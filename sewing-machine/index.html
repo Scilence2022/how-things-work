@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>缝纫机的原理 · 锁式线迹 3D 动画</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #10141b;
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+
+  .lbl { background: rgba(12,16,23,.78); border: 1px solid rgba(255,255,255,.16);
+    color: #e6ecf3; font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  .lbl.red   { border-color: rgba(230,57,70,.85);  color: #ffb3b9; }
+  .lbl.blue  { border-color: rgba(47,111,237,.9);  color: #aecbff; }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none; }
+  #title h1 { font-size: 20px; font-weight: 700; color: #f2f5f9; letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  #title .sub { font-size: 12.5px; color: #9fb0c3; margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 348px;
+    background: rgba(13,17,24,.86); border: 1px solid rgba(255,255,255,.09);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.red  { color: #ff9aa1; border-color: rgba(230,57,70,.7); }
+  .chip.blue { color: #a8c6ff; border-color: rgba(47,111,237,.7); }
+  .chip.dim  { color: #b9c4d0; border-color: rgba(255,255,255,.22); }
+
+  #steps { list-style: none; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: rgba(255,255,255,.05); }
+  #steps li.on { background: rgba(230,57,70,.12); border-color: rgba(230,57,70,.45); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: #dfe6ee; }
+  #steps li.on .n { background: #e63946; color: #fff; }
+  #steps .t { font-size: 12.5px; color: #c7d2de; line-height: 1.45; }
+  #steps .t b { color: #f2f5f9; font-size: 12.5px; }
+  #steps li.on .t b { color: #ffd7da; }
+
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px;
+    background: #e63946; color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { background: #f04b58; }
+  input[type=range] { width: 100%; accent-color: #e63946; height: 18px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { font-size: 12px; color: #9fb0c3; flex: 0 0 30px; }
+  .row .val { font-size: 11.5px; color: #c7d2de; flex: 0 0 38px; text-align: right; }
+  #toggles { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: #b9c4d0; display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: #e63946; }
+  @media (max-width: 760px) { #panel { width: calc(100vw - 36px); } #title h1 { font-size: 16px; } }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1>缝纫机为什么会缝住布？—— 锁式线迹的形成</h1>
+  <div class="sub">3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 一根面线与一根底线如何在布里打结</div>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip red">面线（机针带入）</span>
+    <span class="chip blue">底线（梭芯）</span>
+    <span class="chip dim">一个周期 = 一针</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div class="row"><label>速度</label><input id="speed" type="range" min="0.1" max="3" step="0.05" value="1"><span class="val" id="speedVal">1.0×</span></div>
+    <div class="row"><label>相位</label><input id="scrub" type="range" min="0" max="1000" step="1" value="0"><span class="val" id="scrubVal">0%</span></div>
+  </div>
+  <div id="toggles">
+    <label><input id="tglLabels" type="checkbox" checked> 部件标签</label>
+    <label><input id="tglHousing" type="checkbox" checked> 机构外壳</label>
+    <label><input id="tglRotate" type="checkbox" checked> 自动环绕</label>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数（调试/截图用） ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool  = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+
+/* ---------------- 常量：机构几何与时序 ---------------- */
+const CYCLE_SECONDS = 5.0;          // 一针的时长（1× 速度）
+const STITCH_LEN    = 0.5;          // 针距
+const HOOK_C        = new THREE.Vector3(0, -0.78, -0.5);   // 旋梭中心
+const HOOK_R        = 0.615;        // 梭尖回转半径
+const RACE_Y        = -0.78;
+const TIP_TOP = 1.0, TIP_BOT = -0.6;        // 针尖上/下止点
+const EYE_UP  = 0.22;                        // 针孔到针尖距离
+const CATCH_T = 0.48;                        // 梭尖到达机针（钩住线环）的相位
+const CATCH_DEG = 90;                        // 该时刻梭尖所在角度
+const ARC_START_DEG = 88;                    // 线环贴住梭壳的固定锚点角度
+const COL_RED = 0xe63946, COL_BLUE = 0x2f6fed;
+
+const D2R = Math.PI / 180;
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+function ss(a, b, x) { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+// 跨周期边界的窗口（a 靠近 1.0 时用；如收线 [0.98,1.04]、送布 [1.04,1.13]）
+function w(a, b, t) { return ss(a, b, t < 0.5 ? t + 1 : t); }
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x10141b);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(2.7, 1.55, 4.7);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.05, -0.12, -0.05);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.4;
+controls.maxDistance = 14;
+controls.maxPolarAngle = 1.66;
+controls.autoRotateSpeed = 0.7;
+
+/* ---------------- 灯光 ---------------- */
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x35322c, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 2.4);
+key.position.set(4.5, 8, 3.5);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -6; key.shadow.camera.right = 6;
+key.shadow.camera.top = 6;  key.shadow.camera.bottom = -6;
+key.shadow.camera.far = 25;
+key.shadow.bias = -0.0004;
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+const M = {
+  steel:  new THREE.MeshStandardMaterial({ color: 0xc9ced6, metalness: 0.9,  roughness: 0.32 }),
+  dark:   new THREE.MeshStandardMaterial({ color: 0x525a66, metalness: 0.75, roughness: 0.45 }),
+  brass:  new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.85, roughness: 0.35 }),
+  plate:  new THREE.MeshStandardMaterial({ color: 0xaab2bd, metalness: 0.85, roughness: 0.4 }),
+  ghost:  new THREE.MeshStandardMaterial({ color: 0x93a1b5, transparent: true, opacity: 0.13,
+            depthWrite: false, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.8 }),
+  fabric: new THREE.MeshStandardMaterial({ color: 0xcdb99a, transparent: true, opacity: 0.34,
+            depthWrite: false, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 }),
+  red:    new THREE.MeshStandardMaterial({ color: COL_RED,  emissive: COL_RED,  emissiveIntensity: 0.35, roughness: 0.55 }),
+  blue:   new THREE.MeshStandardMaterial({ color: COL_BLUE, emissive: COL_BLUE, emissiveIntensity: 0.35, roughness: 0.55 }),
+  case:   new THREE.MeshStandardMaterial({ color: 0x9fc0d8, transparent: true, opacity: 0.22,
+            depthWrite: false, metalness: 0.4, roughness: 0.3, side: THREE.DoubleSide }),
+};
+
+function mesh(geo, mat, opts = {}) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(...(opts.pos ?? [0, 0, 0]));
+  if (opts.rot) m.rotation.set(...opts.rot);
+  if (opts.ghost) { m.renderOrder = 6; }
+  m.castShadow = !!opts.cast;
+  m.receiveShadow = !!opts.recv;
+  scene.add(m);
+  return m;
+}
+
+/* ---------------- 机壳（半透明外壳，交代机身语境） ---------------- */
+const housing = new THREE.Group();
+scene.add(housing);
+function ghostBox(w, h, d, pos) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), M.ghost);
+  m.position.set(...pos); m.renderOrder = 6;
+  housing.add(m); return m;
+}
+ghostBox(0.9, 5.5, 1.2, [3.0, 1.7, 0]);        // 立柱
+ghostBox(2.9, 0.9, 1.2, [1.15, 3.85, 0]);      // 悬臂
+ghostBox(0.9, 0.85, 1.2, [-0.15, 2.98, 0]);    // 针头
+ghostBox(4.8, 0.34, 2.0, [0.9, -1.22, 0]);     // 底座外框（梭床下方）
+
+/* ---------------- 底盘（带圆孔，让旋梭露出来） ---------------- */
+{
+  const sh = new THREE.Shape();
+  sh.moveTo(-1.55, -1.05); sh.lineTo(3.3, -1.05); sh.lineTo(3.3, 1.05); sh.lineTo(-1.55, 1.05); sh.closePath();
+  const hole = new THREE.Path();
+  hole.absarc(0, 0.5, 0.85, 0, Math.PI * 2, true);
+  sh.holes.push(hole);
+  const g = new THREE.ExtrudeGeometry(sh, { depth: 0.1, bevelEnabled: false });
+  const m = new THREE.Mesh(g, M.dark);
+  m.rotation.x = -Math.PI / 2; m.position.y = -1.05;
+  m.receiveShadow = true;
+  scene.add(m);
+}
+
+/* ---------------- 针板（带针孔与送布牙槽） ---------------- */
+{
+  const sh = new THREE.Shape();
+  sh.moveTo(-0.85, -0.85); sh.lineTo(0.9, -0.85); sh.lineTo(0.9, 0.85); sh.lineTo(-0.85, 0.85); sh.closePath();
+  const c = new THREE.Path(); c.absarc(0, 0, 0.13, 0, Math.PI * 2, true); sh.holes.push(c);
+  for (const s of [1, -1]) {
+    const r = new THREE.Path();
+    r.moveTo(-0.4, s * 0.28); r.lineTo(0.45, s * 0.28); r.lineTo(0.45, s * 0.52); r.lineTo(-0.4, s * 0.52); r.closePath();
+    sh.holes.push(r);
+  }
+  const g = new THREE.ExtrudeGeometry(sh, { depth: 0.045, bevelEnabled: false });
+  const m = new THREE.Mesh(g, M.plate);
+  m.rotation.x = -Math.PI / 2; m.position.y = -0.055;
+  m.receiveShadow = true;
+  scene.add(m);
+}
+
+/* ---------------- 旋梭组件 ---------------- */
+// 外导轨环（静止）
+{
+  const t = new THREE.Mesh(new THREE.TorusGeometry(0.76, 0.05, 12, 64), M.steel);
+  t.rotation.x = Math.PI / 2; t.position.set(HOOK_C.x, RACE_Y, HOOK_C.z); t.scale.z = 0.6;
+  t.castShadow = true; t.receiveShadow = true;
+  scene.add(t);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.04, 48), M.dark);
+  base.position.set(HOOK_C.x, -0.93, HOOK_C.z); base.receiveShadow = true;
+  scene.add(base);
+}
+// 旋梭转环（旋转体 + 梭尖单独摆放，保证与线环时序严格对齐）
+const hookRing = (() => {
+  const rO = 0.62, rI = 0.52;
+  const sh = new THREE.Shape();
+  sh.absarc(0, 0, rO, -10 * D2R, 150 * D2R, false);
+  sh.lineTo(rI * Math.cos(156 * D2R), rI * Math.sin(156 * D2R));
+  sh.absarc(0, 0, rI, 156 * D2R, -16 * D2R, true);
+  sh.quadraticCurveTo(0.60 * Math.cos(-22 * D2R), 0.60 * Math.sin(-22 * D2R),
+                      rO * Math.cos(-10 * D2R),   rO * Math.sin(-10 * D2R));
+  const g = new THREE.ExtrudeGeometry(sh, { depth: 0.09, bevelEnabled: false });
+  g.translate(0, 0, -0.045);
+  const m = new THREE.Mesh(g, M.brass);
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(HOOK_C.x, RACE_Y, HOOK_C.z);
+  m.castShadow = true;
+  scene.add(m);
+  // 转环上的标记条，方便看出它在转
+  const mark = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.1), M.ghost.clone());
+  mark.material.opacity = 0.9; mark.material.color.set(0xf2e9cf); mark.material.depthWrite = true;
+  scene.add(mark);
+  return { ring: m, mark };
+})();
+// 梭尖（独立对象，每帧摆到 θp）
+const hookPoint = (() => {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.11, 0.18), M.brass);
+  base.position.set(-0.01, 0, 0.03);
+  const mid = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.2), M.brass);
+  mid.position.set(-0.055, 0, 0.14); mid.rotation.y = -0.5;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.034, 0.15, 10), M.brass);
+  tip.rotation.x = Math.PI / 2; tip.rotation.z = 0.35;
+  tip.position.set(-0.105, -0.01, 0.22);
+  for (const c of [base, mid, tip]) { c.castShadow = true; g.add(c); }
+  scene.add(g);
+  return g;
+})();
+// 梭壳（静止、半透明）+ 壳柄（防止它跟着转）
+{
+  const cs = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 48, 1, true), M.case);
+  cs.position.set(HOOK_C.x, RACE_Y, HOOK_C.z); cs.renderOrder = 5;
+  scene.add(cs);
+  const top = new THREE.Mesh(new THREE.CircleGeometry(0.42, 48), M.case);
+  top.rotation.x = -Math.PI / 2; top.position.set(HOOK_C.x, RACE_Y + 0.151, HOOK_C.z); top.renderOrder = 5;
+  const bot = top.clone(); bot.rotation.x = Math.PI / 2; bot.position.y = RACE_Y - 0.151;
+  scene.add(top, bot);
+  const finger = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.3, 0.26), M.steel);
+  finger.position.set(HOOK_C.x - 0.465, RACE_Y, HOOK_C.z); finger.castShadow = true;
+  scene.add(finger);
+}
+// 梭芯（蓝线）
+const bobbin = (() => {
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.22, 32), M.blue);
+  const f1 = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.02, 32), M.dark);
+  f1.position.y = 0.12; const f2 = f1.clone(); f2.position.y = -0.12;
+  g.add(core, f1, f2);
+  g.position.set(HOOK_C.x, RACE_Y, HOOK_C.z);
+  scene.add(g);
+  return g;
+})();
+
+/* ---------------- 机针 + 针杆 ---------------- */
+const needleGrp = new THREE.Group();
+scene.add(needleGrp);
+const needleBar = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 2.1, 20), M.steel);
+const needleClamp = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.16, 20), M.dark);
+const needleShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 1.0, 12), M.steel);
+const needleTip = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.06, 12), M.steel);
+needleTip.rotation.x = Math.PI;
+const needleEye = new THREE.Mesh(new THREE.TorusGeometry(0.048, 0.013, 8, 20), M.steel);
+needleEye.rotation.y = Math.PI / 2;
+for (const m of [needleBar, needleClamp, needleShaft, needleTip, needleEye]) { m.castShadow = true; needleGrp.add(m); }
+
+/* ---------------- 压脚 + 压杆 ---------------- */
+{
+  const soleF = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.05, 0.2), M.steel);
+  soleF.position.set(-0.1, 0.065, -0.175);
+  const soleB = soleF.clone(); soleB.position.z = 0.175;
+  const ankle = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.3, 0.18), M.steel);
+  ankle.position.set(0.28, 0.2, 0);
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 2.2, 14), M.steel);
+  bar.position.set(0.28, 1.4, 0);
+  for (const m of [soleF, soleB, ankle, bar]) { m.castShadow = true; scene.add(m); }
+}
+
+/* ---------------- 送布牙 ---------------- */
+function makeDog(z) {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.1, 0.12), M.dark);
+  base.position.y = -0.05;
+  g.add(base);
+  for (let i = 0; i < 6; i++) {
+    const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.035, 0.1), M.steel);
+    tooth.position.set(-0.32 + i * 0.128, 0.017, 0);
+    g.add(tooth);
+  }
+  g.position.set(0, -0.045, z);
+  g.traverse(o => { o.castShadow = true; });
+  scene.add(g);
+  return g;
+}
+const dogs = [makeDog(-0.4), makeDog(0.4)];
+
+/* ---------------- 挑线杆 ---------------- */
+const LEVER_PIVOT = V3(0.78, 3.32, 0.74);
+const LEVER_HIGH = V3(0.34, 3.02, 0.74), LEVER_LOW = V3(0.5, 2.02, 0.74);
+const leverBody = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1, 12), M.steel);
+leverBody.castShadow = true; scene.add(leverBody);
+const leverEye = new THREE.Group(); scene.add(leverEye);
+{
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.016, 8, 18), M.steel);
+  ring.castShadow = true; leverEye.add(ring);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.1, 16), M.dark);
+  hub.rotation.x = Math.PI / 2; hub.position.copy(LEVER_PIVOT); scene.add(hub);
+  const weight = new THREE.Mesh(new THREE.SphereGeometry(0.08, 14, 10), M.dark);
+  weight.castShadow = true; scene.add(weight);
+  leverEye.userData.weight = weight;
+}
+
+/* ---------------- 面线卷 / 张力器 / 手轮 ---------------- */
+{
+  const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.75, 12), M.steel);
+  pin.position.set(1.7, 4.6, 0.42); scene.add(pin);
+  const spool = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.21, 0.45, 24), M.red);
+  spool.position.set(1.7, 4.72, 0.42); spool.castShadow = true; scene.add(spool);
+  for (const dy of [0.24, -0.24]) {
+    const fl = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.02, 24), M.dark);
+    fl.position.set(1.7, 4.72 + dy, 0.42); scene.add(fl);
+  }
+  for (const dy of [0.045, -0.045]) {
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.05, 20), M.steel);
+    disc.rotation.x = Math.PI / 2; disc.position.set(0.25, 3.05 + dy, 0.68);
+    disc.castShadow = true; scene.add(disc);
+  }
+}
+const wheel = (() => {
+  const outer = new THREE.Group();
+  outer.position.set(3.02, 3.85, 0.42); outer.rotation.y = Math.PI / 2;
+  const spin = new THREE.Group(); outer.add(spin);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.05, 10, 40), M.dark);
+  rim.castShadow = true; spin.add(rim);
+  for (let i = 0; i < 3; i++) {
+    const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.8, 8), M.steel);
+    sp.rotation.z = i * Math.PI / 3; spin.add(sp);
+  }
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.16, 14), M.steel);
+  hub.rotation.x = Math.PI / 2; spin.add(hub);
+  scene.add(outer);
+  return spin;
+})();
+
+/* ---------------- 布料 + 线迹标记 ---------------- */
+const fabric = new THREE.Mesh(new THREE.BoxGeometry(12, 0.04, 2.2), M.fabric);
+fabric.position.y = 0.015; fabric.renderOrder = 4;
+scene.add(fabric);
+
+const N_MARKS = 13;
+const marks = [];
+{
+  const dashG = new THREE.BoxGeometry(0.14, 0.012, 0.06);
+  const knotRG = new THREE.SphereGeometry(0.03, 12, 10);
+  for (let j = 0; j < N_MARKS; j++) {
+    const g = new THREE.Group();
+    const top = new THREE.Mesh(dashG, M.red);  top.position.y = 0.042;
+    const bot = new THREE.Mesh(dashG, M.blue); bot.position.y = -0.016;
+    const kr = new THREE.Mesh(knotRG, M.red);  kr.position.y = 0.02;
+    const kb = new THREE.Mesh(knotRG, M.blue); kb.position.y = -0.004;
+    g.add(top, bot, kr, kb);
+    g.userData = { top, bot, kr, kb };
+    scene.add(g);
+    marks.push(g);
+  }
+}
+
+/* ---------------- 线（管几何，逐帧重建） ---------------- */
+const dynGeoms = [];
+function tubeFromPoints(pts, radius, mat, tubular = 96) {
+  if (pts.length < 2) return null;
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.5);
+  const g = new THREE.TubeGeometry(curve, tubular, radius, 6, false);
+  const m = new THREE.Mesh(g, mat);
+  scene.add(m);
+  dynGeoms.push(g);
+  return m;
+}
+function rebuildThreads(build) {
+  for (const g of dynGeoms) g.dispose();
+  dynGeoms.length = 0;
+  for (const m of threadMeshes) scene.remove(m);
+  threadMeshes.length = 0;
+  build();
+}
+const threadMeshes = [];
+
+// 底线：梭芯 → 梭壳出口 → 针孔下方（静态）
+{
+  const c = HOOK_C;
+  const pts = [
+    V3(c.x + 0.24 * Math.cos(200 * D2R), -0.74, c.z + 0.24 * Math.sin(200 * D2R)),
+    V3(c.x + 0.38 * Math.cos(180 * D2R), -0.66, c.z + 0.38 * Math.sin(180 * D2R)),
+    V3(c.x + 0.34 * Math.cos(135 * D2R), -0.34, c.z + 0.34 * Math.sin(135 * D2R)),
+    V3(c.x + 0.45 * Math.cos(105 * D2R), -0.15, c.z + 0.45 * Math.sin(105 * D2R)),
+    V3(0, -0.01, 0),
+  ];
+  tubeFromPoints(pts, 0.02, M.blue, 64);
+}
+
+/* ---------------- 部件标签 ---------------- */
+const labelObjs = [];
+function addLabel(text, pos, cls = '') {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  div.textContent = text;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelObjs.push(o);
+  return o;
+}
+addLabel('面线（机针线）', V3(1.15, 4.0, 0.42), 'red');
+addLabel('张力器', V3(0.05, 2.78, 0.68));
+addLabel('挑线杆', V3(1.0, 3.55, 0.74));
+addLabel('机针', V3(0.1, 1.0, 0));
+addLabel('压脚', V3(-0.55, 0.35, 0));
+addLabel('布料', V3(-2.6, 0.2, 0.9));
+addLabel('针板', V3(0.85, -0.05, 0.62));
+addLabel('送布牙', V3(0.0, -0.02, 0.72));
+addLabel('旋梭', V3(0.95, -0.62, -0.45));
+addLabel('梭壳（不转）', V3(-0.62, -0.52, 0.25));
+addLabel('梭芯（底线）', V3(0.35, -0.95, 0.3));
+addLabel('底线', V3(-0.52, -0.45, -0.32), 'blue');
+
+/* ---------------- 相位讲解 ---------------- */
+const STEPS = [
+  { t0: 0.135, t1: 0.445, n: 1, b: '刺布', d: '机针引着面线向下刺穿布料，到达最低点；挑线杆同步下降，放出面线。' },
+  { t0: 0.445, t1: 0.52, n: 2, b: '成环', d: '机针回升少许，布料压住线，面线在针孔旁鼓出一个线环。' },
+  { t0: 0.52, t1: 0.98, n: 3, b: '旋梭绕线', d: '梭尖穿过线环，带它绕梭壳转一整圈，面线整个套过装有底线的梭芯。' },
+  { t0: 0.98, t1: 1.13, n: 4, b: '收线 · 送布', d: '挑线杆收紧面线，把底线拉进布层中间绞合成结；送布牙把布料推进一针。' },
+];
+function stepIndex(t) {
+  if (t >= 0.98 || t < 0.135) return 3;
+  if (t < 0.445) return 0;
+  if (t < 0.52) return 1;
+  return 2;
+}
+
+/* ---------------- 每帧更新 ---------------- */
+function needleTipY(t) {
+  if (t < 0.135) return TIP_TOP;
+  if (t < 0.385) return lerp(TIP_TOP, TIP_BOT, ss(0.135, 0.385, t));
+  if (t < 0.445) return TIP_BOT;
+  if (t < 0.945) return lerp(TIP_BOT, TIP_TOP, ss(0.445, 0.945, t));
+  return TIP_TOP;
+}
+function leverLevel(t) {   // 1=高位（已收线） 0=低位（放线）
+  if (t >= 0.95) return ss(0.95, 1.03, t);        // 0.95..1 上升
+  if (t < 0.03) return ss(0.95, 1.03, t + 1);     // 0..0.03 上升收尾（跨周期）
+  if (t < 0.10) return 1;                          // 高位保持
+  if (t < 0.40) return 1 - ss(0.10, 0.40, t);      // 下降放线
+  return 0;                                        // 低位
+}
+function hookPointDeg(t) { return CATCH_DEG + 720 * (t - CATCH_T); }   // 每针两圈
+
+// 下方红线（布料以下的一段）：U 形小环 → 被梭尖拖绕 → 收线滑脱
+function lowerThreadPoints(t, eyeY) {
+  if (!((t >= 0.30 && t < 1) || t < 0.05)) return null;
+  const H = V3(0, 0, 0);
+  const pts = [H];
+
+  const sep = 0.035 + 0.11 * ss(0.445, 0.48, t);
+  const wMorph = ss(CATCH_T, 0.52, t);               // U 形 → 绕梭形态的过渡
+  const bendY_U = eyeY - 0.18 - 0.20 * ss(0.44, 0.48, t);
+
+  // 绕梭参数
+  let spanDeg;
+  if (t < 0.98) {
+    const thbDeg = hookPointDeg(t) - 25;
+    const bendBlend = lerp(90, thbDeg, ss(CATCH_T, 0.52, t));
+    spanDeg = bendBlend - ARC_START_DEG;
+  } else {
+    spanDeg = lerp(337, 0, w(0.98, 1.04, t));
+  }
+  const shrunk = w(0.99, 1.045, t);
+  const bendR = lerp(0.535, 0.14, shrunk);
+  const bendY = lerp(-0.70, -0.10, shrunk);
+  const arcR = lerp(0.44, 0.05, w(1.0, 1.05, t));
+  const arcY = lerp(-0.76, -0.12, w(1.0, 1.05, t));
+  const thb = spanDeg * D2R + ARC_START_DEG * D2R;
+
+  // 内侧腿：H → 梭壳锚点
+  const anchor = V3(arcR * Math.cos(ARC_START_DEG * D2R), arcY, HOOK_C.z + arcR * Math.sin(ARC_START_DEG * D2R));
+  pts.push(V3().lerpVectors(V3(-sep, -0.10, 0), V3(anchor.x * 0.35, -0.34, anchor.z * 0.35), wMorph));
+  pts.push(V3().lerpVectors(V3(-sep, eyeY + 0.04, 0), anchor, wMorph));
+
+  // 贴着梭壳的弧段
+  if (spanDeg > 5) {
+    const n = Math.max(2, Math.ceil(spanDeg / 8));
+    for (let i = 1; i < n; i++) {
+      const a = (ARC_START_DEG + spanDeg * i / n) * D2R;
+      pts.push(V3(arcR * Math.cos(a), arcY, HOOK_C.z + arcR * Math.sin(a)));
+    }
+  }
+
+  // 环的“环底”，跟在梭尖后面
+  const bend = V3(bendR * Math.cos(thb), bendY, HOOK_C.z + bendR * Math.sin(thb));
+  pts.push(V3().lerpVectors(V3(0, bendY_U, sep * 0.3), bend, wMorph));
+
+  // 外侧腿：环底 → H（拖出的那根线）
+  if (wMorph < 0.97) {
+    pts.push(V3().lerpVectors(V3(sep, eyeY + 0.04, 0), bend, wMorph));
+  }
+  const bowR = lerp(0.35, 0.12, shrunk);
+  const bow = V3(bowR * Math.cos(thb - 45 * D2R), lerp(-0.28, -0.06, shrunk), HOOK_C.z + bowR * Math.sin(thb - 45 * D2R));
+  pts.push(V3().lerpVectors(V3(sep, -0.10, 0), bow, wMorph));
+  pts.push(H);
+  return pts;
+}
+
+function updateWorld(t, cyc) {
+  /* --- 机针 --- */
+  const tipY = needleTipY(t);
+  const eyeY = tipY + EYE_UP;
+  needleBar.position.y = tipY + 2.1;
+  needleClamp.position.y = tipY + 1.25;
+  needleShaft.position.y = tipY + 0.55;
+  needleTip.position.y = tipY + 0.03;
+  needleEye.position.y = tipY + EYE_UP;
+
+  /* --- 挑线杆 --- */
+  const lv = leverLevel(t);
+  const eye = V3().lerpVectors(LEVER_LOW, LEVER_HIGH, lv);
+  leverEye.position.copy(eye);
+  const dir = V3().subVectors(eye, LEVER_PIVOT);
+  const len = dir.length();
+  leverBody.scale.y = len;
+  leverBody.position.copy(LEVER_PIVOT).addScaledVector(dir, 0.5);
+  leverBody.quaternion.setFromUnitVectors(V3(0, 1, 0), dir.clone().normalize());
+  const wDir = V3().subVectors(LEVER_PIVOT, eye).normalize();
+  leverEye.userData.weight.position.copy(LEVER_PIVOT).addScaledVector(wDir, 0.32);
+
+  /* --- 旋梭 --- */
+  const hpDeg = hookPointDeg(t);
+  const hp = hpDeg * D2R;
+  hookRing.ring.rotation.y = 10 * D2R - hp;
+  const ptPos = V3(HOOK_C.x + HOOK_R * Math.cos(hp), RACE_Y, HOOK_C.z + HOOK_R * Math.sin(hp));
+  hookPoint.position.copy(ptPos);
+  const tangent = V3(-Math.sin(hp), 0, Math.cos(hp));
+  hookPoint.lookAt(ptPos.clone().add(tangent));
+  hookRing.mark.position.set(HOOK_C.x + 0.57 * Math.cos(hp + 120 * D2R), RACE_Y, HOOK_C.z + 0.57 * Math.sin(hp + 120 * D2R));
+
+  /* --- 送布牙 / 送布量 / 线迹 --- */
+  const tlFeed = cyc - Math.floor(cyc - 1.04);          // 送布窗口的局部时间（跨周期）
+  const lift = ss(1.025, 1.05, tlFeed) - ss(1.125, 1.15, tlFeed);
+  const shift = STITCH_LEN * (ss(1.04, 1.115, tlFeed) - ss(1.135, 1.25, tlFeed));
+  for (const d of dogs) { d.position.y = -0.045 + 0.055 * lift; d.position.x = shift; }
+  const feedTotal = STITCH_LEN * (Math.floor(cyc - 1.04) + ss(1.04, 1.13, tlFeed));
+  const kc = Math.floor(cyc);                          // 当前周期序号
+  const base = feedTotal - STITCH_LEN * kc;            // 本周期新线迹的位置
+  for (let j = 0; j < N_MARKS; j++) {
+    const g = marks[j];
+    g.position.x = base + j * STITCH_LEN;              // j = 倒数第几针
+    const born = j === 0 ? w(0.98, 1.015, t) : 1;      // 最新一针在收线后出现
+    g.visible = g.position.x > -0.3 && g.position.x < 5.4 && born > 0.02;
+    g.scale.setScalar(Math.max(born, 0.001));
+  }
+
+  /* --- 手轮 --- */
+  wheel.rotation.z = 2 * Math.PI * t;
+
+  /* --- 线 --- */
+  rebuildThreads(() => {
+    // 上线：线卷 → 张力器 → 挑线杆 → 导线孔 → 针孔
+    const upper = [
+      V3(1.7, 4.94, 0.42),
+      V3(1.35, 4.42, 0.42),
+      V3(0.55, 3.6, 0.55),
+      V3(0.25, 3.14, 0.70),
+      V3(0.25, 2.94, 0.70),
+      eye,
+      V3(0.2, 2.45, 0.55),
+    ];
+    if (eyeY < 0.1) upper.push(V3(0, 0.05, 0));   // 针孔在布下时，让线从布孔穿过
+    upper.push(V3(0, eyeY, 0));
+    tubeFromPoints(upper, 0.022, M.red, 72);
+
+    // 下线（布料以下）
+    const lower = lowerThreadPoints(t, eyeY);
+    if (lower) tubeFromPoints(lower, 0.022, M.red, 96);
+  });
+
+  /* --- 标签 / UI 状态由外部处理 --- */
+  return { tipY, eyeY, hpDeg };
+}
+
+/* ---------------- 状态与循环 ---------------- */
+let cycles = qsFloat('t', 0);
+let playing = !qsBool('pause', false);
+let speed = qsFloat('speed', 1);
+
+const elPlay = document.getElementById('play');
+const elSpeed = document.getElementById('speed');
+const elSpeedVal = document.getElementById('speedVal');
+const elScrub = document.getElementById('scrub');
+const elScrubVal = document.getElementById('scrubVal');
+const elSteps = document.getElementById('steps');
+const tglLabels = document.getElementById('tglLabels');
+const tglHousing = document.getElementById('tglHousing');
+const tglRotate = document.getElementById('tglRotate');
+
+for (const s of STEPS) {
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="n">${s.n}</span><span class="t"><b>${s.b}</b>　${s.d}</span>`;
+  li.addEventListener('click', () => { cycles = Math.floor(cycles) + s.t0 + 0.003; });
+  elSteps.appendChild(li);
+}
+
+elPlay.textContent = playing ? '暂停' : '播放';
+elPlay.addEventListener('click', () => { playing = !playing; elPlay.textContent = playing ? '暂停' : '播放'; });
+elSpeed.value = speed; elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×';
+elSpeed.addEventListener('input', () => { speed = parseFloat(elSpeed.value); elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×'; });
+elScrub.addEventListener('input', () => { cycles = Math.floor(cycles) + parseInt(elScrub.value, 10) / 1000; });
+tglLabels.addEventListener('change', () => { for (const o of labelObjs) o.visible = tglLabels.checked; });
+tglHousing.addEventListener('change', () => { housing.visible = tglHousing.checked; });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { tglLabels.checked = false; tglLabels.dispatchEvent(new Event('change')); }
+if (!qsBool('housing', true)) { tglHousing.checked = false; tglHousing.dispatchEvent(new Event('change')); }
+controls.autoRotate = qsBool('spin', true) && tglRotate.checked;
+if (qs.get('top') === '1') {   // 调试机位：高角度俯瞰旋梭
+  camera.position.set(1.7, 4.6, 1.9);
+  controls.target.set(0.0, -0.7, -0.45);
+}
+
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); elPlay.click(); }
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+let lastStep = -1;
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = clock.getDelta();
+  if (playing) cycles += dt * speed / CYCLE_SECONDS;
+  const t = cycles - Math.floor(cycles);
+
+  updateWorld(t, cycles);
+
+  const si = stepIndex(t);
+  if (si !== lastStep) {
+    lastStep = si;
+    [...elSteps.children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  elScrub.value = Math.round(t * 1000);
+  elScrubVal.textContent = Math.round(t * 100) + '%';
+
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+updateWorld(cycles - Math.floor(cycles), cycles);
+frame();
+</script>
+</body>
+</html>
