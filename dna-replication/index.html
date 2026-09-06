@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DNA 的原理 · 半保留复制与冈崎片段动画</title>
+<style>
+  :root { --acc:#2ea882; color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #10141b;
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif; }
+  #cv { position: fixed; inset: 0; display: block; }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none; }
+  #title h1 { font-size: 20px; font-weight: 700; color: #f2f5f9; letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  #title .sub { font-size: 12.5px; color: #9fb0c3; margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 356px;
+    background: rgba(13,17,24,.86); border: 1px solid rgba(255,255,255,.09);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.gray  { color: #b7c2d0; border-color: rgba(154,167,184,.65); }
+  .chip.green { color: #7ee2ae; border-color: rgba(67,209,124,.6); }
+  .chip.orange{ color: #ffc188; border-color: rgba(255,159,67,.6); }
+
+  #steps { list-style: none; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: rgba(255,255,255,.05); }
+  #steps li.on { background: rgba(46,168,130,.13); border-color: rgba(46,168,130,.5); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: #dfe6ee; }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12.5px; color: #c7d2de; line-height: 1.45; }
+  #steps .t b { color: #f2f5f9; font-size: 12.5px; }
+  #steps li.on .t b { color: #a9ecd5; }
+
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { font-size: 12px; color: #9fb0c3; flex: 0 0 30px; }
+  .row .val { font-size: 11.5px; color: #c7d2de; flex: 0 0 38px; text-align: right; }
+  #toggles { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: #b9c4d0; display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  @media (max-width: 760px) { #panel { width: calc(100vw - 36px); } #title h1 { font-size: 16px; } }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="title">
+  <h1>DNA 是怎么被复制的？—— 半保留复制与冈崎片段</h1>
+  <div class="sub">工厂视角：母链持续向左穿行 ⟺ 复制叉向右前进 · 一个周期 = 一个冈崎片段诞生 · 空格播放/暂停</div>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip gray">母链（模板）</span>
+    <span class="chip green">新链 DNA</span>
+    <span class="chip orange">RNA 引物</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div class="row"><label>速度</label><input id="speed" type="range" min="0.1" max="3" step="0.05" value="1"><span class="val" id="speedVal">1.0×</span></div>
+    <div class="row"><label>相位</label><input id="scrub" type="range" min="0" max="1000" step="1" value="0"><span class="val" id="scrubVal">0%</span></div>
+  </div>
+  <div id="toggles">
+    <label><input id="tglLabels" type="checkbox" checked> 标注</label>
+    <label><input id="tglInset" type="checkbox" checked> 半保留示意</label>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ================= URL 参数 ================= */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool  = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+
+/* ================= 画布（1600×900 虚拟坐标，等比留白缩放） ================= */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = 1600, H = 900;
+let dpr = 1, vs = 1, vox = 0, voy = 0;
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+  cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  vs = Math.min(innerWidth / W, innerHeight / H);
+  vox = (innerWidth - W * vs) / 2; voy = (innerHeight - H * vs) / 2;
+}
+addEventListener('resize', resize); resize();
+
+/* ================= 工具 ================= */
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+function ss(a, b, x) { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+const FONT = '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif';
+function text(str, x, y, size, color, align = 'left', weight = 500) {
+  ctx.font = `${weight} ${size}px ${FONT}`; ctx.fillStyle = color;
+  ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillText(str, x, y);
+}
+function rrect(x, y, w, h, r, fill, stroke, lw = 1) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function line(x1, y1, x2, y2, color, lw = 1, dash = null) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  ctx.strokeStyle = color; ctx.lineWidth = lw;
+  if (dash) ctx.setLineDash(dash);
+  ctx.stroke(); if (dash) ctx.setLineDash([]);
+}
+
+/* ================= 常量：复制叉工厂时序 ================= */
+const CYCLE = 26;                 // 一个周期（秒，1× 速度）= 1 个冈崎片段
+const DUPY = 300;                 // 母链双螺旋中心线
+const TOP_Y = 280, BOT_Y = 560;   // 分开后上/下模板走线
+const FORK_X = 1010;              // 复制叉（解旋酶）位置
+const PRIM_X = 930;               // 引物 5' 端诞生点
+const P = 420;                    // 相邻冈崎片段间距 = 每周期母链左移量
+const RNA_W = 42;                 // RNA 引物屏显长度
+const POLI_AT = 1.44, SEAL_AT = 1.70;   // 缺口到达 PolⅠ / 连接酶站的相位偏移（相对片段出生）
+const LEAD_X = 878;               // 前导链聚合酶位置
+const COL_PAR = '#9aa7b8', COL_NEW = '#43d17c', COL_RNA = '#ff9f43';
+
+// 片段 j（j=0 本周期新生的，-1 上一周期…）的 5' 端（右端）屏幕坐标
+const x5of = (j, u) => PRIM_X - P * (u - j - 0.16);
+// 后随链生长端（3' 端）: 引发期 0.16–0.26，延伸期 0.26–0.58
+function growX(u) {
+  if (u < 0.16) return null;
+  if (u < 0.26) return PRIM_X - 2 * P * (u - 0.16);
+  if (u < 0.58) return 846 - 1600 * (u - 0.26);
+  return null;
+}
+
+/* ================= 相位讲解 ================= */
+const STEPS = [
+  { t0: 0.00, t1: 0.16, n: 1, b: '解旋', d: '解旋酶撕开双链，SSB 蛋白稳住单链，拓扑异构酶在前方松解超螺旋；前导链已开始连续合成。' },
+  { t0: 0.16, t1: 0.26, n: 2, b: '引发', d: '引物酶沿后随链模板合成一小段 RNA 引物（橙色），提供 3′-OH 起点。',
+    },
+  { t0: 0.26, t1: 0.58, n: 3, b: '延伸', d: '聚合酶Ⅲ 从引物 3′ 端沿「远离复制叉」方向延伸 → 冈崎片段；前导链同速连续推进。' },
+  { t0: 0.58, t1: 0.80, n: 4, b: '切引物 · 补缺', d: '片段碰上前一段后，Pol Ⅰ 边切前段的 RNA 引物、边用 DNA 补上缺口。' },
+  { t0: 0.80, t1: 1.00, n: 5, b: '连接 · 半保留', d: '连接酶封合最后一个缺口（磷酸二酯键）。每条子代双链 = 一条母链 + 一条新链。' },
+];
+function stepIndex(t) {
+  if (t < 0.16) return 0;
+  if (t < 0.26) return 1;
+  if (t < 0.58) return 2;
+  if (t < 0.80) return 3;
+  return 4;
+}
+
+/* ================= 状态 / UI ================= */
+let cycles = qsFloat('t', 0);
+let playing = !qsBool('pause', false);
+let speed = qsFloat('speed', 1);
+let showLabels = qsBool('labels', true);
+let showInset = qsBool('inset', true);
+
+const elPlay = document.getElementById('play');
+const elSpeed = document.getElementById('speed');
+const elSpeedVal = document.getElementById('speedVal');
+const elScrub = document.getElementById('scrub');
+const elScrubVal = document.getElementById('scrubVal');
+const elSteps = document.getElementById('steps');
+const tglLabels = document.getElementById('tglLabels');
+const tglInset = document.getElementById('tglInset');
+
+for (const s of STEPS) {
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="n">${s.n}</span><span class="t"><b>${s.b}</b>　${s.d}</span>`;
+  li.addEventListener('click', () => { cycles = Math.floor(cycles) + s.t0 + 0.002; });
+  elSteps.appendChild(li);
+}
+elPlay.textContent = playing ? '暂停' : '播放';
+elPlay.addEventListener('click', () => { playing = !playing; elPlay.textContent = playing ? '暂停' : '播放'; });
+elSpeed.value = speed; elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×';
+elSpeed.addEventListener('input', () => { speed = parseFloat(elSpeed.value); elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×'; });
+elScrub.addEventListener('input', () => { cycles = Math.floor(cycles) + parseInt(elScrub.value, 10) / 1000; });
+tglLabels.checked = showLabels;
+tglLabels.addEventListener('change', () => { showLabels = tglLabels.checked; });
+tglInset.checked = showInset;
+tglInset.addEventListener('change', () => { showInset = tglInset.checked; });
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+
+/* ================= 各部件绘制 ================= */
+function drawBg() {
+  ctx.fillStyle = '#10141b'; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(800, 380, 80, 800, 430, 900);
+  g.addColorStop(0, 'rgba(46,168,130,0.05)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+// 右侧未复制的母链双螺旋（向左流动）
+function drawParentDuplex(u) {
+  const y1 = x => DUPY - 13 + 3.5 * Math.sin(x * 0.045 + u * 18);
+  const y2 = x => DUPY + 13 + 3.5 * Math.sin(x * 0.045 + u * 18 + 0.4);
+  // 骨架
+  ctx.beginPath();
+  for (let x = FORK_X - 30; x <= 1660; x += 8) x === FORK_X - 30 ? ctx.moveTo(x, y1(x)) : ctx.lineTo(x, y1(x));
+  ctx.strokeStyle = COL_PAR; ctx.lineWidth = 4; ctx.stroke();
+  ctx.beginPath();
+  for (let x = FORK_X - 30; x <= 1660; x += 8) x === FORK_X - 30 ? ctx.moveTo(x, y2(x)) : ctx.lineTo(x, y2(x));
+  ctx.strokeStyle = COL_PAR; ctx.lineWidth = 4; ctx.stroke();
+  // 碱基对（越靠近解旋酶越散开）
+  for (let x = FORK_X + 6; x <= 1660; x += 23) {
+    const a = ss(FORK_X + 6, FORK_X + 60, x);           // 解旋中的淡入
+    ctx.strokeStyle = `rgba(150,165,185,${0.28 + 0.30 * a})`;
+    ctx.lineWidth = 3;
+    line(x, y1(x) + 3, x, y2(x) - 3, ctx.strokeStyle, 3);
+  }
+}
+
+// 两条分开的模板走线
+function drawTemplates() {
+  ctx.beginPath(); ctx.moveTo(FORK_X + 4, DUPY - 13);
+  ctx.bezierCurveTo(FORK_X - 34, DUPY - 15, FORK_X - 44, TOP_Y, FORK_X - 78, TOP_Y);
+  ctx.lineTo(-40, TOP_Y);
+  ctx.strokeStyle = COL_PAR; ctx.lineWidth = 4; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(FORK_X + 4, DUPY + 13);
+  ctx.bezierCurveTo(FORK_X - 36, DUPY + 15, FORK_X - 52, BOT_Y, FORK_X - 96, BOT_Y);
+  ctx.lineTo(-40, BOT_Y);
+  ctx.strokeStyle = COL_PAR; ctx.lineWidth = 4; ctx.stroke();
+}
+
+// 下方子代双链：模板 + 连续合成的前导链
+function drawLeading(u) {
+  // 新链（绿）：实线为主，叠加流动高亮虚线表现行进
+  line(-40, BOT_Y + 16, LEAD_X + 10, BOT_Y + 16, COL_NEW, 5);
+  ctx.save();
+  ctx.setLineDash([18, 30]); ctx.lineDashOffset = -u * P * 1.6;
+  line(-40, BOT_Y + 16, LEAD_X + 10, BOT_Y + 16, 'rgba(215,255,230,.75)', 2.4);
+  ctx.restore();
+  // 配对短横
+  for (let x = -36; x < LEAD_X - 4; x += 23)
+    line(x, BOT_Y + 3, x, BOT_Y + 13, 'rgba(67,209,124,.38)', 3);
+}
+
+// 顶部模板上的互补链（冈崎片段 / 前一段 / 更早的片段）
+function drawTopFragments(u) {
+  for (let j = -4; j <= 0; j++) {
+    const x5 = x5of(j, u);
+    if (x5 < -60) continue;
+    let x3, rnaLeft, rnaRight;
+    if (j === 0 && u < 0.16) continue;
+    if (j === 0 && u < 0.26) {           // 引发期：只有 RNA
+      rnaRight = x5; rnaLeft = PRIM_X - 2 * P * (u - 0.16); x3 = rnaLeft;
+    } else {
+      x3 = (j === 0 && u < 0.58) ? growX(u) : x5 - P;
+      rnaRight = x5; rnaLeft = x5 - RNA_W;
+    }
+    // RNA 引物（可能正在被 PolⅠ 边切边补）
+    const sweep = clamp((u - (j + POLI_AT)) / 0.18, 0, 1);
+    if (rnaRight > rnaLeft) {
+      const orangeEnd = x5 - RNA_W * sweep;             // 绿色从右往左吞掉橙色
+      if (orangeEnd > rnaLeft + 1)
+        line(rnaLeft, TOP_Y + 16, orangeEnd, TOP_Y + 16, COL_RNA, 6.5);
+      if (sweep > 0 && x5 > rnaLeft + 1)
+        line(Math.max(rnaLeft, x5 - RNA_W * sweep), TOP_Y + 16, x5, TOP_Y + 16, COL_NEW, 6.5);
+      for (let x = Math.ceil(rnaLeft / 22) * 22; x < orangeEnd; x += 22)
+        line(x, TOP_Y + 4, x, TOP_Y + 13, 'rgba(255,159,67,.42)', 2.6);
+    }
+    // DNA 部分互补链
+    const dnaRight = (sweep > 0 ? rnaLeft : rnaRight - RNA_W);
+    if (x3 < dnaRight - 1) {
+      line(x3, TOP_Y + 16, dnaRight, TOP_Y + 16, COL_NEW, 5);
+      for (let x = Math.ceil(x3 / 22) * 22; x < dnaRight - 3; x += 22)
+        line(x, TOP_Y + 4, x, TOP_Y + 13, 'rgba(67,209,124,.36)', 2.6);
+    }
+    // 缺口刻痕（片段 j 与 j+1 之间，未连接前）
+    if (j === -1 && u >= 0.58 && u < 0.86) {
+      line(x5, TOP_Y + 6, x5, TOP_Y + 26, '#ff5d5d', 3);
+    }
+  }
+  // 连接酶封合闪光
+  if (u >= 0.85 && u < 0.94) {
+    const k = ss(0.85, 0.94, u);
+    ctx.beginPath(); ctx.arc(x5of(-1, u), TOP_Y + 12, 8 + 46 * k, 0, 7);
+    ctx.strokeStyle = `rgba(120,255,205,${0.85 * (1 - k)})`; ctx.lineWidth = 3.5; ctx.stroke();
+  }
+}
+
+// 单链区的 SSB 圆点
+function drawSSB(u) {
+  ctx.fillStyle = 'rgba(150,163,182,.55)';
+  // 复制叉与最新片段之间的单链区
+  const gapL = (u >= 0.16 ? x5of(0, u) : x5of(-1, u));
+  for (let x = gapL + 30; x < FORK_X - 64; x += 45) { ctx.beginPath(); ctx.arc(x, TOP_Y - 17, 8, 0, 7); ctx.fill(); }
+  // 正在延伸的生长端与前一段之间的单链区
+  const gx = (u >= 0.26 && u < 0.58) ? growX(u) : null;
+  if (gx !== null) {
+    const prevEnd = x5of(-1, u);
+    for (let x = gx + 30; x < prevEnd - 22; x += 45) { ctx.beginPath(); ctx.arc(x, TOP_Y - 17, 8, 0, 7); ctx.fill(); }
+  }
+  // 下方模板叉口附近
+  ctx.beginPath(); ctx.arc(912, BOT_Y - 17, 8, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(956, BOT_Y - 17, 8, 0, 7); ctx.fill();
+}
+
+function blob(x, y, w, h, color, alpha = 1, label = '') {
+  ctx.save(); ctx.globalAlpha = alpha;
+  rrect(x - w / 2, y - h / 2, w, h, 12, color, 'rgba(255,255,255,.35)', 1.5);
+  if (label) { ctx.fillStyle = 'rgba(10,14,20,.8)'; ctx.font = `700 ${h * 0.32}px ${FONT}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, x, y); }
+  ctx.restore();
+}
+// 聚合酶周围的 dNTP 喂料小点
+function feedDots(x, y, u) {
+  for (let i = 0; i < 3; i++) {
+    const a = u * Math.PI * 6 + i * 2.09;
+    ctx.beginPath(); ctx.arc(x + Math.cos(a) * 34, y + Math.sin(a) * 30, 4, 0, 7);
+    ctx.fillStyle = 'rgba(67,209,124,.75)'; ctx.fill();
+  }
+}
+
+function drawEnzymes(u) {
+  // 拓扑异构酶（复制叉前方的母链上）
+  ctx.save(); ctx.translate(1195, DUPY); ctx.rotate(u * Math.PI * 1.2);
+  ctx.beginPath(); ctx.arc(0, 0, 25, 0, 7); ctx.fillStyle = 'rgba(149,117,205,.28)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(178,146,230,.9)'; ctx.lineWidth = 4; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-13, 8); ctx.lineTo(13, 8); ctx.lineTo(0, -14); ctx.closePath();
+  ctx.fillStyle = 'rgba(202,178,241,.85)'; ctx.fill();
+  ctx.restore();
+  // 解旋酶（六元环）
+  ctx.beginPath(); ctx.arc(FORK_X + 6, DUPY, 54, 0, 7);
+  ctx.fillStyle = 'rgba(16,20,27,.72)'; ctx.fill();
+  ctx.lineWidth = 13; ctx.strokeStyle = 'rgba(199,146,234,.9)'; ctx.stroke();
+  for (let i = 0; i < 6; i++) {
+    const a = u * Math.PI * 0.5 + i * Math.PI / 3;
+    ctx.beginPath(); ctx.arc(FORK_X + 6 + 54 * Math.cos(a), DUPY + 54 * Math.sin(a), 8.5, 0, 7);
+    ctx.fillStyle = '#c792ea'; ctx.fill();
+  }
+  // 引物酶（引发期骑行）
+  if (u >= 0.15 && u < 0.27) {
+    const a = ss(0.15, 0.165, u) * (1 - ss(0.262, 0.27, u));
+    blob(PRIM_X - 2 * P * (u - 0.16), TOP_Y - 25, 52, 36, '#ffd166', a, '引');
+  }
+  // 后随链聚合酶Ⅲ（延伸期骑行）
+  if (u >= 0.25 && u < 0.60) {
+    const a = ss(0.25, 0.265, u) * (1 - ss(0.59, 0.60, u));
+    const gx = u < 0.26 ? PRIM_X - 2 * P * (u - 0.16) : growX(u);
+    blob(gx + 12, TOP_Y + 21, 58, 44, '#4fc3f7', a, 'Ⅲ');
+    feedDots(gx + 12, TOP_Y + 21, u);
+  }
+  // 前导链聚合酶Ⅲ（常驻）
+  blob(LEAD_X, BOT_Y + 8, 58, 44, '#4fc3f7', 1, 'Ⅲ');
+  feedDots(LEAD_X, BOT_Y + 8, u + 0.33);
+  // Pol Ⅰ（切引物·补缺，骑行）
+  if (u >= 0.585 && u < 0.795) {
+    const sweep = ss(0.60, 0.78, u);
+    const px = x5of(-1, u) - RNA_W * sweep + 6;
+    blob(px, TOP_Y + 20, 52, 38, '#f06292', ss(0.585, 0.60, u) * (1 - ss(0.785, 0.795, u)), 'Ⅰ');
+  }
+  // 连接酶（封合瞬间出现在缺口站）
+  if (u >= 0.79 && u < 0.95) {
+    const a = ss(0.79, 0.83, u) * (1 - ss(0.92, 0.95, u));
+    blob(LIGX, TOP_Y + 20, 48, 36, '#26c6da', a, '连');
+  }
+}
+const POLI_X = PRIM_X - POLI_AT * P;   // 325 缺口到达 PolⅠ 站
+const LIGX = PRIM_X - SEAL_AT * P;     // 216 连接酶站
+
+/* ================= 标注 ================= */
+function note(str, tx, ty, px, py, color = '#9fb0c3', size = 12.5) {
+  if (tx !== null && py !== null) line(tx, ty - 4, px, py, 'rgba(255,255,255,.22)', 1);
+  text(str, tx, ty, size, color);
+}
+function drawLabels(u) {
+  if (!showLabels) return;
+  note('母链（未复制的双螺旋）', 1295, 376, 1345, DUPY + 24);
+  note('拓扑异构酶', 1052, 184, 1180, DUPY - 24);
+  note('解旋酶', 940, 165, 990, DUPY - 54, '#cbaee8');
+  note('复制叉', 1105, 382, 1046, DUPY + 20);
+  note('SSB 单链结合蛋白', 690, 200, 800, TOP_Y - 24);
+  if (u >= 0.2 && u < 0.62) {
+    const x5 = x5of(0, u);
+    note('RNA 引物', x5 - 60, TOP_Y - 34, x5 - RNA_W / 2, TOP_Y + 6, '#ffb27a', 12.5);
+  }
+  if (u >= 0.15 && u < 0.27) note('引物酶', PRIM_X - 2 * P * (u - 0.16) - 46, TOP_Y - 42, null, null, '#ffd166');
+  if (u >= 0.26 && u < 0.60) note('后随链 Pol Ⅲ', growX(u) + 44, TOP_Y + 76, null, null, '#7fd0f7');
+  note('前导链 Pol Ⅲ', LEAD_X + 60, BOT_Y + 62, null, null, '#7fd0f7');
+  if (u >= 0.585 && u < 0.795) note('Pol Ⅰ 切引物·补 DNA', x5of(-1, u) - 130, TOP_Y - 40, null, null, '#f48fb1');
+  if (u >= 0.79 && u < 0.95) note('连接酶', LIGX - 20, TOP_Y - 40, null, null, '#4dd0e1');
+  if (u >= 0.62 && u < 1) {
+    const x5 = x5of(0, u);
+    note('冈崎片段（刚完成）', (x5 - P / 2) - 70, TOP_Y + 58, null, null, '#7ee2ae', 13);
+  }
+  note('后随链模板（不连续合成）', 470, 208, null, null, '#8b97a8');
+  note('前导链模板（连续合成）', 560, 630, null, null, '#8b97a8');
+  note('两条子代双链 ←', 250, 420, null, null, '#c7d2de', 13.5);
+  note('母链向左穿行 ⟺ 复制叉前进', 1255, 424, null, null, '#77828f', 12);
+}
+
+/* ================= 半保留示意小卡 ================= */
+function drawInset(u) {
+  if (!showInset) return;
+  const X = 1232, Y = 56, Wd = 336, Ht = 212;
+  const hl = stepIndex(u) === 4;
+  rrect(X, Y, Wd, Ht, 14, 'rgba(13,17,24,.84)', hl ? 'rgba(67,209,124,.75)' : 'rgba(255,255,255,.10)', hl ? 1.6 : 1);
+  text('半保留复制', X + 18, Y + 30, 13.5, '#9fb0c3');
+  const sep = 26 + 5 * Math.sin(u * Math.PI * 2);          // 呼吸感
+  // 亲代
+  const py = Y + 58, px0 = X + 24, px1 = X + 200;
+  line(px0, py - 7, px1, py - 7, COL_PAR, 3.5);
+  line(px0, py + 7, px1, py + 7, COL_PAR, 3.5);
+  for (let x = px0 + 10; x < px1 - 6; x += 16) line(x, py - 7, x, py + 7, 'rgba(154,167,184,.4)', 2);
+  text('亲代双链', px1 + 12, py + 4, 11.5, '#8b97a8');
+  // 分叉箭头
+  const mx = X + 236, my = py;
+  ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(px1 + 2, py - 7);
+  ctx.quadraticCurveTo(mx, py - 7, mx + 18, Y + 108 - 14); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(px1 + 2, py + 7);
+  ctx.quadraticCurveTo(mx, py + 7, mx + 18, Y + 108 + 62 + 14); ctx.stroke();
+  // 两个子代
+  const d1 = Y + 108, d2 = Y + 170;
+  line(X + 254, d1 - 7, X + 300, d1 - 7, COL_PAR, 3.5);
+  line(X + 254, d1 + 7, X + 300, d1 + 7, COL_NEW, 3.5);
+  for (let x = X + 258; x < X + 296; x += 14) line(x, d1 - 7, x, d1 + 7, 'rgba(67,209,124,.4)', 1.6);
+  line(X + 254, d2 - 7, X + 300, d2 - 7, COL_NEW, 3.5);
+  line(X + 254, d2 + 7, X + 300, d2 + 7, COL_PAR, 3.5);
+  for (let x = X + 258; x < X + 296; x += 14) line(x, d2 - 7, x, d2 + 7, 'rgba(67,209,124,.4)', 1.6);
+  text('子代①', X + 244, d1 + 4, 11.5, '#8b97a8', 'right');
+  text('子代②', X + 244, d2 + 4, 11.5, '#8b97a8', 'right');
+  text('一旧 + 一新', X + 320, Y + 140, 11.5, '#7ee2ae', 'right');
+  text(`两条子代双链各含一条完整母链`, X + 18, Y + Ht - 14, 11.5, '#77828f');
+}
+
+/* ================= 主绘制 ================= */
+function draw(t) {
+  drawBg();
+  drawInset(t);
+  drawParentDuplex(t);
+  drawTemplates();
+  drawLeading(t);
+  drawTopFragments(t);
+  drawSSB(t);
+  drawEnzymes(t);
+  drawLabels(t);
+}
+
+/* ================= 主循环 ================= */
+let lastStep = -1, last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min((now - last) / 1000, 0.1); last = now;
+  if (playing) cycles += dt * speed / CYCLE;
+  const t = cycles - Math.floor(cycles);
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#10141b'; ctx.fillRect(0, 0, innerWidth, innerHeight);
+  ctx.setTransform(vs * dpr, 0, 0, vs * dpr, vox * dpr, voy * dpr);
+  draw(t);
+
+  const si = stepIndex(t);
+  if (si !== lastStep) {
+    lastStep = si;
+    [...elSteps.children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  elScrub.value = Math.round(t * 1000);
+  elScrubVal.textContent = Math.round(t * 100) + '%';
+}
+frame();
+</script>
+</body>
+</html>

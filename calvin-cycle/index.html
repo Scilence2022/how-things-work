@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>卡尔文循环的原理 · CO₂ 如何变成糖（动画）</title>
+<style>
+  :root { --acc:#5da45c; color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #10141b;
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif; }
+  #cv { position: fixed; inset: 0; display: block; }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none; }
+  #title h1 { font-size: 20px; font-weight: 700; color: #f2f5f9; letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  #title .sub { font-size: 12.5px; color: #9fb0c3; margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 356px;
+    background: rgba(13,17,24,.86); border: 1px solid rgba(255,255,255,.09);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.co2 { color: #8fe3b0; border-color: rgba(116,198,157,.6); }
+  .chip.nrg { color: #fde68a; border-color: rgba(253,230,138,.5); }
+  .chip.turn{ color: #b9c4d0; border-color: rgba(255,255,255,.22); }
+
+  #steps { list-style: none; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: rgba(255,255,255,.05); }
+  #steps li.on { background: rgba(93,164,92,.14); border-color: rgba(93,164,92,.5); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: #dfe6ee; }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12.5px; color: #c7d2de; line-height: 1.45; }
+  #steps .t b { color: #f2f5f9; font-size: 12.5px; }
+  #steps li.on .t b { color: #c4e8b8; }
+
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { font-size: 12px; color: #9fb0c3; flex: 0 0 30px; }
+  .row .val { font-size: 11.5px; color: #c7d2de; flex: 0 0 38px; text-align: right; }
+  #toggles { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: #b9c4d0; display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  @media (max-width: 760px) { #panel { width: calc(100vw - 36px); } #title h1 { font-size: 16px; } }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="title">
+  <h1>光合作用里 CO₂ 是怎么变成糖的？—— 卡尔文循环</h1>
+  <div class="sub">碳固定 → 还原 → RuBP 再生 · 图中 1 轮固定 1 CO₂，×3 即总账（产 1 个 G3P）· 空格播放/暂停</div>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip co2">CO₂（绿点）</span>
+    <span class="chip nrg">ATP / NADPH（光反应供给）</span>
+    <span class="chip turn">圆点数 = 碳原子数</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div class="row"><label>速度</label><input id="speed" type="range" min="0.1" max="3" step="0.05" value="1"><span class="val" id="speedVal">1.0×</span></div>
+    <div class="row"><label>相位</label><input id="scrub" type="range" min="0" max="1000" step="1" value="0"><span class="val" id="scrubVal">0%</span></div>
+  </div>
+  <div id="toggles">
+    <label><input id="tglLabels" type="checkbox" checked> 标注</label>
+    <label><input id="tglLedger" type="checkbox" checked> 碳账本</label>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ================= URL 参数 ================= */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool  = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+
+/* ================= 画布 ================= */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = 1600, H = 900;
+let dpr = 1, vs = 1, vox = 0, voy = 0;
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+  cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  vs = Math.min(innerWidth / W, innerHeight / H);
+  vox = (innerWidth - W * vs) / 2; voy = (innerHeight - H * vs) / 2;
+}
+addEventListener('resize', resize); resize();
+
+/* ================= 工具 ================= */
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+function ss(a, b, x) { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+const FONT = '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif';
+function text(str, x, y, size, color, align = 'left', weight = 500) {
+  ctx.font = `${weight} ${size}px ${FONT}`; ctx.fillStyle = color;
+  ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillText(str, x, y);
+}
+function rrect(x, y, w, h, r, fill, stroke, lw = 1) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+const D2R = Math.PI / 180;
+const CXc = 860, CYc = 470, R = 262;
+const polar = (deg, r = R) => [CXc + r * Math.cos(deg * D2R), CYc + r * Math.sin(deg * D2R)];
+const bez = (p0, c, p1, k) => (1 - k) * (1 - k) * p0 + 2 * (1 - k) * k * c + k * k * p1;
+
+/* ================= 相位讲解 ================= */
+const CYCLE = 20;
+const STEPS = [
+  { t0: 0.00, t1: 0.22, n: 1, b: '碳固定（羧化）', d: 'Rubisco 把 CO₂ 加到 5 碳的 RuBP 上，中间物立即裂解成 2 个 3 碳的 3-PGA。' },
+  { t0: 0.22, t1: 0.40, n: 2, b: '磷酸化', d: '每个 3-PGA 消耗 1 个 ATP，接上磷酸基 → 1,3-二磷酸甘油酸（活化）。' },
+  { t0: 0.40, t1: 0.58, n: 3, b: '还原 → G3P', d: 'NADPH 提供氢（高能电子），把羧基还原成醛基 → 三碳糖磷酸 G3P。' },
+  { t0: 0.58, t1: 0.72, n: 4, b: '净产物离开', d: '每 6 个 G3P 有 1 个离开循环，作为合成蔗糖、淀粉等糖类的原料。' },
+  { t0: 0.72, t1: 0.92, n: 5, b: 'RuBP 再生', d: '其余 5 个 G3P（15C）再耗 3 个 ATP，重排成 3 个 RuBP（15C），碳架回到起点。' },
+  { t0: 0.92, t1: 1.00, n: 6, b: '总账', d: '每 3 CO₂：耗 9 ATP + 6 NADPH，净得 1 个 G3P —— 全部来自光反应的供给。' },
+];
+function stepIndex(t) {
+  for (let i = 0; i < STEPS.length; i++) if (t >= STEPS[i].t0 && t < STEPS[i].t1) return i;
+  return STEPS.length - 1;
+}
+
+/* ================= 状态 / UI ================= */
+let cycles = qsFloat('t', 0);
+let playing = !qsBool('pause', false);
+let speed = qsFloat('speed', 1);
+let showLabels = qsBool('labels', true);
+let showLedger = qsBool('ledger', true);
+
+const elPlay = document.getElementById('play');
+const elSpeed = document.getElementById('speed');
+const elSpeedVal = document.getElementById('speedVal');
+const elScrub = document.getElementById('scrub');
+const elScrubVal = document.getElementById('scrubVal');
+const elSteps = document.getElementById('steps');
+const tglLabels = document.getElementById('tglLabels');
+const tglLedger = document.getElementById('tglLedger');
+
+for (const s of STEPS) {
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="n">${s.n}</span><span class="t"><b>${s.b}</b>　${s.d}</span>`;
+  li.addEventListener('click', () => { cycles = Math.floor(cycles) + s.t0 + 0.002; });
+  elSteps.appendChild(li);
+}
+elPlay.textContent = playing ? '暂停' : '播放';
+elPlay.addEventListener('click', () => { playing = !playing; elPlay.textContent = playing ? '暂停' : '播放'; });
+elSpeed.value = speed; elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×';
+elSpeed.addEventListener('input', () => { speed = parseFloat(elSpeed.value); elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×'; });
+elScrub.addEventListener('input', () => { cycles = Math.floor(cycles) + parseInt(elScrub.value, 10) / 1000; });
+tglLabels.checked = showLabels; tglLedger.checked = showLedger;
+tglLabels.addEventListener('change', () => { showLabels = tglLabels.checked; });
+tglLedger.addEventListener('change', () => { showLedger = tglLedger.checked; });
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+
+/* ================= 环与阶段 ================= */
+const STAGES = [
+  { a0: -92, a1: -18, c: '#2ec4b6', name: '碳固定（羧化）', lx: 1136, ly: 188 },
+  { a0: -12, a1: 66,  c: '#a78bfa', name: '还原',           lx: 1120, ly: 596 },
+  { a0: 84,  a1: 268, c: '#e8b04a', name: 'RuBP 再生',      lx: 462,  ly: 636 },
+];
+function drawRing(t) {
+  ctx.save();
+  ctx.setLineDash([9, 11]); ctx.lineDashOffset = -t * R * 1.2;
+  ctx.beginPath(); ctx.arc(CXc, CYc, R, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,.14)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
+  const si = stepIndex(t);
+  STAGES.forEach((s, i) => {
+    const on = si >= 5 ||
+      (i === 0 && si <= 1) || (i === 1 && (si === 2 || si === 3)) || (i === 2 && si === 4);
+    ctx.beginPath(); ctx.arc(CXc, CYc, R, s.a0 * D2R, s.a1 * D2R);
+    ctx.strokeStyle = s.c; ctx.globalAlpha = on ? 0.95 : 0.4; ctx.lineWidth = on ? 13 : 10;
+    ctx.lineCap = 'round'; ctx.stroke(); ctx.globalAlpha = 1;
+  });
+  // 方向箭头 ×2
+  for (const a of [-33, 176]) {
+    const [x, y] = polar(a);
+    const ta = (a + 90) * D2R;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ta);
+    ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-7, -7); ctx.lineTo(-7, 7); ctx.closePath();
+    ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fill(); ctx.restore();
+  }
+  if (showLabels) for (const s of STAGES) {
+    ctx.beginPath(); ctx.arc(s.lx - 14, s.ly - 4, 4.5, 0, 7); ctx.fillStyle = s.c; ctx.fill();
+    text(s.name, s.lx, s.ly, 13, s.c, 'left', 600);
+  }
+  // 中心说明
+  const si6 = si === 5;
+  text(si6 ? '净得 1 G3P → 合成糖类' : '卡尔文循环', CXc, 452, si6 ? 17 : 18, si6 ? '#c4e8b8' : '#dfe6ee', 'center', 700);
+  text(si6 ? '3 CO₂ + 9 ATP + 6 NADPH' : '叶绿体基质 · 不需光直接参与', CXc, 480, 12, '#9fb0c3', 'center');
+}
+
+/* ================= 分子卡片 ================= */
+function carbonCard(x, y, nC, label, badge, alpha = 1, accent = 'rgba(255,255,255,.25)', w = null) {
+  if (alpha <= 0.02) return;
+  const cw = w || (nC * 24 + 40);
+  ctx.save(); ctx.globalAlpha = alpha;
+  rrect(x - cw / 2, y - 26, cw, 52, 11, 'rgba(24,31,41,.92)', accent, 1.6);
+  for (let i = 0; i < nC; i++) {
+    ctx.beginPath(); ctx.arc(x - (nC - 1) * 11 + i * 22, y - 8, 8, 0, 7);
+    ctx.fillStyle = '#3d4a59'; ctx.fill();
+    ctx.strokeStyle = 'rgba(190,205,220,.55)'; ctx.lineWidth = 1.4; ctx.stroke();
+  }
+  text(label, x, y + 20, 12.5, '#c7d2de', 'center', 600);
+  if (badge) {
+    ctx.font = `700 11px ${FONT}`;
+    const bw = ctx.measureText(badge).width + 14;
+    rrect(x + cw / 2 - bw - 2, y - 40, bw, 18, 9, '#2b3542', accent, 1);
+    text(badge, x + cw / 2 - bw / 2 - 2, y - 27, 11, '#ffd9a0', 'center', 700);
+  }
+  ctx.restore();
+}
+function miniCard(x, y, nC, alpha = 1) {          // 飞行中的小卡片
+  if (alpha <= 0.02) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  rrect(x - 30, y - 15, 60, 30, 8, 'rgba(24,31,41,.92)', 'rgba(255,255,255,.3)', 1.2);
+  for (let i = 0; i < nC; i++) {
+    ctx.beginPath(); ctx.arc(x - (nC - 1) * 7 + i * 14, y, 5, 0, 7);
+    ctx.fillStyle = '#3d4a59'; ctx.fill();
+    ctx.strokeStyle = 'rgba(190,205,220,.5)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  ctx.restore();
+}
+function chipPill(x, y, label, color, alpha = 1, spent = false) {
+  if (alpha <= 0.02) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.font = `700 11px ${FONT}`;
+  const w = ctx.measureText(label).width + 16;
+  rrect(x - w / 2, y - 11, w, 22, 11, spent ? 'rgba(70,79,92,.9)' : 'rgba(24,31,41,.94)', color, 1.4);
+  text(label, x, y + 4, 11, spent ? '#8b97a8' : color, 'center', 700);
+  ctx.restore();
+}
+// 飞行芯片：出发 → 到达 → 折返（变灰色）
+function flyChip(t, outA, outD, backA, backD, from, c1, to, label, color, spentLabel) {
+  if (t < outA) return;
+  const k = ss(outA, outA + outD, t);
+  let x = bez(from[0], c1[0], to[0], k), y = bez(from[1], c1[1], to[1], k);
+  let a = 1, lb = label, sp = false;
+  if (t >= backA) {
+    const kb = ss(backA, backA + backD, t);
+    x = bez(to[0], c1[0], from[0], kb); y = bez(to[1], c1[1], from[1], kb);
+    lb = spentLabel; sp = true; a = 1 - 0.25 * kb;
+    if (kb >= 1) return;
+  }
+  chipPill(x, y, lb, color, a, sp);
+}
+
+/* ================= 场景绘制 ================= */
+const STATION = [400, 168];                 // 类囊体（光反应）供给站
+const RUB = polar(-52);                     // Rubisco 位置
+const PGA = polar(-2);                      // 3-PGA 位置
+const G3P = polar(62);                      // G3P 位置
+const REG = polar(175);                     // 再生弧中点
+
+function drawStation() {
+  rrect(STATION[0] - 150, STATION[1] - 58, 300, 116, 14, 'rgba(13,17,24,.84)', 'rgba(255,255,255,.10)');
+  text('类囊体（光反应）', STATION[0], STATION[1] - 30, 13.5, '#c7d2de', 'center', 600);
+  text('持续供给 →', STATION[0], STATION[1] - 8, 11.5, '#77828f', 'center');
+  chipPill(STATION[0] - 70, STATION[1] + 26, 'ATP', '#fde68a');
+  chipPill(STATION[0] + 40, STATION[1] + 26, 'NADPH', '#7dd3fc');
+  // 供给箭头（虚线）
+  ctx.save(); ctx.setLineDash([6, 8]);
+  ctx.beginPath(); ctx.moveTo(STATION[0] + 158, STATION[1] + 26);
+  ctx.quadraticCurveTo(640, 250, polar(-125)[0], polar(-125)[1]);
+  ctx.strokeStyle = 'rgba(253,230,138,.35)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
+  text('ATP · NADPH', 600, 232, 12, '#fde68a');
+}
+function drawLedger(t) {
+  if (!showLedger) return;
+  const X = 1186, Y = 636, Wd = 380, Ht = 226;
+  const hl = stepIndex(t) === 5;
+  rrect(X, Y, Wd, Ht, 14, 'rgba(13,17,24,.84)', hl ? 'rgba(125,211,166,.8)' : 'rgba(255,255,255,.10)', hl ? 1.6 : 1);
+  text('碳账本（每固定 3 CO₂）', X + 18, Y + 28, 13.5, '#c7d2de', 'left', 600);
+  const rows = [
+    ['3 CO₂ + 3 RuBP → 6 × 3-PGA', t >= 0.22],
+    ['还原：耗 6 ATP + 6 NADPH → 6 G3P', t >= 0.58],
+    ['1 G3P 离开 → 合成蔗糖 / 淀粉', t >= 0.72],
+    ['5 G3P + 3 ATP → 3 RuBP（回位）', t >= 0.92],
+    ['合计：9 ATP + 6 NADPH → 净得 1 G3P', true, true],
+  ];
+  rows.forEach((r, i) => {
+    const y = Y + 58 + i * 29;
+    ctx.beginPath(); ctx.arc(X + 26, y - 4, 5, 0, 7);
+    ctx.fillStyle = r[1] ? (r[2] ? '#7dd3fc' : '#8fe3b0') : 'rgba(255,255,255,.14)'; ctx.fill();
+    text(r[0], X + 42, y, 12.5, r[1] ? (r[2] ? '#bfe9ff' : '#e6ecf3') : '#5b6673');
+  });
+}
+
+function drawCO2(t) {
+  for (let i = 0; i < 3; i++) {
+    const a = 0.02 + i * 0.045, d = 0.10;
+    if (t < a || t > a + d + 0.02) continue;
+    const k = ss(a, a + d, t);
+    const x = bez(1445, 1245, RUB[0], k), y = bez(120, 168, RUB[1], k);
+    ctx.globalAlpha = 1 - Math.max(0, ss(a + d, a + d + 0.02, t));
+    ctx.beginPath(); ctx.arc(x, y, 9.5, 0, 7); ctx.fillStyle = '#74c69d'; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1.2; ctx.stroke();
+    if (i === 0 && k < 0.7) text('CO₂', x + 16, y + 4, 12, '#8fe3b0', 'left', 600);
+    ctx.globalAlpha = 1;
+    if (k >= 1) {  // 到达闪光
+      const f = ss(a + d, a + d + 0.02, t);
+      ctx.beginPath(); ctx.arc(RUB[0], RUB[1], 12 + 30 * f, 0, 7);
+      ctx.strokeStyle = `rgba(116,198,157,${0.8 * (1 - f)})`; ctx.lineWidth = 2.5; ctx.stroke();
+    }
+  }
+}
+
+function drawMolecules(t) {
+  // RuBP（顶部；固定时被消耗，再生后回归）
+  const rA = (1 - ss(0.10, 0.17, t)) + ss(0.88, 0.95, t);
+  carbonCard(CXc, CYc - R, 5, 'RuBP', '×3', clamp(rA, 0, 1), t < 0.22 ? 'rgba(46,196,182,.8)' : 'rgba(232,176,74,.8)');
+  // Rubisco
+  ctx.beginPath(); ctx.arc(RUB[0], RUB[1], 44, 0, 7);
+  ctx.fillStyle = 'rgba(46,110,88,.92)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(125,211,166,.65)'; ctx.lineWidth = 2.5; ctx.stroke();
+  text('Rubisco', RUB[0], RUB[1] + 5, 14, '#c4e8b8', 'center', 700);
+  if (showLabels) { text('羧化酶', RUB[0] + 56, RUB[1] + 30, 11.5, '#77828f'); }
+  // 两个 3C 小卡片：Rubisco → 3-PGA（分裂）
+  if (t >= 0.12 && t < 0.24) {
+    const k = ss(0.12, 0.22, t);
+    for (const off of [-20, 20]) {
+      const x = bez(RUB[0], 1090, PGA[0], k) + off * (1 - k), y = bez(RUB[1], 400, PGA[1], k);
+      miniCard(x, y, 3, 1 - ss(0.20, 0.24, t));
+    }
+  }
+  // 3-PGA → G3P（还原期沿弧移动并换名）
+  const morphK = ss(0.44, 0.58, t);
+  if (morphK > 0 || t < 0.44) {
+    const ang = lerp(-2, 62, morphK);
+    const [x, y] = polar(ang);
+    const g3pA = ss(0.16, 0.24, t);                      // 卡片出现
+    const isG3P = t >= 0.50;
+    carbonCard(x, y, 3, isG3P ? 'G3P' : '3-PGA', isG3P ? (t >= 0.66 ? '×5' : '×6') : '×6',
+      g3pA * (1 - ss(0.70, 0.74, t)), isG3P ? 'rgba(167,139,250,.8)' : 'rgba(46,196,182,.8)');
+  }
+  // 出口箭头 + 离开的金卡片
+  ctx.save(); ctx.setLineDash([7, 8]);
+  ctx.beginPath(); ctx.moveTo(1010, 728); ctx.quadraticCurveTo(1090, 810, 1180, 842);
+  ctx.strokeStyle = 'rgba(253,230,138,.5)'; ctx.lineWidth = 2.2; ctx.stroke();
+  ctx.restore();
+  ctx.beginPath(); ctx.moveTo(1188, 846); ctx.lineTo(1170, 837); ctx.lineTo(1172, 854); ctx.closePath();
+  ctx.fillStyle = 'rgba(253,230,138,.6)'; ctx.fill();
+  if (showLabels) text('→ 蔗糖 · 淀粉（净产物）', 1052, 878, 12.5, '#fde68a', 'left', 600);
+  if (t >= 0.60 && t < 0.72) {
+    const k = ss(0.60, 0.70, t);
+    const x = bez(G3P[0], 1090, 1180, k), y = bez(G3P[1], 800, 842, k);
+    carbonCard(x, y, 3, 'G3P', '×1', 1 - ss(0.70, 0.72, t), 'rgba(253,230,138,.95)');
+  }
+  // 再生：5 个 3C 小卡片沿弧回到顶部
+  for (let i = 0; i < 5; i++) {
+    const a = 0.72 + i * 0.025;
+    if (t < a || t > a + 0.17) continue;
+    const k = ss(a, a + 0.16, t);
+    const ang = lerp(62, 270, k);
+    const [x, y] = polar(ang, R + (i % 2 ? 16 : -14));
+    miniCard(x, y, 3, 1 - ss(a + 0.15, a + 0.17, t));
+  }
+  // 再生闪光
+  if (t >= 0.88 && t < 0.97) {
+    const f = ss(0.88, 0.97, t);
+    ctx.beginPath(); ctx.arc(CXc, CYc - R, 20 + 40 * f, 0, 7);
+    ctx.strokeStyle = `rgba(232,176,74,${0.8 * (1 - f)})`; ctx.lineWidth = 3; ctx.stroke();
+  }
+}
+function drawChips(t) {
+  for (let i = 0; i < 6; i++)   // 还原-磷酸化的 6 ATP
+    flyChip(t, 0.22 + i * 0.018, 0.09, 0.30 + i * 0.018, 0.10, [STATION[0] - 70, STATION[1] + 20], [740, 240], PGA, 'ATP', '#fde68a', 'ADP');
+  for (let i = 0; i < 6; i++)   // 6 NADPH
+    flyChip(t, 0.40 + i * 0.018, 0.09, 0.50 + i * 0.018, 0.10, [STATION[0] + 40, STATION[1] + 20], [820, 330], polar(20), 'NADPH', '#7dd3fc', 'NADP⁺');
+  for (let i = 0; i < 3; i++)   // 再生的 3 ATP
+    flyChip(t, 0.75 + i * 0.03, 0.10, 0.84 + i * 0.03, 0.10, [STATION[0] - 70, STATION[1] + 20], [600, 380], REG, 'ATP', '#fde68a', 'ADP');
+}
+function drawCaptions(t) {
+  if (!showLabels) return;
+  const si = stepIndex(t);
+  const show = (a, b) => ss(a, a + 0.03, t) * (1 - ss(b - 0.03, b, t));
+  let s;
+  if ((s = show(0.01, 0.22))) { ctx.globalAlpha = s; text('5C(RuBP) + 1C(CO₂) → 2 × 3C(3-PGA)', 1160, 340, 12.5, '#8fe3b0'); ctx.globalAlpha = 1; }
+  if ((s = show(0.23, 0.40))) { ctx.globalAlpha = s; text('3-PGA + ATP → 1,3-二磷酸甘油酸', 1150, 560, 12.5, '#c7d2de'); ctx.globalAlpha = 1; }
+  if ((s = show(0.41, 0.58))) { ctx.globalAlpha = s; text('+ NADPH 供氢 → 还原成 G3P', 1150, 590, 12.5, '#bfe9ff'); ctx.globalAlpha = 1; }
+  if ((s = show(0.59, 0.72))) { ctx.globalAlpha = s; text('6 个 G3P：1 个离开，5 个留用', 862, 776, 12.5, '#fde68a'); ctx.globalAlpha = 1; }
+  if ((s = show(0.73, 0.92))) { ctx.globalAlpha = s; text('5×G3P (15C) + 3 ATP → 3×RuBP (15C)', 520, 560, 12.5, '#ffd9a0'); ctx.globalAlpha = 1; }
+}
+
+/* ================= 主绘制 ================= */
+function draw(t) {
+  ctx.fillStyle = '#10141b'; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(CXc, CYc, 60, CXc, CYc, 880);
+  g.addColorStop(0, 'rgba(93,164,92,0.055)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  drawRing(t);
+  drawStation();
+  drawLedger(t);
+  drawCO2(t);
+  drawChips(t);
+  drawMolecules(t);
+  drawCaptions(t);
+}
+
+/* ================= 主循环 ================= */
+let lastStep = -1, last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min((now - last) / 1000, 0.1); last = now;
+  if (playing) cycles += dt * speed / CYCLE;
+  const t = cycles - Math.floor(cycles);
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#10141b'; ctx.fillRect(0, 0, innerWidth, innerHeight);
+  ctx.setTransform(vs * dpr, 0, 0, vs * dpr, vox * dpr, voy * dpr);
+  draw(t);
+
+  const si = stepIndex(t);
+  if (si !== lastStep) {
+    lastStep = si;
+    [...elSteps.children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  elScrub.value = Math.round(t * 1000);
+  elScrubVal.textContent = Math.round(t * 100) + '%';
+}
+frame();
+</script>
+</body>
+</html>
