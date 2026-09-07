@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>汽车差速器 —— 转弯时两侧车轮为什么不一样快</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #10141b;
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+
+  .lbl { background: rgba(12,16,23,.78); border: 1px solid rgba(255,255,255,.16);
+    color: #e6ecf3; font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  .lbl.red   { border-color: rgba(230,57,70,.85);  color: #ffb3b9; }
+  .lbl.blue  { border-color: rgba(47,111,237,.9);  color: #aecbff; }
+  .lbl.amber { border-color: rgba(217,164,65,.9);  color: #ffe2a8; }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none; }
+  #title h1 { font-size: 20px; font-weight: 700; color: #f2f5f9; letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  #title .sub { font-size: 12.5px; color: #9fb0c3; margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 376px;
+    background: rgba(13,17,24,.86); border: 1px solid rgba(255,255,255,.09);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.red   { color: #ff9aa1; border-color: rgba(230,57,70,.7); }
+  .chip.blue  { color: #a8c6ff; border-color: rgba(47,111,237,.7); }
+  .chip.amber { color: #ffd28a; border-color: rgba(217,164,65,.7); }
+  .chip.dim   { color: #b9c4d0; border-color: rgba(255,255,255,.22); }
+
+  #steps { list-style: none; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: rgba(255,255,255,.05); }
+  #steps li.on { background: rgba(230,57,70,.12); border-color: rgba(230,57,70,.45); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: #dfe6ee; }
+  #steps li.on .n { background: #e63946; color: #fff; }
+  #steps .t { font-size: 12.5px; color: #c7d2de; line-height: 1.45; }
+  #steps .t b { color: #f2f5f9; font-size: 12.5px; }
+  #steps li.on .t b { color: #ffd7da; }
+
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px;
+    background: #e63946; color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { background: #f04b58; }
+  input[type=range] { width: 100%; accent-color: #e63946; height: 18px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { font-size: 12px; color: #9fb0c3; flex: 0 0 30px; }
+  .row .val { font-size: 11.5px; color: #c7d2de; flex: 0 0 66px; text-align: right; }
+  .row.wide { grid-column: 1 / 3; }
+  #toggles { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: #b9c4d0; display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: #e63946; }
+  @media (max-width: 760px) { #panel { width: calc(100vw - 36px); } #title h1 { font-size: 16px; } }
+
+  /* 右上角转速读数面板 */
+  #read { position: fixed; top: 18px; right: 18px; z-index: 5; width: 224px;
+    background: rgba(13,17,24,.86); border: 1px solid rgba(255,255,255,.09);
+    border-radius: 14px; padding: 12px 14px; backdrop-filter: blur(6px);
+    box-shadow: 0 8px 30px rgba(0,0,0,.45); transition: border-color .3s; }
+  #read .rh { font-size: 12px; color: #9fb0c3; margin-bottom: 8px; letter-spacing: .5px; }
+  #read .rr { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #c7d2de;
+    padding: 3px 0; }
+  #read .rr b { margin-left: auto; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13.5px; color: #f2f5f9; font-weight: 600; }
+  #read .d { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 9px; }
+  .dL { background: #e63946; } .dR { background: #2f6fed; }
+  .dC { background: #9aa7b6; } .dS { background: #d9a441; }
+  #req { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.08);
+    font-size: 12px; color: #9fe0b3; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  #read.hi { border-color: rgba(63,191,127,.6); }
+  #read.hi #req { color: #c5ffce; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1>汽车差速器 —— 转弯时两侧车轮为什么不一样快？</h1>
+  <div class="sub">3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 行星锥齿轮的自转吸收左右轮转速差：n左 + n右 = 2n壳</div>
+</div>
+
+<div id="read">
+  <div class="rh">转速读数（r/min）</div>
+  <div class="rr"><i class="d dL"></i>左轮 n<sub>L</sub><b id="rL">30.0</b></div>
+  <div class="rr"><i class="d dR"></i>右轮 n<sub>R</sub><b id="rR">30.0</b></div>
+  <div class="rr"><i class="d dC"></i>壳体 n<sub>壳</sub><b id="rC">30.0</b></div>
+  <div class="rr"><i class="d dS"></i>行星轮自转<b id="rS">0.0</b></div>
+  <div id="req">n左 + n右 = 60.0 = 2·n壳 ✓</div>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip red">左半轴 · 左轮</span>
+    <span class="chip blue">右半轴 · 右轮</span>
+    <span class="chip amber">行星锥齿轮</span>
+    <span class="chip dim">主减速比 3:1</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div class="row"><label>速度</label><input id="speed" type="range" min="0.1" max="3" step="0.05" value="1"><span class="val" id="speedVal">1.0×</span></div>
+    <div class="row"><label>相位</label><input id="scrub" type="range" min="0" max="1000" step="1" value="0"><span class="val" id="scrubVal">0%</span></div>
+    <div class="row wide"><label>转向</label><input id="steer" type="range" min="-100" max="100" step="1" value="0"><span class="val" id="steerVal">直线</span></div>
+  </div>
+  <div id="toggles">
+    <label><input id="tglLabels" type="checkbox" checked> 部件标签</label>
+    <label><input id="tglCase" type="checkbox" checked> 壳体（半透明）</label>
+    <label><input id="tglTracks" type="checkbox" checked> 地面轨迹</label>
+    <label><input id="tglRead" type="checkbox" checked> 转速读数</label>
+    <label><input id="tglRotate" type="checkbox" checked> 自动环绕</label>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数（调试/分享用） ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool  = (k, d) => { const v = qs.get(k); return v === null ? d : (v !== '0' && v !== 'false'); };
+
+/* ---------------- 常量：机构几何与运动学 ----------------
+   坐标约定：半轴沿 X（左轮 +X 为车左侧），车头朝 +Z，地面 y=0。
+   差速器中心 O = (0, AXLE_Y, 0)，所有锥齿轮节锥顶点共点于 O：
+   - 齿圈(主减速从动)锥角 71.57°，主动小锥齿轮 18.43°，两者轴垂直 → 传动比 tan71.57° = 3:1
+   - 半轴齿轮 / 行星齿轮均为 45° 锥角 → 行星轮相对自转 = (ω左−ω右)/2
+   运动学恒等式：ω左 + ω右 = 2ω壳（由行星轮与两侧半轴齿轮同时纯滚动推出）      */
+const CYCLE_SECONDS = 14;            // 一个相位周期（1× 速度）
+const RPT = 7;                       // 每周期壳体(齿圈)转 7 圈
+const RPM_CAGE = RPT * 60 / CYCLE_SECONDS;   // 30 r/min @1×（读数用）
+const GEAR_RATIO = 3;                // 主减速比 N齿圈/N小齿轮 = 30/10
+const AXLE_Y = 0.78;                 // 半轴中心高度（= 车轮半径，轮子接地）
+const WHEEL_R = 0.78;
+const HALF_X = 2.3;                  // 车轮离中心线的横向距离（轮距/2）
+const TRACK_W = HALF_X * 2;
+
+const D2R = Math.PI / 180;
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const V2 = (x, y) => new THREE.Vector2(x, y);
+
+/* ---------------- 相位讲解（5 步，可点击跳转） ----------------
+   steer: 点击该步骤时预设的转向量（+1 左转最急 ... 0 直线 ... -1 右转最急） */
+const STEPS = [
+  { t0: 0.00, t1: 0.18, n: 1, steer: 0.00, b: '动力传入',
+    d: '发动机经传动轴驱动主动锥齿轮，从动大齿圈带着差速器壳体公转，行星轮随之绕半轴公转。' },
+  { t0: 0.18, t1: 0.42, n: 2, steer: 0.00, b: '直线行驶',
+    d: '左右车轮阻力相同，行星轮不自转，壳体+行星轮+半轴齿轮像一个刚体整体转动，左右转速相等。' },
+  { t0: 0.42, t1: 0.62, n: 3, steer: 0.50, b: '转弯',
+    d: '外侧车轮走过的弧线更长，必须转得更快；行星轮开始自转，把两侧转速差“吸收”掉。' },
+  { t0: 0.62, t1: 0.82, n: 4, steer: 0.35, b: '转速关系',
+    d: '无论怎么转向恒有 n左 + n右 = 2n壳，行星轮自转恰为转速差的一半。拖动“转向”滑块验证。' },
+  { t0: 0.82, t1: 1.00, n: 5, steer: 1.00, b: '极端情况 · 单侧悬空',
+    d: '右轮悬空、左轮被制动：n左=0，悬空侧以 2 倍壳速空转，发动机动力全部从无阻力一侧流失。' },
+];
+function stepIndex(t) {
+  if (t < 0.18) return 0;
+  if (t < 0.42) return 1;
+  if (t < 0.62) return 2;
+  if (t < 0.82) return 3;
+  return 4;
+}
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x10141b);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(4.3, 2.5, 5.2);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.6, -0.3);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.6;
+controls.maxDistance = 18;
+controls.maxPolarAngle = 1.52;
+controls.autoRotateSpeed = 0.6;
+
+/* ---------------- 灯光 ---------------- */
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x35322c, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 2.4);
+key.position.set(5, 9, 4);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -8; key.shadow.camera.right = 8;
+key.shadow.camera.top = 8;  key.shadow.camera.bottom = -8;
+key.shadow.camera.far = 30;
+key.shadow.bias = -0.0004;
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+const M = {
+  steel: new THREE.MeshStandardMaterial({ color: 0xc9ced6, metalness: 0.9,  roughness: 0.32 }),
+  dark:  new THREE.MeshStandardMaterial({ color: 0x525a66, metalness: 0.75, roughness: 0.45 }),
+  brass: new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.85, roughness: 0.35 }),
+  tire:  new THREE.MeshStandardMaterial({ color: 0x24272e, metalness: 0.1,  roughness: 0.92 }),
+  caseM: new THREE.MeshStandardMaterial({ color: 0x9fc0d8, transparent: true, opacity: 0.18,
+           depthWrite: false, metalness: 0.4, roughness: 0.3, side: THREE.DoubleSide }),
+  red:   new THREE.MeshStandardMaterial({ color: 0xe63946, emissive: 0xc21f2c, emissiveIntensity: 0.35, roughness: 0.5 }),
+  blue:  new THREE.MeshStandardMaterial({ color: 0x2f6fed, emissive: 0x1d4fc2, emissiveIntensity: 0.35, roughness: 0.5 }),
+};
+// 需要逐步骤脉冲高亮的部件：独立材质实例（emissive 用自身色，强度每帧调）
+const matPinion = M.brass.clone(); matPinion.emissive.set(0xd9a441); matPinion.emissiveIntensity = 0.1;
+const matRing   = M.steel.clone(); matRing.emissive.set(0xc9ced6);   matRing.emissiveIntensity = 0.05;
+const matSpider = M.brass.clone(); matSpider.emissive.set(0xffc451); matSpider.emissiveIntensity = 0.1;
+const matShaftL = M.steel.clone(); matShaftL.emissive.set(0xe63946); matShaftL.emissiveIntensity = 0.04;
+const matShaftR = M.steel.clone(); matShaftR.emissive.set(0x2f6fed); matShaftR.emissiveIntensity = 0.04;
+function glow(color) {   // 指示箭头用：不受灯光影响的亮色
+  return new THREE.MeshBasicMaterial({ color, toneMapped: false });
+}
+
+function mesh(geo, mat, opts = {}) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(...(opts.pos ?? [0, 0, 0]));
+  if (opts.rot) m.rotation.set(...opts.rot);
+  if (opts.parent) opts.parent.add(m); else scene.add(m);
+  m.castShadow = !!opts.cast;
+  m.receiveShadow = !!opts.recv;
+  if (opts.order) m.renderOrder = opts.order;
+  return m;
+}
+
+/* ---------------- 锥齿轮生成器（程序化） ----------------
+   规范姿态：轴线 = 局部 +Y，锥顶在原点，锥面向 +Y 张开。
+   k = tan(节锥角)，齿带在轴向 [y0,y1]（半径 = y·k），N 齿，phaseDeg 为齿相位。
+   齿 = 沿锥面斜率的梯形截面沿切向拉伸，逐个绕轴摆放，周节在齿带中径处匹配。 */
+function bevelGear({ k, y0, y1, N, phaseDeg = 0, toothH = 0.045, mat = M.steel }) {
+  const g = new THREE.Group();
+  const r0 = y0 * k, r1 = y1 * k;
+  // 毛坯：旋转体锥面（略内收，让齿凸出锥面）
+  const pts = [V2(0.03, y0), V2(Math.max(r0 - 0.012, 0.04), y0),
+               V2(Math.max(r1 - 0.012, 0.04), y1), V2(0.03, y1)];
+  mesh(new THREE.LatheGeometry(pts, 48), mat, { parent: g, cast: true });
+  // 齿：梯形截面（轴向 × 径向），沿切向拉伸
+  const rMid = 0.5 * (r0 + r1);
+  const tangW = 2 * Math.PI * rMid / N * 0.42;
+  const sh = new THREE.Shape();
+  sh.moveTo(y0, r0 - 0.02); sh.lineTo(y1, r1 - 0.02);
+  sh.lineTo(y1, r1 + toothH); sh.lineTo(y0, r0 + toothH);
+  sh.closePath();
+  const tg = new THREE.ExtrudeGeometry(sh, { depth: tangW, bevelEnabled: false });
+  tg.translate(0, 0, -tangW / 2);
+  const up = V3(0, 1, 0);
+  for (let i = 0; i < N; i++) {
+    const a = phaseDeg * D2R + i * 2 * Math.PI / N;
+    const d = V3(Math.cos(a), 0, Math.sin(a));        // 径向
+    const t = V3(-Math.sin(a), 0, Math.cos(a));       // 切向
+    const m4 = new THREE.Matrix4().makeBasis(up, d, t.clone().negate());  // 右手系
+    const tooth = new THREE.Mesh(tg, mat);
+    tooth.quaternion.setFromRotationMatrix(m4);
+    tooth.castShadow = true;
+    g.add(tooth);
+  }
+  return g;
+}
+
+/* ---------------- 地面 ---------------- */
+{
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(30, 16),
+    new THREE.MeshStandardMaterial({ color: 0x151a22, metalness: 0.05, roughness: 0.95 }));
+  g.rotation.x = -Math.PI / 2;
+  g.position.y = 0;
+  g.receiveShadow = true;
+  scene.add(g);
+}
+
+/* ---------------- 差速器总成 ---------------- */
+const mech = new THREE.Group();          // 机构整体（抬到半轴高度）
+mech.position.set(0, AXLE_Y, 0);
+scene.add(mech);
+
+/* --- 差速器壳体 + 行星轮系统：绕 X 轴公转 --- */
+const cageGroup = new THREE.Group();
+mech.add(cageGroup);
+
+// 半透明壳体：圆筒 + 两端球冠 + 与齿圈相连的法兰
+const caseShell = new THREE.Group();
+cageGroup.add(caseShell);
+{
+  const p = { order: 5 };
+  mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.55, 40, 1, true), M.caseM,
+    { parent: caseShell, rot: [0, 0, Math.PI / 2], ...p });
+  mesh(new THREE.SphereGeometry(0.45, 32, 20), M.caseM, { parent: caseShell, pos: [0.275, 0, 0], ...p });
+  mesh(new THREE.SphereGeometry(0.45, 32, 20), M.caseM, { parent: caseShell, pos: [-0.275, 0, 0], ...p });
+  mesh(new THREE.CylinderGeometry(0.56, 0.56, 0.06, 40, 1, true), M.caseM,
+    { parent: caseShell, rot: [0, 0, Math.PI / 2], pos: [0.155, 0, 0], ...p });
+  // 壳体上的不透明小凸块：半透明也能看出它在公转
+  mesh(new THREE.BoxGeometry(0.06, 0.08, 0.12), M.dark, { parent: caseShell, pos: [0.155, 0.5, 0], cast: true });
+}
+
+// 从动大齿圈（锥角 71.57°，30 齿，与主动小锥齿轮严格 3:1 啮合）
+const ringHolder = new THREE.Group();
+ringHolder.rotation.z = -Math.PI / 2;    // 规范 +Y → 世界 +X
+cageGroup.add(ringHolder);
+{
+  const ring = bevelGear({ k: 3.0, y0: 0.19, y1: 0.235, N: 30, phaseDeg: 6, toothH: 0.05, mat: matRing });
+  ringHolder.add(ring);
+  // 背板 + 螺栓：齿圈“铆”在壳体法兰上（ringHolder 内为规范坐标，轴向 = +Y）
+  mesh(new THREE.CylinderGeometry(0.56, 0.56, 0.05, 40), M.dark,
+    { parent: ringHolder, pos: [0, 0.155, 0], cast: true });
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4 + 0.2;
+    mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.09, 10), M.steel,
+      { parent: ringHolder, pos: [0.46 * Math.cos(a), 0.155, 0.46 * Math.sin(a)], cast: true });
+  }
+}
+
+// 行星轮轴（十字销，随壳体公转，垂直于半轴）
+mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.72, 14), M.dark, { parent: cageGroup, cast: true });
+
+// 行星锥齿轮 ×2（45° 锥，12 齿，相位 15°：在啮合线上留出半轴齿轮的齿）
+const spiderTopSpin = new THREE.Group();      // 上行星轮：自转轴 = 局部 +Y
+cageGroup.add(spiderTopSpin);
+spiderTopSpin.add(bevelGear({ k: 1, y0: 0.15, y1: 0.31, N: 12, phaseDeg: 15, toothH: 0.042, mat: matSpider }));
+mesh(new THREE.CylinderGeometry(0.13, 0.03, 0.12, 14), M.steel,
+  { parent: spiderTopSpin, pos: [0, 0.1, 0], cast: true });   // 锥顶填实
+mesh(new THREE.SphereGeometry(0.028, 10, 8), glow(0xffc451), { parent: spiderTopSpin, pos: [0.2, 0.2, 0] }); // 自转记号
+
+const spiderBotWrap = new THREE.Group();      // 下行星轮：整体翻转 180°
+spiderBotWrap.rotation.x = Math.PI;
+cageGroup.add(spiderBotWrap);
+const spiderBotSpin = new THREE.Group();      // 自转与上行星轮同公式（翻转已由外层完成）
+spiderBotWrap.add(spiderBotSpin);
+spiderBotSpin.add(bevelGear({ k: 1, y0: 0.15, y1: 0.31, N: 12, phaseDeg: 15, toothH: 0.042, mat: matSpider }));
+mesh(new THREE.CylinderGeometry(0.13, 0.03, 0.12, 14), M.steel,
+  { parent: spiderBotSpin, pos: [0, 0.1, 0], cast: true });   // 锥顶填实
+mesh(new THREE.SphereGeometry(0.028, 10, 8), glow(0xffc451), { parent: spiderBotSpin, pos: [0.2, -0.2, 0] });
+
+/* --- 左右半轴齿轮：装在半轴上，不随壳体公转，只绕 X 自转 --- */
+const sideLSpin = new THREE.Group();          // 左（+X 侧，车左）：锥面朝 -X 张开
+mech.add(sideLSpin);
+const sideLHolder = new THREE.Group();
+sideLHolder.rotation.z = Math.PI / 2;         // 规范 +Y → 世界 -X
+sideLSpin.add(sideLHolder);
+sideLHolder.add(bevelGear({ k: 1, y0: 0.15, y1: 0.31, N: 12, phaseDeg: 0, toothH: 0.045, mat: matShaftL }));
+mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.2, 16), M.steel,
+  { parent: sideLHolder, pos: [0, 0.14, 0], cast: true });   // 轮毂填实
+
+const sideRSpin = new THREE.Group();          // 右（-X 侧）：锥面朝 +X 张开
+mech.add(sideRSpin);
+const sideRHolder = new THREE.Group();
+sideRHolder.rotation.z = -Math.PI / 2;
+sideRSpin.add(sideRHolder);
+sideRHolder.add(bevelGear({ k: 1, y0: 0.15, y1: 0.31, N: 12, phaseDeg: 0, toothH: 0.045, mat: matShaftR }));
+mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.2, 16), M.steel,
+  { parent: sideRHolder, pos: [0, 0.14, 0], cast: true });
+
+/* --- 主动小锥齿轮 + 传动轴（绕 Z 高速自转，3 倍壳速） --- */
+const pinionSpin = new THREE.Group();
+mech.add(pinionSpin);
+{
+  const holder = new THREE.Group();
+  holder.rotation.x = -Math.PI / 2;           // 规范 +Y → 世界 -Z（锥面朝 -Z）
+  pinionSpin.add(holder);
+  holder.add(bevelGear({ k: 0.3333, y0: 0.51, y1: 0.78, N: 10, phaseDeg: 18, toothH: 0.05, mat: matPinion }));
+  mesh(new THREE.CylinderGeometry(0.15, 0.05, 0.5, 20), M.steel,
+    { parent: holder, pos: [0, 0.3, 0], cast: true });   // 齿轮鼻部填实（锥顶方向）
+  // 传动轴：从齿轮背端一直伸向车头方向
+  mesh(new THREE.CylinderGeometry(0.085, 0.085, 1.78, 20), M.steel,
+    { parent: pinionSpin, rot: [Math.PI / 2, 0, 0], pos: [0, 0, -1.66], cast: true });
+  mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.06, 20), M.dark,
+    { parent: pinionSpin, rot: [Math.PI / 2, 0, 0], pos: [0, 0, -0.82], cast: true });   // 法兰
+  // 万向节十字（转动时可见）
+  mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.26, 12), M.dark,
+    { parent: pinionSpin, rot: [0, 0, Math.PI / 2], pos: [0, 0, -2.6], cast: true });
+  mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.26, 12), M.dark,
+    { parent: pinionSpin, rot: [Math.PI / 2, 0, 0], pos: [0, 0, -2.6], cast: true });
+}
+
+/* --- 左右半轴 + 车轮 --- */
+const shaftLGrp = new THREE.Group();          // 左半轴（+X），从壳体伸到左轮
+shaftLGrp.position.set(0.3, 0, 0);
+mech.add(shaftLGrp);
+mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.95, 14), matShaftL,
+  { parent: shaftLGrp, rot: [0, 0, Math.PI / 2], pos: [0.975, 0, 0], cast: true });
+mesh(new THREE.TorusGeometry(0.09, 0.03, 10, 24), M.red,
+  { parent: shaftLGrp, rot: [0, Math.PI / 2, 0], pos: [0.3, 0, 0], cast: true });        // 红色色环
+
+const shaftRGrp = new THREE.Group();          // 右半轴（-X）；悬空步骤会绕 Z 微抬
+shaftRGrp.position.set(-0.3, 0, 0);
+mech.add(shaftRGrp);
+mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.95, 14), matShaftR,
+  { parent: shaftRGrp, rot: [0, 0, Math.PI / 2], pos: [-0.975, 0, 0], cast: true });
+mesh(new THREE.TorusGeometry(0.09, 0.03, 10, 24), M.blue,
+  { parent: shaftRGrp, rot: [0, Math.PI / 2, 0], pos: [-0.3, 0, 0], cast: true });       // 蓝色色环
+
+function makeWheel(markMat) {                 // 车轮：轮胎 + 轮辋 + 辐条 + 色块记号
+  const outer = new THREE.Group();            // 定位（悬空时抬升）
+  const spin = new THREE.Group();             // 自转（绕 X）
+  outer.add(spin);
+  mesh(new THREE.TorusGeometry(0.6, 0.18, 18, 48), M.tire, { parent: spin, rot: [0, Math.PI / 2, 0], cast: true });
+  mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.2, 32), M.steel,
+    { parent: spin, rot: [0, 0, Math.PI / 2], cast: true });
+  for (let i = 0; i < 5; i++) {
+    const a = i * 2 * Math.PI / 5;
+    mesh(new THREE.BoxGeometry(0.045, 0.66, 0.07), M.dark,
+      { parent: spin, pos: [0, 0.3 * Math.cos(a), 0.3 * Math.sin(a)], rot: [a, 0, 0], cast: true });
+  }
+  mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.3, 16), M.dark,
+    { parent: spin, rot: [0, 0, Math.PI / 2], cast: true });
+  mesh(new THREE.BoxGeometry(0.05, 0.1, 0.07), markMat,
+    { parent: spin, pos: [0, 0.4, 0] });      // 轮辋上的色块：一眼看出转速差
+  return { outer, spin };
+}
+const wheelL = makeWheel(M.red);
+wheelL.outer.position.set(HALF_X, 0, 0);
+mech.add(wheelL.outer);
+const wheelR = makeWheel(M.blue);
+wheelR.outer.position.set(-HALF_X, 0, 0);
+mech.add(wheelR.outer);
+
+/* ---------------- 动力流 / 动力流失指示箭头 ---------------- */
+const grpFlow = new THREE.Group();            // 步骤1：传动轴上流向小锥齿轮的脉冲箭头
+scene.add(grpFlow);
+const flowCones = [];
+for (let i = 0; i < 3; i++) {
+  const c = mesh(new THREE.ConeGeometry(0.05, 0.16, 12), glow(0xffc400), { parent: grpFlow, rot: [-Math.PI / 2, 0, 0] });
+  flowCones.push(c);
+}
+const grpLeak = new THREE.Group();            // 步骤5：动力从右半轴流失的红色箭头
+scene.add(grpLeak);
+const leakCones = [];
+for (let i = 0; i < 3; i++) {
+  const c = mesh(new THREE.ConeGeometry(0.05, 0.16, 12), glow(0xff4d4d), { parent: grpLeak, rot: [0, 0, Math.PI / 2] });
+  leakCones.push(c);
+}
+
+/* ---------------- 地面轨迹（直线 / 弯道两种模式） ---------------- */
+const grpTracks = new THREE.Group();
+scene.add(grpTracks);
+const matDashL = new THREE.LineDashedMaterial({ color: 0xe66d75, dashSize: 0.22, gapSize: 0.16, transparent: true, opacity: 0.6 });
+const matDashR = new THREE.LineDashedMaterial({ color: 0x7da7ff, dashSize: 0.22, gapSize: 0.16, transparent: true, opacity: 0.6 });
+
+// 直线模式：两条纵向虚线 + 两个滚动光点（光点由轮转角纯函数驱动，速度=轮面速度）
+const grpStraight = new THREE.Group();
+grpTracks.add(grpStraight);
+for (const sx of [HALF_X, -HALF_X]) {
+  const lg = new THREE.BufferGeometry().setFromPoints([V3(sx, 0.012, -6), V3(sx, 0.012, 6)]);
+  const line = new THREE.Line(lg, sx > 0 ? matDashL : matDashR);
+  line.computeLineDistances();
+  grpStraight.add(line);
+}
+const dotSL = mesh(new THREE.SphereGeometry(0.055, 12, 10), glow(0xff6b74), { parent: grpStraight });
+const dotSR = mesh(new THREE.SphereGeometry(0.055, 12, 10), glow(0x82aaff), { parent: grpStraight });
+
+// 弯道模式：转弯中心标记 + 两条同心虚线圆弧 + 两个沿弧滚动光点
+const grpArcs = new THREE.Group();
+grpTracks.add(grpArcs);
+const markCenter = new THREE.Group();
+{
+  mesh(new THREE.TorusGeometry(0.13, 0.02, 8, 28), glow(0xffc46b), { parent: markCenter, rot: [Math.PI / 2, 0, 0] });
+  mesh(new THREE.BoxGeometry(0.5, 0.012, 0.03), glow(0xffc46b), { parent: markCenter });
+  mesh(new THREE.BoxGeometry(0.03, 0.012, 0.5), glow(0xffc46b), { parent: markCenter });
+}
+grpArcs.add(markCenter);
+function makeArcLine(mat) {                   // 半径变化时重建（虚线长度不随缩放变形）
+  const line = new THREE.Line(new THREE.BufferGeometry(), mat);
+  line.userData.r = -1;
+  grpArcs.add(line);
+  return line;
+}
+function updateCircle(line, R) {
+  if (Math.abs(R - line.userData.r) < 0.01) return;
+  line.userData.r = R;
+  const old = line.geometry;
+  const pts = [];
+  const n = 180;
+  for (let i = 0; i <= n; i++) {
+    const a = i / n * Math.PI * 2;
+    pts.push(V3(R * Math.cos(a), 0.012, R * Math.sin(a)));
+  }
+  line.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  line.computeLineDistances();
+  old.dispose();
+}
+const circleL = makeArcLine(matDashL);
+const circleR = makeArcLine(matDashR);
+const dotL = mesh(new THREE.SphereGeometry(0.055, 12, 10), glow(0xff6b74), { parent: grpArcs });
+const dotR = mesh(new THREE.SphereGeometry(0.055, 12, 10), glow(0x82aaff), { parent: grpArcs });
+
+/* ---------------- 部件标签 ---------------- */
+let labelsOn = true;
+const labelObjs = [];
+function addLabel(text, pos, cls = '', dynamic = false) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  div.textContent = text;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  if (!dynamic) labelObjs.push(o);      // 动态标签的可见性由每帧逻辑单独控制
+  return o;
+}
+addLabel('传动轴', V3(0, AXLE_Y + 0.42, -2.15));
+addLabel('主动锥齿轮', V3(0.42, AXLE_Y + 0.12, -0.72), 'amber');
+addLabel('从动锥齿轮（大齿圈）', V3(-0.42, AXLE_Y + 0.92, 0.28));
+addLabel('差速器壳体', V3(0, AXLE_Y - 0.52, 0.42));
+addLabel('行星锥齿轮（自转+公转）', V3(0.5, AXLE_Y + 0.52, 0.05), 'amber');
+addLabel('半轴齿轮', V3(0.58, AXLE_Y + 0.42, 0.12));
+addLabel('左半轴', V3(1.25, AXLE_Y + 0.24, 0), 'red');
+addLabel('右半轴', V3(-1.25, AXLE_Y + 0.24, 0), 'blue');
+addLabel('左轮（车左侧）', V3(HALF_X, AXLE_Y + 1.0, 0), 'red');
+addLabel('右轮（车右侧）', V3(-HALF_X, AXLE_Y + 1.0, 0), 'blue');
+const labelCenter = addLabel('转弯中心', V3(3, 0.16, 0), 'amber', true);   // 位置每帧随转向更新
+const labelFlow = addLabel('动力全部流失（悬空侧空转）', V3(-HALF_X + 0.2, AXLE_Y + 0.85, 0.3), 'red', true);
+
+/* ---------------- 状态与 UI ---------------- */
+let cycles = qsFloat('t', 0);
+let playing = !qsBool('pause', false);
+let speed = qsFloat('speed', 1);
+let sTarget = 0;          // 转向目标（-1 右转最急 ... 0 直线 ... +1 左转最急）
+let sDisp = 0;            // 显示/积分用的平滑转向量
+let liftK = 0;            // 步骤5 右轮悬空抬升系数 0..1
+let revC = 0, revL = 0, revR = 0, revS = 0;   // 壳体/左/右/行星轮(相对) 累计转数
+let lastCyc = Math.floor(cycles);
+let lastStep = stepIndex(cycles - Math.floor(cycles));
+let tracksOn = true;
+
+const elPlay = document.getElementById('play');
+const elSpeed = document.getElementById('speed');
+const elSpeedVal = document.getElementById('speedVal');
+const elScrub = document.getElementById('scrub');
+const elScrubVal = document.getElementById('scrubVal');
+const elSteer = document.getElementById('steer');
+const elSteerVal = document.getElementById('steerVal');
+const elSteps = document.getElementById('steps');
+const elRead = document.getElementById('read');
+const elRL = document.getElementById('rL');
+const elRR = document.getElementById('rR');
+const elRC = document.getElementById('rC');
+const elRS = document.getElementById('rS');
+const elReq = document.getElementById('req');
+const tglLabels = document.getElementById('tglLabels');
+const tglCase = document.getElementById('tglCase');
+const tglTracks = document.getElementById('tglTracks');
+const tglRead = document.getElementById('tglRead');
+const tglRotate = document.getElementById('tglRotate');
+
+function steerText(s) {
+  const a = Math.abs(s);
+  if (a < 0.12) return '直线';
+  const R = (TRACK_W / 2 / a).toFixed(1);
+  return (s > 0 ? '左转' : '右转') + ' · R=' + R;
+}
+function setSteer(v, fromScript) {
+  sTarget = clamp(v, -1, 1);
+  if (fromScript) elSteer.value = Math.round(-sTarget * 100);  // 滑块向左拖 = 左转
+}
+
+for (const s of STEPS) {
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="n">${s.n}</span><span class="t"><b>${s.b}</b>　${s.d}</span>`;
+  li.addEventListener('click', () => {
+    cycles = Math.floor(cycles) + s.t0 + 0.003;   // 跳相位（转角增量由帧循环按当前传动比吸收）
+    setSteer(s.steer, true);
+  });
+  elSteps.appendChild(li);
+}
+
+elPlay.textContent = playing ? '暂停' : '播放';
+elPlay.addEventListener('click', () => { playing = !playing; elPlay.textContent = playing ? '暂停' : '播放'; });
+elSpeed.value = speed; elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×';
+elSpeed.addEventListener('input', () => { speed = parseFloat(elSpeed.value); elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×'; });
+elScrub.addEventListener('input', () => { cycles = Math.floor(cycles) + parseInt(elScrub.value, 10) / 1000; });
+elSteer.addEventListener('input', () => { setSteer(-parseInt(elSteer.value, 10) / 100, false); });
+
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; for (const o of labelObjs) o.visible = labelsOn; });
+tglCase.addEventListener('change', () => { caseShell.visible = tglCase.checked; });
+tglTracks.addEventListener('change', () => { tracksOn = tglTracks.checked; });
+tglRead.addEventListener('change', () => { elRead.style.display = tglRead.checked ? '' : 'none'; });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+
+// URL 参数 → 初始开关状态
+if (!qsBool('labels', true)) { tglLabels.checked = false; tglLabels.dispatchEvent(new Event('change')); }
+if (!qsBool('case', true)) { tglCase.checked = false; tglCase.dispatchEvent(new Event('change')); }
+if (!qsBool('tracks', true)) { tglTracks.checked = false; tglTracks.dispatchEvent(new Event('change')); }
+if (!qsBool('read', true)) { tglRead.checked = false; tglRead.dispatchEvent(new Event('change')); }
+controls.autoRotate = qsBool('spin', true) && tglRotate.checked;
+// 初始转向：?steer= 优先，否则用当前相位所属步骤的预设
+{
+  const si0 = stepIndex(cycles - Math.floor(cycles));
+  const v = qs.get('steer') === null ? STEPS[si0].steer : clamp(qsFloat('steer', 0), -1, 1);
+  setSteer(v, true);
+  sDisp = sTarget;
+  elSteps.children[si0].classList.add('on');
+}
+if (qs.get('top') === '1') {   // 调试机位：俯瞰行星轮啮合
+  camera.position.set(0.9, 6.4, 1.0);
+  controls.target.set(0, 0.7, 0);
+}
+
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); elPlay.click(); }
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------- 每帧更新 ---------------- */
+function updateWorld(t, cyc, dt) {
+  const si = stepIndex(t);
+
+  /* 转向量与悬空抬升的平滑过渡 */
+  sDisp += (sTarget - sDisp) * (1 - Math.exp(-dt * 3.2));
+  liftK += ((si === 4 ? 1 : 0) - liftK) * (1 - Math.exp(-dt * 3.0));
+
+  /* 转角积分：把本帧 cycles 的增量按当前传动比分配到各轴。
+     恒等式来源：revL 以 (1-s) 积分、revR 以 (1+s) 积分 → revL + revR = 2·revC 恒成立；
+     行星轮相对壳体 revS 以 -s 积分 = (revL - revR)/2。 */
+  const d = cyc - lastCyc; lastCyc = cyc;
+  revC += d * RPT;
+  revL += d * RPT * (1 - sDisp);
+  revR += d * RPT * (1 + sDisp);
+  revS += d * RPT * (-sDisp);
+
+  const thC = revC * 2 * Math.PI;
+  const thL = revL * 2 * Math.PI, thR = revR * 2 * Math.PI, thS = revS * 2 * Math.PI;
+
+  cageGroup.rotation.x = thC;                    // 壳体+齿圈+行星轮架 公转
+  pinionSpin.rotation.z = thC * GEAR_RATIO;      // 主动小锥齿轮 3×（相位已按啮合校准）
+  sideLSpin.rotation.x = thL;                    // 半轴齿轮只自转、不公转
+  sideRSpin.rotation.x = thR;
+  spiderTopSpin.rotation.y = thS;                // 行星轮自转（相对壳体）
+  spiderBotSpin.rotation.y = thS;
+  wheelL.spin.rotation.x = thL;                  // 车轮滚动（1:1 半轴）
+  wheelR.spin.rotation.x = thR;
+
+  /* 步骤5：右轮悬空（右半轴绕 Z 微抬使外端升起 + 车轮升高，保持连接感） */
+  const phi = 0.075 * liftK;
+  shaftRGrp.rotation.z = -phi;                 // 右半轴朝 -X 伸出，取负号才使外端抬高
+  wheelR.outer.position.y = 2.0 * Math.sin(phi);
+
+  /* 地面轨迹：直线模式 / 弯道模式切换（转向很小近似直线，避免出现超大弧线） */
+  const aS = Math.abs(sDisp);
+  const arcsOn = aS >= 0.12;
+  grpStraight.visible = tracksOn && !arcsOn;
+  grpArcs.visible = tracksOn && arcsOn;
+  if (tracksOn) {
+    if (!arcsOn) {
+      // 直线：光点位置 = 轮子累计滚过的距离（纯函数，暂停即停）
+      const zL = ((revL * 2 * Math.PI * WHEEL_R) % 12 + 12) % 12 - 6;
+      const zR = ((revR * 2 * Math.PI * WHEEL_R) % 12 + 12) % 12 - 6;
+      dotSL.position.set(HALF_X, 0.02, zL);
+      dotSR.position.set(-HALF_X, 0.02, zR);
+    } else {
+      // 弯道：转弯中心在转向侧，R = 轮距/2 / |s|；两光点以同一角速度绕中心前进，
+      // 半径不同 → 弧线速度不同 —— 这正是内外轮转速差的原因
+      const Rc = (TRACK_W / 2) / aS;
+      const cx = Math.sign(sDisp) * Rc;
+      const RL = Math.abs(cx - HALF_X), RR = Math.abs(cx + HALF_X);
+      updateCircle(circleL, RL);
+      updateCircle(circleR, RR);
+      circleL.position.x = cx; circleR.position.x = cx;
+      markCenter.position.set(cx, 0.015, 0);
+      labelCenter.position.set(cx, 0.16, 0);
+      const th = Math.sign(sDisp) * 2 * Math.PI * revC * WHEEL_R / Rc;
+      const uL = Math.sign(HALF_X - cx) || 1, uR = Math.sign(-HALF_X - cx) || -1;
+      dotL.position.set(cx + RL * uL * Math.cos(th), 0.02, -RL * uL * Math.sin(th));
+      dotR.position.set(cx + RR * uR * Math.cos(th), 0.02, -RR * uR * Math.sin(th));
+    }
+  }
+
+  /* 步骤指示：动力流箭头 / 发光脉冲 */
+  const pulse = 0.5 + 0.5 * Math.sin(cyc * Math.PI * 12);
+  matPinion.emissiveIntensity = si === 0 ? 0.22 + 0.5 * pulse : 0.10;
+  matRing.emissiveIntensity = si === 0 ? 0.12 + 0.3 * pulse : 0.05;
+  matSpider.emissiveIntensity = (si === 2 || si === 4) ? 0.22 + 0.45 * pulse : 0.10;
+  matShaftL.emissiveIntensity = si === 1 ? 0.18 + 0.3 * pulse : 0.04;
+  matShaftR.emissiveIntensity = si === 4 ? 0.25 + 0.55 * pulse : 0.04;
+
+  grpFlow.visible = si === 0;
+  if (grpFlow.visible) {
+    for (let i = 0; i < 3; i++) {
+      const f = ((revC * 0.85 + i / 3) % 1 + 1) % 1;
+      flowCones[i].position.set(0, AXLE_Y + 0.18, -0.95 - f * 1.5);
+    }
+  }
+  grpLeak.visible = si === 4 && liftK > 0.4;
+  if (grpLeak.visible) {
+    for (let i = 0; i < 3; i++) {
+      const f = ((revR * 0.5 + i / 3) % 1 + 1) % 1;
+      leakCones[i].position.set(-0.7 - f * 1.5, AXLE_Y + 0.16, 0);
+    }
+  }
+
+  /* 动态标签可见性（覆盖 toggles 的批量设置） */
+  labelCenter.visible = tracksOn && arcsOn && labelsOn;
+  labelFlow.visible = si === 4 && liftK > 0.5 && labelsOn;
+
+  /* 转速读数（反映当前传动状态；暂停时机构停但比例关系仍可拖转向验证） */
+  const rpm = RPM_CAGE * speed;
+  const nL = rpm * (1 - sDisp), nR = rpm * (1 + sDisp);
+  elRL.textContent = nL.toFixed(1);
+  elRR.textContent = nR.toFixed(1);
+  elRC.textContent = rpm.toFixed(1);
+  elRS.textContent = (-rpm * sDisp).toFixed(1);
+  elReq.textContent = `n左 + n右 = ${(nL + nR).toFixed(1)} = 2 × n壳(${rpm.toFixed(1)}) ✓`;
+  elRead.classList.toggle('hi', si === 3);
+
+  elSteerVal.textContent = steerText(sDisp);
+  return si;
+}
+
+/* ---------------- 循环 ---------------- */
+const clock = new THREE.Clock();
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (playing) cycles += dt * speed / CYCLE_SECONDS;
+  const cyc = Math.floor(cycles), t = cycles - cyc;
+
+  const si = updateWorld(t, cyc, dt);
+
+  if (si !== lastStep) {
+    lastStep = si;
+    [...elSteps.children].forEach((li, i) => li.classList.toggle('on', i === si));
+    setSteer(STEPS[si].steer, true);   // 播放越过步骤边界时，转向按剧本切换
+  }
+  elScrub.value = Math.round(t * 1000);
+  elScrubVal.textContent = Math.round(t * 100) + '%';
+
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+updateWorld(cycles - Math.floor(cycles), Math.floor(cycles), 1 / 60);
+frame();
+</script>
+</body>
+</html>

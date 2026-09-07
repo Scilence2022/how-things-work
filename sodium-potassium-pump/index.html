@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>钠钾泵的原理 · Na⁺/K⁺-ATP 酶构象循环动画</title>
+<style>
+  :root { --acc:#e0862c; color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #10141b;
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif; }
+  #cv { position: fixed; inset: 0; display: block; }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none; }
+  #title h1 { font-size: 20px; font-weight: 700; color: #f2f5f9; letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  #title .sub { font-size: 12.5px; color: #9fb0c3; margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 356px;
+    background: rgba(13,17,24,.86); border: 1px solid rgba(255,255,255,.09);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.na { color: #ffd54f; border-color: rgba(255,213,79,.6); }
+  .chip.k  { color: #90caf9; border-color: rgba(100,181,246,.6); }
+  .chip.atp{ color: #ffb74d; border-color: rgba(255,183,77,.55); }
+
+  #steps { list-style: none; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: rgba(255,255,255,.05); }
+  #steps li.on { background: rgba(224,134,44,.13); border-color: rgba(224,134,44,.5); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: #dfe6ee; }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12.5px; color: #c7d2de; line-height: 1.45; }
+  #steps .t b { color: #f2f5f9; font-size: 12.5px; }
+  #steps li.on .t b { color: #ffd0a0; }
+
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { font-size: 12px; color: #9fb0c3; flex: 0 0 30px; }
+  .row .val { font-size: 11.5px; color: #c7d2de; flex: 0 0 38px; text-align: right; }
+  #toggles { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: #b9c4d0; display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  @media (max-width: 760px) { #panel { width: calc(100vw - 36px); } #title h1 { font-size: 16px; } }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="title">
+  <h1>钠钾泵是怎么工作的？—— Na⁺/K⁺-ATP 酶的构象循环</h1>
+  <div class="sub">Post-Albers 交替通路模型 · 每消耗 1 个 ATP：泵出 3 Na⁺、泵入 2 K⁺ · 空格播放/暂停</div>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip na">Na⁺ ×3（泵出）</span>
+    <span class="chip k">K⁺ ×2（泵入）</span>
+    <span class="chip atp">1 ATP → ADP + Pi</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div class="row"><label>速度</label><input id="speed" type="range" min="0.1" max="3" step="0.05" value="1"><span class="val" id="speedVal">1.0×</span></div>
+    <div class="row"><label>相位</label><input id="scrub" type="range" min="0" max="1000" step="1" value="0"><span class="val" id="scrubVal">0%</span></div>
+  </div>
+  <div id="toggles">
+    <label><input id="tglLabels" type="checkbox" checked> 标注</label>
+    <label><input id="tglBg" type="checkbox" checked> 背景离子浓度</label>
+    <label><input id="tglNet" type="checkbox" checked> 净效应清单</label>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ================= URL 参数 ================= */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool  = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+
+/* ================= 画布（1600×900 虚拟坐标） ================= */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = 1600, H = 900;
+let dpr = 1, vs = 1, vox = 0, voy = 0;
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+  cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  vs = Math.min(innerWidth / W, innerHeight / H);
+  vox = (innerWidth - W * vs) / 2; voy = (innerHeight - H * vs) / 2;
+}
+addEventListener('resize', resize); resize();
+
+/* ================= 工具 ================= */
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+function ss(a, b, x) { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+const FONT = '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif';
+function text(str, x, y, size, color, align = 'left', weight = 500) {
+  ctx.font = `${weight} ${size}px ${FONT}`; ctx.fillStyle = color;
+  ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillText(str, x, y);
+}
+function rrect(x, y, w, h, r, fill, stroke, lw = 1) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function line(x1, y1, x2, y2, color, lw = 1, dash = null) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  ctx.strokeStyle = color; ctx.lineWidth = lw;
+  if (dash) ctx.setLineDash(dash);
+  ctx.stroke(); if (dash) ctx.setLineDash([]);
+}
+
+/* ================= 常量与时序 ================= */
+const CYCLE = 16;
+const CX = 800, CYM = 450;          // 泵中心
+const MEM_T = 380, MEM_B = 520;     // 膜上下沿
+const COL_NA = '#ffd54f', COL_K = '#64b5f6';
+
+// 构象参数 e：0 = E1（口朝胞内/下），1 = E2（口朝胞外/上）
+function morphE(t) { return ss(0.34, 0.50, t) * (1 - ss(0.74, 0.88, t)); }
+const openDown = e => 1 - ss(0.02, 0.30, e);
+const openUp   = e => ss(0.70, 0.98, e);
+
+/* ================= 相位讲解 ================= */
+const STEPS = [
+  { t0: 0.00, t1: 0.16, n: 1, b: 'E1 · 捕获 3 Na⁺', d: '泵开口朝胞内（E1 态），胞内侧高亲和位点依次结合 3 个 Na⁺。' },
+  { t0: 0.16, t1: 0.34, n: 2, b: 'ATP 结合 · 自身磷酸化', d: 'ATP 结合胞质侧；γ-磷酸基转到泵蛋白的天冬氨酸上，ADP 脱离 → E1-P。' },
+  { t0: 0.34, t1: 0.50, n: 3, b: '变构 E1-P → E2-P', d: '磷酸化驱动大变构：结合口转向胞外，3 个 Na⁺ 被短暂「遮蔽」在通道里。' },
+  { t0: 0.50, t1: 0.63, n: 4, b: '释放 3 Na⁺ 到胞外', d: 'E2-P 对 Na⁺ 亲和力骤降，3 个 Na⁺ 顺着浓度梯度释放到胞外。' },
+  { t0: 0.63, t1: 0.78, n: 5, b: '结合 2 K⁺ · 去磷酸化', d: '胞外 2 个 K⁺ 结合到 E2-P 高亲和位点，触发 Pi 脱落 → E2。' },
+  { t0: 0.78, t1: 1.00, n: 6, b: '回位 E2 → E1 · 释 K⁺', d: 'K⁺ 被遮蔽后开口转回胞内，对 K⁺ 亲和力下降而释放；泵回到 E1，等待下一轮。' },
+];
+function stepIndex(t) {
+  for (let i = 0; i < STEPS.length; i++) if (t >= STEPS[i].t0 && t < STEPS[i].t1) return i;
+  return STEPS.length - 1;
+}
+
+/* ================= 状态 / UI ================= */
+let cycles = qsFloat('t', 0);
+let playing = !qsBool('pause', false);
+let speed = qsFloat('speed', 1);
+let showLabels = qsBool('labels', true);
+let showBg = qsBool('bg', true);
+let showNet = qsBool('net', true);
+
+const elPlay = document.getElementById('play');
+const elSpeed = document.getElementById('speed');
+const elSpeedVal = document.getElementById('speedVal');
+const elScrub = document.getElementById('scrub');
+const elScrubVal = document.getElementById('scrubVal');
+const elSteps = document.getElementById('steps');
+const tglLabels = document.getElementById('tglLabels');
+const tglBg = document.getElementById('tglBg');
+const tglNet = document.getElementById('tglNet');
+
+for (const s of STEPS) {
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="n">${s.n}</span><span class="t"><b>${s.b}</b>　${s.d}</span>`;
+  li.addEventListener('click', () => { cycles = Math.floor(cycles) + s.t0 + 0.002; });
+  elSteps.appendChild(li);
+}
+elPlay.textContent = playing ? '暂停' : '播放';
+elPlay.addEventListener('click', () => { playing = !playing; elPlay.textContent = playing ? '暂停' : '播放'; });
+elSpeed.value = speed; elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×';
+elSpeed.addEventListener('input', () => { speed = parseFloat(elSpeed.value); elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×'; });
+elScrub.addEventListener('input', () => { cycles = Math.floor(cycles) + parseInt(elScrub.value, 10) / 1000; });
+tglLabels.checked = showLabels; tglBg.checked = showBg; tglNet.checked = showNet;
+tglLabels.addEventListener('change', () => { showLabels = tglLabels.checked; });
+tglBg.addEventListener('change', () => { showBg = tglBg.checked; });
+tglNet.addEventListener('change', () => { showNet = tglNet.checked; });
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+
+/* ================= 场景部件 ================= */
+function drawBg(u) {
+  ctx.fillStyle = '#10141b'; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(CX, CYM, 60, CX, CYM, 860);
+  g.addColorStop(0, 'rgba(224,134,44,0.05)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (!showBg) return;
+  // 背景浓度提示：胞外 Na⁺ 多、胞内 K⁺ 多
+  const rnd = (i, s) => { const x = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return x - Math.floor(x); };
+  for (let i = 0; i < 16; i++) {
+    const x = 60 + rnd(i, 1) * 1480, y = 70 + rnd(i, 2) * 280;
+    if (Math.abs(x - CX) < 150) continue;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fillStyle = 'rgba(255,213,79,.13)'; ctx.fill();
+  }
+  for (let i = 0; i < 18; i++) {
+    const x = 60 + rnd(i, 3) * 1480, y = 590 + rnd(i, 4) * 270;
+    if (Math.abs(x - CX) < 150) continue;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fillStyle = 'rgba(100,181,246,.14)'; ctx.fill();
+  }
+}
+
+function drawMembrane() {
+  for (let x = 44; x <= 1560; x += 26) {
+    if (Math.abs(x - CX) < 128) continue;                    // 泵占据处断开
+    ctx.beginPath(); ctx.arc(x, MEM_T + 8, 6.5, 0, 7); ctx.fillStyle = 'rgba(178,138,96,.75)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, MEM_B - 8, 6.5, 0, 7); ctx.fillStyle = 'rgba(178,138,96,.75)'; ctx.fill();
+    // 两条疏水尾巴（正弦波纹）
+    for (const dx of [-3, 3]) {
+      ctx.beginPath(); ctx.moveTo(x + dx, MEM_T + 18);
+      for (let y = MEM_T + 18; y <= MEM_B - 18; y += 7)
+        ctx.lineTo(x + dx + Math.sin((y - MEM_T) * 0.22 + (dx > 0 ? 1.9 : 0)) * 3.5, y);
+      ctx.strokeStyle = 'rgba(178,138,96,.30)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+}
+
+function drawPump(t, e) {
+  const od = openDown(e), ou = openUp(e);
+  ctx.save();
+  ctx.translate(CX, CYM); ctx.rotate((e - 0.5) * 0.10);
+  // 膜内主体
+  const g = ctx.createLinearGradient(0, -140, 0, 150);
+  g.addColorStop(0, '#41618f'); g.addColorStop(1, '#31465f');
+  ctx.beginPath(); ctx.roundRect(-108, -128, 216, 268, [46, 46, 60, 60]);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 2.5; ctx.stroke();
+  // 胞质结构域（ATP 结合的头部）
+  ctx.beginPath(); ctx.ellipse(-58, 128, 56, 34, -0.25, 0, 7);
+  ctx.fillStyle = '#3a5478'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(58, 132, 46, 28, 0.25, 0, 7);
+  ctx.fillStyle = '#3a5478'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.stroke();
+  ctx.restore();
+  // 中央腔 + 双向通道臂（暗色 = 内腔）
+  ctx.save();
+  ctx.lineCap = 'round';
+  if (od > 0.02) { line(CX, CYM, CX, CYM + 104 * od, '#131a26', 56); }
+  if (ou > 0.02) { line(CX, CYM, CX, CYM - 104 * ou, '#131a26', 56); }
+  ctx.beginPath(); ctx.arc(CX, CYM - 4, 37, 0, 7); ctx.fillStyle = '#131a26'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 2; ctx.stroke();
+  // 开口边缘
+  if (od > 0.05) { ctx.beginPath(); ctx.ellipse(CX, CYM + 104 * od, 27, 8, 0, 0, 7);
+    ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 2.5; ctx.stroke(); }
+  if (ou > 0.05) { ctx.beginPath(); ctx.ellipse(CX, CYM - 104 * ou, 27, 8, 0, 0, 7);
+    ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 2.5; ctx.stroke(); }
+  ctx.restore();
+}
+
+// 磷酸化位点 P 旋钮 / ATP · ADP / Pi
+function drawChemistry(t) {
+  const knob = { x: CX + 64, y: CYM + 118 };
+  // ATP / ADP 芯片
+  const dockT = ss(0.16, 0.24, t), leaveT = ss(0.32, 0.42, t);
+  if (dockT < 1 || leaveT < 1) {
+    const k = dockT < 1 ? ss(0.16, 0.24, t) : 1;
+    let x = lerp(520, CX - 92, k), y = lerp(700, CYM + 120, k);
+    if (leaveT > 0) { x = lerp(CX - 92, 440, leaveT); y = lerp(CYM + 120, 770, leaveT); }
+    const alpha = ss(0.16, 0.175, t) * (1 - ss(0.40, 0.42, t));
+    if (alpha > 0.02) {
+      ctx.save(); ctx.globalAlpha = alpha;
+      rrect(x - 33, y - 15, 66, 30, 9, '#ffb74d', 'rgba(0,0,0,.4)', 1.5);
+      text(t >= 0.26 ? 'ADP' : 'ATP', x, y + 5, 14, '#20150a', 'center', 700);
+      ctx.restore();
+    }
+  }
+  // 磷酸基从 ATP 飞到旋钮
+  if (t >= 0.255 && t < 0.34) {
+    const k = ss(0.255, 0.30, t);
+    const x = lerp(CX - 92, knob.x, k), y = lerp(CYM + 120, knob.y, k) - 26 * Math.sin(k * Math.PI);
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fillStyle = '#ff8a3d'; ctx.fill();
+  }
+  // P 旋钮
+  const pOn = t >= 0.30 && t < 0.70;
+  if (pOn) {
+    const glow = 0.55 + 0.45 * Math.sin(t * Math.PI * 8);
+    ctx.beginPath(); ctx.arc(knob.x, knob.y, 12, 0, 7);
+    ctx.fillStyle = `rgba(255,138,61,${0.75 + 0.2 * glow})`; ctx.fill();
+    text('P', knob.x, knob.y + 5, 13, '#20150a', 'center', 700);
+    ctx.beginPath(); ctx.arc(knob.x, knob.y, 16 + 3 * glow, 0, 7);
+    ctx.strokeStyle = `rgba(255,138,61,${0.35 * glow})`; ctx.lineWidth = 2; ctx.stroke();
+  }
+  // Pi 脱落
+  if (t >= 0.66 && t < 0.78) {
+    const k = ss(0.66, 0.76, t);
+    const x = lerp(knob.x, 1030, k), y = lerp(knob.y, 700, k);
+    ctx.globalAlpha = 1 - k * 0.75;
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fillStyle = '#ff8a3d'; ctx.fill();
+    text('Pi', x + 14, y + 4, 12, '#ffc188');
+    ctx.globalAlpha = 1;
+  }
+  return knob;
+}
+
+// 离子运动（i = 0..2 钠；i = 0..1 钾）
+function naIon(i, t) {
+  const t0 = 0.02 + 0.04 * i, t1 = 0.13 + 0.04 * i;
+  const te = 0.50 + 0.03 * i, tf = 0.585 + 0.03 * i;
+  if (t < t0) return null;
+  if (t < t1) { const k = ss(t0, t1, t);
+    return { x: lerp(610 + i * 58, CX, k), y: lerp(712, CYM - 4 + (i - 1) * 15, k), a: 1 }; }
+  if (t < te) return { x: CX + (i - 1) * 16, y: CYM - 4 + (i - 1) * 13, a: 1 };
+  if (t < tf) { const k = ss(te, tf, t);
+    return { x: CX + (i - 1) * 8 * (1 - k), y: lerp(CYM - 10, MEM_T - 84, k), a: 1 }; }
+  if (t < tf + 0.14) { const k = ss(tf, tf + 0.14, t);
+    return { x: lerp(CX, 742 + i * 74, k), y: lerp(MEM_T - 84, 148, k), a: 1 - k * 0.55 }; }
+  if (t < tf + 0.30) { const k = ss(tf, tf + 0.30, t);
+    return { x: lerp(CX, 742 + i * 74, 1), y: lerp(MEM_T - 84, 148, 1) - 26 * k, a: 0.45 * (1 - k) }; }
+  return null;
+}
+function kIon(i, t) {
+  const t0 = 0.63 + 0.045 * i, t1 = 0.715 + 0.045 * i;
+  const te = 0.855 + 0.035 * i, tf = 0.93 + 0.035 * i;
+  if (t < t0) return null;
+  if (t < t1) { const k = ss(t0, t1, t);
+    return { x: lerp(1010 + i * 44 - 20, CX + (i ? 14 : -14), k), y: lerp(152, CYM - 4 + (i ? 13 : -9), k), a: 1 }; }
+  if (t < te) return { x: CX + (i ? 15 : -15), y: CYM - 4 + (i ? 12 : -10), a: 1 };
+  if (t < tf) { const k = ss(te, tf, t);
+    return { x: CX + (i ? 10 : -10) * (1 - k), y: lerp(CYM + 2, MEM_B + 88, k), a: 1 }; }
+  if (t < tf + 0.12) { const k = ss(tf, tf + 0.12, t);
+    return { x: lerp(CX, 716 + i * 96, k), y: lerp(MEM_B + 88, 742, k), a: 1 - k * 0.55 }; }
+  if (t < tf + 0.26) { const k = ss(tf, tf + 0.26, t);
+    return { x: 716 + i * 96, y: 742 + 24 * k, a: 0.45 * (1 - k) }; }
+  return null;
+}
+function drawIon(x, y, a, color, label) {
+  if (!x || a <= 0.02) return;
+  ctx.globalAlpha = a;
+  ctx.beginPath(); ctx.arc(x, y, 13.5, 0, 7); ctx.fillStyle = color; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+  text(label, x, y + 4.5, 11.5, 'rgba(20,16,6,.9)', 'center', 700);
+  ctx.globalAlpha = 1;
+}
+
+/* ================= 标注 / 状态徽章 / 净效应 ================= */
+function stateBadge(t) {
+  let s, c = '#e8a45c';
+  if (t < 0.16) { s = 'E1 · 口朝胞内'; c = '#8fb6e8'; }
+  else if (t < 0.26) s = 'E1 + ATP';
+  else if (t < 0.34) s = 'E1-P（已磷酸化）';
+  else if (t < 0.50) s = 'E1-P → E2-P · 变构中'; 
+  else if (t < 0.66) s = 'E2-P · 口朝胞外'; 
+  else if (t < 0.78) s = 'E2 + K⁺ · 已去磷酸化'; 
+  else if (t < 0.90) s = 'E2-K → E1 · 变构回位'; 
+  else { s = 'E1 · 循环完成'; c = '#8fe8a0'; }
+  ctx.font = `700 15px ${FONT}`;
+  const w2 = ctx.measureText(s).width + 44;
+  rrect(CX - w2 / 2, 268, w2, 34, 17, 'rgba(13,17,24,.85)', c + 'aa', 1.4);
+  text(s, CX, 290, 15, c, 'center', 700);
+}
+function drawLabels(t, e) {
+  if (!showLabels) return;
+  text('Na⁺/K⁺-ATP 酶（钠钾泵）', CX, 246, 14.5, '#c7d2de', 'center', 600);
+  stateBadge(t);
+  const od = openDown(e), ou = openUp(e);
+  if (od > 0.4) text('结合口朝胞内', CX + 122, MEM_B + 104 * od + 26, 12.5, '#8fb6e8', 'left');
+  if (ou > 0.4) text('结合口朝胞外', CX + 122, MEM_T - 104 * ou - 14, 12.5, '#e8a45c', 'left');
+  text('细胞外（Na⁺ 高 · K⁺ 低）', 60, 96, 15, '#9fb0c3', 'left', 600);
+  text('细胞内（K⁺ 高 · Na⁺ 低）', 60, 838, 15, '#9fb0c3', 'left', 600);
+  text('磷脂双分子层', 1478, 366, 12, '#8a6f52', 'right');
+  if (t >= 0.14 && t < 0.30) text('ATP 结合位', CX - 92 - 52, CYM + 96, 12, '#ffb74d');
+  if (t >= 0.28 && t < 0.72) text('磷酸化位点（Asp）', CX + 96, CYM + 158, 12, '#ffc188');
+  const occ = (t >= 0.40 && t < 0.50) || (t >= 0.79 && t < 0.87);
+  if (occ) text('离子被「遮蔽」occluded', CX + 130, CYM - 40, 12.5, '#9fb0c3');
+}
+function drawNet(t) {
+  if (!showNet) return;
+  const X = 1186, Y = 688, Wd = 376, Ht = 168;
+  rrect(X, Y, Wd, Ht, 14, 'rgba(13,17,24,.84)', 'rgba(255,255,255,.10)');
+  text('净效应（每消耗 1 个 ATP）', X + 18, Y + 28, 13.5, '#c7d2de', 'left', 600);
+  const rows = [
+    ['3 Na⁺ → 泵出到胞外', t >= 0.62, '#ffd54f'],
+    ['2 K⁺ → 泵入到胞内', t >= 0.94, '#90caf9'],
+    ['1 ATP → ADP + Pi', t >= 0.34, '#ffb74d'],
+    ['净外向电流 · 维持膜电位与渗透平衡', true, '#7ee2ae'],
+  ];
+  rows.forEach((r, i) => {
+    const y = Y + 56 + i * 27;
+    ctx.beginPath(); ctx.arc(X + 26, y - 4, 5, 0, 7);
+    ctx.fillStyle = r[1] ? r[2] : 'rgba(255,255,255,.14)'; ctx.fill();
+    text(r[0], X + 42, y, 13, r[1] ? '#e6ecf3' : '#5b6673');
+  });
+}
+
+/* ================= 主绘制 ================= */
+function draw(t) {
+  const e = morphE(t);
+  drawBg(t);
+  drawMembrane();
+  drawPump(t, e);
+  const knob = drawChemistry(t);
+  for (let i = 0; i < 3; i++) { const p = naIon(i, t); if (p) drawIon(p.x, p.y, p.a, COL_NA, 'Na⁺'); }
+  for (let i = 0; i < 2; i++) { const p = kIon(i, t); if (p) drawIon(p.x, p.y, p.a, COL_K, 'K⁺'); }
+  drawLabels(t, e);
+  drawNet(t);
+}
+
+/* ================= 主循环 ================= */
+let lastStep = -1, last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min((now - last) / 1000, 0.1); last = now;
+  if (playing) cycles += dt * speed / CYCLE;
+  const t = cycles - Math.floor(cycles);
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#10141b'; ctx.fillRect(0, 0, innerWidth, innerHeight);
+  ctx.setTransform(vs * dpr, 0, 0, vs * dpr, vox * dpr, voy * dpr);
+  draw(t);
+
+  const si = stepIndex(t);
+  if (si !== lastStep) {
+    lastStep = si;
+    [...elSteps.children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  elScrub.value = Math.round(t * 1000);
+  elScrubVal.textContent = Math.round(t * 100) + '%';
+}
+frame();
+</script>
+</body>
+</html>
