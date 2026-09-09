@@ -243,7 +243,7 @@ const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
    轮转角  Θ    = 22.5°·(周期数 + s(t))    s: 0（间隙段）→ 随臂线性映射到 1（锁定）→ 保持 1（回程被止回爪锁死）
    驱动爪  推程：爪尖贴着轮齿轮廓爬坡→顶陡面（接触点=轮廓上的纯函数点）
            回程：爪绕销轴张开 ψ→180°，爪尖抬离齿顶滑回，92% 后落座回弹
-   反向模式：摆臂镜像摆动，爪全程张开 175° 掠过齿顶，轮完全不动                          */
+   反向模式：摆臂镜像摆动，爪全程张开 175° 掠过齿顶；Θ 冻结在进入反向瞬间的相位，纹丝不动        */
 function armAngleDeg(t, rev) { const a = ARM_AMP * Math.cos(2 * Math.PI * t); return rev ? -a : a; }
 function armEnd(aDeg) { const a = aDeg * D2R;
   return { x: ARM_PIV.x + ARM_LEN * Math.sin(a), y: ARM_PIV.y - ARM_LEN * Math.cos(a) }; }
@@ -253,6 +253,12 @@ function wheelAdvance(t, rev) {                    // 一个周期内轮前进�
   if (t < 0.5) { const a0 = ARM_AMP * Math.cos(2 * Math.PI * T_BACK);
     return (a0 - ARM_AMP * Math.cos(2 * Math.PI * t)) / (a0 + ARM_AMP); }
   return 1;
+}
+function tFromAdv(adv) {                           // wheelAdvance 反函数：由推进比例反推推程相位 t ∈ [0,.5]
+  if (adv <= 0) return 0;
+  if (adv >= 1) return 0.5;
+  const a0 = ARM_AMP * Math.cos(2 * Math.PI * T_BACK);
+  return Math.acos(clamp((a0 - adv * (a0 + ARM_AMP)) / ARM_AMP, -1, 1)) / (2 * Math.PI);
 }
 function profileR(phi) {                           // 轮齿轮廓半径（phi: 相对某齿根的角度，度）
   let p = ((phi % PITCH) + PITCH) % PITCH;
@@ -273,15 +279,17 @@ function psiReturnDeg(t, psiRest, psiEnd) {
   const u = t - 0.955;                                          // “嗒”回弹
   return psiRest + 1.7 * Math.sin(u * 62) * Math.exp(-u * 17);
 }
-function stateAt(t, cyc, rev, psiRest, psiEnd, Lp) {
+function stateAt(t, cyc, rev, revPhase, psiRest, psiEnd, Lp) {
   const aDeg = armAngleDeg(t, rev);
   const C = armEnd(aDeg);
   const adv = wheelAdvance(t, rev);
-  const thetaDeg = PITCH * (cyc + adv);
+  const thetaDeg = rev ? PITCH * revPhase : PITCH * (cyc + adv);
   let tip, psi, mode;
   if (rev) { psi = 175; tip = tipFromPsi(C, psi, Lp); mode = 'slide'; }
   else if (t < 0.5) {
-    tip = profilePoint(REST_ROOT + PHI0 + PITCH * adv, thetaDeg, Z_TIP);
+    // 爪尖世界位形每周期必须相同（铰点固定不动）：轮系角扣掉整周期数，
+    // 否则接触点会随 cyc 绕轮漂移，驱动爪被逐周期拉长甩出
+    tip = profilePoint(REST_ROOT + PHI0 + PITCH * (adv - cyc), thetaDeg, Z_TIP);
     psi = psiFromTip(tip, C);
     mode = t < T_BACK ? 'rest' : 'drive';
   } else {
@@ -625,6 +633,21 @@ let cycles = qsFloat('t', 0);
 let playing = !qsBool('pause', false);
 let speed = qsFloat('speed', 1);
 let rev = qsBool('rev', false);
+let revPhase = 0;                          // 反向期间轮冻结的相位（=进入反向瞬间的 cyc+adv）
+if (rev) revPhase = wheelPhaseNow();
+function wheelPhaseNow() {                 // 当前轮相位（周期数，含本周期已推进比例）
+  const c = Math.floor(cycles), t = cycles - c;
+  return c + wheelAdvance(t, false);
+}
+function setRev(on) {                      // 进入反向：冻结轮相位；恢复正向：从冻结角无缝续推
+  if (on === rev) return;
+  if (on) { revPhase = wheelPhaseNow(); rev = true; }
+  else {
+    rev = false;
+    const K = Math.floor(revPhase);
+    cycles = K + tFromAdv(revPhase - K);
+  }
+}
 
 const elPlay = document.getElementById('play');
 const elSpeed = document.getElementById('speed');
@@ -648,8 +671,8 @@ function buildSteps() {
     const li = document.createElement('li');
     li.innerHTML = `<span class="n">${s.n}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
     li.addEventListener('click', () => {
-      if (s.t0 === null) { rev = !rev; }
-      else { rev = false; cycles = Math.floor(cycles) + s.t0; }
+      if (s.t0 === null) { setRev(!rev); }
+      else { if (rev) setRev(false); cycles = Math.floor(cycles) + s.t0; }
       syncRev();
     });
     elSteps.appendChild(li);
@@ -664,7 +687,7 @@ elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
 elSpeed.value = speed; elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×';
 elSpeed.addEventListener('input', () => { speed = parseFloat(elSpeed.value); elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×'; });
 elScrub.addEventListener('input', () => { cycles = Math.floor(cycles) + parseInt(elScrub.value, 10) / 1000; });
-elRev.addEventListener('click', () => { rev = !rev; syncRev(); });
+elRev.addEventListener('click', () => { setRev(!rev); syncRev(); });
 tglLabels.addEventListener('change', () => { for (const o of labelObjs) o.visible = tglLabels.checked; });
 tglFrame.addEventListener('change', () => { frameGrp.visible = tglFrame.checked; });
 tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
@@ -683,7 +706,7 @@ addEventListener('resize', () => {
 
 /* ---------------- 每帧更新 ---------------- */
 function updateWorld(t, cyc) {
-  const st = stateAt(t, cyc, rev, PSI_REST, PSI_END, L_PAWL);
+  const st = stateAt(t, cyc, rev, revPhase, PSI_REST, PSI_END, L_PAWL);
   wheelGrp.rotation.z = st.thetaDeg * D2R;
 
   armGrp.position.set(ARM_PIV.x, ARM_PIV.y, Z_ARM);
@@ -695,7 +718,7 @@ function updateWorld(t, cyc) {
   pawlGrp.scale.set(dC, 1, 1);
 
   sphereDrv.position.copy(st.tip);
-  const seatK = t > 0.955 ? Math.max(0, Math.sin((t - 0.955) * 42)) * Math.exp(-(t - 0.955) * 11) : 0;
+  const seatK = (!rev && t > 0.955) ? Math.max(0, Math.sin((t - 0.955) * 42)) * Math.exp(-(t - 0.955) * 11) : 0;
   sphereDrv.scale.setScalar(1 + 1.1 * seatK);
   if (rev || st.mode === 'slide') sphereDrv.material = matGlowY;
   else if (st.mode === 'drive') sphereDrv.material = matGlowR;
