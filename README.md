@@ -41,6 +41,20 @@
 - [x] 肌肉收缩的横桥循环（Ca²⁺ 点火 → Power stroke → ATP 松手回位）✅ **cross-bridge-cycle/**
 - [x] 血红蛋白 MWC 协同运氧（T→R 变构 + S 形氧合曲线）✅ **hemoglobin-mwc/**
 
+> 完整选题库、知识图谱与分期路线见 **[ROADMAP.md](./ROADMAP.md)**。
+
+### 下一批（Phase 1 补全闭环 + 两个新领域开篇）
+
+- [x] E2 消除反应（反式共平面 + 协同过渡态，与 SN2 成对）✅ **e2-elimination/**
+- [ ] E1 消除反应（与 SN1 共享碳正离子，补全 SN1/SN2/E1/E2 四宫格）→ **e1-elimination/**
+- [ ] 线粒体电子传递链（电子下坡、质子上坡，补齐 ATP 合酶的上游）→ **electron-transport-chain/**
+- [ ] 光系统与 Z 方案（两次光子抬升，与线粒体电子传递链互为镜像）→ **photosynthesis-z-scheme/**
+- [ ] 突触传递（电信号 → 化学信号 → 电信号的翻译现场）→ **synaptic-transmission/**
+- [ ] 转录（解链泡与 σ 因子，中心法则第二环）→ **transcription/**
+- [ ] 翻译（核糖体逐密码子读卡，中心法则第三环）→ **translation-ribosome/**
+- [ ] 直流电动机⇄发电机（同一台机器的两种身份，「物理与天文」开篇）→ **motor-generator/**
+- [ ] 伽尔顿板·中心极限定理（正态从随机中长出来，「数学与计算机」开篇）→ **galton-board/**
+
 ## 目录结构
 
 每个选题一个自包含目录，入口为 `index.html`，无构建步骤。
@@ -60,6 +74,7 @@ action-potential/        动作电位去极化 / 复极化（Canvas 2D，零依�
 calvin-cycle/            卡尔文循环（Canvas 2D，零依赖）
 li-ion-battery/          锂离子电池摇椅模型：充电与放电（Three.js，CDN 引入）
 sn1-mechanism/           SN1 机理：碳正离子与外消旋化（Three.js，CDN 引入）
+e2-elimination/          E2 消除反应：反式共平面与协同消除（Three.js，CDN 引入）
 buffer-solution/         缓冲溶液如何抵抗 pH 变化（可交互粒子模拟，Three.js，CDN 引入）
 water-electrolysis/      水电解：电解池与原电池互为逆过程（Three.js，CDN 引入）
 differential/            差速器：转弯时行星轮如何吸收左右轮速差（Three.js，CDN 引入）
@@ -109,6 +124,12 @@ hemoglobin-mwc/          血红蛋白 MWC 别构模型：协同运氧与 S 形�
 - **看什么**：决速步 C–Br 异裂（Br⁻ 带电子对离去）后，三个烷基压成平面、碳上下张开两瓣**空 p 轨道**——SN1 的招牌瞬间；随后 H₂O 从上、下两面各以 50% 概率进攻，最终并排出现 R/S 两个镜像产物（外消旋 50:50）。右下角能量曲线是「双峰 + 中间体盆地」，灰色虚线叠加 SN2 的单峰作对比；决速步亮出 v = k[RX]——速率与亲核试剂无关。
 - **怎么玩**：`空格` 播放暂停、点击步骤跳相位、相位滑块逐帧；拖到 30%–50% 相位细看空 p 轨道；面板底部有 SN2 ⇄ SN1 逐项对比表。
 - **URL 参数**：`?t=` `pause=` `speed=` `labels=` `spin=`，另有 `top=1` 俯视机位（验证三基团共平面）。
+
+### E2：反式共平面与协同消除
+
+- **看什么**：碱摘走 β-H、C–H 电子落成 π 键、C–Br 电子随 Br⁻ 离去——三处变化一拍完成，只有一个过渡态（无中间体），能量曲线与 E1 的「双峰 + 中间体盆地」虚线对比；开局 C–C 单键从重叠式转到对位交叉，只有 **H–Cβ–Cα–Br 四原子共面且反式（二面角 180°）** 时反应才解锁，右上角纽曼投影实时标出二面角与 anti 状态。切到 **t-BuO⁻ 大位阻碱**：内侧 β-H 挤不进去，碱被顶到外侧甲基消除 → Hofmann 产物 1-丁烯（EtO⁻ 小碱 → Zaitsev 产物 2-丁烯）。
+- **怎么玩**：`空格` 播放暂停、点击五步跳相位、相位滑块逐帧；勾选「构象探索」亲手转 C–C 键找 anti 构象，转不到 180° 反应锁死；切换碱看区域选择性反转。
+- **URL 参数**：`?t=` `pause=` `speed=` `labels=` `arrows=` `newman=` `base=et/tbu` `spin=`，另有 `top=1` 轴向机位（正对 Cα→Cβ 轴检验反式共平面）。
 
 ### 缓冲溶液：两支储备军
 
