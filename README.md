@@ -50,8 +50,8 @@
 - [x] 线粒体电子传递链（电子下坡、质子上坡，补齐 ATP 合酶的上游）✅ **electron-transport-chain/**
 - [x] 光系统与 Z 方案（两次光子抬升，与线粒体电子传递链互为镜像）✅ **photosynthesis-z-scheme/**
 - [x] 突触传递（电信号 → 化学信号 → 电信号的翻译现场）✅ **synaptic-transmission/**
-- [ ] 转录（解链泡与 σ 因子，中心法则第二环）→ **transcription/**
-- [ ] 翻译（核糖体逐密码子读卡，中心法则第三环）→ **translation-ribosome/**
+- [x] 转录（解链泡与 σ 因子，中心法则第二环）✅ **transcription/**
+- [x] 翻译（核糖体逐密码子读卡，中心法则第三环）✅ **translation-ribosome/**
 - [ ] 直流电动机⇄发电机（同一台机器的两种身份，「物理与天文」开篇）→ **motor-generator/**
 - [ ] 伽尔顿板·中心极限定理（正态从随机中长出来，「数学与计算机」开篇）→ **galton-board/**
 
@@ -84,6 +84,8 @@ geneva-drive/            日内瓦机构：连续旋转变精确间歇 + 转位�
 atp-synthase/            ATP 合酶：质子流驱动的旋转催化（Three.js，CDN 引入）
 electron-transport-chain/ 线粒体电子传递链：电子下坡、质子上坡（Canvas 2D，零依赖）
 photosynthesis-z-scheme/ 光反应 Z 方案：两部光子电梯（Canvas 2D，零依赖）
+transcription/           转录：RNA 聚合酶与解链泡（Canvas 2D，零依赖）
+translation-ribosome/    翻译：核糖体逐密码子读卡（Canvas 2D，零依赖）
 cross-bridge-cycle/      肌肉收缩的横桥循环：粗细肌丝滑行的分子机制（Three.js，CDN 引入）
 hemoglobin-mwc/          血红蛋白 MWC 别构模型：协同运氧与 S 形氧合曲线（Three.js，CDN 引入）
 ```
@@ -214,6 +216,19 @@ hemoglobin-mwc/          血红蛋白 MWC 别构模型：协同运氧与 S 形�
 - **看什么**：动作电位沿轴突抵达末梢,电压门控 Ca²⁺ 通道开门点火;SNARE 像拉链把囊泡拽上突触前膜,融合孔打开,乙酰胆碱倾泻进 ~20 nm 间隙;ACh 结合配体门控受体放 Na⁺ 内流产生 EPSP——右上小卡实时画出后膜电位;AChE 把 ACh 切成乙酸+胆碱即刻清场,胆碱被转运体回收再装填。
 - **怎么玩**：`空格` 播放暂停、点击六步跳相位、相位滑块逐帧;两个毒理彩蛋各试一次——「肉毒毒素」剪断 SNARE(囊泡无法融合,后膜静默 → 松弛性麻痹),「有机磷」抑制 AChE(递质不灭活,受体持续开门 → 持续去极化、抽搐)。
 - **URL 参数**：`?t=` `pause=` `speed=` `labels=0` `botox=1` `op=1`。
+
+
+### 转录：RNA 聚合酶与解链泡
+
+- **看什么**：全酶沿 DNA 扫描,σ 因子认出 −35/−10 启动子框后脱落;~14 bp 解链泡张开,模板链 3′→5′ 被逐个读过,配对的 NTP(A=U/G≡C)收进 3′ 端——**不需要引物**;RNA 以 AUG 开头越拉越长,末端 GCGC 折出终止发夹把整条链拽出,泡合拢、聚合酶脱落。右上计数「已转录 nt」与「当前配对」实时跟进;序列是真实的:TACGGGCCATATCGCG → AUGCCCGGUAUAGCGC。
+- **怎么玩**:`空格` 播放暂停、点击五步跳相位、相位滑块逐帧;关掉「编码链字母」只剩模板链,自己脑补配对再打开核对。
+- **URL 参数**:`?t=` `pause=` `speed=` `labels=0`。
+
+### 翻译：核糖体逐密码子读卡
+
+- **看什么**:核糖体驻留、mRNA 滑动——AUG 上 P 位起始(fMet-tRNA,反密码子 UAC);EF-Tu 押着氨酰-tRNA 进 A 位,**密码子-反密码子对上才水解 GTP 锁定**(第二轮有一颗错的,当场踢出去);肽酰转移酶把多肽从 P 位转挂 A 位,EF-G 移位一码、空 tRNA 从 E 位离场;UAA 进 A 位没有 tRNA 能配,释放因子入位、多肽落链、亚基解散。tRNA 像车厢挂钩,把氨基酸逐节连成多肽。
+- **怎么玩**:`空格` 播放暂停、点击四步跳相位、相位滑块逐帧;盯住第二轮的「错配踢出」瞬间。
+- **URL 参数**:`?t=` `pause=` `speed=` `labels=0`。
 
 ### 卡尔文循环
 
