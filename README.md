@@ -48,8 +48,8 @@
 - [x] E2 消除反应（反式共平面 + 协同过渡态，与 SN2 成对）✅ **e2-elimination/**
 - [x] E1 消除反应（与 SN1 共享碳正离子，补全 SN1/SN2/E1/E2 四宫格）✅ **e1-elimination/**
 - [x] 线粒体电子传递链（电子下坡、质子上坡，补齐 ATP 合酶的上游）✅ **electron-transport-chain/**
-- [ ] 光系统与 Z 方案（两次光子抬升，与线粒体电子传递链互为镜像）→ **photosynthesis-z-scheme/**
-- [ ] 突触传递（电信号 → 化学信号 → 电信号的翻译现场）→ **synaptic-transmission/**
+- [x] 光系统与 Z 方案（两次光子抬升，与线粒体电子传递链互为镜像）✅ **photosynthesis-z-scheme/**
+- [x] 突触传递（电信号 → 化学信号 → 电信号的翻译现场）✅ **synaptic-transmission/**
 - [ ] 转录（解链泡与 σ 因子，中心法则第二环）→ **transcription/**
 - [ ] 翻译（核糖体逐密码子读卡，中心法则第三环）→ **translation-ribosome/**
 - [ ] 直流电动机⇄发电机（同一台机器的两种身份，「物理与天文」开篇）→ **motor-generator/**
@@ -71,6 +71,7 @@ cam-follower/       凸轮从动件位移曲线（Three.js，CDN 引入）
 dna-replication/         DNA 半保留复制与冈崎片段（Canvas 2D，零依赖，离线可开）
 sodium-potassium-pump/   钠钾泵 Na⁺/K⁺-ATP 酶构象循环（Canvas 2D，零依赖）
 action-potential/        动作电位去极化 / 复极化（Canvas 2D，零依赖）
+synaptic-transmission/   突触传递：电→化学→电的翻译现场（Canvas 2D，零依赖）
 calvin-cycle/            卡尔文循环（Canvas 2D，零依赖）
 li-ion-battery/          锂离子电池摇椅模型：充电与放电（Three.js，CDN 引入）
 sn1-mechanism/           SN1 机理：碳正离子与外消旋化（Three.js，CDN 引入）
@@ -82,6 +83,7 @@ differential/            差速器：转弯时行星轮如何吸收左右轮速�
 geneva-drive/            日内瓦机构：连续旋转变精确间歇 + 转位曲线展开图（Three.js，CDN 引入）
 atp-synthase/            ATP 合酶：质子流驱动的旋转催化（Three.js，CDN 引入）
 electron-transport-chain/ 线粒体电子传递链：电子下坡、质子上坡（Canvas 2D，零依赖）
+photosynthesis-z-scheme/ 光反应 Z 方案：两部光子电梯（Canvas 2D，零依赖）
 cross-bridge-cycle/      肌肉收缩的横桥循环：粗细肌丝滑行的分子机制（Three.js，CDN 引入）
 hemoglobin-mwc/          血红蛋白 MWC 别构模型：协同运氧与 S 形氧合曲线（Three.js，CDN 引入）
 ```
@@ -200,6 +202,18 @@ hemoglobin-mwc/          血红蛋白 MWC 别构模型：协同运氧与 S 形�
 - **看什么**：上方膜电位示波曲线与下方膜片场景严格同相位——阈上刺激跨过 −55 mV 的瞬间正反馈点燃：Na⁺ 激活门开放、Na⁺ 涌入反极化到 +36 mV；峰值处失活球（球-链闸门）堵住通道、K⁺ 通道延迟开放；K⁺ 外流复极化、跌破静息成超极化；最后闸门复位、泵与漏通道恢复梯度。电荷符号随电位实时翻转，曲线下方标出绝对/相对不应期。
 - **怎么玩**：`空格` 播放暂停、点击七步跳相位、相位滑块逐帧；暂停时离子流仍在动（该相位下的稳态通量）。
 - **URL 参数**：`?t=` `pause=` `speed=` `labels=`，另有 `charge=0` 隐藏电荷符号、`refr=0` 隐藏不应期标尺。
+
+### 光反应 Z 方案：两部光子电梯
+
+- **看什么**：类囊体膜工厂——光子撞上 PSⅡ 的 P680,电子被抬上第一级电梯;水在锰簇裂解补位,O₂ 冒泡只是副产品,H⁺ 留在腔内;电子下坡经 PQ 摆渡到 Cyt b₆f,借势把 H⁺ 泵进腔,PC 腔面接力;第二个光子在 PSI 再抬一次——Z 形曲线第二个峰;Fd→FNR 造出 NADPH;腔内 H⁺ 经 ATP 合酶流回基质发电——**和线粒体同一台机器,反着用**。右上「Z 方案」小卡实时标出电子在两部电梯间的位置。
+- **怎么玩**：`空格` 播放暂停、点击五步跳相位、相位滑块逐帧;勾「改照绿光会怎样?」——光子被弹回,两部电梯全停(叶绿素显绿色,正因为它不吸收绿光)。
+- **URL 参数**：`?t=` `pause=` `speed=` `labels=0` `green=1`。
+
+### 突触传递：电信号 → 化学信号 → 电信号
+
+- **看什么**：动作电位沿轴突抵达末梢,电压门控 Ca²⁺ 通道开门点火;SNARE 像拉链把囊泡拽上突触前膜,融合孔打开,乙酰胆碱倾泻进 ~20 nm 间隙;ACh 结合配体门控受体放 Na⁺ 内流产生 EPSP——右上小卡实时画出后膜电位;AChE 把 ACh 切成乙酸+胆碱即刻清场,胆碱被转运体回收再装填。
+- **怎么玩**：`空格` 播放暂停、点击六步跳相位、相位滑块逐帧;两个毒理彩蛋各试一次——「肉毒毒素」剪断 SNARE(囊泡无法融合,后膜静默 → 松弛性麻痹),「有机磷」抑制 AChE(递质不灭活,受体持续开门 → 持续去极化、抽搐)。
+- **URL 参数**：`?t=` `pause=` `speed=` `labels=0` `botox=1` `op=1`。
 
 ### 卡尔文循环
 
