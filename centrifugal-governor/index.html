@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>瓦特离心调速器 · 第一个负反馈控制器</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#ffd166;
+    --bg:#10141b; --panel:rgba(13,17,24,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,24,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,24,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#b0761f;
+    --bg:#eef1f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.g { border-color: rgba(255,209,102,.9); color: #ffe9a8; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(176,118,31,.9); color: #9c6f00; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 11px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 19px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11.5px; color: var(--text2); font-weight: 400; }
+  #stats .v.b { color: #74c0fc; }
+  #stats .v.g { color: #ffd166; }
+  #stats .v.w { color: #ffa94d; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 388px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(255,169,77,.6); background: rgba(255,169,77,.12); color: var(--text); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 52px; text-align: right; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(255,209,102,.10); border-color: rgba(255,209,102,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(176,118,31,.08); border-color: rgba(176,118,31,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12.5px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12.5px; }
+  #steps li.on .t b { color: #ffe9a8; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="瓦特离心调速器：第一个负反馈控制器" data-en="Watt's Governor: the first feedback controller">瓦特离心调速器：第一个负反馈控制器</h1>
+  <div class="sub" data-zh="飞锤张角随转速变化 → 套筒连着节气阀:转速掉就开大阀、转速涨就收小阀——负荷突变,飞锤-套筒-阀门三角追逐到新平衡 · 空格播放/暂停" data-en="Fly-balls read the speed, the sleeve drives the throttle: slow → open more, fast → close. Drop a load on it and watch the triangle chase a new balance · Space = play/pause">飞锤张角随转速变化 → 套筒连着节气阀:转速掉就开大阀、转速涨就收小阀——负荷突变,飞锤-套筒-阀门三角追逐到新平衡 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="机器转速" data-en="engine speed">机器转速</span><span class="v b" id="stW">—</span>
+  <span class="k" data-zh="阀门开度" data-en="valve opening">阀门开度</span><span class="v g" id="stV">—</span>
+  <span class="k" data-zh="负荷" data-en="load">负荷</span><span class="v w" id="stL">—</span>
+  <span class="k" data-zh="稳态偏差" data-en="droop">稳态偏差</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <div id="actions">
+    <button class="abtn" id="btnLoadUp" data-zh="突加负荷!" data-en="sudden load!">突加负荷!</button>
+    <button class="abtn" id="btnLoadDn" data-zh="突卸负荷" data-en="sudden unload">突卸负荷</button>
+  </div>
+  <div class="row"><label data-zh="负荷水平" data-en="load level">负荷水平</label><input id="load" type="range" min="10" max="90" step="5" value="40"><span class="val" id="loadVal">40%</span></div>
+  <div class="row"><label data-zh="速度" data-en="Speed">速度</label><input id="spd" type="range" min="0.2" max="3" step="0.1" value="1"><span class="val" id="spdVal">1.0×</span></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles" style="margin-top:0">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../four-bar-linkage/" data-zh="机构家族:连杆与摇臂" data-en="family: linkages">机构家族:连杆与摇臂</a>
+    <a href="../worm-drive/" data-zh="同期蒸汽机伴生机构" data-en="a steam-age sibling">同期蒸汽机伴生机构</a>
+    <a href="../thermostat/" data-zh="反馈家族:恒温器(规划中)" data-en="feedback family: thermostat (planned)">反馈家族:恒温器(规划中)</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeef1f6 : 0x10141b);
+  M.floor.color.set(THEME === 'light' ? 0xd6dce6 : 0x1b212c);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('瓦特离心调速器', "Watt's Governor");
+  for (const r of labelRegistry) r.o.element.textContent = r.text();
+  buildSteps();
+  setPlayLabel();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(2.4, 3.4, 8.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.8, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 22;
+controls.autoRotateSpeed = 0.55;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.7));
+const key = new THREE.DirectionalLight(0xffffff, 2.0);
+key.position.set(5, 9, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.45);
+fill.position.set(-6, 3, -5);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.35,
+    emissive: color, emissiveIntensity: 0.06, transparent: true, ...opts });
+}
+const M = {
+  floor: mat(0x1b212c, { roughness: 0.9, emissive: 0x000000 }),
+  frame: mat(0x39424f, { roughness: 0.7 }),
+  brass: mat(0xd8b26a, { metalness: 0.65, roughness: 0.3 }),
+  steel: mat(0xcfd4dc, { metalness: 0.8, roughness: 0.25 }),
+  ball: mat(0x74c0fc, { metalness: 0.4, roughness: 0.4 }),
+  pipe: mat(0x6fc2d8, { metalness: 0.4, roughness: 0.5 }),
+  engine: mat(0x90be6d, { roughness: 0.45 }),
+  belt: new THREE.MeshBasicMaterial({ color: 0x8b97a8, transparent: true, opacity: 0.7 }),
+  valve: mat(0xff9f28, { roughness: 0.4, metalness: 0.4 }),
+};
+
+/* ================= 场景 ================= */
+const floor = new THREE.Mesh(new THREE.BoxGeometry(10, 0.2, 4.6), M.floor);
+floor.position.y = -0.1;
+scene.add(floor);
+/* 调速器支架与主轴 */
+const pedestal = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.9, 0.5), M.frame);
+pedestal.position.set(-1.6, 0.45, 0);
+scene.add(pedestal);
+const spindle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 2.6, 12), M.steel);
+spindle.position.set(-1.6, 2.0, 0);
+scene.add(spindle);
+/* 飞锤系统:两臂 + 两球 + 套筒 + 连杆 */
+const govTop = new THREE.Group();
+govTop.position.set(-1.6, 3.3, 0);
+scene.add(govTop);
+const arms = [], balls = [];
+for (const s of [-1, 1]) {
+  const armPivot = new THREE.Group();
+  govTop.add(armPivot);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 0.05), M.steel);
+  arm.position.x = s * 0.45;
+  armPivot.add(arm);
+  const link = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.04, 0.04), M.steel);
+  link.position.set(s * 0.35, -0.3, 0);
+  link.rotation.z = s * 0.5;
+  armPivot.add(link);
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.16, 18, 14), M.ball);
+  ball.position.set(s * 0.9, -0.08, 0);
+  armPivot.add(ball);
+  armPivot.rotation.z = s * -0.3;
+  arms.push({ pivot: armPivot, s });
+  balls.push(ball);
+}
+const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.3, 16), M.brass);
+sleeve.position.set(-1.6, 2.35, 0);
+scene.add(sleeve);
+/* 套筒连杆 → 阀门杠杆 */
+const leverGrp = new THREE.Group();
+leverGrp.position.set(-0.7, 2.9, 0);
+scene.add(leverGrp);
+const lever = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.05, 0.05), M.steel);
+lever.position.x = 0.5;
+leverGrp.add(lever);
+const leverLink = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.75, 8), M.steel);
+scene.add(leverLink);
+/* 蒸汽管 + 节气阀 */
+const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 2.6, 16), M.pipe);
+pipe.rotation.z = Math.PI / 2;
+pipe.position.set(1.4, 0.8, 0);
+scene.add(pipe);
+const valveBody = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.4), M.frame);
+valveBody.position.set(0.7, 0.8, 0);
+scene.add(valveBody);
+const valveDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.06, 20), M.valve);
+valveDisc.rotation.z = Math.PI / 2;
+valveDisc.position.set(0.7, 0.8, 0);
+scene.add(valveDisc);
+/* 发动机:汽缸 + 飞轮 */
+const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.9, 20), M.engine);
+cyl.rotation.z = Math.PI / 2;
+cyl.position.set(3.4, 1.4, 0);
+scene.add(cyl);
+const flywheel = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.09, 10, 40), M.steel);
+flywheel.position.set(2.5, 1.4, 0);
+scene.add(flywheel);
+const fwSpoke = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 0.06), M.steel);
+fwSpoke.position.set(2.5, 1.4, 0);
+scene.add(fwSpoke);
+/* 皮带(两段直线示意) */
+const belt1 = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.03, 0.02), M.belt);
+belt1.position.set(0.55, 2.62, 0.07);
+belt1.rotation.z = 0.32;
+scene.add(belt1);
+const belt2 = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.03, 0.02), M.belt);
+belt2.position.set(0.55, 0.72, -0.07);
+belt2.rotation.z = -0.32;
+scene.add(belt2);
+
+/* ---------------- 状态(在标签前) ---------------- */
+let playing = !qsBool('pause', false);
+if (matchMedia('(prefers-reduced-motion: reduce)').matches && qs.get('pause') === null) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let load = 0.4;                 // 0..1
+let w = 1.0;                    // 归一化转速(1.0 = 额定)
+let valve = 0.4;                // 0..1 开度
+let theta = 0;                  // 飞锤张角(视觉 = f(w))
+let thetaSpindle = 0;
+const W_NOM = 1.0;
+const ARM_L = 0.9, G = 9.8;
+function ballsAngle() {
+  /* 离心 vs 重力: tanθ = ω²·L/g (ω 归一化,额定 1 → 约 30°) */
+  const t = clamp(w * w * ARM_L * 3.2 / G, 0.15, 2.0);
+  return Math.atan(t);
+}
+function sleeveY() {
+  /* 张角越大套筒越高 */
+  return 2.35 + (Math.tan(ballsAngle()) / 2.0 - 0.29) * 0.85;
+}
+
+/* ---------------- 标签 ---------------- */
+const labelRegistry = [];
+function addLabel(textFn, pos, cls = '', target = scene) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  target.add(o);
+  labelRegistry.push({ o, text: textFn });
+  div.textContent = textFn();
+  return o;
+}
+const lblBalls = addLabel(() => L(`飞锤:张角 ${Math.round(theta * 180 / Math.PI)}°`, `fly-balls: ${Math.round(theta * 180 / Math.PI)}°`),
+  new THREE.Vector3(0, 0.6, 0), 'g', govTop);
+const lblValve = addLabel(() => L(`节气阀:开度 ${(valve * 100).toFixed(0)}%`, `throttle: ${(valve * 100).toFixed(0)}% open`),
+  new THREE.Vector3(0.7, 1.45, 0), 'b');
+const lblLoad = addLabel(() => L(`负荷(磨盘/织机)`, 'load (mill / loom)'), new THREE.Vector3(3.4, 2.35, 0), 'g');
+const lblStatus = addLabel(() => {
+  const dev = (w - W_NOM) * 100;
+  return Math.abs(dev) < 2.5
+    ? L(`稳态:转速额定,偏差 ${dev.toFixed(1)}%(有差调节)`, `steady: at nominal, droop ${dev.toFixed(1)}%`)
+    : L(`调节中:转速偏差 ${dev.toFixed(1)}%——飞锤-套筒-阀门三角追逐`, `hunting: speed off by ${dev.toFixed(1)}% — the triangle is chasing`);
+}, new THREE.Vector3(0.5, 4.9, 0), 'st');
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '飞锤:转速的读数器', be: 'Fly-balls: a speed gauge',
+    d: '两个重球挂在铰接臂上:转得越快,离心把球甩得越开、张角越大——转速被翻译成一个几何角度。',
+    de: 'Spinning balls on hinged arms: the faster the spindle, the wider they fly — speed becomes an angle.',
+    act: () => { load = 0.4; document.getElementById('load').value = 40; document.getElementById('loadVal').textContent = '40%'; } },
+  { b: '套筒连着节气阀', be: 'The sleeve drives the throttle',
+    d: '球臂张开时把滑套往上提,套筒通过杠杆压向节气阀——转速高,阀就关小;转速低,阀就开大。',
+    de: 'Wider balls lift the sleeve; the lever translates that into the throttle. Fast → close, slow → open.',
+    act: () => { load = 0.4; document.getElementById('load').value = 40; document.getElementById('loadVal').textContent = '40%'; } },
+  { b: '突加负荷:三角追逐', be: 'Sudden load: the chase',
+    d: '负荷一加,转速掉 → 飞锤收拢 → 套筒下移 → 阀门开大 → 蒸汽加力 → 转速回升——三个部件追了几圈才安定。',
+    de: 'Add a load: speed dips, balls fall, sleeve drops, valve opens, steam pushes back — the triangle hunts before settling.',
+    act: () => { load = 0.75; document.getElementById('load').value = 75; document.getElementById('loadVal').textContent = '75%'; } },
+  { b: '有差调节:新平衡略低', be: 'Droop: the new normal is lower',
+    d: '安定后转速回不到额定值——比例控制的代价:负荷越大,稳态转速略越低(约 −5%)。但它简单、可靠、1788 年起就开始工作。',
+    de: 'It settles slightly below nominal — proportional control\'s droop. Simple, robust, and on duty since 1788.',
+    act: () => { load = 0.75; document.getElementById('load').value = 75; document.getElementById('loadVal').textContent = '75%'; } },
+  { b: '反馈控制的开山', be: 'The founding feedback loop',
+    d: '「测量 → 比较 → 修正」的闭环思想从这只铜球出发:恒温器、血糖调节、巡航控制、火箭姿态——全都是它的后代。',
+    de: 'Measure, compare, correct: thermostats, blood glucose, cruise control, rocket attitude — all descendants of these brass balls.',
+    act: () => { load = 0.4; document.getElementById('load').value = 40; document.getElementById('loadVal').textContent = '40%'; } },
+];
+function stepIndex() {
+  if (Math.abs(w - W_NOM) > 0.06) return 2;
+  if (load > 0.6) return 3;
+  return 1;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => s.act());
+    el.appendChild(li);
+  });
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elSpd = document.getElementById('spd');
+const elSpdVal = document.getElementById('spdVal');
+const elLoad = document.getElementById('load');
+const elLoadVal = document.getElementById('loadVal');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+const stW = document.getElementById('stW'), stV = document.getElementById('stV'),
+  stL = document.getElementById('stL'), stD = document.getElementById('stD');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+elLoad.addEventListener('input', () => { load = parseInt(elLoad.value, 10) / 100; elLoadVal.textContent = elLoad.value + '%'; });
+elSpd.value = speed;
+elSpdVal.textContent = speed.toFixed(1) + '×';
+elSpd.addEventListener('input', () => { speed = parseFloat(elSpd.value); elSpdVal.textContent = speed.toFixed(1) + '×'; });
+document.getElementById('btnLoadUp').addEventListener('click', () => { load = clamp(load + 0.35, 0.1, 0.9); elLoad.value = Math.round(load * 100); elLoadVal.textContent = elLoad.value + '%'; });
+document.getElementById('btnLoadDn').addEventListener('click', () => { load = clamp(load - 0.35, 0.1, 0.9); elLoad.value = Math.round(load * 100); elLoadVal.textContent = elLoad.value + '%'; });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+tglLabels.addEventListener('change', () => {
+  for (const r of labelRegistry) r.o.element.style.display = tglLabels.checked ? '' : 'none';
+});
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { tglLabels.checked = false; tglLabels.dispatchEvent(new Event('change')); }
+controls.autoRotate = qsBool('spin', true) && tglRotate.checked;
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let lastStep = -1;
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const dts = dt * speed;
+  if (playing) {
+    /* 反馈:阀门开度由套筒(=转速)决定,负向 */
+    const targetValve = clamp(0.4 + (1 - w) * 2.2, 0.05, 1);
+    valve += (targetValve - valve) * clamp(dts * 3, 0, 1);
+    /* 发动机:进气推力 − 负荷 − 摩擦 */
+    w += (valve * 0.9 - load * 0.62 - (w - W_NOM) * 0.12) * dts * 1.6;
+    w = clamp(w, 0.3, 1.8);
+    thetaSpindle += w * 7 * dts;
+    theta = lerp(theta, ballsAngle(), 1 - Math.exp(-dts * 4));
+  }
+  theta = ballsAngle();
+  const sY = sleeveY();
+
+  /* 飞锤张角 */
+  for (const a of arms) a.pivot.rotation.z = a.s * -theta;
+  sleeve.position.y = sY;
+  spindle.rotation.y = thetaSpindle;
+  /* 杠杆:套筒高度 → 阀门开度 */
+  leverGrp.rotation.z = lerp(0.18, -0.18, valve);
+  leverLink.position.set(-0.35 + 0.28 * valve, (sY + 2.85) / 2, 0);
+  leverLink.scale.y = Math.max(Math.abs(2.85 - sY), 0.05) / 0.75;
+  leverLink.rotation.z = sY > 2.85 ? 0.15 : -0.15;
+  /* 阀门开度可视化:阀盘滑出 */
+  valveDisc.position.x = 0.55 + valve * 0.3;
+  /* 飞轮 */
+  flywheel.rotation.x += w * 5 * dts;
+  fwSpoke.rotation.x += w * 5 * dts;
+
+  stW.innerHTML = (w * 100).toFixed(0) + '<small> %(额定 100)</small>';
+  stV.innerHTML = (valve * 100).toFixed(0) + '<small> %</small>';
+  stL.innerHTML = (load * 100).toFixed(0) + '<small> %</small>';
+  stD.innerHTML = ((w - W_NOM) * 100).toFixed(1) + '<small> %</small>';
+
+  for (const r of labelRegistry) r.o.element.textContent = r.text();
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+
+applyTheme();
+applyLang();
+setPlayLabel();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
