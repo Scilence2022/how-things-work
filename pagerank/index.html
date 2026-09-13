@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PageRank 与马尔可夫链:随机点击冲出网页重要性</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4cc2ff;
+    --bg:#0e1420; --panel:rgba(13,18,26,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,18,26,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,18,26,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#0a76d1;
+    --bg:#eef1f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl b { color: var(--text); font-weight: 700; }
+  .lbl.g { border-color: rgba(76,194,255,.9); color: #bfe7ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(10,118,209,.9); color: #0a6ab8; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(200,60,60,.9); color: #b83232; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 340px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #chart { position: fixed; top: 60px; right: 18px; z-index: 4; width: 240px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    padding: 10px 14px 12px; backdrop-filter: blur(6px); }
+  #chart .chead { font-size: 12px; font-weight: 700; color: var(--text); }
+  #chart .cformula { font-size: 10.5px; color: var(--text2); margin: 3px 0 8px; font-variant-numeric: tabular-nums; }
+  .crow { display: flex; align-items: center; gap: 7px; height: 17px; }
+  .crow .cl { flex: 0 0 11px; font-size: 11px; font-weight: 700; color: var(--text2); }
+  .crow .track { flex: 1; height: 9px; border-radius: 5px; background: var(--hover); position: relative; overflow: hidden; }
+  .crow .fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0%; background: var(--acc);
+    border-radius: 5px; transition: width .12s linear; }
+  .crow .tick { position: absolute; top: 0; bottom: 0; left: 0%; width: 2px; background: #ff8a3d; transition: left .25s; }
+  .crow .cv { flex: 0 0 38px; text-align: right; font-size: 10.5px; color: var(--text3); font-variant-numeric: tabular-nums; }
+  #cnote { display: none; margin-top: 7px; font-size: 11px; line-height: 1.45; color: #ff7b7b; }
+  .clegend { display: flex; gap: 14px; margin-top: 8px; }
+  .clegend .lg { display: inline-flex; gap: 5px; align-items: center; font-size: 10.5px; color: var(--text2); }
+  .clegend .swf { width: 14px; height: 8px; border-radius: 2px; background: var(--acc); }
+  .clegend .swt { width: 2px; height: 10px; background: #ff8a3d; }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 11px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 18px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v.l { color: var(--acc); }
+  #stats .v.ok { color: #43d17c; }
+  #stats .v.bad { color: #ff5d5d; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 384px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 82px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 56px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #actions { display: flex; gap: 8px; margin-bottom: 6px; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(76,194,255,.10); border-color: rgba(76,194,255,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(10,118,209,.08); border-color: rgba(10,118,209,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12.5px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12.5px; }
+  #steps li.on .t b { color: #9fdcff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1180px), (max-height: 640px) { #chart { display: none; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="PageRank 与马尔可夫链:随机点击冲出网页重要性" data-en="PageRank & Markov chains: random clicks surface importance">PageRank 与马尔可夫链:随机点击冲出网页重要性</h1>
+  <div class="sub" data-zh="球=网页,箭头=超链接;粒子=冲浪者:每步以 d=0.85 沿链接随机点击、15% 随机跳转;驻留份额收敛 = PageRank,右侧蓝条贴上橙线即收敛 · 3D 交互演示:鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Spheres = pages, arrows = hyperlinks; particles are surfers: with d=0.85 click a random out-link, 15% jump anywhere; the dwell share converges to PageRank — blue bars meeting orange ticks means converged · 3D demo: drag to orbit / scroll to zoom · Space = play/pause">球=网页,箭头=超链接;粒子=冲浪者:每步以 d=0.85 沿链接随机点击、15% 随机跳转;驻留份额收敛 = PageRank,右侧蓝条贴上橙线即收敛 · 3D 交互演示:鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="chart">
+  <div class="chead" data-zh="重要性排名:实测 ⇄ 理论" data-en="Ranking: measured ⇄ theory">重要性排名:实测 ⇄ 理论</div>
+  <div class="cformula">PR(p) = (1−d)/N + d·Σ PR(q)/out(q)</div>
+  <div id="crows"></div>
+  <div id="cnote"></div>
+  <div class="clegend">
+    <span class="lg"><i class="swf"></i><span data-zh="实测驻留份额" data-en="measured dwell">实测驻留份额</span></span>
+    <span class="lg"><i class="swt"></i><span data-zh="理论迭代值" data-en="iterated theory">理论迭代值</span></span>
+  </div>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="点击步数" data-en="clicks">点击步数</span><span class="v l" id="stC">0</span>
+  <span class="k" data-zh="困在死胡同" data-en="trapped">困在死胡同</span><span class="v" id="stStuck">0</span>
+  <span class="k" data-zh="实测 vs 理论" data-en="meas vs theory">实测 vs 理论</span><span class="v" id="stErr">—</span>
+  <span class="k" data-zh="Σ PageRank" data-en="Σ PageRank">Σ PageRank</span><span class="v ok" id="stSum">1.000</span>
+  <span class="k" data-zh="状态" data-en="status">状态</span><span class="v" id="stS">—</span>
+</div>
+
+<div id="panel">
+  <div id="actions">
+    <button class="abtn" id="btnReset" data-zh="重置实验" data-en="Reset run">重置实验</button>
+    <button class="abtn" id="btnDead" data-zh="加一个死胡同页面" data-en="Add a dead-end page">加一个死胡同页面</button>
+  </div>
+  <div class="row"><label data-zh="阻尼因子 d" data-en="damping d">阻尼因子 d</label><input id="d" type="range" min="50" max="99" step="1" value="85"><span class="val" id="dVal">0.85</span></div>
+  <div class="row"><label data-zh="冲浪粒子" data-en="surfers">冲浪粒子</label><input id="n" type="range" min="120" max="700" step="20" value="400"><span class="val" id="nVal">400</span></div>
+  <div class="row"><label data-zh="进度(点击)" data-en="Progress (clicks)">进度(点击)</label><input id="prog" type="range" min="0" max="30000" step="100" value="0"><span class="val" id="progVal">0</span></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div class="row" style="margin-top:0"><label data-zh="速度" data-en="Speed">速度</label><input id="speed" type="range" min="0.2" max="3" step="0.1" value="1"><span class="val" id="speedVal">1.0×</span></div>
+  </div>
+  <div id="toggles">
+    <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+    <label><input id="tglSpin" type="checkbox"> <span data-zh="环绕视角" data-en="auto-orbit">环绕视角</span></label>
+    <label><input id="tglFix" type="checkbox"> <span data-zh="死胡同修复:视作链向全部页面" data-en="dangling fix: link to all pages">死胡同修复:视作链向全部页面</span></label>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../random-walk/" data-zh="同族:随机游走,单步无序" data-en="same family: random walk">同族:随机游走,单步无序</a>
+    <a href="../neural-gradient/" data-zh="同族:迭代收敛到不动点" data-en="same family: iterative fixed points">同族:迭代收敛到不动点</a>
+    <a href="../monty-hall-bayes/" data-zh="延伸:另一种概率直觉" data-en="related: another probability intuition">延伸:另一种概率直觉</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const BG = { dark: 0x0e1420, light: 0xeef1f6 };
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(BG.dark, 20, 44);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(BG[THEME]);
+  scene.fog.color.set(BG[THEME]);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('PageRank 与马尔可夫链', 'PageRank & Markov chains');
+  buildSteps();
+  setPlayLabel();
+  updateDeadBtn();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(6.8, 5.6, 9.0);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.0, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 4;
+controls.maxDistance = 26;
+controls.autoRotateSpeed = 0.5;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.7));
+const key = new THREE.DirectionalLight(0xffffff, 1.6);
+key.position.set(5, 9, 4);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.45);
+fill.position.set(-6, 3, -6);
+scene.add(fill);
+
+const grid = new THREE.GridHelper(26, 26, 0x8899aa, 0x8899aa);
+grid.material.transparent = true;
+grid.material.opacity = 0.13;
+scene.add(grid);
+
+/* ---------------- 材质 / 颜色 ---------------- */
+const M = {
+  edge: new THREE.MeshStandardMaterial({ color: 0x5f7186, roughness: .5, metalness: .1, transparent: true, opacity: .95 }),
+  cone: new THREE.MeshStandardMaterial({ color: 0x93a7bd, roughness: .4, metalness: .1 }),
+  ring: new THREE.MeshBasicMaterial({ color: 0xff5d5d, transparent: true, opacity: .85 }),
+};
+const C_MUTED = new THREE.Color(0x5d7085), C_ACC = new THREE.Color(0x3fb6ff);
+const C_ACT = new THREE.Color(0xffd166), C_TP = new THREE.Color(0x7ee0ff), C_STUCK = new THREE.Color(0xff5d5d);
+
+/* ================= 图:节点=网页,边=超链接 ================= */
+const NODE_POS = [
+  new THREE.Vector3(-2.4, 1.0, -1.6),  // A
+  new THREE.Vector3(-0.7, 1.5, -2.6),  // B
+  new THREE.Vector3(0.9, 1.1, -1.2),   // C
+  new THREE.Vector3(2.6, 0.8, -2.2),   // D
+  new THREE.Vector3(2.2, 1.4, 0.9),    // E
+  new THREE.Vector3(0.6, 0.9, 2.4),    // F
+  new THREE.Vector3(-1.3, 1.3, 1.9),   // G
+  new THREE.Vector3(-3.0, 0.9, 0.5),   // H
+  new THREE.Vector3(3.8, 1.7, 0.4),    // I(死胡同)
+];
+const BASE_EDGES = [[0,1],[0,2],[1,2],[1,7],[2,0],[3,2],[3,0],[4,2],[4,3],[5,4],[5,3],[6,0],[6,5],[7,6]];
+const DEAD_EDGES = [[2,8],[6,8]];
+const nodeGeo = new THREE.SphereGeometry(1, 26, 18);
+const coneGeo = new THREE.ConeGeometry(0.07, 0.22, 10);
+const UP = new THREE.Vector3(0, 1, 0);
+let nodes = [], edgeObjs = [], deadEnd = false, fixOn = false;
+let labelRegistry = [];
+function regLbl(o, text, vis = null) { labelRegistry.push({ o, text, vis }); }
+
+function makeNode(i, dead) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0x5d7085, roughness: .38, metalness: .05, emissive: 0x5d7085, emissiveIntensity: .22 });
+  if (dead) { mat.color.set(0x8a3030); mat.emissive.set(0xff5d5d); mat.emissiveIntensity = .3; }
+  const mesh = new THREE.Mesh(nodeGeo, mat);
+  mesh.position.copy(NODE_POS[i]);
+  mesh.scale.setScalar(0.3);
+  scene.add(mesh);
+  const div = document.createElement('div');
+  div.className = 'lbl' + (dead ? ' bad' : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(NODE_POS[i]).add(new THREE.Vector3(0, 0.75, 0));
+  scene.add(o);
+  const nd = { i, name: String.fromCharCode(65 + i), pos: NODE_POS[i], out: [], mat, mesh, div, o, r: 0.3, share: 1 / 9 };
+  nodes.push(nd);
+  regLbl(o, () => {
+    const tag = (nd.share * 100).toFixed(1) + '%';
+    if (nd.i === 8) return `<b>I</b> ${fixOn ? L('已修复', 'fixed') : L('死胡同', 'dead end')} · ${tag}`;
+    return `<b>${nd.name}</b> ${tag}`;
+  });
+  return nd;
+}
+function addEdgeObj(j, i) {
+  const a = nodes[j].pos, b = nodes[i].pos;
+  const mid = a.clone().lerp(b, .5); mid.y += 0.16 + a.distanceTo(b) * 0.15;
+  const curve = new THREE.QuadraticBezierCurve3(a.clone(), mid, b.clone());
+  const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 22, 0.02, 6, false), M.edge);
+  const cone = new THREE.Mesh(coneGeo, M.cone);
+  cone.position.copy(curve.getPoint(.84));
+  cone.quaternion.setFromUnitVectors(UP, curve.getTangent(.84));
+  scene.add(tube, cone);
+  edgeObjs.push({ j, i, curve, len: a.distanceTo(b), tube, cone });
+}
+function rebuildOut() { nodes.forEach(n => n.out.length = 0); edgeObjs.forEach(e => nodes[e.j].out.push(e.i)); }
+for (let i = 0; i < 8; i++) makeNode(i, false);
+for (const [j, i] of BASE_EDGES) addEdgeObj(j, i);
+rebuildOut();
+
+/* 死胡同修复光环(视作链向所有页面) */
+const fixRing = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.028, 10, 40), M.ring);
+fixRing.rotation.x = Math.PI / 2;
+fixRing.position.copy(NODE_POS[8]);
+fixRing.visible = false;
+scene.add(fixRing);
+function updateFixRing() { fixRing.visible = deadEnd && fixOn; }
+
+/* 悬浮标签:跳转提示 */
+{
+  const div = document.createElement('div');
+  div.className = 'lbl g';
+  const o = new CSS2DObject(div);
+  o.position.set(0, 3.7, 0);
+  scene.add(o);
+  regLbl(o, () => L(`每步 ${(100 * (1 - d)).toFixed(0)}% 概率:随机跳到任意页`,
+                    `each step: ${(100 * (1 - d)).toFixed(0)}% chance to jump anywhere`));
+}
+
+/* ================= 粒子冲浪者(InstancedMesh) ================= */
+const DWELL = 0.22, TP_T = 0.12, TRAVEL = 4.2, PMAX = 700;
+const DW = 0, MV = 1, TO = 2, TI = 3, ST = 4;
+let nParts = clamp(Math.round(qsFloat('n', 400)), 120, PMAX);
+const pGeo = new THREE.SphereGeometry(0.05, 10, 8);
+const pMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .35, metalness: .1 });
+const pMesh = new THREE.InstancedMesh(pGeo, pMat, PMAX);
+pMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+pMesh.frustumCulled = false;
+scene.add(pMesh);
+
+const counts = new Float64Array(9);
+let totalClicks = 0, stuckCount = 0;
+const parts = [];
+function setCol(p, c) {
+  if (p.col === c) return;
+  p.col = c;
+  pMesh.setColorAt(p.idx, c);
+  if (pMesh.instanceColor) pMesh.instanceColor.needsUpdate = true;
+}
+function spawnPart() {
+  const node = (Math.random() * nodes.length) | 0;
+  const p = { idx: parts.length, node, to: -1, state: DW, t: Math.random() * DWELL, u: 0,
+              curve: null, len: 1, pos: nodes[node].pos.clone(), col: null };
+  parts.push(p);
+  setCol(p, C_ACT);
+}
+function resizeParts(n) {
+  n = clamp(n | 0, 120, PMAX);
+  while (parts.length > n) { const p = parts.pop(); if (p.state === ST) stuckCount--; }
+  while (parts.length < n) spawnPart();
+  nParts = n;
+  pMesh.count = n;
+}
+function record(j) { counts[j]++; totalClicks++; }
+function edgeByPair(j, i) { for (const e of edgeObjs) if (e.j === j && e.i === i) return e; return null; }
+function startTp(p) { p.state = TO; p.u = 0; p.pos.copy(nodes[p.node].pos); setCol(p, C_TP); }
+function arrive(p, j) {
+  p.node = j; p.state = DW; p.t = DWELL * (0.75 + Math.random() * 0.5);
+  p.pos.copy(nodes[j].pos);
+  record(j);
+  setCol(p, C_ACT);
+}
+function decide(p) {
+  const out = nodes[p.node].out;
+  if (!out.length) {                       // 死胡同:没有可点的链接
+    if (!fixOn) { p.state = ST; stuckCount++; setCol(p, C_STUCK); return; }
+    startTp(p);                            // Google 的修法:视作链向所有页面 → 均匀跳转
+    return;
+  }
+  if (Math.random() >= d) { startTp(p); return; }
+  p.to = out[(Math.random() * out.length) | 0];
+  const e = edgeByPair(p.node, p.to);
+  if (!e) { arrive(p, p.to); return; }
+  p.curve = e.curve; p.len = e.len; p.state = MV; p.u = 0;
+}
+function updateParticle(p, dts) {
+  if (p.state === DW) {
+    p.t -= dts;
+    if (p.t <= 0) decide(p);
+  } else if (p.state === MV) {
+    p.u += dts * TRAVEL / Math.max(p.len, 0.5);
+    if (p.u >= 1) arrive(p, p.to);
+    else p.curve.getPoint(p.u, p.pos);
+  } else if (p.state === TO) {
+    p.u += dts / TP_T;
+    if (p.u >= 1) { p.to = (Math.random() * nodes.length) | 0; p.state = TI; p.u = 0; p.pos.copy(nodes[p.to].pos); }
+  } else if (p.state === TI) {
+    p.u += dts / TP_T;
+    if (p.u >= 1) arrive(p, p.to);
+  }
+}
+/* 快进:只跑马尔可夫链计数,不动画 */
+function fastForward(target) {
+  let delta = Math.floor(target) - totalClicks;
+  if (delta <= 0 || !parts.length) return;
+  delta = Math.min(delta, 500000);
+  const per = Math.floor(delta / parts.length), rem = delta - per * parts.length;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    let k = per + (i < rem ? 1 : 0);
+    while (k-- > 0) {
+      if (p.state === ST) break;
+      const out = nodes[p.node].out;
+      if (!out.length && !fixOn) { p.state = ST; stuckCount++; setCol(p, C_STUCK); break; }
+      if (out.length && Math.random() < d) record(p.node = out[(Math.random() * out.length) | 0]);
+      else record(p.node = (Math.random() * nodes.length) | 0);
+    }
+    if (p.state !== ST) { p.state = DW; p.t = Math.random() * DWELL; }
+    p.pos.copy(nodes[p.node].pos);
+  }
+}
+
+/* ================= 理论 PageRank(幂迭代) ================= */
+let d = 0.85, dTouched = false;
+let THEORY = new Float64Array(9).fill(1 / 9), theorySum = 1;
+function computeTheory() {
+  const N = nodes.length;
+  const pr = new Float64Array(N).fill(1 / N);
+  for (let it = 0; it < 100; it++) {
+    const nx = new Float64Array(N).fill((1 - d) / N);
+    for (let j = 0; j < N; j++) {
+      const out = nodes[j].out;
+      if (!out.length) {                     // 死胡同列
+        if (fixOn) { const s = d * pr[j] / N; for (let i = 0; i < N; i++) nx[i] += s; }
+        continue;                            // 不修复:概率从这里漏掉
+      }
+      const s = d * pr[j] / out.length;
+      for (const i of out) nx[i] += s;
+    }
+    pr.set(nx);
+  }
+  THEORY = pr;
+  theorySum = 0;
+  for (let i = 0; i < N; i++) theorySum += pr[i];
+  elSum.textContent = theorySum.toFixed(3);
+  elSum.className = 'v ' + (theorySum < 0.999 ? 'bad' : 'ok');
+  if (deadEnd && !fixOn) cnote.textContent = L(
+    `冲浪者最终全部困死在 I;橙线是「不管死胡同」的公式值,Σ 只有 ${theorySum.toFixed(2)}——漏掉的正是掉进洞里的概率。勾上「死胡同修复」。`,
+    `Surfers end up trapped in I; the orange ticks are the naive formula with Σ = ${theorySum.toFixed(2)} — the missing mass fell into the hole. Tick the dangling fix.`);
+}
+
+/* ================= UI 元素 ================= */
+const elPlay = document.getElementById('play');
+const elSpeed = document.getElementById('speed');
+const elSpeedVal = document.getElementById('speedVal');
+const elD = document.getElementById('d');
+const elDVal = document.getElementById('dVal');
+const elN = document.getElementById('n');
+const elNVal = document.getElementById('nVal');
+const progEl = document.getElementById('prog');
+const progVal = document.getElementById('progVal');
+const tglLabels = document.getElementById('tglLabels');
+const tglSpin = document.getElementById('tglSpin');
+const tglFix = document.getElementById('tglFix');
+const stC = document.getElementById('stC'), stStuck = document.getElementById('stStuck'),
+  stErr = document.getElementById('stErr'), elSum = document.getElementById('stSum'),
+  stS = document.getElementById('stS');
+const crowsEl = document.getElementById('crows'), cnote = document.getElementById('cnote');
+const btnReset = document.getElementById('btnReset'), btnDead = document.getElementById('btnDead');
+
+let playing = !qsBool('pause', false);
+if (matchMedia('(prefers-reduced-motion: reduce)').matches && qs.get('pause') === null) playing = false;
+let speed = 1, showLabels = true;
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function updateDeadBtn() {
+  btnDead.textContent = L(deadEnd ? '移除死胡同页面' : '加一个死胡同页面',
+                          deadEnd ? 'Remove the dead-end page' : 'Add a dead-end page');
+}
+function resetExperiment() {
+  counts.fill(0); totalClicks = 0; stuckCount = 0;
+  for (const p of parts) {
+    p.state = DW; p.to = -1; p.t = Math.random() * DWELL;
+    p.node = (Math.random() * nodes.length) | 0;
+    p.pos.copy(nodes[p.node].pos);
+    setCol(p, C_ACT);
+  }
+  progEl.value = 0; progVal.textContent = '0';
+  stErr.textContent = '—';
+}
+function unstickAll() {
+  for (const p of parts) if (p.state === ST) {
+    p.state = DW; p.t = Math.random() * DWELL; stuckCount--; setCol(p, C_ACT);
+  }
+}
+function buildChart() {
+  crowsEl.innerHTML = '';
+  chartRows = nodes.map(n => {
+    const row = document.createElement('div');
+    row.className = 'crow';
+    row.innerHTML = `<span class="cl"${n.i === 8 ? ' style="color:#ff7373"' : ''}>${n.name}</span><div class="track"><div class="fill"></div><div class="tick"></div></div><span class="cv">—</span>`;
+    crowsEl.appendChild(row);
+    return { fill: row.querySelector('.fill'), tick: row.querySelector('.tick'), cv: row.querySelector('.cv') };
+  });
+}
+function addDeadEnd() {
+  if (deadEnd) return;
+  deadEnd = true;
+  makeNode(8, true);
+  for (const [j, i] of DEAD_EDGES) addEdgeObj(j, i);
+  rebuildOut();
+  resetExperiment();
+  computeTheory();
+  buildChart();
+  updateFixRing();
+  updateDeadBtn();
+}
+function removeDeadEnd() {
+  if (!deadEnd) return;
+  deadEnd = false;
+  for (const p of parts) {
+    if (p.node === 8 || p.to === 8) {
+      if (p.state === ST) stuckCount--;
+      p.state = DW; p.to = -1; p.t = Math.random() * DWELL;
+      p.node = (Math.random() * 8) | 0;
+      p.pos.copy(nodes[p.node].pos);
+      setCol(p, C_ACT);
+    }
+  }
+  for (const e of edgeObjs) if (e.i === 8) { scene.remove(e.tube, e.cone); e.tube.geometry.dispose(); }
+  edgeObjs = edgeObjs.filter(e => e.i !== 8);
+  const nd = nodes.pop();
+  scene.remove(nd.mesh, nd.o);
+  nd.o.element.remove();
+  nd.mat.dispose();
+  labelRegistry = labelRegistry.filter(r => r.o !== nd.o);
+  rebuildOut();
+  resetExperiment();
+  computeTheory();
+  buildChart();
+  updateFixRing();
+  updateDeadBtn();
+}
+
+/* ================= 讲解步骤(点击跳相位) ================= */
+const STEPS = [
+  { b: '链接 = 选票', be: 'Links are votes',
+    d: '球 = 网页,箭头 = 超链接。被很多页面链接的页面更重要——但选票不等值:来自重要页面的链接,分量更重。',
+    de: 'Spheres are pages, arrows are hyperlinks. Pages linked by many others matter more — but votes are unequal: a link from an important page weighs more.',
+    act: () => { if (deadEnd) removeDeadEnd(); setD(0.85, false); dTouched = false; resetExperiment(); } },
+  { b: '随机冲浪者 = 马尔可夫链', be: 'Random surfer = Markov chain',
+    d: '每颗粒子每步掷骰子:概率 d 沿出链接随机点一条,概率 1−d 随机跳到任意页(模拟直接输网址的人)。跳转抹平死角,让平稳分布存在且唯一。',
+    de: 'Every step each particle flips a coin: with prob d follow a random out-link, with 1−d jump to any page (the typed-URL surfer). Teleporting removes dead corners so a unique stationary distribution exists.',
+    act: () => { resetExperiment(); } },
+  { b: '驻留份额 ⇒ PageRank', be: 'Dwell share ⇒ PageRank',
+    d: '粒子在哪里停留得久,哪里就重要:蓝条(实测驻留)逐渐压到橙线(公式迭代值)上——蒙特卡洛与迭代解殊途同归,误差读数趋向 0。',
+    de: 'Where particles linger is what matters: blue bars (measured dwell) settle onto orange ticks (iterated formula) — Monte Carlo and the fixed point agree; the error readout goes to 0.',
+    act: () => { playing = true; setPlayLabel(); fastForward(totalClicks + 12000); } },
+  { b: '阻尼 d:信任旋钮', be: 'Damping d: the trust dial',
+    d: 'd 调小 → 跳转更频繁,排名被抹平、趋近均匀 1/N;d → 1 → 全信链接,收敛变慢。Google 论文取 d = 0.85:链接为主、跳转兜底。',
+    de: 'Lower d → more teleporting, ranks flatten toward uniform 1/N; d → 1 → trust links fully, convergence slows. Google chose d = 0.85: links lead, teleport backstops.',
+    act: () => { setD(0.6); } },
+  { b: '死胡同:概率黑洞', be: 'Dead ends: probability black holes',
+    d: '点「加一个死胡同页面」:I 只有入链、没有出链,点进去的粒子永远被困——Σ 掉下 1,排名塌缩。勾上修复,按 Google 的办法:视作链向所有页面。',
+    de: 'Click "add a dead-end page": I has in-links but no out-link, so particles clicking in are trapped forever — Σ drops below 1 and ranks collapse. Tick the fix: Google treats it as linking to every page.',
+    act: () => {
+      if (!deadEnd) addDeadEnd();
+      if (fixOn) { fixOn = false; tglFix.checked = false; }
+      computeTheory(); updateFixRing();
+    } },
+];
+function stepIndex() {
+  if (deadEnd) return 4;
+  if (dTouched) return 3;
+  if (totalClicks > 9000) return 2;
+  if (totalClicks > 400) return 1;
+  return 0;
+}
+const stepsEl = document.getElementById('steps');
+function buildSteps() {
+  stepsEl.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => s.act());
+    stepsEl.appendChild(li);
+  });
+  [...stepsEl.children].forEach((li, i) => li.classList.toggle('on', i === stepIndex()));
+}
+
+/* ================= 控件接线 ================= */
+function setD(v, touched = true) {
+  d = clamp(v, 0.5, 0.99);
+  elD.value = Math.round(d * 100);
+  elDVal.textContent = d.toFixed(2);
+  if (touched) dTouched = true;
+  computeTheory();
+}
+elD.addEventListener('input', () => setD(parseInt(elD.value, 10) / 100));
+elN.addEventListener('input', () => {
+  const n = parseInt(elN.value, 10);
+  resizeParts(n);
+  elNVal.textContent = n;
+});
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elSpeed.addEventListener('input', () => { speed = parseFloat(elSpeed.value); elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+btnReset.addEventListener('click', resetExperiment);
+btnDead.addEventListener('click', () => deadEnd ? removeDeadEnd() : addDeadEnd());
+tglFix.addEventListener('change', () => {
+  fixOn = tglFix.checked;
+  if (fixOn && deadEnd) unstickAll();
+  computeTheory();
+  updateFixRing();
+});
+tglLabels.addEventListener('change', () => { showLabels = tglLabels.checked; });
+tglSpin.addEventListener('change', () => { controls.autoRotate = tglSpin.checked; });
+let progHeld = false;
+progEl.addEventListener('pointerdown', () => { progHeld = true; });
+addEventListener('pointerup', () => { progHeld = false; });
+progEl.addEventListener('input', () => fastForward(parseInt(progEl.value, 10)));
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ================= 状态刷新(8 Hz) ================= */
+let chartRows = [];
+function refreshUI() {
+  const tot = totalClicks, N = nodes.length;
+  stC.textContent = tot.toLocaleString();
+  stStuck.textContent = stuckCount;
+  for (const n of nodes) n.share = tot > 0 ? counts[n.i] / tot : 1 / N;
+  if (tot > 0) {
+    let e = 0;
+    for (const n of nodes) e = Math.max(e, Math.abs(n.share - THEORY[n.i]));
+    stErr.textContent = e.toFixed(3);
+  }
+  for (const n of nodes) {
+    const row = chartRows[n.i];
+    if (!row) continue;
+    row.fill.style.width = (n.share * 100).toFixed(2) + '%';
+    row.tick.style.left = `calc(${(THEORY[n.i] * 100).toFixed(2)}% - 1px)`;
+    row.cv.textContent = tot > 0 ? (n.share * 100).toFixed(1) + '%' : '—';
+  }
+  let txt, cls;
+  if (deadEnd && !fixOn) { txt = L('概率漏水!', 'probability leaking!'); cls = 'bad'; }
+  else if (deadEnd && fixOn) { txt = L('死胡同已修复', 'dead end fixed'); cls = 'ok'; }
+  else { txt = tot > 8000 ? L('已收敛 ✓', 'converged ✓') : L('冲浪中…', 'surfing…'); cls = tot > 8000 ? 'ok' : 'l'; }
+  stS.textContent = txt;
+  stS.className = 'v ' + cls;
+  cnote.style.display = deadEnd && !fixOn ? 'block' : 'none';
+  for (const r of labelRegistry) {
+    r.o.element.innerHTML = r.text();
+    r.o.element.style.display = showLabels ? '' : 'none';
+  }
+  if (!progHeld) {
+    progEl.value = Math.min(tot, parseInt(progEl.max, 10));
+    progVal.textContent = tot.toLocaleString();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...stepsEl.children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+}
+
+/* ================= 主循环(页面隐藏时停 rAF) ================= */
+const clock = new THREE.Clock();
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+let wallT = 0, uiAcc = 1, lastStep = -1, raf = null;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  wallT += dt;
+  const dts = dt * speed;
+  if (playing) for (let i = 0; i < parts.length; i++) updateParticle(parts[i], dts);
+
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    let s = 1;
+    if (p.state === MV) s = 0.85;
+    else if (p.state === TO) s = Math.max(1 - p.u, 0.02);
+    else if (p.state === TI) s = Math.max(p.u, 0.02);
+    else if (p.state === ST) s = 0.75;
+    _s.setScalar(s);
+    _m4.compose(p.pos, _q, _s);
+    pMesh.setMatrixAt(i, _m4);
+  }
+  for (let i = parts.length; i < PMAX; i++) { _m4.makeScale(0.0001, 0.0001, 0.0001); pMesh.setMatrixAt(i, _m4); }
+  pMesh.instanceMatrix.needsUpdate = true;
+
+  let sMin = 1, sMax = 0;
+  for (const n of nodes) { sMin = Math.min(sMin, n.share); sMax = Math.max(sMax, n.share); }
+  const span = Math.max(sMax - sMin, 1e-6);
+  for (const n of nodes) {
+    const k = (n.share - sMin) / span;
+    n.r += (0.24 + 0.34 * k - n.r) * Math.min(1, dt * 3.5);
+    n.mesh.scale.setScalar(n.r);
+    if (!(deadEnd && n.i === 8)) {
+      n.mat.color.lerpColors(C_MUTED, C_ACC, 0.12 + 0.88 * k);
+      n.mat.emissive.copy(n.mat.color).multiplyScalar(0.25);
+    }
+  }
+  if (fixRing.visible) fixRing.scale.setScalar(1 + 0.07 * Math.sin(wallT * 3.2));
+
+  uiAcc += dt;
+  if (uiAcc >= 0.12) { uiAcc = 0; refreshUI(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function loop() { raf = requestAnimationFrame(loop); frame(); }
+function startLoop() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(loop); } }
+function stopLoop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stopLoop() : startLoop());
+
+/* ================= 初始化 / URL 参数 ================= */
+resizeParts(nParts);
+elN.value = nParts;
+elNVal.textContent = nParts;
+buildChart();
+applyTheme();
+buildSteps();
+updateDeadBtn();
+setD(clamp(qsFloat('d', 0.85), 0.5, 0.99), qs.get('d') !== null);
+if (qsBool('dead', false)) addDeadEnd();
+if (qsBool('fix', false)) { fixOn = true; tglFix.checked = true; computeTheory(); updateFixRing(); }
+speed = clamp(qsFloat('speed', 1), 0.2, 3);
+elSpeed.value = speed;
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+showLabels = qsBool('labels', true);
+tglLabels.checked = showLabels;
+tglSpin.checked = qsBool('spin', false);
+controls.autoRotate = tglSpin.checked;
+fastForward(clamp(qsFloat('t', 0), 0, 2000000));
+setPlayLabel();
+applyLang();
+startLoop();
+</script>
+</body>
+</html>
