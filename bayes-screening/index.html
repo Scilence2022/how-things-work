@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>贝叶斯筛查 · 阳性≠患病</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#e0a13f;
+    --bg:#10141b; --panel:rgba(13,17,24,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,24,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-bg:#10141b; --cv-grid:rgba(255,255,255,.07); --cv-axis:rgba(255,255,255,.22);
+    --cv-cursor:rgba(255,255,255,.10); --cv-dim:#77828f; --cv-dim2:#8b97a8;
+    --cv-text:#c7d2de; --cv-pill:rgba(13,17,24,.85);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#b0761f;
+    --bg:#eef1f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-bg:#eef1f6; --cv-grid:rgba(20,35,55,.10); --cv-axis:rgba(20,35,55,.38);
+    --cv-cursor:rgba(20,35,55,.14); --cv-dim:#8593a3; --cv-dim2:#6b7a8a;
+    --cv-text:#33414f; --cv-pill:rgba(255,255,255,.9);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #cv { position: fixed; inset: 0; display: block; }
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 430px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.25); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.2); }
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 5px 16px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 19px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11.5px; color: var(--text2); font-weight: 400; }
+  #stats .v.f { color: #ff9f43; }
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 396px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 13px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 150px); overflow: auto; }
+  #legend { display: flex; gap: 7px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.s { color: #ff8a80; border-color: rgba(255,138,128,.7); }
+  .chip.t { color: #7ee2ae; border-color: rgba(53,208,127,.7); }
+  .chip.f { color: #ffb86b; border-color: rgba(255,159,67,.7); }
+  .chip.n { color: var(--text2); border-color: var(--tool-border); }
+  :root[data-theme="light"] .chip.s { color: #b23b32; border-color: rgba(178,59,50,.7); }
+  :root[data-theme="light"] .chip.t { color: #0f7a44; border-color: rgba(15,122,68,.7); }
+  :root[data-theme="light"] .chip.f { color: #9c6200; border-color: rgba(156,98,0,.7); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 64px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 44px; text-align: right; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #steps { list-style: none; margin-top: 10px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(224,161,63,.12); border-color: rgba(224,161,63,.5); }
+  :root[data-theme="light"] #steps li.on { background: rgba(176,118,31,.10); border-color: rgba(176,118,31,.45); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(128,140,155,.25); color: var(--text3); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12.5px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12.5px; }
+  #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: flex; flex-direction: column; gap: 6px; margin-top: 10px;
+    padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { padding: 9px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #reset { padding: 7px 10px; font-size: 12px; font-weight: 600;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; cursor: pointer; }
+  #reset:hover { border-color: var(--acc); color: var(--acc); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow label { font-size: 12px; color: var(--text2); flex: 0 0 30px; }
+  .crow .val { font-size: 11.5px; color: var(--text3); flex: 0 0 34px; text-align: right; }
+  #toggles { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="title">
+  <h1 data-zh="贝叶斯筛查:阳性 ≠ 患病——99% 灵敏度被基率淹没" data-en="Bayes screening: positive ≠ sick — 99% sensitivity drowned by the base rate">贝叶斯筛查:阳性 ≠ 患病——99% 灵敏度被基率淹没</h1>
+  <div class="sub" data-zh="患病率 0.1% × 灵敏度 99% × 假阳性率 5%:1000 人筛查约 51 人阳性,真患者只有 ~1 人,P(病|阳) ≈ 1.9% · 空格播放/暂停" data-en="Prevalence 0.1%, sensitivity 99%, false positives 5%: screening 1,000 people → ~51 positives, only ~1 truly sick, P(sick|+) ≈ 1.9% · Space = play/pause">患病率 0.1% × 灵敏度 99% × 假阳性率 5%:1000 人筛查约 51 人阳性,真患者只有 ~1 人,P(病|阳) ≈ 1.9% · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="真患者 / 健康" data-en="sick / healthy">真患者 / 健康</span><span class="v" id="stS">—</span>
+  <span class="k" data-zh="检测阳性" data-en="positive tests">检测阳性</span><span class="v" id="stP">—</span>
+  <span class="k" data-zh="P(病|阳)" data-en="P(sick|+)">P(病|阳)</span><span class="v f" id="stV">—</span>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip s" data-zh="真患者" data-en="truly sick">真患者</span>
+    <span class="chip t" data-zh="真阳性(病且阳)" data-en="true positive">真阳性(病且阳)</span>
+    <span class="chip f" data-zh="假阳性(健且阳)" data-en="false positive">假阳性(健且阳)</span>
+    <span class="chip n" data-zh="阴性 / 未测" data-en="negative / untested">阴性 / 未测</span>
+  </div>
+  <ol id="steps"></ol>
+  <div class="row"><label data-zh="患病率" data-en="Prevalence">患病率</label><input id="prev" type="range" min="0.1" max="10" step="0.1" value="0.1"><span class="val" id="prevVal">0.1%</span></div>
+  <div class="row"><label data-zh="灵敏度" data-en="Sensitivity">灵敏度</label><input id="sens" type="range" min="50" max="100" step="1" value="99"><span class="val" id="sensVal">99%</span></div>
+  <div class="row"><label data-zh="假阳性率" data-en="False pos. rate">假阳性率</label><input id="fpr" type="range" min="0.5" max="20" step="0.5" value="5"><span class="val" id="fprVal">5%</span></div>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div class="crow"><label data-zh="速度" data-en="Speed">速度</label><input id="speed" type="range" min="0.2" max="4" step="0.1" value="1"><span class="val" id="speedVal">1.0×</span></div>
+    <div class="crow"><label data-zh="进度" data-en="Phase">进度</label><input id="prog" type="range" min="0" max="4.99" step="0.01" value="0"><span class="val" id="progVal">1/5</span></div>
+    <button id="reset" data-zh="重置参数" data-en="Reset params">重置参数</button>
+  </div>
+  <div id="toggles">
+    <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+    <label><input id="tglFormula" type="checkbox" checked> <span data-zh="公式条" data-en="Formula">公式条</span></label>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../monty-hall-bayes/" data-zh="同族:蒙提霍尔·换门直觉" data-en="same family: Monty Hall">同族:蒙提霍尔·换门直觉</a>
+    <a href="../galton-board/" data-zh="同族:大数定律长出正态" data-en="same family: the bell emerges">同族:大数定律长出正态</a>
+    <a href="../random-walk/" data-zh="同族:随机游走,单步无序" data-en="same family: random walk">同族:随机游走,单步无序</a>
+  </div>
+</div>
+
+<script>
+/* ================= 主题 / 语言（全站共享模式） ================= */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme')
+  || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const PAL = {};
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  const cs = getComputedStyle(htmlEl);
+  for (const [k, v] of Object.entries({ bg:'--cv-bg', grid:'--cv-grid', axis:'--cv-axis',
+      cursor:'--cv-cursor', dim:'--cv-dim', dim2:'--cv-dim2', text:'--cv-text', pill:'--cv-pill', acc:'--acc' }))
+    PAL[k] = cs.getPropertyValue(v).trim();
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('贝叶斯筛查 · 阳性≠患病', 'Bayes Screening · Positive ≠ Sick');
+  buildSteps();
+  setPlayLabel();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ================= 画布（1600×900 虚拟坐标） ================= */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = 1600, H = 900;
+let dpr = 1, vs = 1, vox = 0, voy = 0;
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+  cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  vs = Math.min(innerWidth / W, innerHeight / H);
+  vox = (innerWidth - W * vs) / 2; voy = (innerHeight - H * vs) / 2;
+}
+addEventListener('resize', resize); resize();
+
+/* ================= 工具 ================= */
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+function ss(a, b, x) { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+const FONT = '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif';
+function text(str, x, y, size, color, align = 'left', weight = 500) {
+  ctx.font = `${weight} ${size}px ${FONT}`; ctx.fillStyle = color;
+  ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillText(str, x, y);
+}
+function rrect(x, y, w, h, r, fill, stroke, lw = 1) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function line(x1, y1, x2, y2, color, lw = 1, dash = null) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  ctx.strokeStyle = color; ctx.lineWidth = lw;
+  if (dash) ctx.setLineDash(dash);
+  ctx.stroke(); if (dash) ctx.setLineDash([]);
+}
+function circle(x, y, r, fill, stroke, lw = 1) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function rng(seed) {
+  let s = seed >>> 0 || 1;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+/* ================= 参数与格子状态 ================= */
+const N = 1000, COLS = 50, ROWS = 20;
+const GX = 200, GY = 150, PITCH = 24, CS = 21;
+const GW = COLS * PITCH - (PITCH - CS), GH = ROWS * PITCH - (PITCH - CS);
+const GCX = GX + GW / 2, GCY = GY + GH / 2;
+let tR = 0, wall = 0, playing = true, speed = 1, showLabels = true, showFormula = true;
+let prevPct = 0.1, sensPct = 99, fprPct = 5;
+let state = [], nSick = 1, nTP = 1, nFP = 50, nPos = 51, ppv = 0, tpIdx = 0;
+const C = {
+  neutral: 'rgba(150,163,182,.22)', testedNeg: 'rgba(150,163,182,.12)',
+  sick: '#ff6f61', missed: 'rgba(255,111,97,.16)', tp: '#35d07f', fp: '#ff9f43',
+};
+const f2 = v => String(+v.toFixed(6));
+const pct2 = v => { const x = v * 100; return (x >= 10 ? x.toFixed(1) : x.toFixed(2)) + '%'; };
+const fmtPct = v => (v % 1 ? v.toFixed(1) : String(v)) + '%';
+
+/* 1000 格按期望计数确定性着色:乱序表前 nSick 个为患者(其中前 nTP 个检出),
+   随后 nFP 个健康人误报。0 阴性 1 漏检 2 真阳性 3 假阳性 */
+function computeGrid() {
+  nSick = Math.max(1, Math.round(N * prevPct / 100));
+  nTP = Math.max(1, Math.round(nSick * sensPct / 100));
+  nFP = Math.round((N - nSick) * fprPct / 100);
+  nPos = nTP + nFP;
+  const se = sensPct / 100, p = prevPct / 100, fp = fprPct / 100;
+  ppv = (se * p) / (se * p + fp * (1 - p));
+  const order = Array.from({ length: N }, (_, i) => i);
+  const r = rng(7);
+  for (let i = N - 1; i > 0; i--) {
+    const j = (r() * (i + 1)) | 0;
+    const tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+  }
+  state = new Array(N).fill(0);
+  for (let i = 0; i < nTP; i++) state[order[i]] = 2;
+  for (let i = nTP; i < nSick; i++) state[order[i]] = 1;
+  for (let i = 0; i < nFP; i++) state[order[nSick + i]] = 3;
+  tpIdx = order[0];
+}
+
+/* ================= 步骤(文案随滑块实时重算) ================= */
+const STEPS = [
+  { b: '1000 人,一人一格', be: '1,000 people, one cell each',
+    d: () => L(`患病率 ${fmtPct(prevPct)} 意味着:1000 人里平均只有 ${nSick} 个真患者——这个先验数字叫「基率」,它决定后面的一切。`,
+      `Prevalence ${fmtPct(prevPct)} means about ${nSick} true patient(s) per 1,000 people — the base rate that decides everything downstream.`) },
+  { b: '先按真相染色', be: 'Color by the truth first',
+    d: () => L(`红格是真患者(${nSick} 格),其余 ${N - nSick} 格健康。检测还没开始,谁患病已是事实——检测只能发现它,不能改变它。`,
+      `Red cells are truly sick (${nSick}); the other ${N - nSick} are healthy. The test has not run yet — being sick is already a fact; a test can only reveal it.`) },
+  { b: '全民检测', be: 'Test everyone',
+    d: () => L(`灵敏度 ${fmtPct(sensPct)}:患者几乎必被揪出;假阳性率 ${fmtPct(fprPct)}:健康人里也有同样比例被误判。两股人流同时涌进「阳性」。`,
+      `Sensitivity ${fmtPct(sensPct)} catches the sick; false-positive rate ${fmtPct(fprPct)} wrongly flags healthy people too. Two streams flow into "positive".`) },
+  { b: '阳性大军集合', be: 'The positives assemble',
+    d: () => L(`真阳性 ${nTP} 格 + 假阳性 ${nFP} 格 = 阳性 ${nPos} 格。${fmtPct(fprPct)} 看似很小,但乘上 ${N - nSick} 个健康人,轻易淹没 ${nSick} 个患者。`,
+      `True positives ${nTP} + false positives ${nFP} = ${nPos} positives. ${fmtPct(fprPct)} looks tiny, but times ${N - nSick} healthy people it drowns the ${nSick} real patient(s).`) },
+  { b: '阳性 ≠ 患病', be: 'Positive ≠ sick',
+    d: () => L(`${nPos} 个阳性里只有 ${nTP} 格是真患者:P(病|阳) ≈ ${pct2(ppv)}。低基率把 99% 的灵敏度稀释成不到 2% 的阳性价值——初筛阳性,复检才作数。`,
+      `Only ${nTP} of ${nPos} positives is truly sick: P(sick|+) ≈ ${pct2(ppv)}. A low base rate dilutes 99% sensitivity into <2% positive value — screen positive, then confirm.`) },
+];
+function stepIndex() { return clamp(Math.floor(tR), 0, 4); }
+
+/* ================= 绘制 ================= */
+function drawGrid(t) {
+  const ph = Math.min(4, Math.floor(tR)), loc = tR - ph;
+  const sweep = ph < 2 ? 0 : ph > 2 ? 2 : clamp(loc / 0.72, 0, 1);
+  const dimT = ph === 3 ? lerp(1, 0.22, ss(0, 0.35, loc))
+    : ph === 4 ? lerp(1, 0.12, ss(0, 0.3, loc)) : 1;
+  const fpK = ph === 4 ? lerp(1, 0.55, ss(0, 0.4, loc)) : 1;
+  const outK = ph === 4 ? 1 - ss(0.93, 1, loc) : 1;
+  if (showLabels) text(L('每格 = 1 人 · 共 1000 人', 'each cell = 1 person · N = 1000'),
+    GX + GW, GY + GH + 32, 12.5, PAL.dim, 'right');
+  for (let i = 0; i < N; i++) {
+    const c = i % COLS, r = (i / COLS) | 0;
+    const x = GX + c * PITCH, y = GY + r * PITCH;
+    const st = state[i], sick = st === 1 || st === 2;
+    let fill = C.neutral, stroke = null, a = 1;
+    if (ph === 0) {
+      a = clamp(loc * 2.2 - (c * 0.5 + r) * 0.02, 0, 1);
+    } else if (ph === 1) {
+      if (sick) { fill = C.sick; a = ss(0.06 + c * 0.004, 0.26 + c * 0.004, loc); }
+    } else {
+      const rev = (c + 0.5) / COLS + r * 0.0012 <= sweep;
+      if (rev) {
+        if (st === 2) fill = C.tp;
+        else if (st === 3) fill = C.fp;
+        else if (st === 1) { fill = C.missed; stroke = C.sick; }
+        else fill = C.testedNeg;
+      } else if (sick) fill = C.sick;
+      a = (st === 2) ? 1 : (st === 3) ? fpK : dimT;
+    }
+    a *= outK;
+    if (a <= 0.02) continue;
+    ctx.globalAlpha = a;
+    rrect(x, y, CS, CS, 4.5, fill, stroke, 1.4);
+    const cx = x + CS / 2, cy = y + CS / 2;
+    if (ph === 1 && sick) {
+      const k = ss(0.15, 0.55, loc);
+      if (k > 0 && k < 1) {
+        ctx.globalAlpha = (1 - k) * 0.8 * outK;
+        circle(cx, cy, lerp(12, 34, k), null, C.sick, 2);
+      }
+    }
+    if (ph === 4 && st === 2 && a > 0.5) {
+      ctx.globalAlpha = (0.5 + 0.35 * Math.sin(t * 4.5 + i)) * outK;
+      circle(cx, cy, 13 + 4 * Math.sin(t * 4.5 + i), null, C.tp, 2);
+    }
+  }
+  ctx.globalAlpha = 1;
+  /* 扫描线 */
+  if (ph === 2 && sweep < 1) {
+    const sx = GX + sweep * (GW + 10);
+    ctx.shadowColor = '#7fd0f7'; ctx.shadowBlur = 9;
+    line(sx, GY - 8, sx, GY + GH + 8, '#7fd0f7', 2);
+    ctx.shadowBlur = 0;
+    if (showLabels) text(L('检测中…', 'testing…'), sx + 14, GY - 16, 13, '#7fd0f7', 'left', 700);
+  }
+  /* 招牌瞬间:阳性聚光后,真患者独自发光 */
+  if (ph === 4) {
+    const k = ss(0.18, 0.45, loc);
+    if (k > 0) {
+      const tx = GX + (tpIdx % COLS) * PITCH + CS / 2;
+      const ty = GY + ((tpIdx / COLS) | 0) * PITCH + CS / 2;
+      ctx.globalAlpha = k * outK;
+      line(tx + 10, ty - 8, GCX - 190, GCY - 42, C.tp, 1.5, [5, 4]);
+      ctx.globalAlpha = 1;
+      rrect(GCX - 280, GCY - 52, 560, 96, 16, PAL.pill, PAL.grid, 1);
+      ctx.globalAlpha = k * outK;
+      text(L(`真患者 ${nTP} ÷ 阳性 ${nPos} ≈ ${pct2(ppv)}`, `sick ${nTP} of ${nPos} positives ≈ ${pct2(ppv)}`),
+        GCX, GCY - 6, 26, C.tp, 'center', 700);
+      text(L('阳性 ≠ 患病:基率占坑,复检才作数', 'positive ≠ sick: the base rate rules — confirm, then conclude'),
+        GCX, GCY + 28, 14, PAL.dim2, 'center');
+      ctx.globalAlpha = 1;
+    }
+  }
+  /* 相位字幕 */
+  if (showLabels) {
+    const cap = [
+      L('① 1000 个方块 = 1000 个人,每格一人', '1: 1,000 squares = 1,000 people'),
+      L(`② 真相先行:真患者 ${nSick} 格 vs 健康 ${N - nSick} 格`, `2: the truth first — ${nSick} sick vs ${N - nSick} healthy`),
+      L(`③ 全民检测:灵敏度 ${fmtPct(sensPct)},假阳性率 ${fmtPct(fprPct)}`, `3: test all — sensitivity ${fmtPct(sensPct)}, false-positive ${fmtPct(fprPct)}`),
+      L(`④ 阳性 ${nPos} 格 = 真阳性 ${nTP} + 假阳性 ${nFP}`, `4: positives ${nPos} = true ${nTP} + false ${nFP}`),
+      L(`⑤ P(病|阳) ≈ ${pct2(ppv)}:阳性 ≠ 患病`, `5: P(sick|+) ≈ ${pct2(ppv)} — positive ≠ sick`),
+    ];
+    ctx.globalAlpha = outK;
+    text(cap[ph], GCX, 128, 17, PAL.acc, 'center', 700);
+    ctx.globalAlpha = 1;
+  }
+}
+function drawFormula() {
+  if (!showFormula) return;
+  const ph = Math.min(4, Math.floor(tR)), loc = tR - ph;
+  const se = sensPct / 100, p = prevPct / 100, fp = fprPct / 100;
+  const num = se * p, den = se * p + fp * (1 - p);
+  const fx = 890;
+  if (ph === 4) {
+    ctx.globalAlpha = ss(0, 0.3, loc);
+    rrect(fx - 410, 688, 820, 68, 12, PAL.pill, PAL.acc, 1.2);
+    ctx.globalAlpha = 1;
+  }
+  text(L('P(病|阳) = 灵敏度×患病率 ÷ (灵敏度×患病率 + 假阳性率×(1−患病率))',
+      'P(sick|+) = sens×prev ÷ (sens×prev + FPR×(1−prev))'), fx, 716, 13, PAL.dim2, 'center');
+  text(`= ${f2(se)}×${f2(p)} ÷ (${f2(se)}×${f2(p)} + ${f2(fp)}×${f2(1 - p)}) = ${f2(num)} ÷ ${f2(den)} ≈ ${pct2(ppv)}`,
+    fx, 748, 16, PAL.acc, 'center', 700);
+}
+function draw(t) {
+  ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
+  drawGrid(t);
+  drawFormula();
+}
+
+/* ================= 读数面板 ================= */
+const stS = document.getElementById('stS'), stP = document.getElementById('stP'),
+  stV = document.getElementById('stV');
+function updateStats() {
+  stS.textContent = `${nSick} / ${N - nSick}`;
+  stP.innerHTML = `${nPos}<small> 格 · ${L('真', 'T')}${nTP}+${L('假', 'F')}${nFP}</small>`;
+  stV.innerHTML = `${pct2(ppv)}<small> ≈ ${nTP}/${nPos}</small>`;
+}
+
+/* ================= UI / 主循环 ================= */
+const elPlay = document.getElementById('play');
+const elSpeed = document.getElementById('speed');
+const elSpeedVal = document.getElementById('speedVal');
+const elProg = document.getElementById('prog');
+const elProgVal = document.getElementById('progVal');
+const elPrev = document.getElementById('prev'), elPrevVal = document.getElementById('prevVal');
+const elSens = document.getElementById('sens'), elSensVal = document.getElementById('sensVal');
+const elFpr = document.getElementById('fpr'), elFprVal = document.getElementById('fprVal');
+const elReset = document.getElementById('reset');
+const elSteps = document.getElementById('steps');
+const tglLabels = document.getElementById('tglLabels');
+const tglFormula = document.getElementById('tglFormula');
+
+function buildSteps() {
+  elSteps.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${s.d()}</span>`;
+    li.addEventListener('click', () => { tR = i + 0.001; elProg.value = tR; elProgVal.textContent = `${i + 1}/5`; });
+    elSteps.appendChild(li);
+  });
+  [...elSteps.children].forEach((li, i) => li.classList.toggle('on', i === stepIndex()));
+}
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function syncParamUI() {
+  elPrev.value = prevPct; elPrevVal.textContent = fmtPct(prevPct);
+  elSens.value = sensPct; elSensVal.textContent = fmtPct(sensPct);
+  elFpr.value = fprPct; elFprVal.textContent = fmtPct(fprPct);
+}
+function onParam() { computeGrid(); updateStats(); buildSteps(); }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elSpeed.addEventListener('input', () => { speed = parseFloat(elSpeed.value); elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elProg.addEventListener('input', () => {
+  tR = parseFloat(elProg.value);
+  elProgVal.textContent = (Math.floor(tR) + 1) + '/5';
+});
+elPrev.addEventListener('input', () => { prevPct = parseFloat(elPrev.value); syncParamUI(); onParam(); });
+elSens.addEventListener('input', () => { sensPct = parseFloat(elSens.value); syncParamUI(); onParam(); });
+elFpr.addEventListener('input', () => { fprPct = parseFloat(elFpr.value); syncParamUI(); onParam(); });
+elReset.addEventListener('click', () => { prevPct = 0.1; sensPct = 99; fprPct = 5; syncParamUI(); onParam(); });
+tglLabels.addEventListener('change', () => { showLabels = tglLabels.checked; });
+tglFormula.addEventListener('change', () => { showFormula = tglFormula.checked; });
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); elPlay.click(); }
+  if (e.code === 'ArrowLeft') { tR = Math.max(0, Math.floor(tR) - 1 + 0.001); elProg.value = tR; }
+  if (e.code === 'ArrowRight') { tR = Math.min(4.999, Math.floor(tR) + 1 + 0.001); elProg.value = tR; }
+});
+
+/* URL 参数:?t= 0–1 初始进度 ?pause=1 ?speed= ?labels=0 ?formula=0
+   页面专属 ?prev= ?sens= ?fpr=(百分数) */
+prevPct = clamp(qsFloat('prev', 0.1), 0.1, 10);
+sensPct = clamp(qsFloat('sens', 99), 50, 100);
+fprPct = clamp(qsFloat('fpr', 5), 0.5, 20);
+speed = clamp(qsFloat('speed', 1), 0.2, 4);
+elSpeed.value = speed; elSpeedVal.textContent = speed.toFixed(1) + '×';
+showLabels = qsBool('labels', true); tglLabels.checked = showLabels;
+showFormula = qsBool('formula', true); tglFormula.checked = showFormula;
+playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+tR = clamp(qsFloat('t', 0), 0, 0.999) * 5;
+
+let last = performance.now(), rafId = 0, running = false;
+function frame(now) {
+  rafId = requestAnimationFrame(frame);
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  if (playing) {
+    wall += dt * speed;
+    tR += dt * speed / 3.5;
+    if (tR >= 5) tR -= 5;
+    elProg.value = tR;
+    elProgVal.textContent = (Math.floor(tR) + 1) + '/5';
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, innerWidth, innerHeight);
+  ctx.setTransform(vs * dpr, 0, 0, vs * dpr, vox * dpr, voy * dpr);
+  draw(wall);
+  [...elSteps.children].forEach((li, i) => li.classList.toggle('on', i === stepIndex()));
+}
+function setRunning(r) {
+  if (r && !running) { running = true; last = performance.now(); rafId = requestAnimationFrame(frame); }
+  else if (!r && running) { running = false; cancelAnimationFrame(rafId); }
+}
+document.addEventListener('visibilitychange', () => setRunning(!document.hidden));
+
+applyTheme();
+applyLang();
+syncParamUI();
+computeGrid();
+updateStats();
+setRunning(!document.hidden);
+</script>
+</body>
+</html>

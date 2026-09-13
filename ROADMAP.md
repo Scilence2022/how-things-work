@@ -1,6 +1,6 @@
 # ROADMAP · 选题库与路线规划 v2
 
-> 已完成 **122 页**（三维 117 / 二维 5，见 [README](./README.md)）。**Phase 11 地球系统全部收官(10/10),下一步进入 Phase 12 天文与时空。**
+> 已完成 **130 页**（三维 120 / 二维 10，见 [README](./README.md)）。**Phase 13 计算与信息收官(8/8),下一步进入 Phase 14 日常科技。**
 > 本文档回答三个问题：**下一个动画做什么、为什么、用什么技术做。**
 > v2 核心调整：① 技术基线切换为 **3D 优先**；② 选题库扩至 **100+ 页**、按「家族闭环」分 13 个 Phase 推进；③ 站点工程（搜索/互链/3D 体验）同步升级。
 
@@ -15,8 +15,8 @@
 
 ## 二、现状盘点（2026-09）
 
-- **已完成 116 页**：机械机构 14 / 化学原理 26 / 生物原理 29 / 物理天文 40 / 数学计算机 7。
-- **技术栈分布**：Three.js r0.170（importmap + CDN）117 页；Canvas 2D 5 页（全部属 2D 白名单，见 §四）。v2 批次(角动量/陀螺/p-n 结/燃料电池 + 渗透/神经网络/排序/RSA)全部带页面底部「相关」互链。
+- **已完成 130 页**：机械机构 14 / 化学原理 26 / 生物原理 29 / 物理天文 46 / 数学计算机 15。
+- **技术栈分布**：Three.js r0.170（importmap + CDN）120 页；Canvas 2D 10 页（全部属 2D 白名单，见 §四）。v2 批次(角动量/陀螺/p-n 结/燃料电池 + 渗透/神经网络/排序/RSA)全部带页面底部「相关」互链。
 - **在途**：无。Phase 2-11 全部收官,Phase 11 地球系统 10/10。
 - **站点**：首页按领域分节卡片 + 双语描述；README 逐页「看什么/怎么玩」；三处登记义务（README / index / ROADMAP）+ v2 新增第 4 处(页面底部互链)。
 
@@ -48,7 +48,7 @@
 ## 四、技术基线 v2：3D 优先策略
 
 - **默认 Three.js r0.170**：`importmap` 指向 jsdelivr CDN（`three` + `three/addons/`），module script 单文件内联，与 motor-generator / differential 等现有 3D 页同构。
-- **2D 白名单**：只有纯平面图表才允许 Canvas 2D。现存页白名单 = `rsa-crypto`、`fourier-series`、`monty-hall-bayes`、`activation-energy`、`titration-curve`（曲线/树/数字本位）；规划页白名单保持 `taylor-series`、`huffman-coding`、`bayes-screening`、`error-correction`、`fractals` 不变。其余新页一律 3D。
+- **2D 白名单**：只有纯平面图表才允许 Canvas 2D。现存页白名单 = `rsa-crypto`、`fourier-series`、`monty-hall-bayes`、`activation-energy`、`titration-curve`、`error-correction`、`huffman-coding`、`bayes-screening`、`fractals`、`taylor-series`（曲线/树/数字本位）；规划页白名单 5 页已全部上线并入上列。其余新页一律 3D。
 - **3D 通用骨架**：OrbitControls（带阻尼，默认可拖）；三灯（ambient + key + rim）；双语文本用 canvas 贴图 sprite（沿用 `data-zh`/`data-en` 语义）；材质配色遵循全站双主题 CSS 变量的同款调色板。
 - **性能预算**：≤60 KB/页；粒子系统必须 `InstancedMesh` 且按设备降档；`devicePixelRatio` 钳制 ≤2；`document.hidden` 时自动停 rAF；`prefers-reduced-motion` 默认暂停。
 - **✅ 存量 2D 升级已完成（2026-09）**：16 页按本判据重建为 3D——卡诺循环、电磁感应、多普勒、开普勒轨道、伽尔顿板（原远期候选 5 页）+ dna-replication、transcription、translation-ribosome、synaptic-transmission、action-potential、sodium-potassium-pump、electron-transport-chain、photosynthesis-z-scheme、calvin-cycle、cross-bridge-cycle、hemoglobin-mwc（空间关系承载因果的分子/膜机器 11 页）。剩余 5 个 2D 页全部为平面图表本位，正式转入白名单。
@@ -215,7 +215,7 @@
 5. **光钟与时间膨胀 —— `time-dilation/`**：光在运动光钟里走斜线→每秒变长；μ 子为什么能到达地面；GPS 卫星钟每天快 38 μs。招牌：静止/运动双光钟并排。~45 KB。
 6. **时空弯曲 —— `spacetime-curvature/`**：质量让网格下陷，行星沿测地线绕行；引力透镜=光也走测地线。招牌：橡胶膜+测地线轨迹实时。~50 KB。
 
-## 十六、Phase 13 · 计算与信息（8 页；2D 白名单 3 页）
+## 十六、Phase 13 · 计算与信息（8 页：3D×3 + 2D 白名单×5）—— ✅ 全部收官(8/8)
 
 1. **导航与最短路径 —— `shortest-path/`**：Dijkstra 逐步松弛（波纹扩散）→A* 加启发式直奔目标；实时路况=边权更新。招牌：3D 城市路网算法波前推进。3D。~50 KB。
 2. **PageRank 与马尔可夫链 —— `pagerank/`**：随机点击游走，停稳后的驻留概率=重要性；阻尼因子防死胡同。招牌：3D 网图粒子游走密度收敛成排名柱状图。3D。~45 KB。
