@@ -142,7 +142,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] Microwave oven (2.45 GHz flips water dipoles; cavity standing waves create hot/cold spots; turntable evens them) ✅ **microwave-oven/**
 - [x] Capacitive touchscreen (crossed ITO electrodes, fingertip draws charge, row-column scans resolve coordinates) ✅ **touch-screen/**
 - [x] GPS positioning (four pseudorange spheres, clock bias solved, relativity corrections keep it from drifting) ✅ **gps/**
-- [x] Transistors to adders (MOSFET as a gate → logic gates → 4-bit ripple-carry adder) ✅ **transistor-adder/**
+- [x] Transistors to adders (MOSFET as a gate → logic gates → 8-bit ripple-carry adder) ✅ **transistor-adder/**
 - [x] Fiber optics (core-cladding index gap keeps light bouncing; single-mode avoids modal dispersion) ✅ **fiber-optics/**
 - [x] Camera sensor (photons through microlenses, Bayer filter and photodiodes become color pixels) ✅ **camera-sensor/**
 - [x] Anti-lock brakes (slip 10–20 % keeps grip and steering; 15 Hz pulse-release valve control) ✅ **abs-brakes/**
@@ -174,7 +174,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 
 #### Transistors to adders — gates build calculation
 
-- **What you see**: MOSFET channels open and close to make logic gates; gates assemble XOR, the half-adder, and a 4-bit ripple-carry adder, with carries rippling level by level.
+- **What you see**: MOSFET channels open and close to make logic gates; gates assemble XOR, the half-adder, and an 8-bit ripple-carry adder, with carries rippling level by level.
 - **How to play**: toggle the A and B inputs, run beat-by-beat or auto, and watch the camera fly from the nanoscale transistor to the gate-level circuit and the 5 + 3 = 8 carry chain.
 - **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
 

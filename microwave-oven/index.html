@@ -352,6 +352,17 @@ const cellT = new Float32Array(NCELL).fill(20);
     i++;
   }
 }
+/* 邻接表:黄油内部导热(冷热斑被逐渐匀化的原因之一) */
+const cellNbr = [];
+for (let i = 0; i < NCELL; i++) cellNbr.push([]);
+for (let ix = 0; ix < NX; ix++) for (let iz = 0; iz < NZ; iz++) {
+  const i = ix * NZ + iz;
+  if (ix > 0) cellNbr[i].push(i - NZ);
+  if (ix < NX - 1) cellNbr[i].push(i + NZ);
+  if (iz > 0) cellNbr[i].push(i - 1);
+  if (iz < NZ - 1) cellNbr[i].push(i + 1);
+}
+const cellD = new Float32Array(NCELL);
 
 /* 水分子偶极箭头(悬在黄油上方的放大示意层) */
 const arrowGrp = new THREE.Group();
@@ -534,6 +545,11 @@ elSpeed.addEventListener('input', () => { speed = parseFloat(elSpeed.value); elS
 elPower.value = watts;
 elPowerVal.textContent = watts.toFixed(0) + ' W';
 elPower.addEventListener('input', () => { watts = parseFloat(elPower.value); elPowerVal.textContent = watts.toFixed(0) + ' W'; });
+const elProg = document.getElementById('prog'), elProgVal = document.getElementById('progVal');
+let scrub = false;
+elProg.addEventListener('pointerdown', () => { scrub = true; });
+addEventListener('pointerup', () => { scrub = false; });
+elProg.addEventListener('input', () => { tNar = parseFloat(elProg.value) * DUR; curPhase = -1; });
 btnTurn.addEventListener('click', () => setTurn(!turn));
 document.getElementById('btnReset').addEventListener('click', resetButter);
 tglLabels.addEventListener('change', () => {
@@ -576,6 +592,7 @@ function frame() {
   /* 相位推进 */
   const p = Math.floor(tNar / DUR) % 5;
   if (p !== curPhase) { curPhase = p; applyPhase(p); }
+  if (!scrub) elProg.value = ((tNar / DUR) % 5).toFixed(2);
   em.b = lerp(em.b, emT.b, Math.min(1, dt * 2.5));
   em.f = lerp(em.f, emT.f, Math.min(1, dt * 2.5));
   em.d = lerp(em.d, emT.d, Math.min(1, dt * 2.5));
@@ -629,40 +646,50 @@ function frame() {
   arrowGrp.scale.setScalar(0.85 + 0.3 * em.d);
   lblDip.element.style.display = tglDip.checked && tglLabels.checked ? '' : 'none';
 
-  /* 黄油加热:P ∝ E²,熔斑、温差 */
-  let sum = 0, mn = 1e9, mx = -1e9;
+  /* 黄油加热:P ∝ E²(波腹强、波节零),内部导热缓慢匀化;熔点≈32°C */
+  if (playing) {
+    for (let i = 0; i < NCELL; i++) {
+      const xw = (BX + cellPos[i][0]) * cth + (BZ + cellPos[i][1]) * sth;
+      const env = envAt(xw);
+      cellD[i] = 4.2 * pow01 * env * env - 0.015 * (cellT[i] - 20);
+    }
+    for (let i = 0; i < NCELL; i++) {
+      let s = 0;
+      for (const j of cellNbr[i]) s += cellT[j];
+      cellT[i] += (cellD[i] + 0.08 * (s / cellNbr[i].length - cellT[i])) * dts;
+    }
+  }
+  let sum = 0, cold = 0;
   for (let i = 0; i < NCELL; i++) {
-    const xw = (BX + cellPos[i][0]) * cth + (BZ + cellPos[i][1]) * sth;
-    const env = envAt(xw);
-    if (playing) cellT[i] += (4.2 * pow01 * env * env - 0.015 * (cellT[i] - 20)) * dts;
     const T = cellT[i];
-    sum += T; if (T < mn) mn = T; if (T > mx) mx = T;
-    const melt = clamp((T - 48) / 12, 0, 1);
+    sum += T; if (T < 32) cold++;
+    const melt = clamp((T - 32) / 8, 0, 1);
     const sy = 1 - 0.45 * melt;
     dummy.position.set(cellPos[i][0], 0.09 * sy, cellPos[i][1]);
     dummy.scale.set(1, sy, 1);
     dummy.updateMatrix();
     cells.setMatrixAt(i, dummy.matrix);
-    const h = clamp((T - 20) / 60, 0, 1);
+    const h = clamp((T - 20) / 35, 0, 1);
     tmpC.copy(cCold).lerp(cWarm, Math.min(1, h * 1.6));
     if (h > 0.6) tmpC.lerp(cHot, (h - 0.6) / 0.4);
     cells.setColorAt(i, tmpC);
   }
   cells.instanceMatrix.needsUpdate = true;
   if (cells.instanceColor) cells.instanceColor.needsUpdate = true;
-  const avg = sum / NCELL, dT = mx - mn;
+  const avg = sum / NCELL;
 
   /* 状态与读数 */
   lblStatus.element.textContent = L(...PHASE_TXT[curPhase < 0 ? 0 : curPhase]);
   stT.innerHTML = avg.toFixed(0) + '<small> °C</small>';
-  stD.innerHTML = dT.toFixed(0) + '<small> °C</small>';
-  stD.className = 'v ' + (dT > 15 ? 'hot' : 'g');
+  stD.innerHTML = cold + '<small> 块</small>';
+  stD.className = 'v ' + (cold > 8 ? 'hot' : 'g');
   const prog = clamp((avg - 20) / 50, 0, 1);
   heatFill.style.width = (prog * 100).toFixed(0) + '%';
   heatPct.textContent = (prog * 100).toFixed(0) + '%';
 
   if (curPhase !== lastStep) {
     lastStep = curPhase;
+    elProgVal.textContent = (curPhase + 1) + '/5';
     [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === curPhase));
   }
   controls.update();
