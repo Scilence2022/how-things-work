@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPS 定位 · 四个球面找到你</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4cc9f0;
+    --bg:#05070d; --panel:rgba(13,17,24,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,24,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,24,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#0e7490;
+    --bg:#e0e9f3; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.a { border-color: rgba(255,209,102,.9); color: #ffe9a8; }
+  .lbl.p2 { border-color: rgba(244,143,177,.9); color: #f8c9da; }
+  .lbl.g { border-color: rgba(67,209,124,.9); color: #c9f3da; }
+  .lbl.v { border-color: rgba(195,155,211,.9); color: #e6d4f0; }
+  .lbl.b { border-color: rgba(127,208,247,.9); color: #bfe4fb; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.a { color: #9c6f00; }
+  :root[data-theme="light"] .lbl.p2 { color: #b25976; }
+  :root[data-theme="light"] .lbl.g { color: #2f9e5c; }
+  :root[data-theme="light"] .lbl.v { color: #7d3c98; }
+  :root[data-theme="light"] .lbl.b { color: #0c7ba6; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(200,60,60,.9); color: #b83232; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  :root[data-theme="light"] #title h1 { text-shadow: none; }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  :root[data-theme="light"] #title .sub { text-shadow: none; }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 11px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 19px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11.5px; color: var(--text2); font-weight: 400; }
+  #stats .v.g { color: #43d17c; }
+  :root[data-theme="light"] #stats .v.g { color: #2f9e5c; }
+  #stats .v.hot { color: #ff8787; }
+  :root[data-theme="light"] #stats .v.hot { color: #c92a2a; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 380px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(255,93,93,.7); background: rgba(255,93,93,.10); color: #ffc2c2; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(200,60,60,.7); color: #b83232; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 76px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 62px; text-align: right; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(76,201,240,.10); border-color: rgba(76,201,240,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(14,116,144,.08); border-color: rgba(14,116,144,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12.5px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12.5px; }
+  #steps li.on .t b { color: #8fdcf7; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="GPS 定位:四个球面找到你" data-en="GPS: how four spheres find you">GPS 定位:四个球面找到你</h1>
+  <div class="sub" data-zh="每颗卫星广播发射时刻与轨道;伪距 ρ = c·Δt 画出以卫星为心的球面——三球定位置,第四颗解钟差;星载原子钟每天被相对论拨快 38 μs · 空格播放/暂停 · 拖动发光标记移动接收机" data-en="Each satellite broadcasts its transmit time and orbit; pseudorange ρ = c·Δt draws a sphere around it — three spheres locate you, the fourth solves your clock; relativity speeds satellite clocks 38 μs/day · Space = play/pause · drag the glowing marker">每颗卫星广播发射时刻与轨道;伪距 ρ = c·Δt 画出以卫星为心的球面——三球定位置,第四颗解钟差;星载原子钟每天被相对论拨快 38 μs · 空格播放/暂停 · 拖动发光标记移动接收机</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="伪距 ρ(均值)" data-en="pseudorange ρ (mean)">伪距 ρ(均值)</span><span class="v" id="stRho">—</span>
+  <span class="k" data-zh="接收机钟差" data-en="receiver clock offset">接收机钟差</span><span class="v" id="stClk">—</span>
+  <span class="k" data-zh="定位误差" data-en="position error">定位误差</span><span class="v g" id="stErr">—</span>
+</div>
+
+<div id="panel">
+  <div id="actions">
+    <button class="abtn" id="btnFix" data-zh="彩蛋:关掉相对论修正" data-en="easter egg: disable relativity correction">彩蛋:关掉相对论修正</button>
+  </div>
+  <div class="row"><label data-zh="时间快进" data-en="time-lapse">时间快进</label><input id="warp" type="range" min="1" max="40" step="1" value="6"><span class="val" id="warpVal">3.0 天/秒</span></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div class="row"><label data-zh="速度" data-en="Speed">速度</label><input id="speed" type="range" min="0.2" max="3" step="0.1" value="1"><span class="val" id="speedVal">1.0×</span></div>
+    <div class="row"><label data-zh="脉冲相位" data-en="pulse phase">脉冲相位</label><input id="phase" type="range" min="0" max="1000" step="1" value="0"><span class="val" id="phaseVal">0.00</span></div>
+  </div>
+  <div id="toggles">
+    <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+    <label><input id="tglOrbits" type="checkbox" checked> <span data-zh="轨道线" data-en="orbit lines">轨道线</span></label>
+    <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../time-dilation/" data-zh="钟为什么快:时间膨胀" data-en="why clocks run fast: time dilation">钟为什么快:时间膨胀</a>
+    <a href="../orbital-mechanics/" data-zh="卫星轨道:开普勒定律" data-en="the orbits: Kepler's laws">卫星轨道:开普勒定律</a>
+    <a href="../spacetime-curvature/" data-zh="广义那一半:时空弯曲" data-en="the GR half: curved spacetime">广义那一半:时空弯曲</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const easeOut = x => 1 - Math.pow(1 - x, 3);
+const easeIO = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const fmt = x => Math.round(x).toLocaleString('en-US');
+const fmtDist = km => km >= 10 ? fmt(km) + ' km' : fmt(km * 1000) + ' m';
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+let sphAlpha = 1;   // 浅色主题下球面更不透明,保证可读
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xe0e9f3 : 0x05070d);
+  sphAlpha = THEME === 'light' ? 1.7 : 1;
+  starMat.opacity = THEME === 'dark' ? 0.7 : 0;
+  earthM.color.set(THEME === 'light' ? 0x7fa8d9 : 0x1c4a7a);
+  gridM.opacity = THEME === 'dark' ? 0.13 : 0.22;
+  halo.material.opacity = THEME === 'dark' ? 0.55 : 0.3;
+  rxDot.material.color.set(THEME === 'light' ? 0x0e7490 : 0x4cc9f0);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('GPS 定位 · 四个球面找到你', 'GPS · Four Spheres Find You');
+  for (const r of labelRegistry) r.o.element.textContent = r.text();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 200);
+camera.position.set(5.6, 3.8, 9.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.8;
+controls.maxDistance = 24;
+controls.autoRotateSpeed = 0.4;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.6));
+const key = new THREE.DirectionalLight(0xffffff, 1.8);
+key.position.set(6, 8, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.4);
+fill.position.set(-6, 3, -5);
+scene.add(fill);
+
+/* 星空 */
+const starMat = new THREE.MeshBasicMaterial({ color: 0xcfd8ea, transparent: true, opacity: 0.7 });
+{
+  const g = new THREE.IcosahedronGeometry(0.05, 0);
+  const stars = new THREE.InstancedMesh(g, starMat, 240);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  for (let i = 0; i < 240; i++) {
+    const a = Math.random() * Math.PI * 2, b = Math.acos(2 * Math.random() - 1), r = 20 + Math.random() * 22;
+    p.set(Math.sin(b) * Math.cos(a) * r, Math.cos(b) * r, Math.sin(b) * Math.sin(a) * r);
+    const k = 0.5 + Math.random() * 1.2;
+    s.set(k, k, k);
+    m.compose(p, q, s);
+    stars.setMatrixAt(i, m);
+  }
+  scene.add(stars);
+}
+
+function glowTexture(stops) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  for (const [o, col] of stops) grd.addColorStop(o, col);
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+
+/* ---------------- 地球 ---------------- */
+const earthM = new THREE.MeshStandardMaterial({ color: 0x1c4a7a, roughness: 0.85, metalness: 0.05 });
+const earth = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), earthM);
+scene.add(earth);
+const gridM = new THREE.MeshBasicMaterial({ color: 0x8fb8dd, wireframe: true, transparent: true, opacity: 0.13 });
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.002, 36, 24), gridM));
+const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowTexture([[0, 'rgba(140,190,255,.5)'], [0.55, 'rgba(110,170,255,.16)'], [1, 'rgba(110,170,255,0)']]),
+  blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
+halo.scale.set(2.75, 2.75, 1);
+scene.add(halo);
+
+/* ================= 物理尺度(1 世界单位 = 6371 km) ================= */
+const KM = 6371;                  // 世界距离 × KM = km
+const WKM = 1 / KM;               // km × WKM = 世界距离
+const C_KMS = 299792.458;         // 光速 km/s
+const SAT_R = 26560 * WKM;        // 轨道半径(距地心 26,560 km,高度 20,189 km)
+const B_RX_S = 0.002;             // 接收机钟差 2 ms
+const B_RX_W = C_KMS * B_RX_S * WKM;  // ≈ 600 km(世界单位)
+const DRIFT_KM_D = 11.4;          // 38 μs/天 × c ≈ 11.4 km/天
+
+/* ---------------- 卫星(4 颗,55° 倾角圆轨道) ---------------- */
+const D2R = Math.PI / 180;
+const OMEGA = 2 * Math.PI / 45;   // 视觉周期 45 s(真实 11 h 58 m)
+const SATS = [
+  { c: 0xffd166, cls: 'a',  inc: 55 * D2R, node: 0.4, ph0: 0.6 },
+  { c: 0xf48fb1, cls: 'p2', inc: 55 * D2R, node: 2.0, ph0: 2.9 },
+  { c: 0x43d17c, cls: 'g',  inc: 55 * D2R, node: 3.7, ph0: 4.6 },
+  { c: 0xc39bd3, cls: 'v',  inc: 55 * D2R, node: 5.2, ph0: 1.8 },
+];
+function satAngle(s, th, out) {
+  const cN = Math.cos(s.node), sN = Math.sin(s.node);
+  const cI = Math.cos(s.inc), sI = Math.sin(s.inc);
+  const c = Math.cos(th), sn = Math.sin(th);
+  return out.set(c * cN - sn * sN * cI, sn * sI, c * sN + sn * cN * cI).multiplyScalar(SAT_R);
+}
+const sphGeo = new THREE.SphereGeometry(1, 40, 28);
+const pulseGeo = new THREE.SphereGeometry(0.028, 8, 6);
+const satGrps = [], sphSolid = [], sphWire = [], pulses = [], rangeLines = [], orbitLines = [];
+SATS.forEach((s, i) => {
+  const grp = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.14),
+    new THREE.MeshStandardMaterial({ color: s.c, roughness: 0.4, metalness: 0.3, emissive: s.c, emissiveIntensity: 0.5 }));
+  grp.add(body);
+  const panelM = new THREE.MeshStandardMaterial({ color: 0x5f7a99, roughness: 0.35, metalness: 0.6 });
+  for (const side of [-1, 1]) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.005, 0.22), panelM);
+    p.position.x = side * 0.1;
+    grp.add(p);
+  }
+  scene.add(grp);
+  satGrps.push(grp);
+  /* 伪距球面(实心壳 + 线框) */
+  const solid = new THREE.Mesh(sphGeo, new THREE.MeshBasicMaterial({ color: s.c, transparent: true, opacity: 0.055,
+    side: THREE.DoubleSide, depthWrite: false }));
+  const wire = new THREE.Mesh(sphGeo, new THREE.MeshBasicMaterial({ color: s.c, transparent: true, opacity: 0.1,
+    wireframe: true, depthWrite: false }));
+  solid.visible = wire.visible = false;
+  scene.add(solid, wire);
+  sphSolid.push(solid); sphWire.push(wire);
+  /* 信号脉冲(3 个/星) */
+  const arr = [];
+  for (let j = 0; j < 3; j++) {
+    const d = new THREE.Mesh(pulseGeo, new THREE.MeshBasicMaterial({ color: s.c, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false }));
+    scene.add(d);
+    arr.push(d);
+  }
+  pulses.push(arr);
+  /* 卫星→接收机 连线(步骤 1) */
+  const rl = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+    new THREE.LineBasicMaterial({ color: s.c, transparent: true, opacity: 0.35 }));
+  scene.add(rl);
+  rangeLines.push(rl);
+  /* 轨道线 */
+  const pts = [];
+  for (let k = 0; k < 128; k++) pts.push(satAngle(s, k / 128 * Math.PI * 2, new THREE.Vector3()));
+  const ol = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: s.c, transparent: true, opacity: 0.22 }));
+  scene.add(ol);
+  orbitLines.push(ol);
+});
+
+/* ---------------- 接收机 / 解算位置 ---------------- */
+let rxLat = 0.42, rxLon = 0.9;
+const rxGrp = new THREE.Group();
+const rxDot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshBasicMaterial({ color: 0x4cc9f0 }));
+const rxHandle = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+const rxRing = new THREE.Mesh(new THREE.RingGeometry(0.055, 0.07, 40),
+  new THREE.MeshBasicMaterial({ color: 0x4cc9f0, transparent: true, opacity: 0.75, side: THREE.DoubleSide }));
+rxRing.rotation.x = -Math.PI / 2;
+rxGrp.add(rxDot, rxHandle, rxRing);
+scene.add(rxGrp);
+const estDot = new THREE.Mesh(new THREE.SphereGeometry(0.04, 14, 10),
+  new THREE.MeshBasicMaterial({ color: 0xff5d5d }));
+estDot.visible = false;
+scene.add(estDot);
+const driftLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+  new THREE.LineDashedMaterial({ color: 0xff5d5d, dashSize: 0.035, gapSize: 0.025, transparent: true, opacity: 0.9 }));
+driftLine.visible = false;
+scene.add(driftLine);
+const flash = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowTexture([[0, 'rgba(255,255,255,1)'], [0.3, 'rgba(140,230,255,.6)'], [1, 'rgba(140,230,255,0)']]),
+  blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+scene.add(flash);
+const driftDir = new THREE.Vector3(1, 0, 0);
+function updateDriftDir() {
+  const north = new THREE.Vector3(-Math.sin(rxLat) * Math.cos(rxLon), Math.cos(rxLat), -Math.sin(rxLat) * Math.sin(rxLon));
+  const east = new THREE.Vector3(-Math.sin(rxLon), 0, Math.cos(rxLon));
+  driftDir.copy(east.multiplyScalar(0.75)).addScaledVector(north, 0.66).normalize();
+}
+updateDriftDir();
+/* 初始相位:让 4 颗卫星开局都在接收机半球上空(天顶/东/北/西南,几何散开) */
+{
+  const rxDir = new THREE.Vector3(Math.cos(rxLat) * Math.cos(rxLon), Math.sin(rxLat), Math.cos(rxLat) * Math.sin(rxLon));
+  const east = new THREE.Vector3(-Math.sin(rxLon), 0, Math.cos(rxLon));
+  const north = new THREE.Vector3(-Math.sin(rxLat) * Math.cos(rxLon), Math.cos(rxLat), -Math.sin(rxLat) * Math.sin(rxLon));
+  const tgts = [
+    rxDir.clone(),
+    rxDir.clone().addScaledVector(east, 0.55).normalize(),
+    rxDir.clone().addScaledVector(north, 0.55).normalize(),
+    rxDir.clone().addScaledVector(east, -0.5).addScaledVector(north, -0.35).normalize(),
+  ];
+  const tv = new THREE.Vector3();
+  SATS.forEach((s, i) => {
+    let best = 0, bestD = -2;
+    for (let k = 0; k < 720; k++) {
+      const th = k / 720 * Math.PI * 2;
+      const d = satAngle(s, th, tv).normalize().dot(tgts[i]);
+      if (d > bestD) { bestD = d; best = th; }
+    }
+    s.ph0 = best;
+  });
+}
+
+/* ================= 状态 ================= */
+let playing = !qsBool('pause', false);
+if (matchMedia('(prefers-reduced-motion: reduce)').matches && qs.get('pause') === null) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let stage = clamp(Math.round(qsFloat('stage', 1)), 0, 4);
+let cycleU = clamp(qsFloat('t', 0), 0, 0.999);
+let stageTime = 0;
+let fixOn = qsBool('fix', true);
+if (!fixOn) stage = 4;
+let days = 0;
+let warp = clamp(qsFloat('warp', 3), 0.5, 20);   // 天/秒
+let errKm = 0;
+let tSim = 0;
+const CYCLE_T = 8;
+const DUR = [6.5, 7.5, 11, 9, 17];
+
+/* ---------------- 标签 ---------------- */
+const labelRegistry = [];
+function addLabel(textFn, pos, cls = '', target = scene) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  target.add(o);
+  labelRegistry.push({ o, text: textFn });
+  div.textContent = textFn();
+  return o;
+}
+const rhoKm = [0, 0, 0, 0];
+SATS.forEach((s, i) =>
+  addLabel(() => `SV${i + 1} · ρ ≈ ${fmt(rhoKm[i])} km`, new THREE.Vector3(0, 0.15, 0), s.cls, satGrps[i]));
+const lblRx = addLabel(() => L('接收机(拖动我)', 'receiver (drag me)'), new THREE.Vector3(0, 0.13, 0), '', rxGrp);
+const lblEst = addLabel(() => L(`解算位置(偏 ${errKm >= 1 ? errKm.toFixed(1) + ' km' : Math.round(errKm * 1000) + ' m'})`,
+  `fix (off by ${errKm >= 1 ? errKm.toFixed(1) + ' km' : Math.round(errKm * 1000) + ' m'})`),
+  new THREE.Vector3(0, 0.1, 0), 'bad', estDot);
+const lblSR = addLabel(() => L('狭义:−7 μs/天(动钟变慢)', 'SR: −7 μs/day (moving clock slows)'), new THREE.Vector3(0.5, 0.42, 0), 'b', satGrps[0]);
+const lblGR = addLabel(() => L('广义:+45 μs/天(引力弱处钟快)', 'GR: +45 μs/day (weaker gravity runs fast)'), new THREE.Vector3(0.5, 0.28, 0), 'p2', satGrps[0]);
+const lblNet = addLabel(() => L('净 +38 μs/天 ⇒ 不修正 ≈ 11 km/天', 'net +38 μs/day ⇒ ≈ 11 km/day uncorrected'), new THREE.Vector3(-0.55, 0.4, 0), 'st', satGrps[1]);
+const lblStatus = addLabel(() => '…', new THREE.Vector3(0, -3.8, 0), 'st');
+
+/* ================= 讲解步骤 ================= */
+function setFix(on) {
+  fixOn = on;
+  const b = document.getElementById('btnFix');
+  b.classList.toggle('on', !fixOn);
+  b.dataset.zh = fixOn ? '彩蛋:关掉相对论修正' : '修正已关:点击恢复';
+  b.dataset.en = fixOn ? 'easter egg: disable relativity correction' : 'correction off: click to restore';
+  b.textContent = L(b.dataset.zh, b.dataset.en);
+}
+function setStage(i) {
+  stage = i;
+  stageTime = 0;
+  cycleU = 0.001;
+  if (stage === 4) { setFix(false); days = 0; }
+  else setFix(true);
+}
+const STEPS = [
+  { b: '卫星与伪距', be: 'Satellites & pseudorange',
+    d: '卫星持续广播「我的轨道 + 信号发射时刻」;电波以光速飞 ~70 ms 抵达,伪距 ρ = c·Δt ≈ 20,200 km。',
+    de: 'Each satellite broadcasts its orbit and the transmit time; the wave flies ~70 ms at light speed: pseudorange ρ = c·Δt ≈ 20,200 km.',
+    act: () => setStage(0) },
+  { b: '三球交汇定坐标', be: 'Three spheres fix a point',
+    d: '以每颗卫星为球心、伪距为半径画球面——三个球面在同一瞬间只共同穿过一个点:那就是你。',
+    de: 'One sphere per satellite, radius = pseudorange — three spheres share exactly one point: you.',
+    act: () => setStage(1) },
+  { b: '第四颗解钟差', be: 'The 4th solves the clock',
+    d: '接收机只是便宜石英钟:差 2 ms 就是 600 km,三球因此扑空;第四颗卫星把钟差 b 当第四个未知数一并解出。',
+    de: 'A cheap quartz clock off by 2 ms means 600 km — three spheres miss; the 4th satellite solves the clock bias b as a fourth unknown.',
+    act: () => setStage(2) },
+  { b: '相对论修正', be: 'The relativity fix',
+    d: '星载原子钟:狭义 −7 μs/天(动钟变慢)、广义 +45 μs/天(高处钟快),净 +38 μs/天——出厂把 10.23 MHz 预调低 0.0046 Hz 抵消。',
+    de: 'Atomic clocks in orbit: SR −7 μs/day (moving slows), GR +45 μs/day (higher runs faster), net +38 μs/day — the 10.23 MHz oscillator is pre-tuned low by 0.0046 Hz.',
+    act: () => setStage(3) },
+  { b: '彩蛋:关掉修正', be: 'Easter egg: disable the fix',
+    d: '不修正,38 μs/天 × c ≈ 每天 11 km 误差累积;拨动「时间快进」跑几天,看解算位置漂离真实接收机。',
+    de: 'Uncorrected, 38 μs/day × c ≈ 11 km/day of error; run the time-lapse slider and watch the fix drift off the true receiver.',
+    act: () => setStage(4) },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => s.act());
+    el.appendChild(li);
+  });
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elSpeed = document.getElementById('speed');
+const elSpeedVal = document.getElementById('speedVal');
+const elWarp = document.getElementById('warp');
+const elWarpVal = document.getElementById('warpVal');
+const elPhase = document.getElementById('phase');
+const elPhaseVal = document.getElementById('phaseVal');
+const tglLabels = document.getElementById('tglLabels');
+const tglOrbits = document.getElementById('tglOrbits');
+const tglRotate = document.getElementById('tglRotate');
+const stRho = document.getElementById('stRho'), stClk = document.getElementById('stClk'),
+  stErr = document.getElementById('stErr');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function syncSliders() {
+  elWarpVal.textContent = `${warp.toFixed(1)} ${L('天/秒', 'day/s')}`;
+  elPhaseVal.textContent = cycleU.toFixed(2);
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elSpeed.addEventListener('input', () => { speed = parseFloat(elSpeed.value); elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elWarp.addEventListener('input', () => { warp = parseInt(elWarp.value, 10) / 2; syncSliders(); });
+elPhase.addEventListener('input', () => { cycleU = parseInt(elPhase.value, 10) / 1000; syncSliders(); });
+document.getElementById('btnFix').addEventListener('click', () => {
+  if (stage === 4 && !fixOn) setFix(true);
+  else setStage(4);
+});
+tglLabels.addEventListener('change', () => {
+  labelRenderer.domElement.style.display = tglLabels.checked ? '' : 'none';
+});
+tglOrbits.addEventListener('change', () => {
+  orbitLines.forEach(o => o.visible = tglOrbits.checked);
+});
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* 拖动接收机(射线与地球求交) */
+const ray = new THREE.Raycaster();
+const ptr = new THREE.Vector2();
+const dragSphere = new THREE.Sphere(new THREE.Vector3(), 1.03);
+const dragTmp = new THREE.Vector3();
+let dragging = false;
+function setPtr(e) { ptr.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); }
+renderer.domElement.addEventListener('pointerdown', e => {
+  setPtr(e);
+  ray.setFromCamera(ptr, camera);
+  if (ray.intersectObject(rxHandle, false).length) {
+    dragging = true;
+    controls.enabled = false;
+    renderer.domElement.style.cursor = 'grabbing';
+  }
+});
+addEventListener('pointermove', e => {
+  if (!dragging) return;
+  setPtr(e);
+  ray.setFromCamera(ptr, camera);
+  if (ray.ray.intersectSphere(dragSphere, dragTmp)) {
+    rxLat = Math.asin(clamp(dragTmp.y / 1.03, -1, 1));
+    rxLon = Math.atan2(dragTmp.z, dragTmp.x);
+    updateDriftDir();
+  }
+});
+addEventListener('pointerup', () => {
+  dragging = false;
+  controls.enabled = true;
+  renderer.domElement.style.cursor = '';
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let lastStep = -1;
+let rafId = 0;
+const satV = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+const rxP = new THREE.Vector3(), estP = new THREE.Vector3(), Y_UP = new THREE.Vector3(0, 1, 0);
+function frame() {
+  rafId = requestAnimationFrame(frame);
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const dts = dt * speed * (playing ? 1 : 0);
+  tSim += dts;
+  if (playing) {
+    cycleU += dts / CYCLE_T;
+    stageTime += dts;
+    if (stageTime > DUR[stage]) setStage((stage + 1) % 5);
+    if (!fixOn) days += dts * warp;
+  }
+  if (cycleU >= 1) cycleU -= 1;
+  const u = cycleU;
+
+  /* 位置 */
+  rxP.set(Math.cos(rxLat) * Math.cos(rxLon), Math.sin(rxLat), Math.cos(rxLat) * Math.sin(rxLon));
+  SATS.forEach((s, i) => {
+    satAngle(s, s.ph0 + tSim * OMEGA, satV[i]);
+    satGrps[i].position.copy(satV[i]);
+    rhoKm[i] = satV[i].distanceTo(rxP) * KM;
+  });
+  rxGrp.position.copy(rxP).multiplyScalar(1.004);
+  rxGrp.quaternion.setFromUnitVectors(Y_UP, rxP);
+  /* 定位误差:修正开 → 米级噪声;修正关 → 11.4 km/天累积 */
+  const targetErrKm = fixOn ? (2.3 + 1.5 * Math.sin(tSim * 0.9 + 1.7)) / 1000 : days * DRIFT_KM_D;
+  errKm += (targetErrKm - errKm) * clamp(dt * 2.5, 0, 1);
+  estP.copy(rxP).addScaledVector(driftDir, errKm * WKM).normalize();
+  estDot.position.copy(estP).multiplyScalar(1.006);
+  const estVisible = errKm > 0.05;
+  estDot.visible = estVisible;
+  driftLine.visible = estVisible;
+  if (estVisible) {
+    const p = driftLine.geometry.attributes.position;
+    p.setXYZ(0, rxP.x * 1.004, rxP.y * 1.004, rxP.z * 1.004);
+    p.setXYZ(1, estP.x * 1.004, estP.y * 1.004, estP.z * 1.004);
+    p.needsUpdate = true;
+    driftLine.computeLineDistances();
+  }
+
+  /* 球面:扩张 → 交汇 → 淡出 */
+  SATS.forEach((s, i) => {
+    const rhoW = satV[i].distanceTo(rxP);
+    const overW = rhoW + B_RX_W;
+    let vis = false, rad = 0, op = 0;
+    if (stage === 1 && i < 3) {
+      rad = rhoW * easeOut(clamp(u / 0.42, 0, 1));
+      op = u < 0.8 ? 1 : 1 - (u - 0.8) / 0.16;
+      vis = op > 0.02;
+    } else if (stage === 2) {
+      const k = easeIO(clamp((u - 0.58) / 0.22, 0, 1));   // 解出钟差,球面收回
+      if (i < 3) {
+        rad = overW * easeOut(clamp(u / 0.38, 0, 1)) - B_RX_W * k;
+        op = u < 0.86 ? 1 : 1 - (u - 0.86) / 0.13;
+        vis = op > 0.02;
+      } else if (u > 0.48) {
+        rad = overW * easeOut(clamp((u - 0.48) / 0.18, 0, 1)) - B_RX_W * k;
+        op = u < 0.86 ? 1 : 1 - (u - 0.86) / 0.13;
+        vis = op > 0.02;
+      }
+    } else if (stage >= 3) {
+      rad = satV[i].distanceTo(estP) * easeOut(clamp(u / 0.45, 0, 1));
+      op = u < 0.82 ? 1 : 1 - (u - 0.82) / 0.15;
+      vis = op > 0.02;
+    }
+    sphSolid[i].visible = sphWire[i].visible = vis;
+    if (vis) {
+      sphSolid[i].position.copy(satV[i]);
+      sphWire[i].position.copy(satV[i]);
+      sphSolid[i].scale.setScalar(Math.max(rad, 1e-4));
+      sphWire[i].scale.setScalar(Math.max(rad, 1e-4));
+      sphSolid[i].material.opacity = 0.055 * op * sphAlpha;
+      sphWire[i].material.opacity = 0.1 * op * sphAlpha;
+    }
+    /* 信号脉冲:卫星 → 接收机 */
+    pulses[i].forEach((d, j) => {
+      d.visible = !(stage === 1 && i === 3);
+      if (d.visible) {
+        const fr = (tSim * 0.45 + j / 3 + i * 0.19) % 1;
+        d.position.lerpVectors(satV[i], rxP, fr);
+        d.material.opacity = 0.3 + 0.6 * Math.sin(fr * Math.PI);
+      }
+    });
+    /* 连线(步骤 1) */
+    rangeLines[i].visible = stage === 0;
+    if (stage === 0) {
+      const p = rangeLines[i].geometry.attributes.position;
+      p.setXYZ(0, satV[i].x, satV[i].y, satV[i].z);
+      p.setXYZ(1, rxP.x, rxP.y, rxP.z);
+      p.needsUpdate = true;
+    }
+  });
+
+  /* 交汇闪光 + 接收机呼吸环 */
+  let flashOn = false;
+  if (stage === 1) flashOn = u > 0.42 && u < 0.88;
+  else if (stage === 2) flashOn = u > 0.8 && u < 0.93;
+  else if (stage >= 3) flashOn = u > 0.45 && u < 0.88;
+  flash.material.opacity = flashOn ? 0.8 : 0;
+  if (flashOn) {
+    flash.position.copy(stage >= 3 ? estP : rxP).multiplyScalar(1.05);
+    const fs = 0.5 + 0.13 * Math.sin(tSim * 6);
+    flash.scale.set(fs, fs, 1);
+  }
+  rxRing.scale.setScalar(1 + 0.28 * Math.sin(tSim * 4));
+
+  /* 标签 */
+  for (const r of labelRegistry) r.o.element.textContent = r.text();
+  const relLabels = stage === 3;
+  lblSR.visible = lblGR.visible = lblNet.visible = relLabels;
+  lblStatus.element.textContent =
+    stage === 0 ? L('每颗卫星广播轨道与发射时刻;电波以光速飞 ~70 ms → ρ = c·Δt',
+      'satellites broadcast orbit + transmit time; ~70 ms at light speed → ρ = c·Δt')
+    : stage === 1 ? L('三个球面同时扩张——只在一个点相遇:你在这里',
+      'three spheres expand — they meet at exactly one point: you')
+    : stage === 2 ? (u < 0.58
+      ? L(`接收机钟差 2 ms → 三球扑空 ${fmt(B_RX_W * KM)} km!`, `a 2 ms clock offset → three spheres miss by ${fmt(B_RX_W * KM)} km!`)
+      : L('第四颗卫星:把钟差当未知数解出,球面收回到位', 'the 4th satellite solves the clock offset — spheres snap back'))
+    : stage === 3 ? L('星钟净快 +38 μs/天;出厂预调 −0.0046 Hz 抵消', 'satellite clocks gain +38 μs/day; factory pre-tunes −0.0046 Hz')
+    : (fixOn ? L('修正恢复:误差重新收敛到米级', 'correction restored: error collapses back to meters')
+      : L(`未修正第 ${days.toFixed(1)} 天 · 漂移 ≈ ${fmtDist(days * DRIFT_KM_D)}`,
+        `day ${days.toFixed(1)} uncorrected · drift ≈ ${fmtDist(days * DRIFT_KM_D)}`));
+  lblStatus.element.className = 'lbl ' + (stage === 4 && !fixOn ? 'bad' : 'st');
+
+  /* 读数 */
+  stRho.innerHTML = fmt((rhoKm[0] + rhoKm[1] + rhoKm[2] + rhoKm[3]) / 4) + '<small> km</small>';
+  stClk.innerHTML = '+' + fmt(2000 + (fixOn ? 0 : 38.5 * days)) + '<small> μs</small>';
+  stErr.innerHTML = errKm < 1 ? (errKm * 1000).toFixed(1) + '<small> m</small>' : errKm.toFixed(2) + '<small> km</small>';
+  stErr.className = 'v ' + (errKm < 0.05 ? 'g' : 'hot');
+
+  if (stage !== lastStep) {
+    lastStep = stage;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === stage));
+  }
+  if (playing && document.activeElement !== elPhase) elPhase.value = Math.round(u * 1000);
+  elPhaseVal.textContent = u.toFixed(2);
+
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) cancelAnimationFrame(rafId);
+  else { clock.getDelta(); rafId = requestAnimationFrame(frame); }
+});
+
+/* 初始化控件为 URL 参数值 */
+elSpeed.value = speed;
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+elWarp.value = Math.round(warp * 2);
+elPhase.value = Math.round(cycleU * 1000);
+if (!qsBool('labels', true)) { tglLabels.checked = false; tglLabels.dispatchEvent(new Event('change')); }
+controls.autoRotate = qsBool('spin', true) && tglRotate.checked;
+setFix(fixOn);
+applyTheme();
+applyLang();
+setPlayLabel();
+syncSliders();
+rafId = requestAnimationFrame(frame);
+</script>
+</body>
+</html>
