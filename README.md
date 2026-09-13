@@ -77,6 +77,15 @@
 - [x] 晶体生长（过饱和驱动、台阶位优先落座、晶面恒速推进，高温踢出空穴缺陷）✅ **crystal-growth/**
 - [x] 液晶与 LCD（90° 扭曲向列相旋光过正交偏振片，加电压螺旋消失像素变黑）✅ **liquid-crystal/**
 
+### Phase 12 · 天文与时空（6/6 收官）
+
+- [x] 月相与日月食(三体视角:朔望弦相位,白道黄道 5° 夹角决定食季)✅ **moon-phases/**
+- [x] 潮汐(近远双隆起,日月同线大潮/垂直小潮,月球每年后退 3.8 cm)✅ **tides/**
+- [x] 四季与黄赤交角(滑块 0°/23.5°/45° 切换四季消失/标准/加倍)✅ **seasons/**
+- [x] 火箭与齐奥尔科夫斯基方程(燃料指数条 70%→99.9%,3 级可解 120 km/s)✅ **rocket-equation/**
+- [x] 光钟与时间膨胀(静止/运动双光钟,0.99c → γ=7.09,GPS 每天慢 38 μs)✅ **time-dilation/**
+- [x] 时空弯曲(动态网格随质量下陷,行星沿测地绕行,星光 1.75″ 偏折)✅ **spacetime-curvature/**
+
 ### Phase 11 · 地球系统(10/10 收官)
 
 - [x] 板块构造(地幔对流双环流,洋脊生壳/海沟销壳,边界地震随机闪现)✅ **plate-tectonics/**
@@ -127,11 +136,11 @@ enzyme-induced-fit/ 酶促反应的诱导契合（Three.js，CDN 引入）
 four-stroke-engine/ 四冲程内燃机配气相位（Three.js，CDN 引入）
 ratchet-pawl/       棘轮棘爪单向离合（Three.js，CDN 引入）
 cam-follower/       凸轮从动件位移曲线（Three.js，CDN 引入）
-dna-replication/         DNA 半保留复制与冈崎片段（Canvas 2D，零依赖，离线可开）
-sodium-potassium-pump/   钠钾泵 Na⁺/K⁺-ATP 酶构象循环（Canvas 2D，零依赖）
-action-potential/        动作电位去极化 / 复极化（Canvas 2D，零依赖）
-synaptic-transmission/   突触传递：电→化学→电的翻译现场（Canvas 2D，零依赖）
-calvin-cycle/            卡尔文循环（Canvas 2D，零依赖）
+dna-replication/         DNA 半保留复制与冈崎片段（Three.js，CDN 引入）
+sodium-potassium-pump/   钠钾泵 Na⁺/K⁺-ATP 酶构象循环（Three.js，CDN 引入）
+action-potential/        动作电位去极化 / 复极化（Three.js，CDN 引入）
+synaptic-transmission/   突触传递：电→化学→电的翻译现场（Three.js，CDN 引入）
+calvin-cycle/            卡尔文循环（Three.js，CDN 引入）
 li-ion-battery/          锂离子电池摇椅模型：充电与放电（Three.js，CDN 引入）
 sn1-mechanism/           SN1 机理：碳正离子与外消旋化（Three.js，CDN 引入）
 e2-elimination/          E2 消除反应：反式共平面与协同消除（Three.js，CDN 引入）
@@ -141,18 +150,18 @@ water-electrolysis/      水电解：电解池与原电池互为逆过程（Thre
 differential/            差速器：转弯时行星轮如何吸收左右轮速差（Three.js，CDN 引入）
 geneva-drive/            日内瓦机构：连续旋转变精确间歇 + 转位曲线展开图（Three.js，CDN 引入）
 atp-synthase/            ATP 合酶：质子流驱动的旋转催化（Three.js，CDN 引入）
-electron-transport-chain/ 线粒体电子传递链：电子下坡、质子上坡（Canvas 2D，零依赖）
-photosynthesis-z-scheme/ 光反应 Z 方案：两部光子电梯（Canvas 2D，零依赖）
-transcription/           转录：RNA 聚合酶与解链泡（Canvas 2D，零依赖）
-translation-ribosome/    翻译：核糖体逐密码子读卡（Canvas 2D，零依赖）
+electron-transport-chain/ 线粒体电子传递链：电子下坡、质子上坡（Three.js，CDN 引入）
+photosynthesis-z-scheme/ 光反应 Z 方案：两部光子电梯（Three.js，CDN 引入）
+transcription/           转录：RNA 聚合酶与解链泡（Three.js，CDN 引入）
+translation-ribosome/    翻译：核糖体逐密码子读卡（Three.js，CDN 引入）
 motor-generator/         直流电动机 ⇄ 发电机：两种身份（Three.js，CDN 引入）
-galton-board/            伽尔顿板：正态从随机里长出来（Canvas 2D，零依赖）
-carnot-cycle/            卡诺循环：pV 黄金圈与效率天花板（Canvas 2D，零依赖）
-electromagnetic-induction/ 电磁感应：楞次「来拒去留」（Canvas 2D，零依赖）
+galton-board/            伽尔顿板：正态从随机里长出来（Three.js，CDN 引入）
+carnot-cycle/            卡诺循环：pV 黄金圈与效率天花板（Three.js，CDN 引入）
+electromagnetic-induction/ 电磁感应：楞次「来拒去留」（Three.js，CDN 引入）
 monty-hall-bayes/        蒙提霍尔：换还是不换，2/3 vs 1/3（Canvas 2D，零依赖）
-doppler-effect/          多普勒效应：音障与马赫锥（Canvas 2D，零依赖）
+doppler-effect/          多普勒效应：音障与马赫锥（Three.js，CDN 引入）
 activation-energy/       活化能：麦克斯韦-玻尔兹曼分布（Canvas 2D，零依赖）
-orbital-mechanics/       开普勒轨道：椭圆与等时面积（Canvas 2D，零依赖）
+orbital-mechanics/       开普勒轨道：椭圆与等时面积（Three.js，CDN 引入）
 titration-curve/         滴定曲线：缓冲平台与等当点突跃（Canvas 2D，零依赖）
 fourier-series/          傅里叶级数：本轮圆叠出一切波形（Canvas 2D，零依赖）
 cross-bridge-cycle/      肌肉收缩的横桥循环：粗细肌丝滑行的分子机制（Three.js，CDN 引入）
@@ -235,6 +244,12 @@ volcano-viscosity/       火山与粘度：温柔盾状 vs 猛爆层状（Three.
 ocean-conveyor/          温盐环流：千年一圈的深海传送带（Three.js，CDN 引入）
 cloud-formation/         云与雨：爬坡降温到露点（Three.js，CDN 引入）
 milankovitch-cycles/     米兰科维奇旋回：三支笔画的冰期时钟（Three.js，CDN 引入）
+moon-phases/             月相与日月食：三体视角的相位游戏（Three.js，CDN 引入）
+tides/                   潮汐：月球把海「拉」出两个隆起（Three.js，CDN 引入）
+seasons/                 四季与黄赤交角：23.5° 把一年掰成四季（Three.js，CDN 引入）
+rocket-equation/         火箭与齐奥尔科夫斯基方程：90% 是燃料（Three.js，CDN 引入）
+time-dilation/           光钟与时间膨胀：光在斜线上变慢（Three.js，CDN 引入）
+spacetime-curvature/     时空弯曲：网格下陷，行星走测地线（Three.js，CDN 引入）
 ```
 
 ### Phase 2 收尾（3D 优先新基线,v2 路线图首批）
@@ -984,6 +999,42 @@ milankovitch-cycles/     米兰科维奇旋回：三支笔画的冰期时钟（T
 - **看什么**:地球在轨道上运行,轨道随偏心率呼吸、地轴倾角摇摆、轴尖锥形进动;右下三色细线是三个周期,金色粗线是叠加出的高纬夏日日照——游标扫过低谷时北极冰帽扩张(冰期),扫过高峰则消退(间冰期)。
 - **怎么玩**:拖「时间轴」一千年一千年地扫;对照三曲线与合成日照;`空格` 播放暂停。
 - **URL 参数**:`?pause=` `?speed=` `?labels=0` `?spin=0`。
+
+### 月相与日月食:三体视角的相位游戏
+
+- **看什么**:太阳(左)、地球(中,绕日)、月球(随地球)三体视图;月球同步自转、永远一面朝地球。拖「月相位置」滑块,月随朔/上弦/望/下弦循环——被照亮的那半边变化;白道与黄道夹 5°,新月+对位=日食,满月+对位=月食。
+- **怎么玩**:拖月相滑块;盯左下角「日食 / 月食」标记;`空格` 播放暂停。
+- **URL 参数**:`?pause=` `?p=0.5` `?speed=` `?labels=0` `?spin=0`。
+
+### 潮汐:月球把海「拉」出两个隆起
+
+- **看什么**:地球上海水形变——近侧隆起随月而动,远侧隆起被「留在原位」也成凸;箭头标出隆起方向,极冠大小随月相变化;日月同线=大潮,90°=小潮。
+- **怎么玩**:拖月相观察潮高;对比朔望大潮/弦月小潮;`空格` 播放暂停。
+- **URL 参数**:`?pause=` `?p=0` `?speed=` `?labels=0` `?spin=0`。
+
+### 四季与黄赤交角:23.5° 把一年掰成四季
+
+- **看什么**:太阳居中,地球沿轨道转 12 个月——倾角让太阳直射点在 ±23.5° 移动,北半球春分/夏至/秋分/冬至依次到达。拖「轴倾角」滑块到 0° 四季消失,到 45° 极端夸张。
+- **怎么玩**:拖「月份」绕一年;拖「轴倾角」做实验;`空格` 播放暂停。
+- **URL 参数**:`?pause=` `?m=6` `?speed=` `?labels=0` `?spin=0`。
+
+### 火箭与齐奥尔科夫斯基方程:90% 是燃料
+
+- **看什么**:Δv = ve·ln(m0/mf) 的指数惩罚用燃料比条展示:Δv=12 km/s 燃料 ~70%、Δv=45 km/s ~96%、Δv=120 km/s 99.9%。「切级」让 Δv 加法可叠,3 级火箭才能跑这么远。
+- **怎么玩**:滑块拉大目标 Δv 看燃料占比爆炸;「切级」对比;`空格` 播放暂停。
+- **URL 参数**:`?pause=` `?dv=45` `?speed=` `?labels=0` `?spin=0`。
+
+### 光钟与时间膨胀:光在斜线上变慢
+
+- **看什么**:静止光钟里的光子上下竖走,运动光钟里的光子斜走,斜线总比竖线长——动钟的一秒被拉长 γ = 1/√(1-v²/c²)。拉滑块到 0.99c,γ=7.09(μ 子能到地面就是这数);GPS 卫星每天比地面快 38 μs。
+- **怎么玩**:拖「光钟速度」看 γ 与对角线长度的对应;`空格` 播放暂停。
+- **URL 参数**:`?pause=` `?v=0.99` `?speed=` `?labels=0` `?spin=0`。
+
+### 时空弯曲:网格下陷,行星走测地线
+
+- **看什么**:动态网格随太阳质量下陷成碗;行星沿最直「测地线」自然绕行,极接近牛顿引力效果;「放一束星光」让光从远处斜穿过太阳附近——光束在弯曲时空中被弯成抛物线(引力透镜);拖「太阳质量」加深井。
+- **怎么玩**:滑块拉大质量看井变深;「放一束星光」看透镜效应;`空格` 播放暂停。
+- **URL 参数**:`?pause=` `?mass=200` `?speed=` `?labels=0` `?spin=0`。
 
 ## 许可
 
