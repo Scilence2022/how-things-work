@@ -226,6 +226,53 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **How to play**: switch between magnetic and floating-gate modes, trigger writes and erases, and watch the domain flip, electron tunneling and retention.
 - **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
 
+### Phase 15 · Closing the families, first batch (6/6)
+
+- [x] Fission chain reaction (neutron generations 1→3→9→27; moderator + control rods pin k at 1) ✅ **fission-chain/**
+- [x] Rainbow & secondary bow (dispersion inside one drop; 42°/51° extremum arcs, reversed secondary, Alexander's dark band) ✅ **rainbow/**
+- [x] Mitosis (spindle captures kinetochores, congression to the plate, synchronous sister split into two identical cells) ✅ **mitosis/**
+- [x] Birthday paradox (pairs explode as n(n−1)/2; 50 % at 23 people; Monte Carlo hugs the theory curve) ✅ **birthday-paradox/**
+- [x] Thermoregulation (the hypothalamus comparator; shivering/sweating chase a moving set-point; fever steps it up) ✅ **thermoregulation/**
+- [x] Sonar & B-mode ultrasound (echo timing c·t/2; the B image assembles line by line; Doppler measures blood flow) ✅ **sonar-ultrasound/**
+
+### Phase 15 deep dives
+
+#### Fission chain reaction — a snowball rolled to just-critical
+
+- **What you see**: a neutron is captured by U-235 into wobbling U-236*, which splits into Ba/Kr fragments with a ~200 MeV flash and 2.43 fresh neutrons on average — generations light up 1→3→9→27, one hue per wave. The moderator brakes fast (orange) neutrons into thermal (cyan) ones, lifting the capture cross-section from ~1 to ~585 barns. Rods in: k<1 and the chain dies within generations; rods out: k>1 with a red runaway alert; just right: k=1, a flat self-sustaining rate.
+- **How to play**: drag control-rod depth to find criticality, switch the moderator off to see k cap at 0.84, hit ignite to inject neutrons; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?rods=`.
+
+#### Rainbow & secondary bow — why exactly 42°
+
+- **What you see**: white light enters a raindrop and fans into six colors by real water dispersion (n = 1.331→1.343), reflects internally once or twice, then exits; sweeping the impact parameter b shows the exit directions piling up at the deviation extremum — the scattering angles 42° (primary) and 51° (secondary) are why the bows are bright. In sky mode the 42° bow is red-outside/violet-inside, the 51° secondary is reversed, with Alexander's dark band between.
+- **How to play**: drag the b/R slider to watch rays bunch at the extremum, toggle one/two reflections and drop/sky views, tap a wavelength swatch to isolate a color; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?mode=` `?k=` `?b=` `?spin=`.
+
+#### Mitosis — an exact halving of one genome
+
+- **What you see**: in a 2n=4 cell, chromatin is replicated into X shapes (two sister chromatids sharing a centromere), the nuclear envelope dissolves, centrosomes move to the poles and grow spindle fibers; fibers search and capture kinetochores, dragging chromosomes onto the metaphase plate (one laggard is pulled in last — the spindle checkpoint); sisters then split synchronously, envelopes re-form, and the cleavage furrow pinches the cell into two genetically identical daughters.
+- **How to play**: scrub the phase slider or jump via the six steps; open the contrast note to compare with meiosis (pairing + crossing-over + two divisions → 4 different cells); space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?note=` `?spin=`.
+
+#### The birthday paradox — why 23 people suffice
+
+- **What you see**: every newcomer must dodge all occupied birthday slots — dodge probabilities multiply while pairs explode as n(n−1)/2; at 23 people the collision chance is 50.7 %, at 57 it is 99 %. Roll random birthdays and collisions flash red, arc-linked on the 365-slot year strip; a 2000-trial Monte-Carlo point converges onto the theory curve.
+- **How to play**: drag N (1–80), roll again to hunt collisions, run Monte Carlo ×2000 to watch the law of large numbers; step 5 auto-demos the repeated collisions at N=23; space to play / pause.
+- **URL parameters**: `?n=` `?t=` `?pause=` `?speed=` `?labels=`.
+
+#### Thermoregulation — the body tunes itself
+
+- **What you see**: the hypothalamus is a comparator — the mismatch between core temperature and set-point drives everything. Cool the environment: skin vessels constrict and blue, muscles shiver for heat. Warm it: vessels dilate red, sweat evaporates away heat. Toggle fever: the set-point steps 37→39 °C while the core is still 37, so you shiver chasing it; on recovery the set-point drops and sweating chases down. A mismatch meter and the core-vs-set-point chart track it all; push the extremes to saturate the loop — hypothermia / heat stroke.
+- **How to play**: drag ambient temperature (−10…45 °C), toggle fever and exercise; step 5 replays the set-point chase live; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?env=` `?spin=`.
+
+#### Sonar & B-mode ultrasound — assembling echoes into an image
+
+- **What you see**: a piezo element turns a voltage pulse into sound; the packet travels down at constant speed and every acoustic-impedance interface reflects part of it back; echo time × c/2 is depth — the A-scan peaks align exactly with the 3D scene. As the transducer sweeps, each ping paints one brightness strip into the B-mode image, assembling the fish/organ cross-section line by line; toggle Doppler and flowing red blood cells shift the echo frequency, color-coded red/blue with a live flow-velocity readout.
+- **How to play**: switch sonar ⇄ B-mode, fire single pings or run auto, drag target depth; step 5 fast-forwards a full B image; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?mode=` `?dop=` `?dep=` `?spin=`.
+
 ### Phase 11 · Earth system (10/10)
 
 - [x] Plate tectonics (mantle convection loops, ridges birth crust, trenches consume it, edges flash with quakes) ✅ **plate-tectonics/**
@@ -410,6 +457,12 @@ nuclear-reactor/       Nuclear reactor (Three.js, CDN)
 mri/                   MRI (Three.js, CDN)
 thermostat/            Thermostat (Three.js, CDN)
 hard-drive-flash/      Hard drive & flash (Three.js, CDN)
+fission-chain/         Fission chain reaction (Three.js, CDN)
+rainbow/               Rainbow & secondary bow (Three.js, CDN)
+mitosis/               Mitosis (Three.js, CDN)
+birthday-paradox/      Birthday paradox (Canvas 2D, zero dependencies)
+thermoregulation/      Thermoregulation (Three.js, CDN)
+sonar-ultrasound/      Sonar & B-mode ultrasound (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
