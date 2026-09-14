@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>声呐与 B 超:回波如何拼成图像</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#63b3ff;
+    --bg:#10151c; --panel:rgba(13,17,24,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,24,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,24,.8);
+    --echo:#ffc46b;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1c62c8;
+    --bg:#eef1f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+    --echo:#b07d10;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.g { border-color: rgba(255,180,84,.9); color: #ffe0ae; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.r { border-color: rgba(255,122,92,.9); color: #ffc4b5; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(160,106,18,.9); color: #8a5c0d; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(28,98,200,.9); color: #1c62c8; }
+  :root[data-theme="light"] .lbl.r { border-color: rgba(214,73,51,.9); color: #d64933; }
+  .pop { display: inline-block; opacity: 0; }
+  .pop.on { animation: pop .8s ease-out forwards; }
+  @keyframes pop {
+    0% { transform: scale(.3); opacity: 0; }
+    22% { transform: scale(1.9); opacity: 1; }
+    45% { transform: scale(1.15); }
+    75% { opacity: 1; }
+    100% { transform: scale(1); opacity: 0; }
+  }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 340px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 11px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 18px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.dp { color: #ff8f7a; }
+
+  #scan { position: fixed; right: 18px; top: 62px; z-index: 4; width: 296px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    padding: 10px 12px 12px; backdrop-filter: blur(6px); }
+  #scan .scT { font-size: 11.5px; color: var(--text2); margin: 7px 0 4px; }
+  #scan .scT:first-child { margin-top: 0; }
+  #scan canvas { width: 100%; display: block; border: 1px solid var(--panel-border);
+    border-radius: 8px; background: #05080d; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(99,179,255,.6); background: rgba(99,179,255,.12); color: var(--text); }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(28,98,200,.55); background: rgba(28,98,200,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 58px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(99,179,255,.10); border-color: rgba(99,179,255,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(28,98,200,.08); border-color: rgba(28,98,200,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde0ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1100px) { #scan { display: none; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="声呐与 B 超:一束声波如何听出深度与血流" data-en="Sonar & B-mode ultrasound: hearing depth and blood flow with one beam">声呐与 B 超:一束声波如何听出深度与血流</h1>
+  <div class="sub" data-zh="压电片发射脉冲 → 匀速下传 → 声阻抗界面部分反射 → 回波计时 d = c·t/2 → 逐线拼出断面图 → 多普勒测血流 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Piezo pulse → steady descent → partial reflection at impedance interfaces → echo timing d = c·t/2 → line-by-line cross-section → Doppler flow · 3D demo · drag to orbit / scroll to zoom · Space = play/pause">压电片发射脉冲 → 匀速下传 → 声阻抗界面部分反射 → 回波计时 d = c·t/2 → 逐线拼出断面图 → 多普勒测血流 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="scan">
+  <div class="scT" data-zh="B 模式断面图 · 一次 ping 画一条竖线" data-en="B-mode image · one vertical line per ping">B 模式断面图 · 一次 ping 画一条竖线</div>
+  <canvas id="bscan" width="560" height="300"></canvas>
+  <div class="scT" data-zh="A-scan 回波幅度–时间 · 每个峰 = 一个界面,峰位 = 深度 c·t/2" data-en="A-scan amplitude–time · each peak = one interface, position = depth c·t/2">A-scan 回波幅度–时间 · 每个峰 = 一个界面,峰位 = 深度 c·t/2</div>
+  <canvas id="ascan" width="560" height="150"></canvas>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="回波延时" data-en="echo delay">回波延时</span><span class="v" id="stDelay">—</span>
+  <span class="k" data-zh="计算深度 c·t/2" data-en="depth c·t/2">计算深度 c·t/2</span><span class="v ok" id="stDepth">—</span>
+  <span class="k" data-zh="频移 Δf" data-en="shift Δf">频移 Δf</span><span class="v dp" id="stDf">—</span>
+  <span class="k" data-zh="血流速度" data-en="flow speed">血流速度</span><span class="v dp" id="stFlow">—</span>
+  <span class="k" data-zh="已扫描线数" data-en="lines scanned">已扫描线数</span><span class="v" id="stLines">0</span>
+</div>
+
+<div id="panel">
+  <div id="actions">
+    <button class="abtn on" id="btnSonar" data-zh="声呐" data-en="sonar">声呐</button>
+    <button class="abtn" id="btnUS" data-zh="B 超" data-en="B-mode">B 超</button>
+    <button class="abtn" id="btnPing" data-zh="发射 ping" data-en="ping!">发射 ping</button>
+    <button class="abtn on" id="btnAuto" data-zh="自动收发" data-en="auto-ping">自动收发</button>
+  </div>
+  <div class="row"><label data-zh="目标深度" data-en="Target depth">目标深度</label><input id="dep" type="range" min="8" max="32" step="0.5" value="16"><span class="val" id="depVal">16.0 m</span></div>
+  <div class="row"><label data-zh="扫描速度" data-en="Sweep speed">扫描速度</label><input id="swp" type="range" min="5" max="100" step="5" value="10"><span class="val" id="swpVal">10 %</span></div>
+  <div class="row"><label data-zh="速度" data-en="Speed">速度</label><input id="spd" type="range" min="0.2" max="3" step="0.1" value="1"><span class="val" id="spdVal">1.0×</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label id="rowDop"><input id="tglDop" type="checkbox"> <span data-zh="多普勒血流" data-en="Doppler flow">多普勒血流</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../doppler-effect/" data-zh="频移从哪里来:多普勒效应" data-en="where the shift comes from: Doppler">频移从哪里来:多普勒效应</a>
+    <a href="../mri/" data-zh="另一种断层成像:MRI" data-en="another tomography: MRI">另一种断层成像:MRI</a>
+    <a href="../resonance-beats/" data-zh="压电片的共振:共振与拍" data-en="the piezo's resonance: resonance & beats">压电片的共振:共振与拍</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const rnd = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeef1f6 : 0x10151c);
+  M.floor.color.set(THEME === 'light' ? 0xd6dce6 : 0x1b212c);
+  M.tank.color.set(THEME === 'light' ? 0x5b6b7d : 0x6f8199);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('声呐与 B 超:回波如何拼成图像', 'Sonar & B-mode ultrasound: echoes into an image');
+  for (const r of labelReg) if (!r.span) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(6.6, 4.6, 9.0);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.9, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 24;
+controls.autoRotateSpeed = 0.5;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.7));
+const key = new THREE.DirectionalLight(0xffffff, 2.0);
+key.position.set(5, 9, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.4);
+fill.position.set(-6, 3, -5);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.2,
+    emissive: color, emissiveIntensity: 0.06, ...opts });
+}
+const M = {
+  floor: mat(0x1b212c, { roughness: 0.9, emissive: 0x000000 }),
+  tank: new THREE.LineBasicMaterial({ color: 0x6f8199, transparent: true, opacity: 0.55 }),
+  water: mat(0x2e6f9e, { transparent: true, opacity: 0.18, roughness: 0.2, emissiveIntensity: 0.03, depthWrite: false }),
+  sand: mat(0x9a8a68, { roughness: 0.95 }),
+  rock: mat(0x5d6672, { roughness: 0.9 }),
+  fish: mat(0x7fb8d9, { roughness: 0.4, metalness: 0.3 }),
+  fishFin: mat(0x4d7a96, { roughness: 0.5 }),
+  tissue: mat(0xc98a8a, { transparent: true, opacity: 0.22, roughness: 0.7, emissiveIntensity: 0.03, depthWrite: false }),
+  organ: mat(0x9e4f4f, { transparent: true, opacity: 0.45, roughness: 0.6 }),
+  vessel: mat(0x8e2f2f, { transparent: true, opacity: 0.4, roughness: 0.5, emissive: 0x8e2f2f, emissiveIntensity: 0.15, side: THREE.DoubleSide }),
+  steel: mat(0xcfd4dc, { metalness: 0.8, roughness: 0.25 }),
+  piezo: mat(0xffc46b, { emissive: 0xffb454, emissiveIntensity: 0.25 }),
+  beam: new THREE.MeshBasicMaterial({ color: 0x63b3ff, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false }),
+};
+
+/* ================= 常量:介质 / 尺度 ================= */
+const H_W = 4;                                  // 介质深度(世界单位)
+const V_P = 8 / 3;                              // 脉冲视觉速度:全深往返 3 s
+const TRIP = 2 * H_W / V_P;
+const MD = {
+  sonar: { c: 1500, D: 40, dU: 'm',  tk: 1000, tU: 'ms', depMin: 8, depMax: 32 },
+  us:    { c: 1540, D: 16, dU: 'cm', tk: 1e6,  tU: 'µs', depMin: 4, depMax: 13 },
+};
+const FISH = { x: 0.8, rx: 0.8, ryM: 2.8 };     // 鱼:世界 x / 半宽,物理半高 2.8 m
+const ORG = { x: -1.0, y: 1.15, rx: 1.35, ry: 1.0 };
+const VES = { x: 1.3, r: 0.3, rCm: 1.2, v: 0.25, f0: 5e6, cosT: 0.5 };
+
+let MODE = qs.get('mode') === 'us' ? 'us' : 'sonar';
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let simT = 0, sweepX = -3, sweepDir = 1, sweepV = 0.1;
+let autoPing = true, dopOn = false;
+let ping = null, lastIfs = null, lastEcho = null, lines = 0, nextPingT = 0.5, piezoFlash = 0;
+const depVal = { sonar: clamp(qsFloat('dep', 16), 8, 32), us: clamp(qsFloat('depU', 8), 4, 13) };
+const tmax = () => 2 * MD[MODE].D / MD[MODE].c;
+const K = () => tmax() / TRIP;                  // 视觉秒 → 物理秒
+const yOf = d => H_W - d / MD[MODE].D * H_W;    // 物理深度 → 世界 y
+
+/* ================= 场景:水槽(声呐) / 组织块(B 超) ================= */
+const floor = new THREE.Mesh(new THREE.BoxGeometry(14, 0.2, 9), M.floor);
+floor.position.y = -0.1;
+scene.add(floor);
+const sonarGrp = new THREE.Group(); scene.add(sonarGrp);
+const usGrp = new THREE.Group(); scene.add(usGrp);
+{
+  const water = new THREE.Mesh(new THREE.BoxGeometry(6.8, H_W, 4), M.water);
+  water.position.y = H_W / 2; sonarGrp.add(water);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(6.8, H_W, 4)), M.tank);
+  edges.position.y = H_W / 2; sonarGrp.add(edges);
+  const sand = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.4, 4), M.sand);
+  sand.position.y = 0.2; sonarGrp.add(sand);
+  for (let i = 0; i < 6; i++) {
+    const r = new THREE.Mesh(new THREE.SphereGeometry(0.12 + rnd(i, 1) * 0.15, 8, 6), M.rock);
+    r.position.set(-3 + rnd(i, 2) * 6, 0.42, -1.6 + rnd(i, 3) * 3.2);
+    r.scale.y = 0.6; sonarGrp.add(r);
+  }
+}
+/* 鱼(目标,深度随滑杆) */
+const fishGrp = new THREE.Group(); sonarGrp.add(fishGrp);
+let tail;
+{
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.3, 20, 14), M.fish);
+  body.scale.set(2.6, 0.95, 0.7); fishGrp.add(body);
+  tail = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.42, 10), M.fishFin);
+  tail.rotation.z = -Math.PI / 2; tail.position.x = -0.66; tail.scale.z = 0.4; fishGrp.add(tail);
+  const fin = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.24, 8), M.fishFin);
+  fin.position.set(0.05, 0.3, 0); fin.scale.z = 0.35; fishGrp.add(fin);
+  const eyeM = new THREE.MeshBasicMaterial({ color: 0x101418 });
+  for (const s of [-1, 1]) {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), eyeM);
+    e.position.set(0.42, 0.07, s * 0.17); fishGrp.add(e);
+  }
+  fishGrp.position.set(FISH.x, 2.4, 0);
+}
+/* 组织块 + 器官 + 血管 */
+const vesGrp = new THREE.Group();
+{
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(6.8, H_W, 4), M.tissue);
+  slab.position.y = H_W / 2; usGrp.add(slab);
+  const slabE = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(6.8, H_W, 4)), M.tank);
+  slabE.position.y = H_W / 2; usGrp.add(slabE);
+  const organ = new THREE.Mesh(new THREE.SphereGeometry(1, 26, 18), M.organ);
+  organ.scale.set(ORG.rx, ORG.ry, 1.1); organ.position.set(ORG.x, ORG.y, 0); usGrp.add(organ);
+  const ves = new THREE.Mesh(new THREE.CylinderGeometry(VES.r, VES.r, 3.9, 20, 1, true), M.vessel);
+  ves.rotation.x = Math.PI / 2; vesGrp.add(ves);
+  vesGrp.position.set(VES.x, 2, 0); usGrp.add(vesGrp);
+}
+
+/* ================= 换能器(收发一体,横移扫描) ================= */
+const transGrp = new THREE.Group(); scene.add(transGrp);
+const piezoEl = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.07, 0.4), M.piezo);
+{
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 0.55), M.steel);
+  bar.position.y = 0.13; transGrp.add(bar);
+  piezoEl.position.y = 0.01; transGrp.add(piezoEl);
+  const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.1, 8), M.steel);
+  cable.position.y = 0.75; transGrp.add(cable);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(0.5, H_W, 0.4), M.beam);
+  beam.position.y = -H_W / 2 - 0.02; transGrp.add(beam);
+  transGrp.position.set(sweepX, H_W + 0.06, 0);
+}
+
+/* ================= 脉冲包池(下行 1 + 回波若干) ================= */
+const pkGeo = new THREE.SphereGeometry(1, 12, 8);
+const packets = [];
+for (let i = 0; i < 10; i++) {
+  const m = new THREE.MeshBasicMaterial({ color: 0xffc46b, transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false });
+  const mesh = new THREE.Mesh(pkGeo, m);
+  mesh.scale.set(0.34, 0.13, 0.24); mesh.visible = false; scene.add(mesh);
+  packets.push({ mesh, m, active: false, y0: 0, tB: 0, amp: 0, d: 0, kind: '' });
+}
+const downM = new THREE.MeshBasicMaterial({ color: 0xbfe8ff, transparent: true, opacity: 0,
+  blending: THREE.AdditiveBlending, depthWrite: false });
+const downPk = new THREE.Mesh(pkGeo, downM);
+downPk.scale.set(0.42, 0.16, 0.3); downPk.visible = false; scene.add(downPk);
+function spawnEcho(y, tB, amp, d, kind) {
+  const p = packets.find(q => !q.active);
+  if (!p) return;
+  p.active = true; p.y0 = y; p.tB = tB; p.amp = amp; p.d = d; p.kind = kind;
+  let col = 0xffc46b;
+  if (dopOn && (kind === 'vesN' || kind === 'vesF')) col = (ping && ping.x < VES.x) ? 0xff5a4a : 0x5a8cff;
+  p.m.color.set(col); p.mesh.visible = true;
+}
+
+/* ---------------- 粒子:气泡 / 红细胞(InstancedMesh) ---------------- */
+const NB = 42, NR = 90;
+const bubbles = new THREE.InstancedMesh(new THREE.SphereGeometry(0.03, 6, 5),
+  new THREE.MeshBasicMaterial({ color: 0xbfe8ff, transparent: true, opacity: 0.5 }), NB);
+bubbles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+sonarGrp.add(bubbles);
+const bubP = Array.from({ length: NB }, (_, i) => ({ x: -3.2 + rnd(i, 7) * 6.4, y: rnd(i, 8) * 3.8, z: -1.8 + rnd(i, 9) * 3.6, s: 0.2 + rnd(i, 10) * 0.5 }));
+const rbcs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.045, 7, 5),
+  new THREE.MeshBasicMaterial({ color: 0xe04848 }), NR);
+rbcs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(rbcs);
+const rbcP = Array.from({ length: NR }, (_, i) => {
+  const a = rnd(i, 11) * Math.PI * 2, r = Math.sqrt(rnd(i, 12)) * VES.r * 0.8;
+  return { dx: Math.cos(a) * r, dy: Math.sin(a) * r, z: -1.9 + rnd(i, 13) * 3.8 };
+});
+const dummy = new THREE.Object3D();
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true, target = scene) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  target.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.element.style.display = labelsOn && r.vis() ? '' : 'none';
+}
+/* 回波弹出标签(snap 同款) */
+const snapDiv = document.createElement('div');
+snapDiv.className = 'lbl g st';
+const snapSpan = document.createElement('span');
+snapSpan.className = 'pop';
+snapDiv.appendChild(snapSpan);
+const snapObj = new CSS2DObject(snapDiv);
+snapObj.position.set(1.1, 0.4, 0);
+transGrp.add(snapObj);
+labelReg.push({ o: snapObj, text: () => '', vis: () => true, span: snapSpan });
+function fireEchoLabel(txt) {
+  snapSpan.textContent = txt;
+  snapSpan.classList.remove('on');
+  void snapSpan.offsetWidth;
+  snapSpan.classList.add('on');
+}
+addLabel(() => L('压电换能器 · 收发一体', 'piezo transducer · TX/RX'), new THREE.Vector3(0, 0.66, 0), 'b', () => true, transGrp);
+addLabel(() => L(`目标鱼 · d = ${depVal.sonar.toFixed(1)} m`, `fish · d = ${depVal.sonar.toFixed(1)} m`),
+  new THREE.Vector3(0, 0.55, 0), 'g', () => MODE === 'sonar', fishGrp);
+addLabel(() => L('海底 · 40 m(砂)', 'seafloor · 40 m (sand)'), new THREE.Vector3(2.2, 0.75, 0), '', () => MODE === 'sonar', sonarGrp);
+addLabel(() => L('器官包膜:声阻抗界面', 'organ capsule: impedance interface'), new THREE.Vector3(ORG.x - 0.2, ORG.y + ORG.ry + 0.4, 0), 'g', () => MODE === 'us', usGrp);
+addLabel(() => L(`血管 · d = ${depVal.us.toFixed(1)} cm · 血流 25 cm/s`, `vessel · d = ${depVal.us.toFixed(1)} cm · flow 25 cm/s`),
+  new THREE.Vector3(0, 0.62, 0), 'r', () => MODE === 'us', vesGrp);
+
+/* ================= 声阻抗界面(按波束 x 解析求交) ================= */
+function currentIfs(x) {
+  const ifs = [];
+  if (MODE === 'sonar') {
+    const u = (x - FISH.x) / FISH.rx;
+    if (Math.abs(u) < 1) ifs.push({ d: depVal.sonar - FISH.ryM * Math.sqrt(1 - u * u), R: 0.6, kind: 'fish' });
+    ifs.push({ d: 40, R: 0.35, kind: 'floor' });
+  } else {
+    const uo = (x - ORG.x) / ORG.rx;
+    if (Math.abs(uo) < 1) ifs.push({ d: (H_W - ORG.y - ORG.ry * Math.sqrt(1 - uo * uo)) * 4, R: 0.22, kind: 'organ' });
+    const uv = (x - VES.x) / VES.r;
+    if (Math.abs(uv) < 1) {
+      const s = VES.rCm * Math.sqrt(1 - uv * uv);
+      ifs.push({ d: depVal.us - s, R: 0.16, kind: 'vesN' });
+      ifs.push({ d: depVal.us + s, R: 0.16, kind: 'vesF' });
+    }
+    ifs.push({ d: 16, R: 0.3, kind: 'bottom' });
+  }
+  return ifs.sort((a, b) => a.d - b.d);
+}
+
+/* ================= 收发物理:一次 ping 的生死 ================= */
+function startPing(pre) {
+  const ifs = currentIfs(sweepX);
+  ping = { t0: simT - pre, x: sweepX, ifs, hit: 0, amp: 1, echoes: 0 };
+  for (const p of packets) { p.active = false; p.mesh.visible = false; }
+  downPk.visible = true;
+  piezoFlash = 1;
+  for (let i = 0; i < ifs.length; i++) {           // 预进 pre 秒:补发在途回波
+    const y = yOf(ifs[i].d), tHit = (H_W - y) / V_P, tArr = 2 * tHit;
+    if (tHit <= pre) {
+      spawnEcho(y, ping.t0 + tHit, ping.amp * ifs[i].R, ifs[i].d, ifs[i].kind);
+      ping.amp *= (1 - ifs[i].R); ping.hit++;
+      if (tArr <= pre) { ping.echoes++; lastEcho = { t: tArr * K(), d: ifs[i].d }; }
+    }
+  }
+}
+function stepPing() {
+  const t = simT - ping.t0;
+  const yD = H_W - V_P * t;
+  while (ping.hit < ping.ifs.length && yD <= yOf(ping.ifs[ping.hit].d)) {
+    const f = ping.ifs[ping.hit];
+    spawnEcho(yOf(f.d), ping.t0 + (H_W - yOf(f.d)) / V_P, ping.amp * f.R, f.d, f.kind);
+    ping.amp *= (1 - f.R); ping.hit++;
+  }
+  let alive = yD > 0;
+  if (alive) { downPk.position.set(ping.x, yD, 0); downM.opacity = 0.25 + 0.75 * ping.amp; }
+  else downPk.visible = false;
+  for (const p of packets) {
+    if (!p.active) continue;
+    const y = p.y0 + V_P * (simT - p.tB);
+    if (y >= H_W) {
+      p.active = false; p.mesh.visible = false; ping.echoes++;
+      lastEcho = { t: 2 * (H_W - p.y0) / V_P * K(), d: p.d };
+      piezoFlash = 1;
+      const tk = MD[MODE].tk;
+      fireEchoLabel(L(`回波 ${(lastEcho.t * tk).toFixed(tk === 1000 ? 1 : 0)} ${MD[MODE].tU}`,
+        `echo ${(lastEcho.t * tk).toFixed(tk === 1000 ? 1 : 0)} ${MD[MODE].tU}`));
+    } else {
+      p.mesh.position.set(ping.x, y, 0);
+      p.m.opacity = clamp(p.amp * 2.2, 0.08, 0.95);
+    }
+    if (p.active) alive = true;
+  }
+  if (!alive) completePing();
+}
+function completePing() {
+  paintColumn(ping.x, ping.ifs);
+  lines++;
+  lastIfs = ping.ifs;
+  ping = null;
+  downPk.visible = false;
+  nextPingT = simT + 0.4;
+}
+function instantPing() {
+  const ifs = currentIfs(sweepX);
+  lastEcho = { t: 2 * (H_W - yOf(ifs[0].d)) / V_P * K(), d: ifs[0].d };
+  paintColumn(sweepX, ifs);
+  lines++;
+  lastIfs = ifs;
+}
+function sweepStep(dt) {
+  sweepX += sweepDir * sweepV * dt;
+  if (sweepX > 3.1) { sweepX = 3.1; sweepDir = -1; }
+  else if (sweepX < -3.1) { sweepX = -3.1; sweepDir = 1; }
+}
+function fastForward(sec) {
+  const lim = simT + sec;
+  let g = 0;
+  while (simT < lim && g++ < 2400) {
+    simT += 0.05;
+    sweepStep(0.05);
+    if (autoPing) instantPing();
+  }
+  ping = null; downPk.visible = false;
+  for (const p of packets) { p.active = false; p.mesh.visible = false; }
+  nextPingT = simT + 0.3;
+}
+
+/* ================= B 图:一次 ping 拼一条竖线 ================= */
+const bctx = document.getElementById('bscan').getContext('2d');
+const BSC_W = 560, BSC_H = 300;
+let prevCol = null;
+function clearImg() {
+  bctx.fillStyle = '#05080d';
+  bctx.fillRect(0, 0, BSC_W, BSC_H);
+  prevCol = null;
+  lines = 0;
+}
+function paintColumn(x, ifs) {
+  const D = MD[MODE].D;
+  const colX = (x + 3.4) / 6.8 * BSC_W;
+  const x0 = prevCol === null ? colX : prevCol;
+  const lo = clamp(Math.min(x0, colX), 0, BSC_W - 1), wdt = clamp(Math.abs(colX - x0), 1.2, BSC_W - lo);
+  let vN = -1, vF = -1;
+  if (MODE === 'us') {
+    const u = (x - VES.x) / VES.r;
+    if (Math.abs(u) < 1) { const s = VES.rCm * Math.sqrt(1 - u * u); vN = depVal.us - s; vF = depVal.us + s; }
+  }
+  for (let r = 0; r < BSC_H; r++) {
+    const d = (r + 0.5) / BSC_H * D;
+    let a = 0.09 * rnd(r, Math.round(colX * 0.7));          // 介质斑点噪声
+    if (vN > 0 && d > vN && d < vF) a *= 0.4;               // 血液近无回声(暗腔)
+    for (const f of ifs) a += f.R * 2.4 * Math.exp(-(((d - f.d) / (D * 0.007)) ** 2)) * Math.exp(-d / D * 0.85);
+    const g = Math.round(clamp(a, 0, 1) * 255);
+    bctx.fillStyle = `rgb(${g},${g},${g})`;
+    bctx.fillRect(lo, r, wdt, 1);
+  }
+  if (dopOn && vN > 0) {                                    // 多普勒彩色叠加:红=朝向探头 蓝=远离
+    bctx.fillStyle = x < VES.x ? 'rgba(255,60,40,.55)' : 'rgba(70,130,255,.55)';
+    bctx.fillRect(lo, vN / D * BSC_H, wdt, (vF - vN) / D * BSC_H);
+  }
+  prevCol = colX;
+}
+
+/* ================= A-scan:幅度–时间(随回波逐个长出峰) ================= */
+const actx = document.getElementById('ascan').getContext('2d');
+const ASC_W = 560, ASC_H = 150;
+function drawAscan() {
+  const tM = tmax(), D = MD[MODE].D, tk = MD[MODE].tk;
+  const tNow = ping ? clamp((simT - ping.t0) * K(), 0, tM) : tM;
+  const ifs = ping ? ping.ifs : (lastIfs || []);
+  actx.clearRect(0, 0, ASC_W, ASC_H);
+  actx.strokeStyle = 'rgba(128,140,155,.25)';
+  actx.lineWidth = 1;
+  for (const gy of [0.33, 0.66]) { actx.beginPath(); actx.moveTo(0, gy * ASC_H); actx.lineTo(ASC_W, gy * ASC_H); actx.stroke(); }
+  actx.strokeStyle = THEME === 'light' ? '#4d9fff' : '#63b3ff';
+  actx.lineWidth = 1.6;
+  actx.beginPath();
+  actx.moveTo(0, ASC_H - 1);
+  const w = tM * 0.010;
+  for (let px = 0; px < ASC_W; px += 2) {
+    const t = px / ASC_W * tM;
+    if (t > tNow) break;
+    let a = 0.02 + 0.03 * rnd(px, Math.floor(simT * 18));
+    for (const f of ifs) {
+      const tI = 2 * (H_W - yOf(f.d)) / V_P * K();
+      if (tI <= tNow) a += f.R * 2.6 * Math.exp(-(((t - tI) / w) ** 2)) * Math.exp(-f.d / D * 0.85);
+    }
+    actx.lineTo(px, ASC_H - 1 - clamp(a, 0, 1.05) * (ASC_H - 16));
+  }
+  actx.stroke();
+  actx.fillStyle = 'rgba(155,170,190,.85)';
+  actx.font = '10px system-ui';
+  actx.fillText('0', 4, ASC_H - 5);
+  actx.fillText(`${(tM * tk).toFixed(tk === 1000 ? 1 : 0)} ${MD[MODE].tU}`, ASC_W - 56, ASC_H - 5);
+}
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '压电片:电压脉冲 → 声脉冲', be: 'Piezo: voltage → sound pulse',
+    d: '给压电陶瓷一个短电压脉冲,它按共振频率「铛」地震一下,把电脉冲变成一束短声脉冲射入介质。声呐的 ping 和 B 超的脉冲是同一个原理。',
+    de: 'A short voltage pulse rings the piezo ceramic at its resonance, turning electricity into a brief sound pulse. Sonar pings and ultrasound pulses are the same trick.',
+    act: () => { clearImg(); aim(); startPing(0); } },
+  { b: '声波在介质中匀速下传', be: 'Steady speed downward',
+    d: '脉冲近似匀速直线前进:海水 ≈ 1500 m/s,软组织 ≈ 1540 m/s。速度已知且恒定——这是把「时间」换算成「深度」的基础。',
+    de: 'The pulse travels straight at near-constant speed: ≈1500 m/s in seawater, ≈1540 m/s in soft tissue. A known, constant speed is what turns time into depth.',
+    act: () => { clearImg(); aim(); startPing(0.55); } },
+  { b: '声阻抗界面:部分反射、部分透射', be: 'Interfaces split the pulse',
+    d: 'Z = ρc。两种介质 Z 不同,界面就把脉冲劈开:一部分原路返回(回波),一部分继续下传。R = (Z₂−Z₁)/(Z₂+Z₁)——鱼鳔、海底、器官包膜、血管壁,每道界面都回一声。',
+    de: 'Z = ρc. Where Z changes, the interface splits the pulse: part reflected back (echo), part transmitted on. R = (Z₂−Z₁)/(Z₂+Z₁) — swim bladder, seafloor, organ capsule, vessel walls each answer.',
+    act: () => { clearImg(); aim(); startPing(firstHitT() - 0.12); } },
+  { b: '回波计时:深度 = c·t/2', be: 'Echo timing: depth = c·t/2',
+    d: '换能器转为接收。回波在 t 时刻到达 → 界面深度 d = c·t/2(除以 2,因为走了往返)。A-scan 上每个尖峰对应一道界面,峰的位置就是深度。',
+    de: 'The transducer now listens. An echo at time t means an interface at d = c·t/2 (round trip, hence /2). Every A-scan peak is an interface; its position is the depth.',
+    act: () => { clearImg(); aim(); startPing(firstArrT() - 0.1); } },
+  { b: '逐线扫描:拼出 B 超断面图', be: 'Line by line: the B-scan image',
+    d: '换能器边横移边重复收发:每个位置把 A-scan 幅度映射成亮度、竖着画一条线。线一条条累积,海底上的鱼、组织里的器官轮廓,就在 B 图里显形——签名时刻。',
+    de: 'The transducer sweeps while pinging: at each position the A-scan amplitudes become brightnesses painted as one vertical line. Line by line the fish on the seafloor, the organ in tissue, takes shape — the signature moment.',
+    act: () => { autoPing = true; syncAutoBtn(); fastForward(18); playing = true; setPlayLabel(); } },
+  { b: '多普勒:血流把回波频率推上移下', be: 'Doppler: moving blood shifts the echo',
+    d: '红细胞随血流运动,回波频率被多普勒效应推移:Δf = 2f₀·v·cosθ/c。测出 Δf 即可反推血流速度;B 图上用红(流向探头)/蓝(远离)给血管里的流动上色。',
+    de: 'Red cells ride the flow, so their echo is Doppler-shifted: Δf = 2f₀·v·cosθ/c. Measuring Δf yields flow speed; the B image colors the vessel red (toward) or blue (away).',
+    act: () => { if (MODE !== 'us') setMode('us'); if (!tglDop.checked) { tglDop.checked = true; tglDop.dispatchEvent(new Event('change')); } fastForward(6); playing = true; setPlayLabel(); } },
+];
+function aim() { sweepX = MODE === 'sonar' ? FISH.x : ORG.x; }
+function firstHitT() { const ifs = currentIfs(sweepX); return (H_W - yOf(ifs[0].d)) / V_P; }
+function firstArrT() { return 2 * firstHitT(); }
+function stepIndex() {
+  if (MODE === 'us' && dopOn) return 5;
+  if (lines >= 8) return 4;
+  if (!ping) return lines > 0 ? 3 : 0;
+  const t = simT - ping.t0;
+  if (t < 0.3) return 0;
+  if (ping.hit === 0) return 1;
+  if (ping.echoes === 0) return 2;
+  return 3;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { playing = true; setPlayLabel(); s.act(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elDep = document.getElementById('dep'), elDepVal = document.getElementById('depVal');
+const elSwp = document.getElementById('swp'), elSwpVal = document.getElementById('swpVal');
+const elSpd = document.getElementById('spd'), elSpdVal = document.getElementById('spdVal');
+const btnSonar = document.getElementById('btnSonar'), btnUS = document.getElementById('btnUS');
+const btnPing = document.getElementById('btnPing'), btnAuto = document.getElementById('btnAuto');
+const tglLabels = document.getElementById('tglLabels'), tglDop = document.getElementById('tglDop'), tglRotate = document.getElementById('tglRotate');
+const stDelay = document.getElementById('stDelay'), stDepth = document.getElementById('stDepth'),
+  stDf = document.getElementById('stDf'), stFlow = document.getElementById('stFlow'), stLines = document.getElementById('stLines');
+const formulaEl = document.getElementById('formula');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function syncAutoBtn() { btnAuto.classList.toggle('on', autoPing); }
+function fmtD(d) { return d.toFixed(1) + ' ' + MD[MODE].dU; }
+function updateFormula() {
+  const md = MD[MODE];
+  const e = lastEcho;
+  const l1 = e
+    ? `<b>d = c·t/2</b> = ${md.c} m/s × ${(e.t * md.tk).toFixed(md.tk === 1000 ? 2 : 0)} ${md.tU} / 2 = <b>${fmtD(e.d)}</b>`
+    : `<b>d = c·t/2</b> · ${L('等待第一个回波…', 'awaiting the first echo…')}`;
+  const l2 = MODE === 'sonar'
+    ? L('R = (Z₂−Z₁)/(Z₂+Z₁):鱼鳔(气)R≈0.6 · 海底(砂)R≈0.35 —— 阻抗差越大,回波越亮',
+        'R = (Z₂−Z₁)/(Z₂+Z₁): swim bladder (air) ≈0.6 · sand ≈0.35 — bigger impedance gap, brighter echo')
+    : L(`多普勒:Δf = 2f₀·v·cosθ/c = 2×5 MHz×0.25 m/s×cos60°/1540 ≈ <b>±812 Hz</b> → v = c·Δf/(2f₀·cosθ) = <b>25 cm/s</b>`,
+        `Doppler: Δf = 2f₀·v·cosθ/c = 2×5 MHz×0.25 m/s×cos60°/1540 ≈ <b>±812 Hz</b> → v = c·Δf/(2f₀·cosθ) = <b>25 cm/s</b>`);
+  formulaEl.innerHTML = l1 + '<br>' + l2;
+}
+function setMode(m) {
+  MODE = m;
+  sonarGrp.visible = m === 'sonar';
+  usGrp.visible = m === 'us';
+  rbcs.visible = m === 'us';
+  btnSonar.classList.toggle('on', m === 'sonar');
+  btnUS.classList.toggle('on', m === 'us');
+  elDep.min = MD[m].depMin; elDep.max = MD[m].depMax; elDep.step = m === 'sonar' ? 0.5 : 0.1;
+  elDep.value = depVal[m];
+  elDepVal.textContent = fmtD(depVal[m]);
+  document.getElementById('rowDop').style.display = m === 'us' ? '' : 'none';
+  if (m !== 'us') { dopOn = false; tglDop.checked = false; }
+  ping = null; downPk.visible = false;
+  for (const p of packets) { p.active = false; p.mesh.visible = false; }
+  lastIfs = null; lastEcho = null; nextPingT = simT + 0.4;
+  clearImg();
+  refreshLabels();
+  updateFormula();
+}
+
+elDep.addEventListener('input', () => { depVal[MODE] = parseFloat(elDep.value); elDepVal.textContent = fmtD(depVal[MODE]); });
+elSwp.addEventListener('input', () => { sweepV = parseFloat(elSwp.value) / 100; elSwpVal.textContent = elSwp.value + ' %'; });
+elSpd.addEventListener('input', () => { speed = parseFloat(elSpd.value); elSpdVal.textContent = speed.toFixed(1) + '×'; });
+btnSonar.addEventListener('click', () => setMode('sonar'));
+btnUS.addEventListener('click', () => setMode('us'));
+btnPing.addEventListener('click', () => { startPing(0); playing = true; setPlayLabel(); });
+btnAuto.addEventListener('click', () => { autoPing = !autoPing; syncAutoBtn(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglDop.addEventListener('change', () => { dopOn = tglDop.checked && MODE === 'us'; updateFormula(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { tglLabels.checked = false; labelsOn = false; }
+if (qsBool('dop', false)) { tglDop.checked = true; }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, formulaAcc = 0;
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const dts = dt * speed;
+  if (playing) {
+    simT += dts;
+    sweepStep(dts);
+    if (ping) stepPing();
+    else if (autoPing && simT >= nextPingT) startPing(0);
+  }
+  /* 换能器与目标 */
+  transGrp.position.x = sweepX;
+  piezoFlash = Math.max(0, piezoFlash - dt * 3);
+  M.piezo.emissiveIntensity = 0.25 + piezoFlash * 2.2;
+  fishGrp.position.y = H_W - depVal.sonar / 40 * H_W + Math.sin(simT * 1.3) * 0.04;
+  tail.rotation.y = Math.sin(simT * 5) * 0.3;
+  vesGrp.position.y = H_W - depVal.us / 16 * H_W;
+  /* 气泡:缓升回绕 */
+  for (let i = 0; i < NB; i++) {
+    const b = bubP[i];
+    if (playing) { b.y += (0.08 + b.s * 0.2) * dts; if (b.y > 3.9) b.y = 0.15; }
+    dummy.position.set(b.x, b.y, b.z);
+    dummy.scale.setScalar(0.7 + b.s);
+    dummy.updateMatrix();
+    bubbles.setMatrixAt(i, dummy.matrix);
+  }
+  bubbles.instanceMatrix.needsUpdate = true;
+  /* 红细胞:沿血管流动(多普勒开启时提速) */
+  if (usGrp.visible) {
+    const vy = vesGrp.position.y, fv = dopOn ? 1.1 : 0.22;
+    for (let i = 0; i < NR; i++) {
+      const p = rbcP[i];
+      if (playing) { p.z += fv * dts; if (p.z > 1.95) p.z = -1.95; }
+      dummy.position.set(VES.x + p.dx, vy + p.dy, p.z);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      rbcs.setMatrixAt(i, dummy.matrix);
+    }
+    rbcs.instanceMatrix.needsUpdate = true;
+  }
+  /* 读数 */
+  const md = MD[MODE];
+  if (lastEcho) {
+    stDelay.textContent = (lastEcho.t * md.tk).toFixed(md.tk === 1000 ? 1 : 0) + ' ' + md.tU;
+    stDepth.textContent = fmtD(lastEcho.d);
+  } else { stDelay.textContent = '—'; stDepth.textContent = '—'; }
+  const dopShow = MODE === 'us' && dopOn;
+  stDf.textContent = dopShow ? '±812 Hz' : '—';
+  stFlow.textContent = dopShow ? '25 cm/s' : '—';
+  stLines.textContent = lines;
+  formulaAcc += dt;
+  if (formulaAcc > 0.25) { formulaAcc = 0; updateFormula(); }
+  drawAscan();
+  for (const r of labelReg) if (labelsOn && r.vis() && !r.span) r.o.element.textContent = r.text();
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null && !document.hidden) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化(URL 参数) ================= */
+elSwp.value = Math.round(sweepV * 100);
+elSwpVal.textContent = Math.round(sweepV * 100) + ' %';
+elSpd.value = speed;
+elSpdVal.textContent = speed.toFixed(1) + '×';
+syncAutoBtn();
+setMode(MODE);
+dopOn = tglDop.checked && MODE === 'us';
+fastForward(clamp(qsFloat('t', 0), 0, 90));
+applyTheme();
+applyLang();
+setPlayLabel();
+start();
+</script>
+</body>
+</html>
