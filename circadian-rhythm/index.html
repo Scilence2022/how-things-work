@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>昼夜节律 · 细胞里的 24 小时分子钟</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#ffd166;
+    --bg:#10141b; --panel:rgba(13,17,24,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,24,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,24,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#b0761f;
+    --bg:#eef1f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.g { border-color: rgba(255,209,102,.9); color: #ffe9a8; }
+  .lbl.b { border-color: rgba(77,171,247,.9); color: #c9e5ff; }
+  .lbl.r { border-color: rgba(255,146,43,.9); color: #ffd9b8; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  .lbl.dm { font-size: 10.5px; color: var(--text2); border-color: transparent;
+    background: transparent; text-shadow: none; padding: 2px 4px; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(176,118,31,.9); color: #8a5c0d; }
+  .pop { display: inline-block; opacity: 0; }
+  .pop.on { animation: pop .9s ease-out forwards; }
+  @keyframes pop {
+    0% { transform: scale(.3); opacity: 0; }
+    22% { transform: scale(1.9); opacity: 1; }
+    45% { transform: scale(1.15); }
+    75% { opacity: 1; }
+    100% { transform: scale(1); opacity: 0; }
+  }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+  #lightbar { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 6; }
+  #lightbar .tbtn.on { border-color: rgba(255,209,102,.7); color: var(--acc); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 340px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 148px; z-index: 4; width: 396px; height: 218px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 11px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11.5px; color: var(--text2); font-weight: 400; }
+  #stats .v.hot { color: #ff922b; }
+  #stats .v.ok { color: #7bd88f; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.p { color: #ffd9b8; border-color: rgba(255,146,43,.7); }
+  .chip.c { color: #c9e5ff; border-color: rgba(77,171,247,.7); }
+  .chip.k { color: #c3f5e5; border-color: rgba(99,230,190,.7); }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1;
+    background: rgba(255,209,102,.12); color: var(--text); border: 1px solid rgba(255,209,102,.5);
+    border-radius: 9px; padding: 8px 10px; font-size: 13px; font-weight: 600;
+    transition: filter .15s, background .15s; }
+  .abtn:hover { filter: brightness(1.15); }
+  .abtn.on { background: rgba(255,146,43,.2); border-color: rgba(255,146,43,.65); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 104px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 78px; text-align: right; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(255,209,102,.10); border-color: rgba(255,209,102,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(176,118,31,.08); border-color: rgba(176,118,31,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #ffe9a8; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1250px) { #plot { display: none; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="昼夜节律:细胞里的 24 小时分子钟" data-en="Circadian Rhythm: the 24-hour molecular clock">昼夜节律:细胞里的 24 小时分子钟</h1>
+  <div class="sub" data-zh="清晨 CLOCK:BMAL1 打开 per/cry 基因 → 白天 PER/CRY 蛋白爬坡 → 够了就回核按住自己的启动子 → 入夜磷酸化降解 → 解锁重启:≈24 h 自生振荡;光脉冲早夜推迟、晚夜提前——倒时差的原理 · 3D 交互 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="At dawn CLOCK:BMAL1 opens the per/cry genes → PER/CRY proteins build through the day → enough, they re-enter the nucleus and sit on their own promoters → night: phosphorylated and degraded → repression lifts and the ≈24 h cycle restarts by itself; a light pulse delays it in early night, advances it in late night — how morning sun fixes jet lag · 3D interactive · drag to orbit / scroll to zoom · Space = play/pause">清晨 CLOCK:BMAL1 打开 per/cry 基因 → 白天 PER/CRY 蛋白爬坡 → 够了就回核按住自己的启动子 → 入夜磷酸化降解 → 解锁重启:≈24 h 自生振荡;光脉冲早夜推迟、晚夜提前——倒时差的原理 · 3D 交互 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="lightbar">
+  <button class="tbtn" id="btnPulseTop" data-zh="☀ 光照脉冲" data-en="☀ Light pulse">☀ 光照脉冲</button>
+</div>
+
+<div id="plot">
+  <h3 data-zh="PER/CRY 浓度 · 72 h 记录(黄带=环境昼,绿带=主观昼,竖线=光脉冲)" data-en="PER/CRY level · 72 h log (gold = ambient day, green = subjective day, vertical = light pulse)">PER/CRY 浓度 · 72 h 记录(黄带=环境昼,绿带=主观昼,竖线=光脉冲)</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="PER/CRY 浓度" data-en="PER/CRY level">PER/CRY 浓度</span><span class="v hot" id="stP">—</span>
+  <span class="k" data-zh="转录速率" data-en="transcription">转录速率</span><span class="v ok" id="stTx">—</span>
+  <span class="k" data-zh="周期长度" data-en="cycle period">周期长度</span><span class="v" id="stT">—</span>
+  <span class="k" data-zh="当前相位" data-en="phase">当前相位</span><span class="v" id="stPh" style="font-size:14px">—</span>
+  <span class="k" data-zh="相位移动量" data-en="phase shift">相位移动量</span><span class="v" id="stSh" style="font-size:14px">—</span>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.p" data-zh="PER 蛋白(橙)" data-en="PER (orange)">PER 蛋白(橙)</span>
+    <span class="chip.c" data-zh="CRY 蛋白(蓝)" data-en="CRY (blue)">CRY 蛋白(蓝)</span>
+    <span class="chip.k" data-zh="CLOCK:BMAL1(绿,激活蛋白)" data-en="CLOCK:BMAL1 (green, activator)">CLOCK:BMAL1(绿,激活蛋白)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnPulse">☀ 光照脉冲</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="光脉冲时机" data-en="pulse timing">光脉冲时机</label><input id="pulseT" type="range" min="0" max="23.5" step="0.5" value="14"><span class="val" id="pulseTVal">CT 14</span></div>
+  <div class="row"><label data-zh="速度" data-en="Speed">速度</label><input id="spd" type="range" min="0.2" max="3" step="0.1" value="1"><span class="val" id="spdVal">1.0×</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglFree" type="checkbox"> <span data-zh="自由运转(恒暗)" data-en="free-run (dark)">自由运转(恒暗)</span></label>
+      <label><input id="tglPhase" type="checkbox" checked> <span data-zh="相位标记" data-en="phase marks">相位标记</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../lac-operon/" data-zh="启动子开关的语言" data-en="the language of promoter switches">启动子开关的语言</a>
+    <a href="../centrifugal-governor/" data-zh="负反馈造振荡" data-en="negative feedback makes oscillation">负反馈造振荡</a>
+    <a href="../insulin-glucagon/" data-zh="另一个生理节律环" data-en="another physiological rhythm loop">另一个生理节律环</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeef1f6 : 0x10141b);
+  M.membe.color.set(THEME === 'light' ? 0x9db4d6 : 0x8fa3c0);
+  M.nucm.color.set(THEME === 'light' ? 0x8fa3c0 : 0x7f93b3);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('昼夜节律 · 分子钟', 'Circadian Rhythm · molecular clock');
+  for (const r of labelReg) {
+    if (r.span) r.span.textContent = snapWord;
+    else r.o.element.textContent = r.text();
+  }
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  refreshPulseBtn();
+  syncPulseT();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(0.5, 2.9, 7.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 18;
+controls.autoRotateSpeed = 0.4;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.7));
+const key = new THREE.DirectionalLight(0xffffff, 1.6);
+key.position.set(4, 8, 6);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.4);
+fill.position.set(-6, 3, -5);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.2,
+    emissive: color, emissiveIntensity: 0.12, ...opts });
+}
+const M = {
+  membe: new THREE.MeshStandardMaterial({ color: 0x8fa3c0, transparent: true, opacity: 0.07,
+    roughness: 0.3, metalness: 0.1, depthWrite: false }),
+  cyto: new THREE.MeshStandardMaterial({ color: 0x74c0fc, transparent: true, opacity: 0.04,
+    roughness: 0.6, depthWrite: false }),
+  nucm: new THREE.MeshStandardMaterial({ color: 0x7f93b3, transparent: true, opacity: 0.13,
+    roughness: 0.4, depthWrite: false }),
+  dna: mat(0x9aa7b8, { metalness: 0.3 }),
+  geneP: mat(0xff922b),
+  geneC: mat(0x4dabf7),
+  bead: mat(0xffd166, { emissiveIntensity: 0.4 }),
+  ck1: mat(0x63e6be, { emissiveIntensity: 0.3 }),
+  ck2: mat(0x8ce99a, { emissiveIntensity: 0.3 }),
+  per: mat(0xff922b, { emissiveIntensity: 0.3 }),
+  cry: mat(0x4dabf7, { emissiveIntensity: 0.3 }),
+  mrna: new THREE.MeshBasicMaterial({ color: 0xffd166 }),
+  ribo: mat(0xf783ac, { emissiveIntensity: 0.2 }),
+  tag: mat(0xffe066, { emissiveIntensity: 0.5 }),
+  pore: mat(0xc7d2de, { metalness: 0.5 }),
+  sun: new THREE.MeshStandardMaterial({ color: 0xffd43b, emissive: 0xffd43b, emissiveIntensity: 1.2, roughness: 0.4 }),
+};
+const base = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.7, 0.12, 48),
+  mat(0x1b212c, { roughness: 0.9, emissive: 0x000000 }));
+base.position.y = -0.55;
+scene.add(base);
+
+/* ================= 细胞:膜 + 核 + DNA ================= */
+const cellC = new THREE.Vector3(0, 1.25, 0);
+const cell = new THREE.Mesh(new THREE.SphereGeometry(2.3, 48, 36), M.membe);
+cell.position.copy(cellC);
+scene.add(cell);
+const cyto = new THREE.Mesh(new THREE.SphereGeometry(2.2, 40, 30), M.cyto);
+cyto.position.copy(cellC);
+scene.add(cyto);
+
+const nucPos = new THREE.Vector3(-0.35, 1.5, 0);
+const nuc = new THREE.Mesh(new THREE.SphereGeometry(0.95, 40, 30), M.nucm);
+nuc.position.copy(nucPos);
+scene.add(nuc);
+/* 核孔 */
+const poreGeo = new THREE.TorusGeometry(0.07, 0.02, 6, 16);
+for (let i = 0; i < 7; i++) {
+  const d = new THREE.Vector3().setFromSphericalCoords(1,
+    Math.acos(2 * (i + 0.5) / 7 - 1), i * 2.399);
+  const p = new THREE.Mesh(poreGeo, M.pore);
+  p.position.copy(nucPos).addScaledVector(d, 0.95);
+  p.lookAt(p.position.clone().add(d));
+  scene.add(p);
+}
+
+/* DNA 环 + 基因区段 + 启动子(dnaGrp 局部 xy 面 = 环面) */
+const dnaGrp = new THREE.Group();
+dnaGrp.position.copy(nucPos);
+dnaGrp.rotation.set(1.15, 0.35, 0);
+nuc.add(dnaGrp);
+dnaGrp.add(new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.04, 8, 64), M.dna));
+const A1 = 0.5, A2 = 3.6;
+const zoneP = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.075, 8, 14, 0.9), M.geneP);
+zoneP.rotation.z = A1;
+dnaGrp.add(zoneP);
+const zoneC = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.075, 8, 14, 0.9), M.geneC);
+zoneC.rotation.z = A2;
+dnaGrp.add(zoneC);
+const bead1 = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 10), M.bead);
+bead1.position.set(Math.cos(A1) * 0.5, Math.sin(A1) * 0.5, 0);
+dnaGrp.add(bead1);
+const bead2 = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 10), M.bead);
+bead2.position.set(Math.cos(A2) * 0.5, Math.sin(A2) * 0.5, 0);
+dnaGrp.add(bead2);
+
+/* CLOCK:BMAL1 二聚体(两个启动子各一座) */
+function makeCK() {
+  const g = new THREE.Group();
+  const a = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), M.ck1);
+  a.position.set(-0.075, 0, 0.02);
+  const b = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 10), M.ck2);
+  b.position.set(0.08, 0, -0.01);
+  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.1, 8), M.ck1);
+  c.rotation.z = Math.PI / 2;
+  c.position.set(0, 0.005, 0.01);
+  g.add(a, b, c);
+  return g;
+}
+const ck1 = makeCK(), ck2 = makeCK();
+ck1.position.set(bead1.position.x, bead1.position.y, 0.22);
+ck2.position.set(bead2.position.x, bead2.position.y, 0.22);
+dnaGrp.add(ck1, ck2);
+/* PER:CRY 结合复合物(压在启动子上) */
+function makePair() {
+  const g = new THREE.Group();
+  const a = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 10), M.per);
+  a.position.set(-0.065, 0.02, 0.02);
+  const b = new THREE.Mesh(new THREE.SphereGeometry(0.08, 14, 10), M.cry);
+  b.position.set(0.07, -0.02, -0.01);
+  g.add(a, b);
+  g.scale.setScalar(0.001);
+  return g;
+}
+const bc1 = makePair(), bc2 = makePair();
+bc1.position.copy(ck1.position);
+bc2.position.copy(ck2.position);
+dnaGrp.add(bc1, bc2);
+dnaGrp.updateMatrixWorld(true);
+const P1w = new THREE.Vector3(), P2w = new THREE.Vector3();
+bead1.getWorldPosition(P1w);
+bead2.getWorldPosition(P2w);
+const zax = new THREE.Vector3(0, 0, 1).applyEuler(dnaGrp.rotation);
+const dock1 = P1w.clone().addScaledVector(zax, 0.24);
+const dock2 = P2w.clone().addScaledVector(zax, 0.24);
+const offs = [[-0.13, 0.09, 0.1], [0.02, 0.17, 0.05], [0.15, 0.07, 0.02], [-0.07, 0.02, 0.18], [0.08, 0.13, 0.14]];
+const slots = [];
+for (const o of offs) slots.push(dock1.clone().add(new THREE.Vector3(...o)));
+for (const o of offs) slots.push(dock2.clone().add(new THREE.Vector3(...o)));
+
+/* 负反馈箭头:PER:CRY 复合物 → 自己的启动子 */
+const arrowMat = new THREE.MeshBasicMaterial({ color: 0xff922b, transparent: true, opacity: 0, depthWrite: false });
+{
+  const a0 = dock1.clone().add(new THREE.Vector3(0, 0.26, 0));
+  const am = nucPos.clone().add(new THREE.Vector3(0.25, 1.02, 0.1));
+  const a2 = dock2.clone().add(new THREE.Vector3(0, 0.26, 0));
+  const curve = new THREE.QuadraticBezierCurve3(a0, am, a2);
+  const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 32, 0.016, 6), arrowMat);
+  scene.add(tube);
+  const coneGeo = new THREE.ConeGeometry(0.05, 0.13, 10);
+  for (const [p, q] of [[a0, 0.06], [a2, 0.94]]) {
+    const dir = p.clone().sub(curve.getPoint(q)).normalize();
+    const cone = new THREE.Mesh(coneGeo, arrowMat);
+    cone.position.copy(p);
+    cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    scene.add(cone);
+  }
+}
+
+/* 核糖体 */
+const ribos = [];
+for (const p of [[1.15, 0.7, 0.6], [-1.35, 0.75, -0.4], [0.55, 2.15, -0.75]]) {
+  const r = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12), M.ribo);
+  r.position.set(...p);
+  r.userData.y = r.position.y;
+  scene.add(r);
+  ribos.push(r);
+}
+
+/* 太阳 + 光脉冲环 */
+const sunPos = new THREE.Vector3(3.1, 3.7, 1.4);
+const sun = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 18), M.sun);
+sun.position.copy(sunPos);
+scene.add(sun);
+const sunLight = new THREE.PointLight(0xffe08a, 1.2, 30, 1.6);
+sunLight.position.copy(sunPos);
+scene.add(sunLight);
+const pulseMat = new THREE.MeshBasicMaterial({ color: 0xffd43b, transparent: true, opacity: 0,
+  blending: THREE.AdditiveBlending, depthWrite: false });
+const pulseRing = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.02, 6, 40), pulseMat);
+pulseRing.position.copy(sunPos);
+pulseRing.lookAt(cellC);
+pulseRing.visible = false;
+scene.add(pulseRing);
+
+/* ---------------- 粒子池(InstancedMesh) ---------------- */
+const dummy = new THREE.Object3D();
+function makePool(geo, m, n) {
+  const im = new THREE.InstancedMesh(geo, m, n);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.frustumCulled = false;
+  scene.add(im);
+  return im;
+}
+const NM = 24, NP = 40;
+const mrnaIM = makePool(new THREE.SphereGeometry(0.055, 8, 6), M.mrna, NM);
+const perIM = makePool(new THREE.SphereGeometry(0.075, 10, 8), M.per, NP);
+const cryIM = makePool(new THREE.SphereGeometry(0.07, 10, 8), M.cry, NP);
+const tagIM = makePool(new THREE.SphereGeometry(0.028, 6, 5), M.tag, NP);
+const mparts = Array.from({ length: NM }, () => ({ t: -1, a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3() }));
+const agents = Array.from({ length: NP }, (_, i) => ({
+  p: new THREE.Vector3().setFromSphericalCoords(1.55 + Math.random() * 0.4,
+    Math.acos(2 * Math.random() - 1), Math.random() * 6.28).add(cellC),
+  v: new THREE.Vector3(), s: 0, mode: 0, slot: -1, k: Math.random() * 6.28,
+}));
+const tmp = new THREE.Vector3();
+let mFlip = false;
+function spawnM() {
+  const m = mparts.find(x => x.t < 0);
+  if (!m) return;
+  m.t = 0;
+  m.a.copy(mFlip ? P1w : P2w);
+  m.b.copy(m.a).sub(nucPos).normalize().multiplyScalar(0.98).add(nucPos);
+  m.c.copy(ribos[(Math.random() * 3) | 0].position);
+  mFlip = !mFlip;
+}
+
+/* ---------------- 状态 ---------------- */
+const SAMPLE_DT = 0.25, WIN_H = 72;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let freeRun = false;
+let labelsOn = true;
+let tSim = 0, tExt = 8;                      // 外部时间(第 1 天 08:00 起)
+let phi = ((tExt - 6) % 24 + 24) % 24;       // CT 相位(0 = 主观黎明)
+let mrnaR = 0, protR = 0, repR = 0, hNow = 0;
+let sampleAcc = 0, period = null, lastWrapT = null;
+let pendingCT = null, lastShift = null, lastShiftT = null, pulseAnim = 0;
+let daylight = 0, mAcc = 0;
+const hist = [], pulses = [];
+
+function computeDerived() {
+  hNow = ((phi % 24) + 24) % 24;
+  mrnaR = Math.pow(0.5 * (1 + Math.cos(Math.PI * 2 * (hNow - 5) / 24)), 1.2);
+  protR = 0.5 * (1 + Math.cos(Math.PI * 2 * (hNow - 13) / 24));
+  repR = Math.pow(0.5 * (1 + Math.cos(Math.PI * 2 * (hNow - 15) / 24)), 1.2);
+}
+function pushSample() {
+  hist.push({ t: tExt, p: protR, m: mrnaR, pv: hNow });
+  if (hist.length > 340) hist.shift();
+}
+function crossed(prev, cur, tgt) {
+  if (prev <= cur) return tgt > prev && tgt <= cur;
+  return tgt > prev || tgt <= cur;
+}
+function prc(h) {   // 光的相位响应曲线(小时)
+  if (h < 12 || h >= 24) return 0;
+  if (h < 18) return -(0.5 + 2.1 * Math.sin(Math.PI * (h - 12) / 6));
+  return 2.0 * Math.sin(Math.PI * (h - 18) / 6);
+}
+function advance(h) {
+  const rate = freeRun ? 24 / 24.3 : 1;
+  const prev = ((phi % 24) + 24) % 24;
+  phi += h * rate;
+  if (pendingCT !== null && crossed(prev, ((phi % 24) + 24) % 24, pendingCT)) firePulse();
+  if (phi >= 24) {
+    phi -= 24;
+    if (lastWrapT !== null) period = tExt - lastWrapT;
+    lastWrapT = tExt;
+  }
+}
+function firePulse() {
+  const s = prc(((phi % 24) + 24) % 24);
+  pendingCT = null;
+  refreshPulseBtn();
+  pulseAnim = 1;
+  pulses.push({ t: tExt, s });
+  if (pulses.length > 30) pulses.shift();
+  if (s === 0) { lastShift = 0; lastShiftT = tExt; snapFlash(L('主观昼:无效', 'subjective day: no effect')); }
+  else {
+    phi = ((phi + s) % 24 + 24) % 24;
+    lastShift = s; lastShiftT = tExt;
+    snapFlash(s < 0 ? L('推迟!', 'delayed!') : L('提前!', 'advanced!'));
+  }
+  updateFormula();
+}
+function snapFlash(word) {
+  snapWord = word;
+  snapSpan.textContent = word;
+  snapSpan.classList.remove('on');
+  void snapSpan.offsetWidth;
+  snapSpan.classList.add('on');
+}
+function resetState() {
+  tSim = 0; tExt = 8; phi = 2; period = null; lastWrapT = null;
+  pendingCT = null; lastShift = null; lastShiftT = null; pulseAnim = 0;
+  hist.length = 0; pulses.length = 0; sampleAcc = 0; mAcc = 0;
+  for (const m of mparts) m.t = -1;
+  for (const a of agents) { a.mode = 0; a.s = 0; }
+  computeDerived();
+  refreshPulseBtn();
+}
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true, target = scene) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  target.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.element.style.display = labelsOn && r.vis() ? '' : 'none';
+}
+const lblNuc = addLabel(() => L('细胞核 · 分子钟主机', 'nucleus · the clock core'),
+  new THREE.Vector3(0, 1.2, 0), 'st', () => true, nuc);
+const lblCK = addLabel(() => repR < 0.35
+  ? L('CLOCK:BMAL1 已结合 → per/cry 转录全开', 'CLOCK:BMAL1 docked → per/cry transcription ON')
+  : L('被 PER:CRY 按住 → 自己的基因被关掉', 'held down by PER:CRY → own genes shut off'),
+  dock1.clone().add(new THREE.Vector3(0, 0.55, 0)), 'st');
+const lblGene1 = addLabel(() => L('per 启动子 + 基因', 'per promoter + gene'),
+  new THREE.Vector3(Math.cos(A1 + 0.45) * 0.66, Math.sin(A1 + 0.45) * 0.66, 0), 'dm', () => true, dnaGrp);
+const lblGene2 = addLabel(() => L('cry 启动子 + 基因', 'cry promoter + gene'),
+  new THREE.Vector3(Math.cos(A2 + 0.45) * 0.66, Math.sin(A2 + 0.45) * 0.66, 0), 'dm', () => true, dnaGrp);
+const lblDimer = addLabel(() => protR < 0.35
+  ? L('细胞质:PER/CRY 稀少,抑制未成形', 'cytoplasm: PER/CRY scarce, no repression yet')
+  : protR < 0.7
+    ? L('PER/CRY 爬坡,二聚体开始回核', 'PER/CRY climbing, dimers heading back to the nucleus')
+    : L('PER:CRY 大军回核,全面压制转录', 'PER:CRY army re-enters, transcription fully repressed'),
+  new THREE.Vector3(1.3, 0.35, 0.9), 'b');
+const lblRibo = addLabel(() => L('核糖体:翻译 PER/CRY', 'ribosomes: translating PER/CRY'),
+  new THREE.Vector3(0, 0.32, 0), '', () => true, ribos[0]);
+const lblArrow = addLabel(() => L('负反馈:抑制自己的基因', 'negative feedback: repressing its own genes'),
+  nucPos.clone().add(new THREE.Vector3(0.25, 1.22, 0.1)), 'r', () => repR > 0.35);
+const lblPhos = addLabel(() => L('入夜:磷酸化标记 → 降解', 'night: phosphate tags → degradation'),
+  new THREE.Vector3(-1.5, 0.35, 0.9), 'g', () => hNow >= 15 && hNow < 23 && protR > 0.3);
+const lblSun = addLabel(() => daylight > 0.5
+  ? L('日光:每天的校准信号(CT 相位被钉在 24 h)', 'daylight: the daily cue (pins CT to 24 h)')
+  : L('夜:没有光校准', 'night: no light cue'),
+  sunPos.clone().add(new THREE.Vector3(0, 0.5, 0)), 'g');
+let snapWord = L('光脉冲!', 'pulse!');
+let snapSpan = null;
+{
+  const div = document.createElement('div');
+  div.className = 'lbl r st';
+  const span = document.createElement('span');
+  span.className = 'pop';
+  div.appendChild(span);
+  const o = new CSS2DObject(div);
+  o.position.copy(sunPos.clone().add(new THREE.Vector3(0, -0.5, 0)));
+  scene.add(o);
+  labelReg.push({ o, text: () => snapWord, vis: () => true, span });
+  snapSpan = span;
+}
+
+/* ================= 讲解步骤 ================= */
+function setPhase(h) {
+  phi = ((h % 24) + 24) % 24;
+  pendingCT = null;
+  refreshPulseBtn();
+  playing = true;
+  setPlayLabel();
+}
+const STEPS = [
+  { b: '清晨:CLOCK:BMAL1 打开 per/cry 基因', be: 'Morning: CLOCK:BMAL1 opens per/cry',
+    d: '两个激活蛋白在黎明结合到 per/cry 启动子上——转录波涌出细胞核,一天的表达由此点火。',
+    de: 'At dawn the two activators dock on the per/cry promoters — transcription waves pour out of the nucleus and the day ignites.',
+    act: () => setPhase(1) },
+  { b: '白天:PER/CRY 蛋白爬坡', be: 'Daytime: PER/CRY climb',
+    d: 'mRNA 穿核孔而出,核糖体翻译出 PER 与 CRY;整个白天浓度一路爬升——曲线上行就是它们在攒数量。',
+    de: 'mRNA exits through pores; ribosomes translate PER and CRY. Levels climb all day — the rising curve is the buildup.',
+    act: () => setPhase(7) },
+  { b: '够了就回核:按住自己的启动子', be: 'Enough: back to the nucleus',
+    d: 'PER 与 CRY 结成二聚体,重新进入细胞核,把 CLOCK:BMAL1 从启动子上撬下来——蛋白抑制自己的基因,负反馈闭环点亮。',
+    de: 'PER and CRY dimerize, re-enter the nucleus and pry CLOCK:BMAL1 off the promoters — the proteins shut down their own genes; the feedback loop lights up.',
+    act: () => setPhase(13) },
+  { b: '入夜:磷酸化降解,浓度回落', be: 'Night: phosphorylated, degraded',
+    d: '夜里 PER/CRY 被加上磷酸标签,被蛋白酶体拆毁;浓度一路下滑——曲线回落,压制逐渐松动。',
+    de: 'At night PER/CRY get phosphate tags and are shredded by the proteasome; the curve slides down and repression loosens.',
+    act: () => setPhase(18) },
+  { b: '解锁重启:≈24 小时自生振荡', be: 'Unlock and restart: a ≈24 h oscillator',
+    d: '浓度跌破阈值,压制解除,CLOCK:BMAL1 重新上位——无需任何外界信号,周期自动重启。延迟负反馈 = 天生约 24 h 的振荡器。',
+    de: 'Below threshold repression lifts and CLOCK:BMAL1 re-docks — the cycle restarts with no external cue. Delayed negative feedback = a built-in ≈24 h oscillator.',
+    act: () => setPhase(22.5) },
+  { b: '光脉冲:早夜推迟,晚夜提前(倒时差)', be: 'Light pulse: early night delays, late night advances',
+    d: '光的相位响应曲线:主观早夜(CT12–18)的光把钟推迟,主观晚夜的光把它提前,主观昼无效——清晨晒太阳所以能治倒时差。拖「时机」滑块,点光照脉冲试两种方向。',
+    de: 'The phase-response curve: light in early subjective night (CT12–18) delays the clock, late-night light advances it, subjective day does nothing — that is why morning sun fixes jet lag. Drag the timing slider and fire a pulse both ways.',
+    act: () => { elPulseT.value = 14; syncPulseT(); queuePulse(); playing = true; setPlayLabel(); } },
+];
+function stepIndex() {
+  if (pendingCT !== null) return 5;
+  if (hNow < 4) return 0;
+  if (hNow < 10) return 1;
+  if (hNow < 15) return 2;
+  if (hNow < 21) return 3;
+  return 4;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => s.act());
+    el.appendChild(li);
+  });
+}
+
+/* ================= 曲线 ================= */
+const plotCv = document.getElementById('plotCv');
+const tglPhase = document.getElementById('tglPhase');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const pad = 30, padR = 14, bot = 26;
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const t0 = tExt - WIN_H;
+  const xOf = t => pad + (W - pad - padR) * (t - t0) / WIN_H;
+  const yOf = p => pad + (H - pad - bot) * (1 - clamp(p, 0, 1));
+  const bh = H - pad - bot;
+  for (let k = Math.ceil(t0); k <= Math.floor(tExt); k++) {
+    const hod = ((k % 24) + 24) % 24;
+    if (hod >= 6 && hod < 18) {
+      ctx.fillStyle = freeRun ? 'rgba(140,150,170,.06)' : 'rgba(255,209,102,.09)';
+      ctx.fillRect(xOf(k), pad, xOf(k + 1) - xOf(k), bh);
+    }
+  }
+  if (tglPhase.checked) {
+    ctx.fillStyle = 'rgba(123,216,143,.14)';
+    for (let i = 1; i < hist.length; i++) {
+      if (hist[i - 1].pv % 24 < 12 && hist[i].pv % 24 < 12)
+        ctx.fillRect(xOf(hist[i - 1].t), pad, Math.max(1, xOf(hist[i].t) - xOf(hist[i - 1].t)), bh);
+    }
+  }
+  for (const pu of pulses) {
+    if (pu.t < t0) continue;
+    const x = xOf(pu.t);
+    ctx.strokeStyle = pu.s < 0 ? '#ff922b' : pu.s > 0 ? '#4dabf7' : '#9aa7b8';
+    ctx.setLineDash([5, 5]); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, H - bot); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  const line = (kk, color, w) => {
+    ctx.strokeStyle = color; ctx.lineWidth = w; ctx.beginPath();
+    let st = false;
+    for (const s of hist) {
+      if (s.t < t0) continue;
+      const x = xOf(s.t), y = yOf(s[kk]);
+      st ? ctx.lineTo(x, y) : (ctx.moveTo(x, y), st = true);
+    }
+    ctx.stroke();
+  };
+  line('m', 'rgba(255,209,102,.55)', 2);
+  line('p', '#ff922b', 3.5);
+  ctx.strokeStyle = cTxt; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, H - bot); ctx.lineTo(W - padR, H - bot); ctx.stroke();
+  ctx.fillStyle = cTxt; ctx.font = '15px system-ui';
+  ctx.fillText('100%', 2, pad + 4);
+  ctx.fillText('0', 16, H - bot - 4);
+  ctx.fillText('-72 h', pad, H - 6);
+  ctx.fillText(L('现在', 'now'), W - padR - 40, H - 6);
+  ctx.fillStyle = '#ff922b'; ctx.fillRect(W - padR - 158, pad + 2, 16, 6);
+  ctx.fillText('PER/CRY', W - padR - 136, pad + 10);
+  ctx.fillStyle = 'rgba(255,209,102,.9)'; ctx.fillRect(W - padR - 158, pad + 20, 16, 6);
+  ctx.fillText('mRNA', W - padR - 136, pad + 28);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elSpd = document.getElementById('spd'), elSpdVal = document.getElementById('spdVal');
+const elPulseT = document.getElementById('pulseT'), elPulseTVal = document.getElementById('pulseTVal');
+const btnPulse = document.getElementById('btnPulse'), btnPulseTop = document.getElementById('btnPulseTop');
+const tglLabels = document.getElementById('tglLabels'), tglFree = document.getElementById('tglFree'), tglRotate = document.getElementById('tglRotate');
+const stP = document.getElementById('stP'), stTx = document.getElementById('stTx'),
+  stT = document.getElementById('stT'), stPh = document.getElementById('stPh'), stSh = document.getElementById('stSh');
+const formulaEl = document.getElementById('formula');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function zoneName(h) {
+  return h < 5 ? L('主观清晨', 'early morning') : h < 12 ? L('主观白天', 'subjective day')
+    : h < 18 ? L('主观早夜', 'early night') : L('主观晚夜', 'late night');
+}
+function syncPulseT() {
+  const h = +elPulseT.value;
+  elPulseTVal.textContent = `CT ${h} · ${zoneName(h)}`;
+}
+function refreshPulseBtn() {
+  btnPulse.textContent = pendingCT !== null
+    ? L(`☀ 已排定 CT ${pendingCT} · 等到点自动发射`, `☀ queued CT ${pendingCT} · fires on arrival`)
+    : L('☀ 光照脉冲', '☀ Light pulse');
+  btnPulse.classList.toggle('on', pendingCT !== null);
+  btnPulseTop.classList.toggle('on', pendingCT !== null);
+}
+function queuePulse() {
+  pendingCT = +elPulseT.value;
+  refreshPulseBtn();
+}
+btnPulse.addEventListener('click', queuePulse);
+btnPulseTop.addEventListener('click', queuePulse);
+document.getElementById('btnReset').addEventListener('click', resetState);
+elPulseT.addEventListener('input', syncPulseT);
+elSpd.addEventListener('input', () => { speed = +elSpd.value; elSpdVal.textContent = speed.toFixed(1) + '×'; });
+elSpdVal.textContent = speed.toFixed(1) + '×';
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglFree.addEventListener('change', () => { freeRun = tglFree.checked; updateFormula(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { tglLabels.checked = false; labelsOn = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+function updateFormula() {
+  const per = period !== null ? period.toFixed(1) : '≈24.0';
+  formulaEl.innerHTML = L(
+    `<b>延迟负反馈 ⇒ 极限环</b>:PER/CRY ↑ → 按住自己的启动子 → 转录停 → 磷酸化降解 → 浓度 ↓ → 解除抑制 → 再转录。实测周期 <b>${per} h</b>${freeRun ? '(自由运转:无光校准,略长于 24 h,峰一天天后漂)' : '(被光每天校准钉在 24 h)'}<br>` +
+    `光脉冲 PRC:主观早夜 CT12–18 → <b>推迟</b>;晚夜 CT18–24 → <b>提前</b>;主观昼无效 · 本页 1 秒 ≈ 1 小时`,
+    `<b>Delayed feedback ⇒ limit cycle</b>: PER/CRY ↑ → sit on own promoter → transcription stops → phosphorylation & degradation → level ↓ → repression lifts → transcribe again. Measured period <b>${per} h</b>${freeRun ? ' (free-running: no light cue, slightly over 24 h, peaks drift later daily)' : ' (light-entrained, pinned to 24 h)'}<br>` +
+    `Light PRC: early subjective night CT12–18 → <b>delay</b>; late night CT18–24 → <b>advance</b>; subjective day → no effect · 1 s ≈ 1 h here`);
+}
+
+/* ---------------- 图形更新 ---------------- */
+function updateVisuals(dt, dts) {
+  /* 昼夜光 + 脉冲 */
+  const dlT = (hNow >= 6 && hNow < 18 && !freeRun) ? 1 : 0;
+  daylight += (dlT - daylight) * Math.min(1, dt * 2);
+  sunLight.intensity = 0.25 + daylight * 1.5 + pulseAnim * 5;
+  M.sun.emissiveIntensity = 0.5 + daylight * 1.2 + pulseAnim * 2.5;
+  key.intensity = 1.6 + pulseAnim * 1.2;
+  if (pulseAnim > 0) {
+    pulseAnim = Math.max(0, pulseAnim - dt / 2.2);
+    pulseRing.visible = true;
+    pulseRing.scale.setScalar(1 + (1 - pulseAnim) * 5);
+    pulseMat.opacity = pulseAnim * 0.85;
+  } else pulseRing.visible = false;
+  /* CLOCK:BMAL1 上/下位 */
+  const D = 1 - clamp(repR * 1.7, 0, 1);
+  for (const ck of [ck1, ck2]) {
+    ck.position.z = 0.22 + (1 - D) * 0.45;
+    ck.rotation.z = Math.sin(tSim * 1.5) * 0.08 * (1 - D);
+  }
+  M.ck1.emissiveIntensity = 0.15 + D * 0.55;
+  M.ck2.emissiveIntensity = 0.15 + D * 0.55;
+  M.bead.emissiveIntensity = 0.2 + D * mrnaR * 1.4;
+  /* PER:CRY 复合物压上启动子 */
+  const bT = clamp(repR * 1.8, 0, 1);
+  for (const bc of [bc1, bc2]) {
+    const s = lerp(bc.scale.x, 0.05 + bT, Math.min(1, dt * 5));
+    bc.scale.setScalar(Math.max(s, 0.001));
+    bc.position.z = 0.22;
+  }
+  arrowMat.opacity = clamp((repR - 0.2) * 2.2, 0, 1) * 0.85;
+  /* mRNA 生成与运输 */
+  mAcc += dts * mrnaR * 3;
+  while (mAcc > 1) { mAcc -= 1; spawnM(); }
+  for (let i = 0; i < NM; i++) {
+    const m = mparts[i];
+    if (m.t >= 0) {
+      m.t += dts * 0.85;
+      if (m.t >= 1) m.t = -1;
+    }
+    if (m.t < 0) { dummy.position.set(0, -20, 0); dummy.scale.setScalar(0.0001); }
+    else {
+      const k = m.t;
+      if (k < 0.45) dummy.position.lerpVectors(m.a, m.b, k / 0.45);
+      else dummy.position.lerpVectors(m.b, m.c, (k - 0.45) / 0.55);
+      dummy.scale.setScalar(Math.min(1, k * 8) * (k > 0.95 ? (1 - k) * 20 : 1));
+    }
+    dummy.updateMatrix();
+    mrnaIM.setMatrixAt(i, dummy.matrix);
+  }
+  mrnaIM.instanceMatrix.needsUpdate = true;
+  /* PER/CRY 蛋白:数量随浓度,夜间磷酸化,回核成二聚体 */
+  const activeA = Math.round(4 + protR * 33);
+  const dimerN = Math.round(repR * 9);
+  const night = hNow >= 15 && hNow < 23;
+  for (let i = 0; i < NP; i++) {
+    const a = agents[i];
+    const on = i < activeA;
+    const dim = on && i >= activeA - dimerN;
+    if (on && dim && a.mode === 0) { a.mode = 1; a.slot = i - (activeA - dimerN); }
+    else if (on && !dim && a.mode !== 0) a.mode = 0;
+    if (a.mode === 0) {
+      a.v.x += (Math.random() - 0.5) * 2.2 * dts;
+      a.v.y += (Math.random() - 0.5) * 2.2 * dts;
+      a.v.z += (Math.random() - 0.5) * 2.2 * dts;
+      a.v.multiplyScalar(1 - Math.min(1, dts * 0.8));
+      a.p.addScaledVector(a.v, dts);
+      const dc = a.p.distanceTo(cellC);
+      if (dc > 2.02) a.v.addScaledVector(tmp.subVectors(cellC, a.p).normalize(), dts * 4);
+      if (dc < 1.28) a.v.addScaledVector(tmp.subVectors(a.p, cellC).normalize(), dts * 4);
+      if (a.p.distanceTo(nucPos) < 1.12) a.v.addScaledVector(tmp.subVectors(a.p, nucPos).normalize(), dts * 5);
+      a.s += ((on ? 1 : 0) - a.s) * Math.min(1, dt * 4);
+    } else {
+      a.p.lerp(slots[a.slot], Math.min(1, dt * 1.8));
+      a.s += (1 - a.s) * Math.min(1, dt * 4);
+    }
+    const sc = Math.max(a.s, 0.0001);
+    dummy.position.copy(a.p);
+    dummy.scale.setScalar(sc);
+    dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    perIM.setMatrixAt(i, dummy.matrix);
+    if (a.mode === 0) {
+      dummy.position.set(a.p.x + Math.sin(tSim * 2 + a.k) * 0.2,
+        a.p.y + Math.cos(tSim * 1.7 + a.k) * 0.17,
+        a.p.z + Math.sin(tSim * 2.3 + a.k) * 0.19);
+    } else dummy.position.set(a.p.x + 0.09, a.p.y + 0.06, a.p.z);
+    dummy.scale.setScalar(sc);
+    dummy.updateMatrix();
+    cryIM.setMatrixAt(i, dummy.matrix);
+    dummy.position.set(a.p.x, a.p.y + 0.13, a.p.z);
+    dummy.scale.setScalar(night && a.mode === 0 ? sc : 0.0001);
+    dummy.updateMatrix();
+    tagIM.setMatrixAt(i, dummy.matrix);
+  }
+  perIM.instanceMatrix.needsUpdate = true;
+  cryIM.instanceMatrix.needsUpdate = true;
+  tagIM.instanceMatrix.needsUpdate = true;
+  /* 核糖体浮动 */
+  for (let i = 0; i < ribos.length; i++) {
+    ribos[i].position.y = ribos[i].userData.y + Math.sin(tSim * 2 + i * 2.1) * 0.05;
+    ribos[i].material.emissiveIntensity = 0.1 + mrnaR * 0.4;
+  }
+}
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, statsAcc = 0;
+function updateStats() {
+  stP.textContent = Math.round(protR * 100) + ' %';
+  stTx.textContent = Math.round(mrnaR * 100) + ' %';
+  stT.textContent = period !== null ? period.toFixed(1) + ' h' : '—';
+  stPh.textContent = L(`CT ${hNow.toFixed(1)} ${hNow < 12 ? '昼' : '夜'}`,
+    `CT ${hNow.toFixed(1)} ${hNow < 12 ? 'day' : 'night'}`);
+  stPh.className = 'v ' + (hNow >= 12 ? 'hot' : 'ok');
+  if (lastShift === null || (lastShiftT !== null && tExt - lastShiftT > 30)) stSh.textContent = '—';
+  else if (lastShift === 0) stSh.textContent = L('无效(昼)', 'none (day)');
+  else if (lastShift < 0) stSh.textContent = L(`推迟 ${(-lastShift).toFixed(1)} h`, `delay ${(-lastShift).toFixed(1)} h`);
+  else stSh.textContent = L(`提前 ${lastShift.toFixed(1)} h`, `advance ${lastShift.toFixed(1)} h`);
+  stSh.className = 'v ' + (lastShift === null || lastShift === 0 ? '' : lastShift < 0 ? 'hot' : 'ok');
+}
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const dts = dt * speed * (playing ? 1 : 0);
+  tSim += dts; tExt += dts;
+  if (dts > 0) {
+    advance(dts);
+    computeDerived();
+    sampleAcc += dts;
+    while (sampleAcc >= SAMPLE_DT) { sampleAcc -= SAMPLE_DT; pushSample(); }
+  }
+  updateVisuals(dt, dts);
+  statsAcc += dt;
+  if (statsAcc > 0.25) {
+    statsAcc = 0;
+    updateStats();
+    drawPlot();
+    updateFormula();
+  }
+  for (const r of labelReg) if (labelsOn && r.vis() && !r.span) r.o.element.textContent = r.text();
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null && !document.hidden) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ---------------- 快进(URL ?t= 预跑) ---------------- */
+function ff(hours) {
+  const end = tExt + clamp(hours, 0, 120);
+  let guard = 0;
+  while (tExt < end && guard++ < 2000) {
+    tExt += 0.25;
+    advance(0.25);
+    computeDerived();
+    sampleAcc += 0.25;
+    while (sampleAcc >= SAMPLE_DT) { sampleAcc -= SAMPLE_DT; pushSample(); }
+  }
+}
+
+/* ================= 初始化(URL 参数) ================= */
+computeDerived();
+ff(clamp(qsFloat('t', 0), 0, 120));
+applyTheme();
+applyLang();
+setPlayLabel();
+start();
+</script>
+</body>
+</html>

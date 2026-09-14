@@ -372,6 +372,39 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **How to play**: compare right/wrong keys, try-turn to feel the jam, run the picking demo, drag the pin count 3–6; space to play / pause.
 - **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?pins=` `?spin=`.
 
+### Phase 19 · Life: adaptation, sensing, rhythm, photosynthetic strategy (4/4)
+
+- [x] Altitude acclimatization & EPO (hypoxia drives the kidney's EPO pump and marrow output; content = saturation × capacity) ✅ **altitude-acclimatization/**
+- [x] Olfactory receptors (GPCR → cAMP amplification cascade → spikes; a 3×4 combinatorial code matrix) ✅ **olfactory-receptor/**
+- [x] Circadian rhythm (a PER/CRY self-repressing transcription loop oscillates ≈24 h; light pulses shift phase) ✅ **circadian-rhythm/**
+- [x] C4 & CAM photosynthesis (CO₂-concentrating tricks: spatial relay vs time-shifted acid storage, photorespiration flatlines) ✅ **c4-cam-photosynthesis/**
+
+### Phase 19 deep dives
+
+#### Altitude & EPO — content = saturation × capacity
+
+- **What you see**: climbing drops inspired PO₂ and arterial saturation sags past the 88% warning; the kidney senses hypoxia (HIF) and pumps EPO into the blood, EPO reaches the marrow (the femur cutaway ejects new cells), and hematocrit ramps along a days-long axis; the key insight: saturation stays low but more hemoglobin means oxygen CONTENT catches up to sea level; on descent the surplus red cells persist for weeks (altitude training); a doping note shows injected EPO bypassing the sensor toward dangerous blood thickening.
+- **How to play**: drag altitude (Lhasa 3650 m / Everest base camp marks), scrub acute (hours) ⇄ chronic (weeks) timelines, toggle injected EPO to push hematocrit toward 68%; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?alt=` `?mode=` `?spin=`.
+
+#### Olfactory receptors — one molecule detonates an amplification cascade
+
+- **What you see**: odorants drift over the epithelium and the right shape docks into a GPCR pocket (one receptor accepts several molecules with different affinities); the receptor flexes, the G protein swaps GDP for GTP and splits; the freed subunit lights adenylyl cyclase and cAMP bursts ~100-fold; cAMP opens the cyclic-nucleotide-gated channel, Na⁺ influx depolarizes to threshold and spikes race to the glomerulus; a 3-odorant × 4-receptor matrix lights cell by cell — coffee, lemon and mint each own a pattern code, because the brain reads patterns.
+- **How to play**: switch the three odors, drag concentration and airflow to move the spike rate, let step 6 auto-cycle the patterns; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?conc=` `?flow=` `?spin=`.
+
+#### Circadian rhythm — the clock that winds itself
+
+- **What you see**: at subjective morning CLOCK-BMAL1 docks on the per/cry promoters and transcription waves leave the nucleus; by day ribosomes build PER/CRY proteins up a slope; when enough accumulate they dimerize back into the nucleus and pry the activators off their own promoters (the feedback arrow lights); at night phosphorylation and degradation drain the concentration; below threshold the repression lifts and the loop restarts by itself — a 72-hour trace draws the ≈24 h free-running oscillation; time a light pulse: early night delays, late night advances (the phase-response curve — why morning sun beats jet lag), and constant darkness drifts to a 24.3 h period.
+- **How to play**: pick a phase and fire a light pulse to watch the curve shift, toggle free-run to watch the drift, speed through three days; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### C4 & CAM — plants that give CO₂ an express lane
+
+- **What you see**: a C3 rice leaf in dry heat closes its stomata to save water, internal CO₂ runs out, Rubisco grabs oxygen instead and the photorespiration waste counter spins; C4 corn packs CO₂ into malate with PEP carboxylase (which ignores O₂) in the mesophyll, relays it through plasmodesmata into the bundle sheath and releases it there — the sheath CO₂ gauge jumps ×10, photorespiration freezes at zero, at a cost of 2 extra ATP per CO₂; CAM cacti shift the same chemistry in time: stomata open at night to stock malic acid (the vacuole tank fills) and stay sealed by day while the store feeds the Calvin cycle; a closing strip lines up the three plants' water-vs-ATP ledgers.
+- **How to play**: switch the three modes, drag heat/drought to move the stomata, scrub day/night in CAM to fill and drain the tank; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?mode=` `?hour=` `?heat=` `?spin=`.
+
 ### Phase 11 · Earth system (10/10)
 
 - [x] Plate tectonics (mantle convection loops, ridges birth crust, trenches consume it, edges flash with quakes) ✅ **plate-tectonics/**
@@ -574,6 +607,10 @@ stirling-engine/       Stirling engine (Three.js, CDN)
 wankel-rotary/         Wankel rotary engine (Three.js, CDN)
 turbocharger/          Turbocharger (Three.js, CDN)
 pin-tumbler-lock/      Pin-tumbler lock (Three.js, CDN)
+altitude-acclimatization/ Altitude acclimatization & EPO (Three.js, CDN)
+olfactory-receptor/    Olfactory receptors (Three.js, CDN)
+circadian-rhythm/      Circadian rhythm (Three.js, CDN)
+c4-cam-photosynthesis/ C4 & CAM photosynthesis (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
