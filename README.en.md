@@ -83,12 +83,12 @@ A collection of animated explanations. We use animation to make "invisible princ
 
 ### Phase 12 · Astronomy & space-time (6/6)
 
-- [x] Moon phases & eclipses (three-body view, ecliptic 5° tilt sets the eclipse season) ✅ **moon-phases/**
-- [x] Tides (differential pull lifts both near and far bulges, Moon retreats 3.8 cm/year) ✅ **tides/**
-- [x] Seasons & obliquity (0° kills seasons, 45° doubles them) ✅ **seasons/**
-- [x] Rockets & Tsiolkovsky (logarithmic penalty, 70% → 99.9% fuel, staging is the only way to the Moon) ✅ **rocket-equation/**
-- [x] Time dilation & light clocks (γ=7 at 0.99c, muons reach ground, GPS gains 38 µs/day) ✅ **time-dilation/**
-- [x] Spacetime curvature (mesh dents, planets follow geodesics; Eddington measured 1.75″ in 1919) ✅ **spacetime-curvature/**
+- [x] Moon phases & eclipses (dual view: phase = Sun-Earth-Moon angle, inset renders the lunar face from that same geometry; the 5° orbital tilt gates eclipse seasons, with shadow-cone landing and arc bite) ✅ **moon-phases/**
+- [x] Tides (tidal-force vector field dissects the gravity difference into two equal bulges over a mean-sea reference; spring at syzygy, neap at the quarters, tidal friction carries the Moon 3.8 cm/year away) ✅ **tides/**
+- [x] Seasons & obliquity (true Kepler orbit + parallel-sunlight terminator; 0°/23.5°/45° tilt slider, annual noon-altitude & day-length curves — Earth is nearest the Sun in January, deep in winter) ✅ **seasons/**
+- [x] Rockets & Tsiolkovsky (the Δv=ve·ln(m0/mf) log wall; same propellant across 1/2/3 stages; LEO/Moon/Mars target lines; ignite, drain, drop shells) ✅ **rocket-equation/**
+- [x] Time dilation & light clocks (dual clocks + a frozen golden γ right triangle; 0.995c → γ≈10, muons reach ground, GPS ledger +38 µs/day) ✅ **time-dilation/**
+- [x] Spacetime curvature (Flamm-dented mesh, geodesic ellipses with perihelion precession, grazing starlight bent 1.75″ — Eddington 1919) ✅ **spacetime-curvature/**
 
 ### Phase 13 · Compute & information (8/8)
 
@@ -275,9 +275,9 @@ A collection of animated explanations. We use animation to make "invisible princ
 
 ### Phase 16 · Astronomy & space-time, continued (4/4)
 
-- [x] Cosmic expansion & redshift (the grid of space itself stretches; the photon lengthens en route; v=Hd measured from the sim) ✅ **cosmic-expansion/**
-- [x] Black hole & spaghettification (the 1/r³ gradient noodles a star; horizon tides ∝ 1/M²; frozen and dimmed from outside) ✅ **black-hole-tides/**
-- [x] Gravitational waves (an inspiral stirs quadrupole ripples; Michelson arms breathe in quadrature and draw the chirp) ✅ **gravitational-waves/**
+- [x] Cosmic expansion & redshift (galaxies pinned to a comoving grid while space itself stretches; photon wavelengths pulled en route; v=H₀d fitted live off the scatter, with a Doppler-mode contrast) ✅ **cosmic-expansion/**
+- [x] Black hole & spaghettification (per-particle 1/r³ noodling; a mass slider shows horizon tides ∝ 1/M²; frozen and reddened from outside) ✅ **black-hole-tides/**
+- [x] Gravitational waves (an inspiral stirs quadrupole ripples; test-mass rings deform under + / × polarization; retarded Michelson readout draws a true-SI chirp) ✅ **gravitational-waves/**
 - [x] Superconductivity & the Meissner effect (Cooper pairs condense, resistance hits exactly zero, the field is expelled and the magnet levitates) ✅ **superconductivity/**
 
 ### Phase 16 deep dives
