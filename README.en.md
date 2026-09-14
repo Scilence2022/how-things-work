@@ -306,6 +306,39 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **How to play**: drag the temperature slider (Tc is ticked) or let it auto-sweep, toggle pinning to compare wobble; space to play / pause.
 - **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?pin=` `?spin=`.
 
+### Phase 17 · Chemistry: energy, fire, air, the table (4/4)
+
+- [x] Lead-acid battery (both plates grow PbSO₄ "snow", the acid thins and the hydrometer sinks, charging reverses it all) ✅ **lead-acid-battery/**
+- [x] Oxyhydrogen & the fire triangle (radical branching 1→2→4 explodes; loudest at stoichiometry; remove any leg and fire dies) ✅ **oxyhydrogen-combustion/**
+- [x] Acid rain (SO₂/NOx oxidize inside cloud droplets, pH dives and marble etches; scrubbers and catalysts to the rescue) ✅ **acid-rain/**
+- [x] Maillard reaction (carbonyl + amino → Amadori → a burst of flavor molecules; the 140 °C threshold and browning) ✅ **maillard-reaction/**
+
+### Phase 17 deep dives
+
+#### Lead-acid battery — the battery where both plates snow
+
+- **What you see**: on discharge the Pb plate releases electrons and the PbO₂ plate accepts them, and BOTH plates grow white PbSO₄ crystals while the acid is consumed — the electrolyte thins, and the hydrometer float sinks from 1.28 to 1.15 (a mechanic's charge meter); cell voltage follows acid concentration, 2.1 → 1.9 V; switch to charge and the current reverses, the "snow" melts back into Pb / PbO₂ and the acid returns — one of the few chemistries that fully reverses for thousands of cycles; thin grid plates give the huge area behind a car's few-hundred-amp crank; overcharge bubbles are the water-electrolysis side reaction.
+- **How to play**: toggle discharge/charge, drag the load to 300 A to see voltage sag and cranking current, scrub the state of charge; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?load=` `?mode=` `?spin=`.
+
+#### Oxyhydrogen & the fire triangle — the math of one-becomes-two
+
+- **What you see**: H₂ and O₂ sit quietly even when mixed (the activation-barrier inset); one spark crosses the barrier locally — H·+O₂→OH·+O·, O·+H₂→OH·+H· — one radical becomes two, the branching tree goes 1→2→4→8, and past the threshold the whole volume reacts at once: 2H₂+O₂→2H₂O, the balloon pops into water mist with a shockwave; at exactly 2:1 nothing is left over and the bang is loudest; the pure-hydrogen jet burns calmly by contrast; the interactive fire triangle — lid off oxygen, water spray off heat, valve off fuel — shows every extinguisher's playbook.
+- **How to play**: drag the mixture ratio to find the loudest point, ignite, switch to the pure-jet contrast, try all three ways to kill a flame; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?ratio=` `?mode=`.
+
+#### Acid rain — the distance from pH 5.6 to 4.3
+
+- **What you see**: natural rain is already pH 5.6 from CO₂; SO₂/NOx plumes ride the wind into cloud droplets and oxidize to sulfuric and nitric acid (molecule-level callouts), strong acids dissociate fully and the pH meter slides to 4.3 flashing red (with the ×10-per-unit H⁺ counter); the rain bubbles on a marble statue (CaCO₃+2H⁺→Ca²⁺+H₂O+CO₂↑), the lake fades past pH 5, the forest browns; toggle mitigation — scrubber plus catalytic converter — and the plume dims while cloud pH recovers.
+- **How to play**: drag emission strength and wind to steer the 9-second plume journey; jump to step 6 for the before/after of mitigation; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Maillard reaction — why seared food smells
+
+- **What you see**: below 100 °C molecules only jiggle (boiling caps at 100 °C, so boiled meat stays grey); past 140 °C a reducing sugar's carbonyl meets an amino group — condensation (a water molecule visibly leaves), Amadori rearrangement into a ketosamine, then hundreds of cracking pathways erupt into flavor particles labeled by family (pyrazines = nutty, furans = caramel, thiophenes = meaty); larger products polymerize into conjugated melanoidin chains and the surface turns golden then brown; a wet surface stalls while it dries; contrast with boiling and with caramelization (no amino group, a different chemistry starting ~160 °C).
+- **How to play**: drag the pan past 140 °C for the flavor burst, drag water to see the dry-first stall, switch grill/boil/caramel scenes, try alkaline pH for speed; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?mode=` `?temp=` `?water=` `?spin=`.
+
 ### Phase 11 · Earth system (10/10)
 
 - [x] Plate tectonics (mantle convection loops, ridges birth crust, trenches consume it, edges flash with quakes) ✅ **plate-tectonics/**
@@ -500,6 +533,10 @@ cosmic-expansion/      Cosmic expansion & redshift (Three.js, CDN)
 black-hole-tides/      Black hole & spaghettification (Three.js, CDN)
 gravitational-waves/   Gravitational waves (Three.js, CDN)
 superconductivity/     Superconductivity & Meissner effect (Three.js, CDN)
+lead-acid-battery/     Lead-acid battery (Three.js, CDN)
+oxyhydrogen-combustion/ Oxyhydrogen & the fire triangle (Three.js, CDN)
+acid-rain/             Acid rain (Three.js, CDN)
+maillard-reaction/     Maillard reaction (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
