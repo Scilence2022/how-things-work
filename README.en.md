@@ -339,6 +339,39 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **How to play**: drag the pan past 140 °C for the flavor burst, drag water to see the dry-first stall, switch grill/boil/caramel scenes, try alkaline pH for speed; space to play / pause.
 - **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?mode=` `?temp=` `?water=` `?spin=`.
 
+### Phase 18 · Mechanisms: heat engines & locks (4/4)
+
+- [x] Stirling engine (external combustion, the regenerator banks heat, efficiency nears the Carnot limit) ✅ **stirling-engine/**
+- [x] Wankel rotary engine (a three-flank rotor = three chambers firing in parallel, three sparks per revolution, valveless) ✅ **wankel-rotary/**
+- [x] Turbocharger (exhaust spins a turbine, the shared shaft boosts intake; lag and the wastegate) ✅ **turbocharger/**
+- [x] Pin-tumbler lock (shear-line logic: the right key aligns five gaps, a wrong key jams one pin, single-pin picking) ✅ **pin-tumbler-lock/**
+
+### Phase 18 deep dives
+
+#### Stirling engine — the external-combustion engine that banks its heat
+
+- **What you see**: a transparent cylinder glows red at the burner end and blue at the finned cold end while the displacer shuttles the working gas: isothermal expansion pushes the power piston, the trip through the regenerator deposits the gas's heat in wire mesh (the gradient bar charges), isothermal compression at the cold end costs less work — that difference is the output — and on the way back the mesh hands the heat back (discharge); heat is banked, not dumped, so efficiency approaches the Carnot limit between the same two temperatures; the pV loop traces in sync; external combustion means any heat source works — flame, sun, waste heat; two pistons at 90° phase on one crank self-sustain the cycle.
+- **How to play**: drag source temperature (ΔT drives power) and rpm, open the pV chart, tap step 5 to cycle heat sources; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Wankel rotary — three cylinders hiding in one rotor
+
+- **What you see**: inside the figure-8 epitrochoid housing, the three flanks of the triangular rotor form three chambers: each grows past the intake port, gets carried away and compressed, fires at minimum volume, then shrinks past the exhaust port; the chambers are staggered by exactly one shaft turn — three sparks per rotor revolution (eccentric shaft : rotor = 3:1, live counter); no valves and no reciprocating mass make it smooth and high-revving; the highlighted apex seals sweep long paths along the housing — wear, oil thirst and emissions.
+- **How to play**: drag rpm, use slow motion to watch the three chambers trade strokes, switch cutaway / see-through views; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Turbocharger — power recovered from exhaust
+
+- **What you see**: red-hot exhaust that would otherwise be dumped spins the turbine past 100,000 rpm (tachometer plus speed-blur rings); the shared shaft drives the blue compressor, packing extra air through the intercooler into the cylinders — more air with more fuel lets a small engine do a big engine's work (contrasted with the crank-hungry supercharger); hit "floor it" and the rpm curve jumps while the boost curve trails — the lag draws itself as the two curves separate; past the boost target the wastegate flap lifts and pressure plateaus.
+- **How to play**: drag the throttle, stomp "floor it" to measure the lag in seconds, jam the wastegate to see the overboost warning; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Pin-tumbler lock — attack and defense on one shear line
+
+- **What you see**: with no key the springs push every driver pin across the shear line and the plug jams (the try-turn jiggle fails); slide a key in and its peaks lift the stacks one by one — the right key lands all five pin gaps exactly on the glowing shear line and the plug turns, throwing the bolt; a wrong key leaves even one stack straddling the line and everything jams (the culprit glows red); the picking demo applies slight tension and lifts each pin until it "sets" — the plug creeps a hair and traps the driver above the line, five sets and it opens; spool security pins fake a set.
+- **How to play**: compare right/wrong keys, try-turn to feel the jam, run the picking demo, drag the pin count 3–6; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?pins=` `?spin=`.
+
 ### Phase 11 · Earth system (10/10)
 
 - [x] Plate tectonics (mantle convection loops, ridges birth crust, trenches consume it, edges flash with quakes) ✅ **plate-tectonics/**
@@ -537,6 +570,10 @@ lead-acid-battery/     Lead-acid battery (Three.js, CDN)
 oxyhydrogen-combustion/ Oxyhydrogen & the fire triangle (Three.js, CDN)
 acid-rain/             Acid rain (Three.js, CDN)
 maillard-reaction/     Maillard reaction (Three.js, CDN)
+stirling-engine/       Stirling engine (Three.js, CDN)
+wankel-rotary/         Wankel rotary engine (Three.js, CDN)
+turbocharger/          Turbocharger (Three.js, CDN)
+pin-tumbler-lock/      Pin-tumbler lock (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
