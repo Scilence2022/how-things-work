@@ -273,6 +273,39 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **How to play**: switch sonar ⇄ B-mode, fire single pings or run auto, drag target depth; step 5 fast-forwards a full B image; space to play / pause.
 - **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?mode=` `?dop=` `?dep=` `?spin=`.
 
+### Phase 16 · Astronomy & space-time, continued (4/4)
+
+- [x] Cosmic expansion & redshift (the grid of space itself stretches; the photon lengthens en route; v=Hd measured from the sim) ✅ **cosmic-expansion/**
+- [x] Black hole & spaghettification (the 1/r³ gradient noodles a star; horizon tides ∝ 1/M²; frozen and dimmed from outside) ✅ **black-hole-tides/**
+- [x] Gravitational waves (an inspiral stirs quadrupole ripples; Michelson arms breathe in quadrature and draw the chirp) ✅ **gravitational-waves/**
+- [x] Superconductivity & the Meissner effect (Cooper pairs condense, resistance hits exactly zero, the field is expelled and the magnet levitates) ✅ **superconductivity/**
+
+### Phase 16 deep dives
+
+#### Cosmic expansion & redshift — it is space that stretches
+
+- **What you see**: galaxies pinned to a comoving grid do not move through space; expansion multiplies every distance by a(t) — switch observer galaxies and everything still recedes (no center); v = H·d is measured live from the sim, not assumed; a photon flying to the observer has its wave train physically stretched by a(t), hue sliding blue→red with live z; a Doppler-contrast mode separates the two mechanisms; run it backwards and everything converges to the starting point.
+- **How to play**: scrub the scale-factor slider or let it auto-expand, toggle observer A/B, fire a photon, drag the H constant; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Black hole & spaghettification — shredded first, or through first
+
+- **What you see**: gravity falls as 1/r², so the gradient across a body grows as 1/r³ — far away head and foot feel the same pull, but near the hole the foot wins and the star stretches into a radial noodle, squeezed sideways; the horizon is where even photons fail to climb out (watch photon packets stall and turn back); toggle mass: a stellar-mass hole shreds the star outside the horizon, a supermassive one is 10¹⁰× gentler at the horizon and the star crosses intact; the outside view freezes/redshifts/fades the star at the horizon while the infaller sails through.
+- **How to play**: toggle stellar ⇄ supermassive, outside ⇄ infaller view, drag the release distance; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?mass=` `?view=` `?body=` `?spin=`.
+
+#### Gravitational waves — how do you see 10⁻²¹
+
+- **What you see**: two compact objects inspiral on a sagging mesh, stirring compression/stretch quadrupole ripples that travel at c; as a ripple crosses a Michelson interferometer one arm lengthens while the other shortens (ΔL = h·L/2, h ~ 10⁻²¹ — smaller than a proton), the recombined fringe shifts, and the photodetector draws h(t): the inspiral chirp sweeping up in frequency and amplitude, a merger flash, then ringdown.
+- **How to play**: drag chirp mass (sweep speed) and source distance (amplitude), toggle +/× polarization, jump steps to the merger; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Superconductivity & the Meissner effect — the field is shown the door
+
+- **What you see**: at room temperature electrons scatter off the lattice (resistance) and field lines pierce the disc; cooling lets the lattice play matchmaker and electrons pair into Cooper pairs (amber→cyan, spring-linked); below Tc = 92 K they condense coherently and resistance drops to exactly zero (cliff in the R(T) inset); the Meissner moment: surface currents expel the field — lines bend around the disc, the key difference from a mere perfect conductor; the expelled field's gradient pops the magnet into levitation; toggle flux pinning to see type-II vortices lock the magnet mid-air, even upside down.
+- **How to play**: drag the temperature slider (Tc is ticked) or let it auto-sweep, toggle pinning to compare wobble; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?pin=` `?spin=`.
+
 ### Phase 11 · Earth system (10/10)
 
 - [x] Plate tectonics (mantle convection loops, ridges birth crust, trenches consume it, edges flash with quakes) ✅ **plate-tectonics/**
@@ -463,6 +496,10 @@ mitosis/               Mitosis (Three.js, CDN)
 birthday-paradox/      Birthday paradox (Canvas 2D, zero dependencies)
 thermoregulation/      Thermoregulation (Three.js, CDN)
 sonar-ultrasound/      Sonar & B-mode ultrasound (Three.js, CDN)
+cosmic-expansion/      Cosmic expansion & redshift (Three.js, CDN)
+black-hole-tides/      Black hole & spaghettification (Three.js, CDN)
+gravitational-waves/   Gravitational waves (Three.js, CDN)
+superconductivity/     Superconductivity & Meissner effect (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
