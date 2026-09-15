@@ -46,9 +46,11 @@
   :root[data-theme="light"] .lbl.st { color: #8a5c0d; }
 
   #view2 { position: fixed; right: 18px; bottom: 18px; z-index: 4; pointer-events: none;
-    border: 1px solid var(--tool-border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+    border: 1px solid var(--tool-border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden;
+    background: #03050a; }
+  #view2 canvas { display: block; width: 100%; height: 100%; border-radius: 11px; }
   #view2 .cap { position: absolute; top: 7px; left: 10px; font-size: 11px; color: #ffe9a8;
-    background: rgba(13,17,24,.62); border: 1px solid rgba(255,209,102,.5);
+    background: rgba(13,17,24,.78); border: 1px solid rgba(255,209,102,.5);
     padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
 
   #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
@@ -138,7 +140,7 @@
 <body>
 <div id="app"></div>
 <div id="labels"></div>
-<div id="view2"><span class="cap" id="cap2">从地球看</span></div>
+<div id="view2"><canvas id="canvas2"></canvas><span class="cap" id="cap2">从地球看</span></div>
 
 <div id="title">
   <h1 data-zh="月相与日月食:朔望与交点的几何" data-en="Moon phases &amp; eclipses: the geometry of syzygy and nodes">月相与日月食:朔望与交点的几何</h1>
@@ -382,7 +384,7 @@ const atmo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x
 atmo.scale.set(2.9, 2.9, 1);
 scene.add(atmo);
 
-/* 月球 + 潮汐锁定标记(红旗,局部 +Z 永远指向地球) */
+/* 月球 + 潮汐锁定标记(红旗,局部 -Z 经 lookAt(0,0,0) 严格指向地球) */
 const moonTex = moonTexture();
 const moonMat = new THREE.MeshStandardMaterial({ map: moonTex, roughness: 0.95, metalness: 0 });
 const moonGrp = new THREE.Group();
@@ -390,9 +392,9 @@ scene.add(moonGrp);
 const moon = new THREE.Mesh(new THREE.SphereGeometry(MOON_R, 40, 28), moonMat);
 moonGrp.add(moon);
 const flagGeo = new THREE.ConeGeometry(0.05, 0.18, 10);
-flagGeo.rotateX(Math.PI / 2);
+flagGeo.rotateX(-Math.PI / 2);
 const flag = new THREE.Mesh(flagGeo, new THREE.MeshBasicMaterial({ color: 0xff5a5a }));
-flag.position.z = MOON_R + 0.08;
+flag.position.z = -MOON_R - 0.08;
 moonGrp.add(flag);
 
 /* 白道系:轨道环 + 交点标记 + 交点连线,全在一个组里,倾角/交点角只改组姿态,零重建 */
@@ -424,17 +426,18 @@ function updateOrbitQuat() {
   orbitGrp.quaternion.multiplyQuaternions(qNode, qTilt);
 }
 
-/* 地影锥(朝背日方向 -X;真实长度 ≈3.6× 月地距,此处截断到 8) */
+/* 地影锥(朝背日方向 -X; 真实本影收缩, 半影扩散) */
 const umbraMat = new THREE.MeshBasicMaterial({ color: 0x05070c, transparent: true, opacity: 0.26, side: THREE.DoubleSide, depthWrite: false });
+const penMat = new THREE.MeshBasicMaterial({ color: 0x05070c, transparent: true, opacity: 0.09, side: THREE.DoubleSide, depthWrite: false });
 {
-  const g = new THREE.CylinderGeometry(0.9, 1.0, 8, 32, 1, true);
+  const g = new THREE.CylinderGeometry(1.0, 0.65, 8, 32, 1, true);
   g.translate(0, -4, 0);
   const umbra = new THREE.Mesh(g, umbraMat);
-  umbra.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(-1, 0, 0));
+  umbra.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-1, 0, 0));
   scene.add(umbra);
-  const g2 = new THREE.CylinderGeometry(1.38, 1.02, 8, 32, 1, true);
+  const g2 = new THREE.CylinderGeometry(1.0, 1.38, 8, 32, 1, true);
   g2.translate(0, -4, 0);
-  const pen = new THREE.Mesh(g2, new THREE.MeshBasicMaterial({ color: 0x05070c, transparent: true, opacity: 0.09, side: THREE.DoubleSide, depthWrite: false }));
+  const pen = new THREE.Mesh(g2, penMat);
   pen.quaternion.copy(umbra.quaternion);
   scene.add(pen);
 }
@@ -461,32 +464,56 @@ const spotP = new THREE.Mesh(new THREE.CircleGeometry(1, 24),
   new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.2, depthWrite: false }));
 scene.add(spotU, spotP);
 
-/* ================= 副视窗:从地球看(第二个 Scene + scissor) ================= */
+/* ================= 副视窗:从地球看 (独立画布 + 严谨地心视角) ================= */
+const cv2 = document.getElementById('canvas2');
+const renderer2 = new THREE.WebGLRenderer({ canvas: cv2, antialias: true });
+renderer2.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer2.toneMapping = THREE.ACESFilmicToneMapping;
+renderer2.toneMappingExposure = 1.05;
+
 const scene2 = new THREE.Scene();
 scene2.background = new THREE.Color(0x03050a);
 const cam2 = new THREE.PerspectiveCamera(26, 1, 0.1, 60);
-scene2.add(new THREE.AmbientLight(0x8fb3d9, 0.12));
+cam2.position.set(0, 0, 12);
+cam2.up.set(0, 1, 0);
+cam2.lookAt(0, 0, 0);
+
+scene2.add(new THREE.AmbientLight(0x8fb3d9, 0.08));
 const light2 = new THREE.DirectionalLight(0xfff3d6, 2.8);
 scene2.add(light2, light2.target);
+
 const moonMat2 = new THREE.MeshStandardMaterial({ map: moonTex, roughness: 0.95, metalness: 0 });
 const moon2Grp = new THREE.Group();
 scene2.add(moon2Grp);
-moon2Grp.add(new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), moonMat2));
+const moonMesh2 = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), moonMat2);
+moonMesh2.rotation.y = Math.PI; // 将有月海的正面(+Z)朝向观察者 cam2
+moon2Grp.add(moonMesh2);
+
 const flag2 = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16), new THREE.MeshBasicMaterial({ color: 0xff5a5a }));
-flag2.position.z = 1.005;
+flag2.position.set(0, 0, 1.005);
 moon2Grp.add(flag2);
+
 const sun2Grp = new THREE.Group();
 scene2.add(sun2Grp);
-sun2Grp.add(new THREE.Mesh(new THREE.CircleGeometry(1, 64), new THREE.MeshBasicMaterial({ color: 0xffedb8 })));
+// 太阳在 z = -2.2 处(月球后方), 距离 cam2 为 14.2, 其半径设为 1.0 * (14.2 / 12) = 1.183, 确保与月球角直径精确一致
+const sunMesh2 = new THREE.Mesh(new THREE.CircleGeometry(1.183, 64), new THREE.MeshBasicMaterial({ color: 0xffedb8 }));
+sun2Grp.add(sunMesh2);
 const corona = new THREE.Sprite(new THREE.SpriteMaterial({ map: coronaTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
-corona.scale.set(6.5, 6.5, 1); corona.position.z = -0.3;
+corona.scale.set(7.5, 7.5, 1);
+corona.position.z = -0.1;
 sun2Grp.add(corona);
-const shadowDisc = new THREE.Mesh(new THREE.CircleGeometry(2.69, 48),
-  new THREE.MeshBasicMaterial({ color: 0x020308, transparent: true, opacity: 0, depthWrite: false }));
-shadowDisc.position.z = 0.9;
+
+// 地影圆盘: 在月球前方 z = 1.01 处, 真实本影角半径约 0.70° (月球为 0.26°, 约 2.69 倍月球半径)
+// 距离 cam2 为 10.99, 对应尺寸 2.69 * (10.99 / 12) ≈ 2.46
+const shadowDisc = new THREE.Mesh(new THREE.CircleGeometry(2.46, 64),
+  new THREE.MeshBasicMaterial({ color: 0x05060c, transparent: true, opacity: 0, depthWrite: false }));
+shadowDisc.position.z = 1.01;
 scene2.add(shadowDisc);
 
 /* ---------------- 标签 ---------------- */
+/* phi/evt/nodeAligned 供下方标签的 textFn 立即求值,必须先于标签声明 */
+let phi = 0, litK = 0, betaDeg = 0, nodeDist = 0, evt = 'none', evtLabel = '', missKm = 0;
+const nodeAligned = () => Math.min(nodeDeg, 180 - nodeDeg);
 const labelReg = [];
 function addLabel(textFn, pos, cls = '', vis = () => true) {
   const div = document.createElement('div');
@@ -499,7 +526,7 @@ function addLabel(textFn, pos, cls = '', vis = () => true) {
   return { o, el: div };
 }
 function refreshLabels() {
-  for (const r of labelReg) r.o.element.style.display = labelsOn && r.vis() ? '' : 'none';
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
 }
 addLabel(() => L('太阳 · 1.5 亿 km 外,日光已近乎平行', 'Sun · 150 M km away — rays arrive parallel'),
   new THREE.Vector3(SUN_D, 3.2, 0), 'g');
@@ -522,8 +549,6 @@ addLabel(() => L('示意压缩了距离:真实月地距 384,400 km ≈ 60 个地
 const lblEvt = addLabel(() => evtLabel, new THREE.Vector3(0, 3.4, 0), 'st', () => evtLabel !== '');
 
 /* ================= 几何与食(全部实时计算) ================= */
-let phi = 0, litK = 0, betaDeg = 0, nodeDist = 0, evt = 'none', evtLabel = '', missKm = 0;
-const nodeAligned = () => Math.min(nodeDeg, 180 - nodeDeg);
 const EVT_NAMES = {
   st: () => L('日全食 · 全食带 ~270 km', 'total solar · belt ~270 km'),
   se: () => L('日偏食(半影扫过)', 'partial solar (penumbra sweeps)'),
@@ -551,14 +576,18 @@ function compute() {
   else if (d2 < 0.96) evt = 'le';
   else if (d2 < 1.47) evt = 'pe';
   if (evt !== 'none') evtLabel = EVT_NAMES[evt]();
-  else if (d1 < 8) { missKm = 384400 * Math.tan(d1 * DEG); evtLabel = missText(); }
-  else if (d2 < 8) { missKm = 384400 * Math.tan(d2 * DEG); evtLabel = missText(); }
+  else if (d1 < 8) { missKm = 384400 * Math.tan(d1 * DEG); evtLabel = missText(d1, d2); }
+  else if (d2 < 8) { missKm = 384400 * Math.tan(d2 * DEG); evtLabel = missText(d1, d2); }
 }
-function missText() {
+function missText(d1, d2) {
   const side = betaDeg >= 0 ? L('北', 'N') : L('南', 'S');
   const wan = (missKm / 1e4).toFixed(1);
-  return L(`影轴错过地球 · 偏${side}约 ${wan} 万 km —— 本月无食`,
-    `shadow axis misses Earth by ~${(missKm / 1e3).toFixed(0)},000 km (to the ${side.toLowerCase()}) — no eclipse this month`);
+  if (d1 < 8) {
+    return L(`月影错过地球 · 偏${side}约 ${wan} 万 km —— 本月无日食`,
+      `Moon's shadow misses Earth by ~${(missKm / 1e3).toFixed(0)},000 km (to the ${side.toLowerCase()}) — no solar eclipse this month`);
+  }
+  return L(`月球错过地影 · 偏${side}约 ${wan} 万 km —— 本月无月食`,
+    `Moon misses Earth's shadow by ~${(missKm / 1e3).toFixed(0)},000 km (to the ${side.toLowerCase()}) — no lunar eclipse this month`);
 }
 function phaseName(pp) {
   pp = ((pp % 1) + 1) % 1;
@@ -618,9 +647,9 @@ function stepIndex() {
   if (evt === 'st' || evt === 'se') return 2;
   if (evt === 'lt' || evt === 'le' || evt === 'pe') return 3;
   const d1 = phi / DEG, d2 = Math.acos(clamp(-moonDir.x, -1, 1)) / DEG;
-  if (Math.min(d1, d2) < 6 && nodeAligned() > 40) return 4;
-  if (nodeAligned() < 25) return 5;
-  if ((p > 0.2 && p < 0.3) || (p > 0.7 && p < 0.8)) return 1;
+  if (Math.min(d1, d2) < 6 && nodeAligned() > 30) return 4;
+  if ((p > 0.21 && p < 0.29) || (p > 0.71 && p < 0.79)) return 1;
+  if (nodeAligned() < 22 && (Math.abs(p - 0) < 0.1 || Math.abs(p - 1) < 0.1 || Math.abs(p - 0.5) < 0.1)) return 5;
   return 0;
 }
 function buildSteps() {
@@ -651,6 +680,7 @@ function layout2() {
   SUB = subSize();
   view2El.style.display = viewOn ? '' : 'none';
   view2El.style.width = view2El.style.height = SUB + 'px';
+  renderer2.setSize(SUB, SUB, false);
   statsEl.style.bottom = viewOn ? (SUB + 30) + 'px' : '18px';
 }
 addEventListener('resize', () => {
@@ -663,7 +693,6 @@ addEventListener('resize', () => {
 
 /* ================= 每帧应用 ================= */
 const COPPER = new THREE.Color(0.62, 0.26, 0.12), WHITE = new THREE.Color(1, 1, 1);
-const qCamInv = new THREE.Quaternion();
 const AX = new THREE.Vector3(), AY = new THREE.Vector3(), AZ = new THREE.Vector3(), AD = new THREE.Vector3();
 const XHAT = new THREE.Vector3(1, 0, 0);
 let capStr = '';
@@ -673,12 +702,12 @@ function apply(dts) {
   moonGrp.lookAt(0, 0, 0);
   lblMoon.o.position.copy(moonPos).add(V_A.set(0, 0.55, 0));
   mShadow.position.copy(moonPos);
-  /* 日食影斑:射线 origin=月亮 方向=背日,与单位球解析求交 */
+  /* 日食影斑:射线 origin=月亮 方向=背日,与单位球解析求交 (带严格 t > 0 判定) */
   AD.copy(moonPos).sub(SUN_POS).normalize();
   mShadow.quaternion.setFromUnitVectors(V_B.set(0, -1, 0), AD);
   const b = moonPos.dot(AD), c = moonPos.lengthSq() - 1, disc = b * b - c;
-  if (disc > 0) {
-    const t = -b - Math.sqrt(disc);
+  const t = disc > 0 ? -b - Math.sqrt(disc) : -1;
+  if (disc > 0 && t > 0 && (evt === 'st' || evt === 'se')) {
     V_C.copy(moonPos).addScaledVector(AD, t);
     V_D.copy(V_C).normalize();
     spotU.visible = spotP.visible = true;
@@ -709,42 +738,69 @@ function apply(dts) {
   lblNodeB.o.position.copy(V_A).add(V_B.set(0, 0.32, 0));
   V_A.set(Math.cos(2.2), 0, -Math.sin(2.2)).applyQuaternion(orbitGrp.quaternion).multiplyScalar(R_M);
   lblLane.o.position.copy(V_A).add(V_B.set(0, 0.32, 0));
-  V_A.set(1, 0, 0).applyQuaternion(orbitGrp.quaternion).multiplyScalar(R_M + 1.7);
-  lblNodeLn.o.position.copy(V_A).add(V_B.set(0, 0.3, 0));
+  V_A.set(1, 0, 0).applyQuaternion(orbitGrp.quaternion).multiplyScalar(2.8);
+  lblNodeLn.o.position.copy(V_A).add(V_B.set(0, 0.28, 0));
   /* 事件大标签跟现场走 */
   if (evt === 'st' || evt === 'se') lblEvt.o.position.copy(spotU.visible ? spotU.position : moonPos).add(V_B.set(0, 0.55, 0));
   else lblEvt.o.position.copy(moonPos).add(V_B.set(0, evt === 'none' ? 1.05 : -1.05, 0));
 
-  /* ---- 副视窗:相机 = 地球,姿态与灯光严格由几何驱动 ---- */
-  cam2.position.copy(moonDir).multiplyScalar(-12);
-  cam2.up.set(0, 1, 0);
-  cam2.lookAt(0, 0, 0);
-  qCamInv.copy(cam2.quaternion).invert();
-  AX.set(1, 0, 0).applyQuaternion(cam2.quaternion);
-  AY.set(0, 1, 0).applyQuaternion(cam2.quaternion);
-  AZ.set(0, 0, 1).applyQuaternion(cam2.quaternion);
-  AD.copy(SUN_POS).sub(moonPos).normalize();
-  light2.position.set(AD.dot(AX), AD.dot(AY), AD.dot(AZ)).multiplyScalar(5);
-  moon2Grp.quaternion.multiplyQuaternions(qCamInv, moonGrp.quaternion);
+  /* ---- 副视窗:从地球看 (地心视角,严格由天球几何驱动) ---- */
+  // 视线深入屏幕为 -Z, 故面向观察者的 +Z 轴为 -rM
+  const vZ = V_B.copy(moonDir).negate();
+  // 屏幕正上方 +Y 轴: 天球北极在垂直视线平面的投影
+  const uNorth = V_A.set(0, 1, 0);
+  const vY = V_C.copy(uNorth).addScaledVector(moonDir, -uNorth.dot(moonDir)).normalize();
+  // 屏幕正向右 +X 轴: vY × vZ
+  const vX = V_D.crossVectors(vY, vZ).normalize();
+
+  // 平行日光入射方向 (+X 轴)
+  const rSun = XHAT;
+  // 阳光矢量在观察者屏幕坐标系的分量:
+  const Lx = rSun.dot(vX); // >0: 右半亮 (上弦月/蛾眉月); <0: 左半亮 (下弦月/残月)
+  const Ly = rSun.dot(vY); // 高度角
+  const Lz = rSun.dot(vZ); // >0: 顺光 (满月); <0: 逆光 (新月)
+
+  // 设置副视窗直射日光
+  light2.position.set(Lx, Ly, Lz).multiplyScalar(10);
+  light2.target.position.set(0, 0, 0);
+  light2.intensity = 2.8 * (1 - 0.92 * lunK) + 0.08;
+
+  // 月球表面颜色与月食血月同步
   moonMat2.color.copy(moonMat.color);
   moonMat2.emissive.copy(moonMat.emissive);
-  light2.intensity = 2.8 * (1 - 0.92 * lunK) + 0.08;
-  /* 日轮:偏移 = 日月角距 ÷ 月轮角半径 0.26°(1 副窗单位 = 0.26°),朔时恰好被月轮挡住 */
-  sun2Grp.quaternion.copy(cam2.quaternion);
-  V_A.copy(XHAT).sub(moonDir);
-  if (V_A.lengthSq() > 1e-12) V_B.set(V_A.dot(AX), V_A.dot(AY), 0).normalize().multiplyScalar(phi / DEG / 0.26);
-  else V_B.set(0, 0, 0);
-  sun2Grp.position.set(0, 0, 0).addScaledVector(AX, V_B.x).addScaledVector(AY, V_B.y).addScaledVector(AZ, -2.2);
-  const cover = clamp((0.533 - phi / DEG) / 0.5, 0, 1);
-  corona.material.opacity = cover > 0.9 ? (cover - 0.9) / 0.1 * 0.95 : 0;
-  /* 地影圆盘:半径 2.69 单位 = 本影角半径 0.7° ÷ 0.26°,弧形咬入月面 */
-  shadowDisc.quaternion.copy(cam2.quaternion);
-  const off2 = d2 / 0.26;
-  V_A.copy(XHAT).negate().sub(moonDir);
-  if (V_A.lengthSq() > 1e-12) V_B.set(V_A.dot(AX), V_A.dot(AY), 0).normalize().multiplyScalar(off2);
-  else V_B.set(0, 0, 0);
-  shadowDisc.position.set(0, 0, 0).addScaledVector(AX, V_B.x).addScaledVector(AY, V_B.y).addScaledVector(AZ, 0.9);
-  shadowDisc.material.opacity = clamp((3.69 - off2) / 0.9, 0, 1) * 0.88;
+
+  // 日食: 太阳在副视窗中的视角位置 (1 单位 = 0.26° 月球角半径)
+  const angDistSun = phi / DEG;
+  if (Lz < 0 && angDistSun < 5.5) {
+    sun2Grp.visible = true;
+    const sScale = 1 / 0.26;
+    sun2Grp.position.set(Lx * angDistSun * sScale, Ly * angDistSun * sScale, -2.2);
+    const cover = clamp((0.533 - angDistSun) / 0.5, 0, 1);
+    corona.material.opacity = cover > 0.85 ? (cover - 0.85) / 0.15 * 0.95 : 0;
+  } else {
+    sun2Grp.visible = false;
+    corona.material.opacity = 0;
+  }
+
+  // 月食: 地影在副视窗中的视角位置 (地影中心位于反日方向 -Lx, -Ly)
+  const angDistShadow = d2;
+  if (Lz > 0 && angDistShadow < 3.8) {
+    shadowDisc.visible = true;
+    const sScale = 1 / 0.26;
+    shadowDisc.position.set(-Lx * angDistShadow * sScale, -Ly * angDistShadow * sScale, 1.01);
+    if (evt === 'lt') {
+      // 月全食时, 地影稍透出暗红光辉并呈现月球自身血月红光
+      shadowDisc.material.color.setHex(0x1a0505);
+      shadowDisc.material.opacity = 0.32;
+    } else {
+      shadowDisc.material.color.setHex(0x05060c);
+      const offShadow = angDistShadow * sScale;
+      shadowDisc.material.opacity = clamp((3.69 - offShadow) / 0.9, 0, 1) * 0.85;
+    }
+  } else {
+    shadowDisc.visible = false;
+  }
+
   /* 副窗标题 */
   const solar = evt === 'st' || evt === 'se';
   const cap = solar
@@ -783,16 +839,9 @@ function frame() {
     [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
   }
   controls.update();
-  renderer.setViewport(0, 0, innerWidth, innerHeight);
-  renderer.setScissorTest(false);
   renderer.render(scene, camera);
   if (viewOn) {
-    renderer.setViewport(innerWidth - 18 - SUB, 18, SUB, SUB);
-    renderer.setScissor(innerWidth - 18 - SUB, 18, SUB, SUB);
-    renderer.setScissorTest(true);
-    renderer.clearDepth();
-    renderer.render(scene2, cam2);
-    renderer.setScissorTest(false);
+    renderer2.render(scene2, cam2);
   }
   labelRenderer.render(scene, camera);
 }
