@@ -148,6 +148,39 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **How to play**: drag layer height/infill/speed, toggle supports, reprint; space to play / pause.
 - **URL parameters**: `?lh=` `?infill=` `?pspd=` `?support=` `?pause=` `?speed=` `?labels=` `?spin=`.
 
+### Phase 22 · Candidate-pool batch three (4/4, pool cleared)
+
+- [x] Tornado (shear builds the mesocyclone, stretching spin-ups via Iω, debris curtain, EF rating, roof off) ✅ **tornado/**
+- [x] Rain shadow (dry/moist adiabatic climb, windward rain, foehn wind, desert swaps sides with the wind) ✅ **rain-shadow/**
+- [x] Benford's law (log cylinder + digit arcs, ×3.7 scale invariance, fake books rejected by χ²) ✅ **benford/**
+- [x] Turing machine (tape + head + rule table, unary add / binary carry / copier, space-time diagram) ✅ **turing-machine/**
+
+### Phase 22 deep dives
+
+#### Tornado: stretching spin out of control
+
+- **What you see**: drag shear past 30% and the whole supercell starts turning, lowering a wall cloud; the updraft stretches the vortex vertically and angular momentum does the rest — 520 debris particles wind into a funnel; past 85% it touches down and grinds up a dust curtain; the v·r≈const hyperbola shows the dot climbing as you stretch; readouts give wind speed, rpm, ΔP≈0.75v² and the EF rating, and at EF3+ the barn roof tears off until you press "fix the barn". "Auto evolve" plays the whole fair → shear → stretch → touchdown life cycle.
+- **How to play**: drag shear/stretch, run auto-evolve, fix the barn; space to play / pause.
+- **URL parameters**: `?shear=` `?stretch=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Rain shadow: one mountain, two fates
+
+- **What you see**: a blue parcel climbs from the sea — dry-adiabatic cooling at 9.8 °C/km until the LCL, then condensation and latent heat slow the cooling; the rain all falls windward, dyeing that slope green; past the summit the bone-dry air warms by compression into a foehn, landing +3.7 °C hotter, and the lee slope fades to desert; the T-altitude chart draws both adiabats and the parcel's current state. Raise the mountain past the LCL and rainforest and desert appear together; flip the wind and the shadow swaps sides instantly.
+- **How to play**: drag height/dew point, flip the wind, try the Himalaya preset; space to play / pause.
+- **URL parameters**: `?hmt=` `?td=` `?flip=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Benford's law: leading digits live on a log circle
+
+- **What you see**: 171 country populations scattered on a logarithmic cylinder — the angle is set by the mantissa, so everything starting with 1 crowds into one arc; the nine base arcs are the theory log10(1+1/d) and nine colored bars grow out of them; switching datasets (rivers, Fibonacci, powers of 2) keeps the bars on the white line; "×3.7" spins every dot around the cylinder yet the bars land unchanged; "fabricate a book" flattens the digits and χ² blows past 15.5 — rejected.
+- **How to play**: six dataset buttons, ×3.7 for scale invariance, fake books for fraud detection; space to play / pause.
+- **URL parameters**: `?ds=` `?pause=` `?labels=` `?spin=`.
+
+#### Turing machine: one tape computes everything computable
+
+- **What you see**: a tape receding into the fog, a read-write head, and a highlighted rule table — each step only reads, writes, moves and changes state; three built-in programs give the same machine three identities: unary addition 111+11→11111, binary increment 1011→1100 (a carry wave moving left), and a copier 11#→11#11 (x/y marks track progress); the space-time diagram draws every tape as growth rings; HALT turns the sign green.
+- **How to play**: switch the three programs, step once at a time, drag the speed 0.5–20 steps/s, reset anytime; space to play / pause.
+- **URL parameters**: `?p=` `?speed=` `?pause=` `?labels=` `?spin=`.
+
 ### Phase 11 · Earth system (10/10)
 
 - [x] Plate tectonics (mantle convection conveyor, ridges birth crust, trenches consume it) ✅ **plate-tectonics/**
@@ -704,6 +737,10 @@ flywheel/              Flywheel & KERS: E=½Iω² and the material red line (Thr
 defibrillator/         Defibrillator: an excitable mesh reset to zero (Three.js, CDN)
 blood-pressure/        Blood pressure monitor: an envelope that reads SYS/MAP/DIA (Three.js, CDN)
 3d-printing/           3D printing: slicing, layer-by-layer extrusion, the 45° rule (Three.js, CDN)
+tornado/               Tornado: stretching makes angular momentum a disaster (Three.js, CDN)
+rain-shadow/           Rain shadow: adiabats, foehn wind and the desert next door (Three.js, CDN)
+benford/               Benford's law: leading digits on a log circle (Three.js, CDN)
+turing-machine/        Turing machine: tape, head and the universal rule table (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
