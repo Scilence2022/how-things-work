@@ -15,7 +15,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 
 | Domain | Sample topics |
 | --- | --- |
-| Mechanisms | Lockstitch sewing, four-stroke valve timing, planetary gears, worm self-locking, universal joints, escapements, Watt's governor |
+| Mechanisms | Lockstitch sewing, four-stroke valve timing, planetary gears, worm self-locking, universal joints, escapements, Watt's governor, ball screw, derailleur, flywheel KERS |
 | Chemistry | SN1/SN2/E1/E2 quartet, galvanic ⇄ electrolytic cells, electrophilic addition & Markovnikov's rule, radical chain reactions, benzene aromaticity, conjugation & color, enzyme kinetics, ozone depletion |
 | Biology | DNA replication & telomere wear, ATP synthase, glycolysis → TCA → fermentation, cardiac cycle, alveolar gas exchange, nephron counter-current, cochlea & eye, kinesin |
 | Physics & space | Motor ⇄ generator, double-slit, laser, EM waves, lens imaging, kinetic theory, entropy & phase change, liquid crystals & LCD |
@@ -100,6 +100,53 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] Fractals & recursion (Koch perimeter diverges, Mandelbrot zooms forever) ✅ **fractals/**
 - [x] Internet packet switching (numbered packets, out-of-order reassembly, retransmit on timeout) ✅ **packet-switching/**
 - [x] Taylor series (tangents grow into the curve; ln(1+x) flies off past its radius) ✅ **taylor-series/**
+
+### Phase 21 · Candidate-pool batch two (6/6)
+
+- [x] Ball screw (recirculating balls, efficiency-vs-lead-angle curves, back-driving and the sliding self-lock contrast, brake) ✅ **ball-screw/**
+- [x] Bike derailleur (cable → parallelogram → chain hop, gear ratios, tension pulley + freehub ratchet) ✅ **bike-derailleur/**
+- [x] Flywheel & KERS (brake energy banked into a 50k-rpm wheel, E=½Iω², the σ=ρv² material red line and burst) ✅ **flywheel/**
+- [x] Defibrillator (VF = crashing waves, the shock = a global reset, sinus node takes over, dosing and movie myths) ✅ **defibrillator/**
+- [x] Blood pressure monitor (occlude, bleed, Korotkoff, oscillation envelope computing SYS/MAP/DIA live) ✅ **blood-pressure/**
+- [x] 3D printing (slice, extrude, stack; the 45° overhang rule and supports; layer-height trade-off) ✅ **3d-printing/**
+
+### Phase 21 deep dives
+
+#### Ball screw: grinding rotation into translation
+
+- **What you see**: a motor spins the threaded shaft while 40 steel balls recirculate through the nut and loop back through the return tube; the efficiency-vs-lead-angle chart shows rolling (ρ≈0.2°) against sliding (ρ≈11.3°); drag the table backwards and the ball screw back-drives instantly — vertical axes need a brake; swap to the sliding screw and, at the same lead, λ<ρ locks solid until you stretch the lead past the friction angle.
+- **How to play**: drag speed/lead, switch drive/push/brake/sliding modes, follow the dot on the chart; space to play / pause.
+- **URL parameters**: `?rpm=` `?pitch=` `?drive=` `?push=` `?brake=` `?slide=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Bike derailleur: ten gears from a fingertip
+
+- **What you see**: cadence drives the 48T ring and the golden chain runs its S-path ring → cog → jockey → tension pulley → back; shifting slides the parallelogram and the chain hops onto the neighboring cog; a bigger cog needs more chain, so the cage swings open; coasting, the freehub ratchet clicks while the wheel keeps spinning.
+- **How to play**: shift up/down (↑/↓), drag cadence, toggle coast and slow-mo shift, compare the five cogs in the chart; space to play / pause.
+- **URL parameters**: `?gear=` `?cad=` `?coast=` `?slow=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Flywheel & KERS: banking your brakes
+
+- **What you see**: a 24-second scripted loop — cruise, brake, idle, boost; the motor-turned-generator pours 313 kJ of KE into an 8 kg flywheel (steel caps at 48k rpm, overflow goes to heat); the boost hands it back; "brakes only" comparison piles up 910 kJ of heat vs ~60 kJ; overrev pushes the rim past σ=ρv² and it bursts in slow motion; the material slider moves the ceiling between steel/aluminum/carbon fiber.
+- **How to play**: scrub the timeline, switch KERS/brakes and materials, press overrev; space to play / pause.
+- **URL parameters**: `?t=` `?mode=` `?mat=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Defibrillator: not a restart, a global reset
+
+- **What you see**: the myocardium is an excitable 1,700-vertex mesh — in sinus rhythm one wave sweeps the heart every 0.8 s; induce VF and six rogue foci shatter the waves, pump output collapsing to ~10%; charging banks E=½CV² (150 J ≈ 1732 V) and the shock depolarizes everything at once — after the flat window the sinus node leads again; under 70 J re-fibrillates, over 300 J leaves burn marks; shocking a healthy heart triggers R-on-T.
+- **How to play**: induce VF → charge → shock; drag the energy slider across the three dose zones; watch the scrolling ECG; space to play / pause.
+- **URL parameters**: `?en=` `?mode=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Blood pressure monitor: two numbers from a squeezed artery
+
+- **What you see**: the cuff inflates past systolic and flattens the brachial artery; bleeding 3 mmHg/s, each pulse peak cracks it open — turbulence knocks Korotkoff sounds and ripples the cuff; the amber envelope peaks at MAP (93) and its shoulders read ~117/79; drag the preset to 150/95 and the whole envelope shifts right.
+- **How to play**: press start for the automatic ~30-second cycle, drag systolic/diastolic, watch the gauge and the chart; space to play / pause.
+- **URL parameters**: `?sys=` `?dia=` `?auto=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### 3D printing: slicing a model into sheets, stacking them back
+
+- **What you see**: a chess pawn sliced into 60 layers, the gantry laying perimeter + zigzag infill while the slicer window draws the current section; the ball's underside widens faster than 45° — supports OFF and the strands sag red, supports ON and a yellow scaffold carries them; snap the supports off when done; layer height 0.1/0.2/0.3 mm means 90/60/40 layers.
+- **How to play**: drag layer height/infill/speed, toggle supports, reprint; space to play / pause.
+- **URL parameters**: `?lh=` `?infill=` `?pspd=` `?support=` `?pause=` `?speed=` `?labels=` `?spin=`.
 
 ### Phase 11 · Earth system (10/10)
 
@@ -651,6 +698,12 @@ altitude-acclimatization/ Altitude acclimatization & EPO (Three.js, CDN)
 olfactory-receptor/    Olfactory receptors (Three.js, CDN)
 circadian-rhythm/      Circadian rhythm (Three.js, CDN)
 c4-cam-photosynthesis/ C4 & CAM photosynthesis (Three.js, CDN)
+ball-screw/            Ball screw: recirculating balls, efficiency curves, self-lock geometry (Three.js, CDN)
+bike-derailleur/       Bike derailleur: parallelogram, chain hop, freehub ratchet (Three.js, CDN)
+flywheel/              Flywheel & KERS: E=½Iω² and the material red line (Three.js, CDN)
+defibrillator/         Defibrillator: an excitable mesh reset to zero (Three.js, CDN)
+blood-pressure/        Blood pressure monitor: an envelope that reads SYS/MAP/DIA (Three.js, CDN)
+3d-printing/           3D printing: slicing, layer-by-layer extrusion, the 45° rule (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)

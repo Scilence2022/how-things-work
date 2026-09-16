@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>滚珠丝杠 · 把旋转磨成直线</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#ff8787;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#c92a2a;
+    --bg:#f0efed; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(255,135,135,.6); background: rgba(255,135,135,.12); color: var(--text); }
+  .abtn.crash { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(201,42,42,.55); background: rgba(201,42,42,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(255,135,135,.10); border-color: rgba(255,135,135,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(201,42,42,.08); border-color: rgba(201,42,42,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #ffc2c2; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="滚珠丝杠:把旋转磨成直线" data-en="Ball Screw: Grinding Rotation into Translation">滚珠丝杠:把旋转磨成直线</h1>
+  <div class="sub" data-zh="螺纹就是绕上圆柱的斜面;钢球在滚道里循环跑,把滑动摩擦换成滚动摩擦——90% 效率、1 N·m 顶起几百牛;代价是几乎不设防:反向一推就倒转,立式轴必须抱闸 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A thread is a ramp wrapped around a cylinder; steel balls recirculate in the raceway, swapping sliding for rolling friction — 90% efficiency, hundreds of newtons from 1 N·m; the price: almost no self-lock, so vertical axes need brakes · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">螺纹就是绕上圆柱的斜面;钢球在滚道里循环跑,把滑动摩擦换成滚动摩擦——90% 效率、1 N·m 顶起几百牛;代价是几乎不设防:反向一推就倒转,立式轴必须抱闸 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="转速" data-en="Speed">转速</span><span class="v" id="stN">—</span>
+  <span class="k" data-zh="直线速度" data-en="Linear speed">直线速度</span><span class="v" id="stV">—</span>
+  <span class="k" data-zh="机械效率" data-en="Efficiency">机械效率</span><span class="v ok" id="stE">—</span>
+  <span class="k" data-zh="输出力(1 N·m)" data-en="Force (1 N·m)">输出力(1 N·m)</span><span class="v" id="stF">—</span>
+  <span class="k" data-zh="导程角" data-en="Lead angle">导程角</span><span class="v" id="stL">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="效率-导程角曲线:绿=滚珠(ρ≈0.2°) · 橙=滑动(ρ≈11.3°) · 圆点=当前" data-en="Efficiency vs lead angle: green = balls (ρ≈0.2°) · orange = sliding (ρ≈11.3°) · dot = now">效率-导程角曲线:绿=滚珠(ρ≈0.2°) · 橙=滑动(ρ≈11.3°) · 圆点=当前</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="循环钢球" data-en="circulating balls">循环钢球</span>
+    <span class="chip.g" data-zh="回流管" data-en="return tube">回流管</span>
+    <span class="chip.r" data-zh="摩擦热 / 锁死" data-en="friction heat / locked">摩擦热 / 锁死</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnDrive" data-zh="电机正转" data-en="motor drive">电机正转</button>
+    <button class="abtn" id="btnPush" data-zh="反向推工作台" data-en="push the table back">反向推工作台</button>
+    <button class="abtn" id="btnBrake" data-zh="抱闸锁定" data-en="service brake">抱闸锁定</button>
+    <button class="abtn" id="btnSlide" data-zh="换滑动丝杠对照" data-en="swap: sliding screw">换滑动丝杠对照</button>
+  </div>
+  <div class="row"><label data-zh="电机转速" data-en="Motor speed">电机转速</label><input id="rpm" type="range" min="-240" max="240" step="5" value="120"><span class="val" id="rpmVal">120 rpm</span></div>
+  <div class="row"><label data-zh="导程 p" data-en="Lead p">导程 p</label><input id="pitch" type="range" min="2" max="40" step="1" value="8"><span class="val" id="pitchVal">8 mm</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="曲线" data-en="Chart">曲线</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../worm-drive/" data-zh="反面教材:蜗杆自锁" data-en="the contrast: worm self-lock">反面教材:蜗杆自锁</a>
+    <a href="../ratchet-pawl/" data-zh="另一种单向不放行" data-en="another one-way lock">另一种单向不放行</a>
+    <a href="../3d-printing/" data-zh="Z 轴就是它" data-en="the Z axis is one">Z 轴就是它</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xf0efed : 0x0f1013);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('滚珠丝杠 · 把旋转磨成直线', 'Ball Screw · Grinding Rotation into Translation');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setToggleBtns();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(3.1, 1.9, 3.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.1, 0.42, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.2;
+controls.maxDistance = 16;
+controls.autoRotateSpeed = 0.4;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 1.8);
+key.position.set(4, 8, 6);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.45);
+fill.position.set(-6, 3, -5);
+scene.add(fill);
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.1,
+    emissive: color, emissiveIntensity: 0.06, transparent: true, ...opts });
+}
+/* 地面 */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(7.2, 7.6, 0.12, 48),
+  mat(0x23262c, { roughness: 0.95, emissive: 0x000000, opacity: 1 }));
+ground.position.y = -0.06;
+scene.add(ground);
+
+/* ================= 床身与导轨 ================= */
+const bedMat = mat(0x3a4048, { roughness: 0.6, metalness: 0.35, opacity: 1 });
+const bed = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.16, 1.7), bedMat);
+bed.position.y = 0.14;
+scene.add(bed);
+const railMat = mat(0xb8c2cc, { roughness: 0.25, metalness: 0.85, opacity: 1 });
+for (const z of [-0.52, 0.52]) {
+  const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 4.4, 12), railMat);
+  rail.rotation.z = Math.PI / 2;
+  rail.position.set(0, 0.3, z);
+  scene.add(rail);
+}
+/* 支承座(两端) */
+for (const x of [-2.42, 2.42]) {
+  const block = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.5, 0.9), bedMat);
+  block.position.set(x, 0.46, 0);
+  scene.add(block);
+}
+
+/* ================= 电机(左端) ================= */
+const motor = new THREE.Group();
+motor.position.set(-2.95, 0.46, 0);
+scene.add(motor);
+const motorBody = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.7, 24), mat(0x2f4f6f, { roughness: 0.45, metalness: 0.4, opacity: 1 }));
+motorBody.rotation.z = Math.PI / 2;
+motor.add(motorBody);
+for (let i = 0; i < 5; i++) {
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.02, 0.56), mat(0x2a4663, { opacity: 1 }));
+  fin.position.y = -0.24 + i * 0.12;
+  motor.add(fin);
+}
+const coupling = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.24, 16), mat(0xd29a3a, { roughness: 0.5, metalness: 0.6, opacity: 1 }));
+coupling.rotation.z = Math.PI / 2;
+coupling.position.x = 0.47;
+motor.add(coupling);
+
+/* ================= 丝杠轴 + 螺纹 ================= */
+const SHAFT_R = 0.16, SHAFT_L = 4.5, PITCH_VIS = 0.22;
+const screw = new THREE.Group();          // 只转不改位置(螺母走)
+screw.position.y = 0.46;
+scene.add(screw);
+const shaft = new THREE.Mesh(new THREE.CylinderGeometry(SHAFT_R, SHAFT_R, SHAFT_L, 28),
+  mat(0x9aa8b5, { roughness: 0.3, metalness: 0.85, opacity: 1 }));
+shaft.rotation.z = Math.PI / 2;
+screw.add(shaft);
+/* 螺纹:沿螺旋线的圆管(滚动模式=滚道,滑动模式变暗变涩) */
+const helixPts = [];
+for (let i = 0; i <= 900; i++) {
+  const t = i / 900;
+  const ang = t * (SHAFT_L / PITCH_VIS) * Math.PI * 2;
+  helixPts.push(new THREE.Vector3(-SHAFT_L / 2 + t * SHAFT_L, Math.cos(ang) * SHAFT_R, Math.sin(ang) * SHAFT_R));
+}
+const helixCurve = new THREE.CatmullRomCurve3(helixPts);
+const ridgeMat = mat(0xc3ced9, { roughness: 0.28, metalness: 0.9, opacity: 1 });
+const ridge = new THREE.Mesh(new THREE.TubeGeometry(helixCurve, 900, 0.03, 6), ridgeMat);
+screw.add(ridge);
+/* 摩擦热高亮(滑动自锁/抱闸打滑时点亮) */
+const heatMat = new THREE.MeshBasicMaterial({ color: 0xff5a2a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+const heatGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.7, 20), heatMat);
+heatGlow.rotation.z = Math.PI / 2;
+
+/* ================= 螺母 + 回流管 + 工作台 ================= */
+const NUT_LEN = 0.56, NUT_R_OUT = 0.36, R_BALL = 0.172, R_RET = 0.318, TURNS = 2.5;
+const nut = new THREE.Group();
+nut.position.set(0, 0.46, 0);
+scene.add(nut);
+const nutShellMat = new THREE.MeshStandardMaterial({ color: 0x6f7d8c, roughness: 0.4, metalness: 0.7,
+  transparent: true, opacity: 0.3, depthWrite: false });
+const nutShell = new THREE.Mesh(new THREE.CylinderGeometry(NUT_R_OUT, NUT_R_OUT, NUT_LEN, 28, 1, true), nutShellMat);
+nutShell.rotation.z = Math.PI / 2;
+nut.add(nutShell);
+for (const dx of [-NUT_LEN / 2, NUT_LEN / 2]) {
+  const flange = new THREE.Mesh(new THREE.CylinderGeometry(NUT_R_OUT + 0.07, NUT_R_OUT + 0.07, 0.05, 28),
+    mat(0x55606d, { roughness: 0.45, metalness: 0.7, opacity: 1 }));
+  flange.rotation.z = Math.PI / 2;
+  flange.position.x = dx;
+  nut.add(flange);
+}
+nut.add(heatGlow);                       // 摩擦热高亮随螺母移动
+/* 钢球循环回路:滚道段(螺旋) + 回流段(外圆一周回起点) */
+const U_HEL = 0.62;                        // 回路中滚道段的参数占比
+const loopPts = [];
+for (let i = 0; i <= 240; i++) {
+  const t = i / 240, ang = t * TURNS * Math.PI * 2;
+  loopPts.push(new THREE.Vector3(-NUT_LEN / 2 + t * NUT_LEN, Math.cos(ang) * R_BALL, Math.sin(ang) * R_BALL));
+}
+for (let i = 1; i <= 96; i++) {            // 径向穿出
+  const t = i / 96;
+  loopPts.push(new THREE.Vector3(NUT_LEN / 2, lerp(Math.cos(TURNS * Math.PI * 2), 1, t) * lerp(R_BALL, R_RET, t),
+    lerp(Math.sin(TURNS * Math.PI * 2), 0, t) * lerp(R_BALL, R_RET, t)));
+}
+for (let i = 1; i <= 140; i++) {           // 外圆整一周回起点
+  const t = i / 140, ang = t * Math.PI * 2;
+  loopPts.push(new THREE.Vector3(NUT_LEN / 2 - t * NUT_LEN, Math.cos(ang) * R_RET, Math.sin(ang) * R_RET));
+}
+const loopCurve = new THREE.CatmullRomCurve3(loopPts, true);
+const retMat = new THREE.MeshStandardMaterial({ color: 0xd29a3a, roughness: 0.4, metalness: 0.7,
+  transparent: true, opacity: 0.5, depthWrite: false });
+const retTube = new THREE.Mesh(new THREE.TubeGeometry(loopCurve, 340, 0.05, 8, true), retMat);
+nut.add(retTube);
+/* 钢球 */
+const BALL_N = 40;
+const ballIM = new THREE.InstancedMesh(new THREE.SphereGeometry(0.052, 12, 10),
+  mat(0xe8edf2, { roughness: 0.12, metalness: 0.95, emissive: 0x223344, emissiveIntensity: 0.4, opacity: 1 }), BALL_N);
+ballIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+ballIM.frustumCulled = false;
+nut.add(ballIM);
+const dummy = new THREE.Object3D();
+/* 螺母-工作台支架 */
+const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.34, 0.7), mat(0x55606d, { opacity: 1 }));
+bracket.position.y = -0.28;
+nut.add(bracket);
+/* 工作台 */
+const table = new THREE.Group();
+scene.add(table);
+const tableTop = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.12, 1.3), mat(0x4a5560, { roughness: 0.5, metalness: 0.4, opacity: 1 }));
+tableTop.position.y = 0.42;
+table.add(tableTop);
+for (const z of [-0.42, 0.42]) {
+  const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.16), mat(0x37414c, { opacity: 1 }));
+  shoe.position.set(0, 0.31, z);
+  table.add(shoe);
+}
+const nutSeat = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.22, 0.5), mat(0x4a5560, { opacity: 1 }));
+nutSeat.position.y = 0.28;
+table.add(nutSeat);
+/* 工件(被台面托着的小块) */
+const work = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.3, 0.42), mat(0x7a6a4f, { roughness: 0.7, opacity: 1 }));
+work.position.y = 0.63;
+table.add(work);
+/* 抱闸:导轨卡钳 */
+const brakeG = new THREE.Group();
+brakeG.position.set(-0.85, 0.3, 0);
+scene.add(brakeG);
+const jawMat = mat(0x8a4a3a, { roughness: 0.6, opacity: 1 });
+for (const z of [-0.52, 0.52]) {
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.12), jawMat);
+  jaw.position.z = z * 0.86;
+  brakeG.add(jaw);
+}
+const brakeMat2 = new THREE.MeshBasicMaterial({ color: 0xff5a2a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+const brakeGlow = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 1.0), brakeMat2);
+brakeG.add(brakeGlow);
+
+/* ================= 状态与物理模型 ================= */
+const D2 = 16;                             // 丝杠计算直径 mm
+const RHO_BALL = 0.2, RHO_SLIDE = 11.3;    // 摩擦角(度):滚动 ≈0.2°,滑动 μ≈0.2
+const TRAVEL = 1.35;                       // 台面行程(单侧,场景单位)
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.1, 4);
+let rpmSet = clamp(qsFloat('rpm', 120), -240, 240);
+let pitchMm = clamp(qsFloat('pitch', 8), 2, 40);
+let drive = qsBool('drive', true);
+let pushing = qsBool('push', false);
+let brake = qsBool('brake', false);
+let sliding = qsBool('slide', false);
+let spinOn = qsBool('spin', true);
+let revs = 0;                               // 丝杠累计转数(带符号)
+let dirSign = 1;                           // 行程尽头自动反向
+let heat = 0;                              // 0..1 摩擦热
+const lambdaDeg = () => Math.atan(pitchMm / (Math.PI * D2)) * 180 / Math.PI;
+const rhoNow = () => sliding ? RHO_SLIDE : RHO_BALL;
+function effAt(lamDeg, sliding_) {
+  const lam = lamDeg * Math.PI / 180, rho = (sliding_ ? RHO_SLIDE : RHO_BALL) * Math.PI / 180;
+  return Math.tan(lam) / Math.tan(lam + rho);
+}
+const effNow = () => effAt(lambdaDeg(), sliding);
+const selfLock = () => sliding && lambdaDeg() < RHO_SLIDE;
+const nNow = () => !drive ? 0 : rpmSet * dirSign;                 // 电机驱动时的轴转速
+const vLin = n => n / 60 * pitchMm;                               // mm/s
+const forceN = () => 2 * Math.PI * effNow() * 1 / (pitchMm / 1000); // 1 N·m 输入
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+addLabel(() => L('电机 1 N·m', 'motor 1 N·m'), new THREE.Vector3(-2.95, 1.15, 0), 'b');
+addLabel(() => L(`丝杠轴:右旋,导程 ${pitchMm} mm`, `screw: right-hand, lead ${pitchMm} mm`),
+  new THREE.Vector3(0.4, 1.05, 0), 'st', () => labelsOn);
+addLabel(() => L('螺母(不能转,只能走)', 'nut (can\'t spin, only travel)'), new THREE.Vector3(nut.position.x, 1.28, 0), 'g');
+addLabel(() => sliding ? L('滑动螺纹:无球,摩擦角 11.3°', 'sliding thread: no balls, friction angle 11.3°')
+  : L(`钢球在滚道里循环:${BALL_N} 颗`, `balls recirculating: ${BALL_N}`), new THREE.Vector3(nut.position.x, 0.16, 0.62), 'o');
+addLabel(() => L('回流管:把球从螺纹末端送回入口', 'return tube: carries balls back to the entry'),
+  new THREE.Vector3(nut.position.x, 0.98, -0.4), 'g', () => !sliding);
+addLabel(() => L('工作台', 'table'), new THREE.Vector3(table.position.x, 0.95, 0.55), 'st');
+addLabel(() => brake ? (heat > 0.25 ? L('抱闸:咬住不放,打滑发热', 'brake: clamped, slipping hot')
+  : L('抱闸:锁定', 'brake: locked')) : L('抱闸:松开', 'brake: off'),
+  new THREE.Vector3(-0.85, 0.78, 0), brake && heat > 0.25 ? 'r' : 'st');
+addLabel(() => selfLock() && pushing ? L('λ < ρ:自锁!推不动,只会发热', 'λ < ρ: self-lock! it just heats up')
+  : L('', ''), new THREE.Vector3(table.position.x, 1.25, -0.5), 'r', () => selfLock() && pushing);
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '螺纹=绕上圆柱的斜面', be: 'A thread is a ramp on a cylinder',
+    d: '把斜面卷到圆柱上,升角 λ=arctan(p/πd₂)。转一圈前进一个导程 p——旋转到直线,几何上就是推着斜面爬坡。',
+    de: 'Wrap a ramp around a cylinder and the lead angle is λ=arctan(p/πd₂). One turn advances one lead p — rotation to translation is just pushing up a ramp.',
+    act: () => { drive = true; pushing = brake = false; sliding = false; pitchMm = 8; resetRun(); } },
+  { b: '钢球在滚道里循环', be: 'Balls recirculate in the raceway',
+    d: '螺母里的钢球被丝杠螺旋推着沿滚道跑,跑到末端从回流管绕回入口——列队循环,肉眼可见。',
+    de: 'Inside the nut, balls ride the helical raceway, exit at the end and loop back through the return tube — a visible circulating chain.',
+    act: () => { drive = true; pushing = brake = false; sliding = false; playing = true; setPlayLabel(); } },
+  { b: '滚动替代滑动:η 30% → 90%', be: 'Rolling beats sliding: 30% → 90%',
+    d: '滑动丝杠的摩擦角约 11°,效率常在 30–40%;换成钢球滚动,摩擦角缩到 0.2° 左右,效率直上 90%——右图两条曲线的差距就是它。',
+    de: 'A sliding screw fights a ~11° friction angle for 30–40% efficiency; steel balls shrink it to ~0.2° and efficiency jumps past 90% — the gap between the two curves.',
+    act: () => { sliding = false; pitchMm = 8; resetRun(); } },
+  { b: '1 N·m 顶起几百牛', be: '1 N·m lifts hundreds of newtons',
+    d: '输出力 F=2πηT/p:效率 90%、导程 8 mm 时,1 N·m 能推出 ~700 N——等于把 70 kg 的台面轻轻顶起。',
+    de: 'Force F=2πηT/p: at 90% efficiency and 8 mm lead, 1 N·m pushes ~700 N — gently hoisting a 70 kg table.',
+    act: () => { sliding = false; pitchMm = 8; drive = true; pushing = brake = false; resetRun(); } },
+  { b: '反向一推就倒转', be: 'Push back and it back-drives',
+    d: '反向拖工作台:滚动摩擦太省力,丝杠立刻被倒着带动(反向效率同样 ~90%)。立式丝杠断电,台面会自己滑下来——所以 Z 轴必配抱闸。点「抱闸锁定」再推。',
+    de: 'Drag the table back: rolling friction gives so little resistance the screw back-drives at ~90% efficiency. Power off a vertical axis and it slides down — hence the brake. Try pushing with the brake on.',
+    act: () => { sliding = false; brake = false; pushing = true; drive = false; playing = true; setPlayLabel(); setToggleBtns(); } },
+  { b: '换滑动丝杠:自锁与解锁', be: 'Swap to sliding: lock and unlock',
+    d: '同样导程 8 mm,滑动丝杠 λ=9.0°<ρ=11.3°,反向推纹丝不动、只冒摩擦热——蜗杆千斤顶的命根子;把导程拉到 30 mm,λ=30.7° 越过摩擦角,又推得动了。自锁不是材料属性,是几何。',
+    de: 'Same 8 mm lead, sliding screw: λ=9.0° < ρ=11.3°, pushing back does nothing but make heat — the trick inside worm-jack self-locking. Stretch the lead to 30 mm: λ=30.7° clears the friction angle and it back-drives again. Self-lock is geometry, not material.',
+    act: () => { sliding = true; pushing = true; drive = false; brake = false; pitchMm = 8; playing = true; setPlayLabel(); setToggleBtns(); } },
+];
+function stepIndex() {
+  if (sliding && pushing) return 5;
+  if (pushing && !brake) return 4;
+  if (pushing && brake) return 4;
+  if (!sliding && pitchMm <= 8 && Math.abs(rpmSet) > 0 && drive) return 3;
+  return 1;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 曲线图 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const pad = 14, padB = 18;
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const xOf = lam => pad + (W - 2 * pad) * clamp(lam, 0, 40) / 40;
+  const yOf = e => pad + (H - pad - padB) * (1 - clamp(e, 0, 1));
+  ctx.strokeStyle = cTxt; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, H - padB); ctx.lineTo(W - pad, H - padB); ctx.stroke();
+  /* 两条效率曲线 */
+  const curve = (sliding_, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    for (let lam = 0.5; lam <= 40; lam += 0.5) {
+      const y = yOf(effAt(lam, sliding_));
+      lam <= 0.5 + 1e-9 ? ctx.moveTo(xOf(lam), y) : ctx.lineTo(xOf(lam), y);
+    }
+    ctx.stroke();
+  };
+  curve(false, '#69db7c');
+  curve(true, '#ffa94d');
+  /* 当前点 */
+  const lam = lambdaDeg(), e = effNow();
+  ctx.strokeStyle = cTxt; ctx.setLineDash([6, 6]); ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(xOf(lam), yOf(e)); ctx.lineTo(xOf(lam), H - padB); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = sliding ? '#ffa94d' : '#69db7c';
+  ctx.beginPath(); ctx.arc(xOf(lam), yOf(e), 6, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  /* 自锁区(滑动) */
+  if (lambdaDeg() < RHO_SLIDE) {
+    ctx.fillStyle = 'rgba(255,107,107,.16)';
+    ctx.fillRect(pad, pad, xOf(RHO_SLIDE) - pad, H - padB - pad);
+  }
+  ctx.fillStyle = cTxt; ctx.font = '14px system-ui';
+  ctx.fillText('λ', W - pad - 14, H - 4);
+  ctx.fillText('η', pad + 4, pad + 14);
+  ctx.fillText('ρ=11.3°', xOf(RHO_SLIDE) - 26, pad + 16);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elRpm = document.getElementById('rpm'), elRpmVal = document.getElementById('rpmVal');
+const elPitch = document.getElementById('pitch'), elPitchVal = document.getElementById('pitchVal');
+const stN = document.getElementById('stN'), stV = document.getElementById('stV'), stE = document.getElementById('stE'),
+  stF = document.getElementById('stF'), stL = document.getElementById('stL');
+const formulaEl = document.getElementById('formula');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function setToggleBtns() {
+  document.getElementById('btnDrive').classList.toggle('on', drive && !pushing);
+  document.getElementById('btnPush').classList.toggle('on', pushing);
+  document.getElementById('btnBrake').classList.toggle('on', brake);
+  document.getElementById('btnSlide').classList.toggle('on', sliding);
+}
+function syncSliders() {
+  elRpm.value = rpmSet; elRpmVal.textContent = rpmSet + ' rpm';
+  elPitch.value = pitchMm; elPitchVal.textContent = pitchMm + ' mm';
+}
+function syncAll() { syncSliders(); drawPlot(); }
+function resetRun() { setToggleBtns(); syncAll(); }
+function updateFormula() {
+  const lam = lambdaDeg().toFixed(1), e = (effNow() * 100).toFixed(0);
+  const st = !pushing && drive ? L('传动中', 'driving')
+    : pushing && brake ? L('抱闸:锁死', 'braked: locked')
+    : pushing && selfLock() ? L('自锁:纹丝不动', 'self-locked')
+    : pushing ? L('反向倒转', 'back-driving')
+    : L('待机', 'idle');
+  formulaEl.innerHTML = L(
+    `λ = arctan(p/πd₂) = <b>${lam}°</b> · η = tanλ/tan(λ+ρ) = <b>${e}%</b><br>` +
+    `F = 2πηT/p = <b>${forceN().toFixed(0)} N</b>(T=1 N·m) · ${st}<br>` +
+    (sliding ? '滑动对照:ρ≈11.3°(μ≈0.2),λ&lt;ρ 即自锁' : '滚珠:ρ≈0.2°,正反向都近乎不打折'),
+    `λ = arctan(p/πd₂) = <b>${lam}°</b> · η = tanλ/tan(λ+ρ) = <b>${e}%</b><br>` +
+    `F = 2πηT/p = <b>${forceN().toFixed(0)} N</b> (T=1 N·m) · ${st}<br>` +
+    (sliding ? 'sliding: ρ≈11.3° (μ≈0.2); λ&lt;ρ self-locks' : 'balls: ρ≈0.2°, near-lossless both ways'));
+}
+document.getElementById('btnDrive').addEventListener('click', () => { drive = true; pushing = false; resetRun(); });
+document.getElementById('btnPush').addEventListener('click', () => { pushing = !pushing; if (pushing) drive = false; else drive = true; resetRun(); });
+document.getElementById('btnBrake').addEventListener('click', () => { brake = !brake; setToggleBtns(); });
+document.getElementById('btnSlide').addEventListener('click', () => { sliding = !sliding; resetRun(); });
+elRpm.addEventListener('input', () => { rpmSet = +elRpm.value; elRpmVal.textContent = rpmSet + ' rpm'; drawPlot(); });
+elPitch.addEventListener('input', () => { pitchMm = +elPitch.value; elPitchVal.textContent = pitchMm + ' mm'; drawPlot(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglRotate').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+if (!qsBool('labels', true)) { document.getElementById('tglLabels').checked = false; labelsOn = false; refreshLabels(); }
+controls.autoRotate = spinOn;
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ---------------- 钢球位置 ---------------- */
+function updateBalls(phase) {
+  const hide = sliding;
+  ballIM.visible = !hide;
+  retTube.visible = !hide;
+  if (hide) return;
+  for (let i = 0; i < BALL_N; i++) {
+    const u = (i / BALL_N + phase) % 1;
+    loopCurve.getPointAt(u, dummy.position);
+    dummy.scale.setScalar(1);
+    dummy.updateMatrix();
+    ballIM.setMatrixAt(i, dummy.matrix);
+  }
+  ballIM.instanceMatrix.needsUpdate = true;
+}
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, statsAcc = 1, phase = 0;
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt = clamp(clock.getDelta(), 0, 0.05) * (playing ? speed : 0);
+  /* 转速合成:驱动 or 反推 */
+  let n = 0;
+  if (pushing) {
+    if (brake || selfLock()) { heat = Math.min(1, heat + dt * 1.6); }
+    else { n = -(TRAVEL * 0.32 / PITCH_VIS) * 60; heat = Math.max(0, heat - dt * 1.2); }
+  } else if (drive) { n = rpmSet * dirSign; heat = sliding ? 0.35 : Math.max(0, heat - dt * 1.2); }
+  else heat = Math.max(0, heat - dt * 0.8);
+  /* 相位与台面 */
+  const dRevs = n / 60 * dt;
+  revs += dRevs;
+  if (drive && Math.abs(revs) > TRAVEL / PITCH_VIS) {   // 行程尽头:行程开关让电机反向
+    revs = clamp(revs, -TRAVEL / PITCH_VIS, TRAVEL / PITCH_VIS);
+    dirSign *= -1;
+  }
+  const x = clamp(revs * PITCH_VIS, -TRAVEL, TRAVEL);
+  table.position.x = x;
+  nut.position.x = x;
+  screw.rotation.x += dRevs * Math.PI * 2;
+  coupling.rotation.x = screw.rotation.x;
+  phase = (phase + (n / 60) * (U_HEL / TURNS) * dt) % 1;
+  if (phase < 0) phase += 1;
+  updateBalls(phase);
+  /* 热量显示 */
+  heatMat.opacity = heat * 0.5;
+  brakeMat2.opacity = (brake && pushing) ? heat * 0.55 : 0;
+  ridgeMat.color.setHex(sliding ? 0x8f9aa5 : 0xc3ced9);
+  ridgeMat.roughness = sliding ? 0.8 : 0.28;
+  nutShellMat.opacity = sliding ? 0.55 : 0.3;
+  /* 相机/标签/步骤 */
+  statsAcc += dt;
+  if (statsAcc > 0.12) {
+    statsAcc = 0;
+    const showN = n;
+    stN.textContent = (showN > 0 ? '' : showN < 0 ? '−' : '') + Math.abs(showN).toFixed(0) + ' rpm';
+    stV.textContent = Math.abs(vLin(showN)).toFixed(0) + ' mm/s';
+    stE.textContent = (effNow() * 100).toFixed(0) + ' %';
+    stE.className = 'v ' + (effNow() > 0.7 ? 'ok' : effNow() > 0.4 ? 'warn' : 'bad');
+    stF.textContent = forceN().toFixed(0) + ' N';
+    stL.textContent = lambdaDeg().toFixed(1) + '°';
+    updateFormula();
+  }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化(URL 参数) ================= */
+speed = clamp(qsFloat('speed', 1), 0.1, 4);
+drive = qsBool('drive', true);
+pushing = qsBool('push', false);
+brake = qsBool('brake', false);
+sliding = qsBool('slide', false);
+syncSliders();
+setToggleBtns();
+applyTheme();
+applyLang();
+syncAll();
+setPlayLabel();
+start();
+</script>
+</body>
+</html>
