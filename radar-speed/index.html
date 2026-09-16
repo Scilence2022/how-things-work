@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>雷达测速 · 被压紧的波前就是速度</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#74c0fc;
+    --bg:#0d1117; --panel:rgba(13,18,24,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,18,24,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,18,24,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1971c2;
+    --bg:#eef1f5; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+  :root[data-theme="light"] .lbl.r { color:#c92a2a; } :root[data-theme="light"] .lbl.g { color:#2b8a3e; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #74c0fc; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 30%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(116,192,252,.6); background: rgba(116,192,252,.12); color: var(--text); }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(25,113,194,.55); background: rgba(25,113,194,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(116,192,252,.10); border-color: rgba(116,192,252,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(25,113,194,.08); border-color: rgba(25,113,194,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="雷达测速:被压紧的波前就是速度" data-en="Radar Speed Gun: squeezed wavefronts are speed">雷达测速:被压紧的波前就是速度</h1>
+  <div class="sub" data-zh="枪打出 f₀=24 GHz 微波 → 接近的车每秒迎面吃掉一截波前,反射波被压紧(频移上抬) → 与本振混出拍频 f_d=2v/λ → 只有径向分量 v·cosθ 被测量 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The gun beams f₀=24 GHz → an approaching car eats into the wavefronts, compressing the echo (up-shift) → mixed with the local oscillator it beats at f_d=2v/λ → only the radial part v·cosθ is measured · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">枪打出 f₀=24 GHz 微波 → 接近的车每秒迎面吃掉一截波前,反射波被压紧(频移上抬) → 与本振混出拍频 f_d=2v/λ → 只有径向分量 v·cosθ 被测量 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="真实车速" data-en="True speed">真实车速</span><span class="v" id="stV">—</span>
+  <span class="k" data-zh="径向分量" data-en="Radial part">径向分量</span><span class="v warn" id="stVr">—</span>
+  <span class="k" data-zh="枪的读数" data-en="Gun reading">枪的读数</span><span class="v bad" id="stGun">—</span>
+  <span class="k" data-zh="多普勒频移" data-en="Doppler shift">多普勒频移</span><span class="v" id="stFd">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="发射波(蓝)· 反射波(红,压缩比已放大示意)· 白线=拍" data-en="Transmitted (blue) · reflected (red, compression exaggerated) · white = beat">发射波(蓝)· 反射波(红,压缩比已放大示意)· 白线=拍</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="蓝色环 发射波前" data-en="blue = outgoing">蓝色环 发射波前</span>
+    <span class="chip.r" data-zh="红色环 反射波前" data-en="red = reflected">红色环 反射波前</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnNear" data-zh="车辆接近" data-en="approaching">车辆接近</button>
+    <button class="abtn" id="btnAway" data-zh="车辆远离" data-en="receding">车辆远离</button>
+    <button class="abtn" id="btnStill" data-zh="静止目标" data-en="static target">静止目标</button>
+  </div>
+  <div class="row"><label data-zh="车速" data-en="Speed">车速</label><input id="v" type="range" min="0" max="160" step="1" value="90"><span class="val" id="vVal">90 km/h</span></div>
+  <div class="row"><label data-zh="照射角 θ" data-en="Beam angle θ">照射角 θ</label><input id="ang" type="range" min="0" max="70" step="1" value="0"><span class="val" id="angVal">0°</span></div>
+  <div class="row"><label data-zh="波段" data-en="Band">波段</label><input id="band" type="range" min="0" max="2" step="1" value="1"><span class="val" id="bandVal">K 24.1 GHz</span></div>
+  <div class="row"><label data-zh="速度" data-en="Speed">速度</label><input id="spd" type="range" min="0.2" max="3" step="0.1" value="1"><span class="val" id="spdVal">1.0×</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="示波" data-en="Scope">示波</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../doppler-effect/" data-zh="多普勒效应本体" data-en="the Doppler effect itself">多普勒效应本体</a>
+    <a href="../sonar-ultrasound/" data-zh="声波版:声呐" data-en="sound edition: sonar">声波版:声呐</a>
+    <a href="../em-wave/" data-zh="微波也是电磁波" data-en="microwaves are EM waves too">微波也是电磁波</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeef1f5 : 0x0d1117);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('雷达测速 · 被压紧的波前就是速度', 'Radar Speed Gun · squeezed wavefronts are speed');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setDirBtns();
+  setPlayLabel();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(-3.2, 3.3, 8.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(-1.25, 0.8, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3.5;
+controls.maxDistance = 22;
+controls.autoRotateSpeed = 0.4;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 1.8);
+key.position.set(5, 9, 6);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.4);
+fill.position.set(-6, 4, -5);
+scene.add(fill);
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.1,
+    emissive: color, emissiveIntensity: 0.06, transparent: true, ...opts });
+}
+/* 地面与道路 */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(9, 9.4, 0.14, 48),
+  mat(0x232a22, { roughness: 0.95, emissive: 0x000000, opacity: 1 }));
+ground.position.y = -0.08;
+scene.add(ground);
+const road = new THREE.Mesh(new THREE.BoxGeometry(11, 0.03, 1.9),
+  mat(0x3a3f45, { roughness: 0.9, emissive: 0x000000, opacity: 1 }));
+road.position.set(0.6, 0.005, 0);
+scene.add(road);
+for (let i = 0; i < 9; i++) {
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.02, 0.09),
+    new THREE.MeshBasicMaterial({ color: 0xd9c46a }));
+  dash.position.set(-4 + i * 1.2, 0.03, 0);
+  scene.add(dash);
+}
+
+/* 测速枪(三脚架 + 枪身 + 显示屏) */
+const gunGrp = new THREE.Group();
+gunGrp.position.set(-3.6, 0, 0);
+scene.add(gunGrp);
+const legMat = mat(0x51565e, { roughness: 0.6, opacity: 1 });
+for (const [dx, dz] of [[0.3, 0.25], [0.3, -0.25], [-0.4, 0]]) {
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.15, 6), legMat);
+  leg.position.set(dx * 0.5, 0.55, dz * 0.5);
+  leg.rotation.x = dz * 0.45;
+  leg.rotation.z = -dx * 0.45;
+  gunGrp.add(leg);
+}
+const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.24, 0.2), mat(0x2c3138, { roughness: 0.4, opacity: 1 }));
+gunBody.position.set(0.1, 1.28, 0);
+gunGrp.add(gunBody);
+const horn = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.09, 0.3, 14), mat(0x454b54, { roughness: 0.5, opacity: 1 }));
+horn.rotation.z = Math.PI / 2;
+horn.position.set(0.52, 1.28, 0);
+gunGrp.add(horn);
+const GUN_MUZZLE = new THREE.Vector3(-2.9, 1.28, 0);
+
+/* 射束(淡蓝半透明锥) */
+const beamMat = new THREE.MeshBasicMaterial({ color: 0x74c0fc, transparent: true, opacity: 0.10,
+  blending: THREE.AdditiveBlending, depthWrite: false });
+const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.95, 9.4, 20, 1, true), beamMat);
+beam.rotation.z = -Math.PI / 2;
+beam.position.set(1.6, 1.28, 0);
+scene.add(beam);
+
+/* 车 */
+const carGrp = new THREE.Group();
+scene.add(carGrp);
+const bodyM = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.3, 0.62), mat(0xd7443e, { roughness: 0.3, metalness: 0.4, opacity: 1 }));
+bodyM.position.y = 0.32;
+carGrp.add(bodyM);
+const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.26, 0.55), mat(0xb03732, { roughness: 0.3, metalness: 0.4, opacity: 1 }));
+cabin.position.set(-0.05, 0.58, 0);
+carGrp.add(cabin);
+const glass = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.57), mat(0x9fd4f5, { roughness: 0.1, metalness: 0.3, opacity: 0.85 }));
+glass.position.set(-0.05, 0.6, 0);
+carGrp.add(glass);
+for (const [dx, dz] of [[0.38, 0.3], [0.38, -0.3], [-0.38, 0.3], [-0.38, -0.3]]) {
+  const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.1, 14), mat(0x1b1d20, { roughness: 0.8, opacity: 1 }));
+  wheel.rotation.x = Math.PI / 2;
+  wheel.position.set(dx, 0.15, dz);
+  carGrp.add(wheel);
+  carGrp.userData.wheels = carGrp.userData.wheels || [];
+  carGrp.userData.wheels.push(wheel);
+}
+
+/* 波前环(发射蓝 / 反射红,InstancedMesh) */
+const RING_N = 46;
+const ringIM = new THREE.InstancedMesh(new THREE.TorusGeometry(1, 0.009, 6, 48),
+  new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }), RING_N);
+ringIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+ringIM.frustumCulled = false;
+scene.add(ringIM);
+const rings = Array.from({ length: RING_N }, () => ({ on: false, x: 0, y: 1.28, z: 0, r: 0, dir: 1 }));
+const dummy = new THREE.Object3D();
+const ringCol = new THREE.Color();
+
+/* 速度箭头:真实速度(绿)与径向分量(橙) */
+const velArrow = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(), 1.4, 0x69db7c, 0.3, 0.16);
+const radArrow = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(), 1, 0xffa94d, 0.3, 0.16);
+scene.add(velArrow, radArrow);
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+
+/* ================= 状态与模型 ================= */
+const BANDS = [
+  { name: 'X', f0: 10.525e9, label: 'X 10.5 GHz' },
+  { name: 'K', f0: 24.125e9, label: 'K 24.1 GHz' },
+  { name: 'Ka', f0: 33.4e9, label: 'Ka 33.4 GHz' },
+];
+const C_LIGHT = 3e8;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let vKmh = clamp(qsFloat('v', 90), 0, 160);
+let theta = clamp(qsFloat('ang', 0), 0, 70) * Math.PI / 180;
+let band = clamp(Math.round(qsFloat('band', 1)), 0, 2);
+let dirSign = qs.get('dir') === 'away' ? -1 : 1;       // +1 接近,-1 远离;静止目标 v=0
+const f0 = () => BANDS[band].f0;
+const lambda = () => C_LIGHT / f0();
+const vMs = () => vKmh / 3.6;
+const vRad = () => vMs() * Math.cos(theta) * (vKmh === 0 ? 0 : dirSign);   // 带符号:接近为正
+const fdHz = () => 2 * Math.abs(vRad()) / lambda();
+/* 视觉压缩比(示意,真实 2v/c ~ 10⁻⁷) */
+const compVis = () => clamp(Math.abs(vRad()) / 42, 0, 0.78);
+/* 车位置:沿车道参数 carS 行驶,起点靠近枪口 */
+const PATH_LEN = 14;
+let carS = 12;
+const carPos = () => ({
+  x: -2.2 + carS * 0.62 * Math.cos(theta),
+  z: -0.3 + carS * 0.5 * Math.sin(theta),
+});
+
+/* 标签 */
+addLabel(() => L(`测速枪:发射 ${BANDS[band].label} · λ≈${(lambda() * 100).toFixed(2)} cm`, `gun: ${BANDS[band].label} · λ≈${(lambda() * 100).toFixed(2)} cm`),
+  new THREE.Vector3(-3.3, 2.05, 0), 'b');
+addLabel(() => L(`车=移动的镜子:反射波${vRad() > 0.01 ? '被压紧(频移↑)' : vRad() < -0.01 ? '被拉开(频移↓)' : '原样弹回(0 移)'}`,
+  `car = moving mirror: echo ${vRad() > 0.01 ? 'compressed (up-shift)' : vRad() < -0.01 ? 'stretched (down-shift)' : 'returned unchanged'}`),
+  new THREE.Vector3(2.6, 1.85, -0.9), vRad() > 0.01 ? 'r' : vRad() < -0.01 ? 'o' : 'st');
+const lblBeam = addLabel(() => L(`波前间距 = λ;混频拍频 ${fmtFd()}`, `wavefront gap = λ; beat ${fmtFd()}`),
+  new THREE.Vector3(-0.6, 2.6, 0.6), 'st');
+function fmtFd() {
+  const f = fdHz();
+  return f >= 1000 ? (f / 1000).toFixed(2) + ' kHz' : f.toFixed(0) + ' Hz';
+}
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '发射:一圈圈波前推向车道', be: 'Transmit: wavefront after wavefront toward the road',
+    d: '枪以 f₀=24.125 GHz(K 波段)定向发射微波,波长 λ≈12.4 mm。看蓝色圆环——它们的间距就是 λ,以光速冲向车道。',
+    de: 'The gun beams microwaves at f₀=24.125 GHz (K-band), λ≈12.4 mm. The blue rings march at light speed; their spacing is the wavelength.',
+    act: () => { vKmh = 0; syncSliders(); } },
+  { b: '车是移动的镜子', be: 'The car is a moving mirror',
+    d: '车头迎着波前冲:每秒「多吃掉」2v/λ 圈反射回去——反射波的频率被抬到 f₀(1+2v/c)。90 km/h = 25 m/s 时,每秒多挤出 ~4000 圈。',
+    de: 'The nose charges into the wavefronts, reflecting 2v/λ extra cycles every second — the echo leaves at f₀(1+2v/c). At 90 km/h that is ~4000 extra cycles a second.',
+    act: () => { vKmh = 90; dirSign = 1; syncSliders(); setDirBtns(); } },
+  { b: '混频出拍频:f_d = 2v/λ', be: 'Mix down to a beat: f_d = 2v/λ',
+    d: '把反射波和发射波在二极管里相乘,得到两者的差——一个几十到几千赫兹的低频「蜂鸣」。f_d = 2v/λ:枪测的从来不是频率本身,而是这个拍。',
+    de: 'Multiply echo and reference in a diode and you get their difference — a hum of tens to thousands of hertz. f_d = 2v/λ: the gun never reads frequency directly, only this beat.',
+    act: () => { vKmh = 120; dirSign = 1; syncSliders(); setDirBtns(); } },
+  { b: '只有径向分量:cosθ 的代价', be: 'Only the radial part: the cosθ tax',
+    d: '把照射角拖到 45°:真实速度没变,读数却掉到 v·cosθ——车在波束方向的投影才吃波前。交警必须把枪正对来车,斜着测就是系统性低估。',
+    de: 'Drag the beam angle to 45°: true speed unchanged, reading drops to v·cosθ — only motion along the beam eats wavefronts. Aim across the lane and you under-read systematically.',
+    act: () => { theta = 45 * Math.PI / 180; syncSliders(); } },
+  { b: '远离的车:波前被拉开', be: 'Receding car: wavefronts stretched',
+    d: '切「车辆远离」:反射面在逃,每圈波前要多追一段路,反射波被拉开、频率下移。拍频只看大小,靠内的电路判断正负号——来车还是逃逸,一目了然。',
+    de: 'Switch to receding: the reflector flees each crest, the echo stretches and down-shifts. The beat gives magnitude; electronics read the sign — approaching or fleeing is unambiguous.',
+    act: () => { dirSign = -1; vKmh = 90; syncSliders(); setDirBtns(); } },
+  { b: '同一原理的大家庭', be: 'One principle, many machines',
+    d: '气象多普勒雷达量雨滴的径向速度画出风暴剖面,网球鹰眼量发球时速,深空探测器靠多普勒漂移导航。相对论修正在这里小到忽略——25 m/s 只有 2v/c≈10⁻⁷。',
+    de: 'Weather radars profile storms from raindrop radial speeds, Hawk-Eye clocks tennis serves, deep-space probes navigate by Doppler drift. Relativity here is negligible: 25 m/s is 2v/c ≈ 10⁻⁷.',
+    act: () => { vKmh = 155; dirSign = 1; theta = 0; syncSliders(); setDirBtns(); } },
+];
+function stepIndex() {
+  if (vKmh === 0) return 0;
+  if (theta > 0.6) return 3;
+  if (dirSign < 0) return 4;
+  if (vKmh > 145) return 5;
+  if (vKmh > 105) return 2;
+  return 1;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => s.act());
+    el.appendChild(li);
+  });
+}
+
+/* ================= 示波器 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot(tNow) {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const mid = H / 2, amp = H * 0.22;
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const f1 = 5.5;                       // 视觉发射频率
+  const k = compVis();
+  const f2 = f1 * (1 + k);
+  const draw = (fn, color, width) => {
+    ctx.strokeStyle = color; ctx.lineWidth = width;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 2) ctx.lineTo(x, mid - fn(x / W) * amp);
+    ctx.stroke();
+  };
+  const ph1 = tNow * Math.PI * 2 * f1, ph2 = tNow * Math.PI * 2 * f2;
+  draw(u => Math.sin(ph1 + u * Math.PI * 2 * 6), '#74c0fc', 2);
+  draw(u => Math.sin(ph2 + u * Math.PI * 2 * 6) * 0.8, '#ff6b6b', 2);
+  draw(u => (Math.sin(ph1 + u * Math.PI * 2 * 6) + Math.sin(ph2 + u * Math.PI * 2 * 6) * 0.8) * 0.55,
+    cTxt === '#9fb0c3' ? 'rgba(255,255,255,.85)' : 'rgba(30,45,70,.8)', 1.4);
+  ctx.fillStyle = cTxt; ctx.font = '15px system-ui';
+  ctx.fillText(`f₂−f₁ = ${fmtFd()}`, 10, 20);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elSpd = document.getElementById('spd'), elSpdVal = document.getElementById('spdVal');
+const elV = document.getElementById('v'), elVVal = document.getElementById('vVal');
+const elAng = document.getElementById('ang'), elAngVal = document.getElementById('angVal');
+const elBand = document.getElementById('band'), elBandVal = document.getElementById('bandVal');
+const tglLabels = document.getElementById('tglLabels'), tglChart = document.getElementById('tglChart'), tglRotate = document.getElementById('tglRotate');
+const stV = document.getElementById('stV'), stVr = document.getElementById('stVr'), stGun = document.getElementById('stGun'), stFd = document.getElementById('stFd');
+const formulaEl = document.getElementById('formula');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function setDirBtns() {
+  document.getElementById('btnNear').classList.toggle('on', vKmh > 0 && dirSign > 0);
+  document.getElementById('btnAway').classList.toggle('on', vKmh > 0 && dirSign < 0);
+  document.getElementById('btnStill').classList.toggle('on', vKmh === 0);
+}
+function syncSliders() {
+  elV.value = vKmh; elVVal.textContent = vKmh.toFixed(0) + L(' km/h', ' km/h');
+  elAng.value = Math.round(theta * 180 / Math.PI); elAngVal.textContent = Math.round(theta * 180 / Math.PI) + '°';
+  elBand.value = band; elBandVal.textContent = BANDS[band].label;
+}
+function updateFormula() {
+  const f = fdHz(), vr = Math.abs(vRad());
+  formulaEl.innerHTML = L(
+    `λ = c/f₀ = ${(lambda() * 100).toFixed(2)} cm · 径向速度 v·cosθ = ${vr.toFixed(1)} m/s<br>` +
+    `<b>f_d = 2v/λ = ${f >= 1000 ? (f / 1000).toFixed(2) + ' kHz' : f.toFixed(0) + ' Hz'}</b> → 读数 ${(vr * 3.6).toFixed(0)} km/h` +
+    (Math.cos(theta) < 0.995 ? `(真实 ${vKmh.toFixed(0)},低估 ${((1 - Math.cos(theta)) * 100).toFixed(0)}%)` : '') +
+    `<br>拍频音频 ${f > 20 ? '可听' : '静默'}:枪听的就是这只「蜂鸣」`,
+    `λ = c/f₀ = ${(lambda() * 100).toFixed(2)} cm · radial v·cosθ = ${vr.toFixed(1)} m/s<br>` +
+    `<b>f_d = 2v/λ = ${f >= 1000 ? (f / 1000).toFixed(2) + ' kHz' : f.toFixed(0) + ' Hz'}</b> → reading ${(vr * 3.6).toFixed(0)} km/h` +
+    (Math.cos(theta) < 0.995 ? ` (true ${vKmh.toFixed(0)}, under-read ${((1 - Math.cos(theta)) * 100).toFixed(0)}%)` : '') +
+    `<br>The gun listens to this beat, nothing else`);
+}
+document.getElementById('btnNear').addEventListener('click', () => { dirSign = 1; if (vKmh === 0) vKmh = 90; syncSliders(); setDirBtns(); });
+document.getElementById('btnAway').addEventListener('click', () => { dirSign = -1; if (vKmh === 0) vKmh = 90; syncSliders(); setDirBtns(); });
+document.getElementById('btnStill').addEventListener('click', () => { vKmh = 0; syncSliders(); setDirBtns(); });
+elV.addEventListener('input', () => { vKmh = +elV.value; setDirBtns(); syncSliders(); });
+elAng.addEventListener('input', () => { theta = +elAng.value * Math.PI / 180; syncSliders(); });
+elBand.addEventListener('input', () => { band = +elBand.value; syncSliders(); });
+elSpd.addEventListener('input', () => { speed = +elSpd.value; elSpdVal.textContent = speed.toFixed(1) + '×'; });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglChart.addEventListener('change', () => { document.getElementById('plot').style.display = tglChart.checked ? '' : 'none'; });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { tglLabels.checked = false; labelsOn = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true) && tglRotate.checked;
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------- 波前环驱动 ---------------- */
+let txAcc = 0, rxAcc = 0, scopeT = 0;
+function spawnRing(dir) {
+  const s = rings.find(r => !r.on);
+  if (!s) return;
+  s.on = true; s.dir = dir; s.r = 0.25;
+  if (dir > 0) { s.x = GUN_MUZZLE.x; s.z = 0; }
+  else {
+    const p = carPos();
+    s.x = p.x; s.z = p.z;
+  }
+}
+function updateRings(vis) {
+  const cVis = 5.2;                                  // 视觉波速 u/s
+  const k = compVis();
+  const vVis = playing ? 1 : 0;
+  txAcc += vis * 1.9 * vVis;
+  if (txAcc >= 1) { txAcc = 0; spawnRing(1); }
+  rxAcc += vis * 1.9 * vVis * (1 + (vRad() > 0 ? k : -k * 0.75));
+  if (rxAcc >= 1) { rxAcc = 0; if (Math.abs(vRad()) > 0.01) spawnRing(-1); }
+  for (let i = 0; i < RING_N; i++) {
+    const r = rings[i];
+    if (r.on) {
+      r.r += vis * cVis;
+      const fade = clamp(1.1 - r.r / 8, 0, 1);
+      if (fade <= 0.01) r.on = false;
+      dummy.position.set(r.x, 0.04, r.z);
+      dummy.rotation.set(-Math.PI / 2, 0, 0);
+      dummy.scale.setScalar(Math.max(r.r, 0.01));
+      ringCol.setHex(r.dir > 0 ? 0x4dabf7 : 0xff6b6b);
+      ringIM.setColorAt(i, ringCol);
+    } else {
+      dummy.position.set(0, -10, 0);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(0.001);
+      ringCol.setHex(0x000000);
+      ringIM.setColorAt(i, ringCol);
+    }
+    dummy.updateMatrix();
+    ringIM.setMatrixAt(i, dummy.matrix);
+  }
+  ringIM.instanceMatrix.needsUpdate = true;
+  if (ringIM.instanceColor) ringIM.instanceColor.needsUpdate = true;
+}
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, statsAcc = 1;
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const vis = dt * speed;
+  if (playing) {
+    carS += vis * vMs() * 0.055 * (dirSign > 0 ? -1 : 1);
+    if (carS > PATH_LEN) carS = -0.5;
+    if (carS < -0.5) carS = PATH_LEN;
+  }
+  const p = carPos();
+  carGrp.position.set(p.x, 0, p.z);
+  const dir = new THREE.Vector3(dirSign > 0 ? -Math.cos(theta) : Math.cos(theta), 0, dirSign > 0 ? Math.sin(theta) : -Math.sin(theta));
+  carGrp.rotation.y = Math.atan2(-dir.z, dir.x);
+  for (const w of carGrp.userData.wheels) w.rotation.y += vis * vMs() * 1.2;
+  updateRings(vis);
+  /* 速度箭头 */
+  const dirX = dirSign > 0 ? -1 : 1;
+  velArrow.position.set(p.x, 1.05, p.z);
+  velArrow.setDirection(new THREE.Vector3(dirX * Math.cos(theta), 0, Math.sin(theta)).normalize());
+  velArrow.setLength(clamp(0.9 + vKmh / 90, 0.6, 2.2), 0.3, 0.16);
+  radArrow.position.set(p.x, 1.5, p.z);
+  const radDir = new THREE.Vector3(Math.sign(GUN_MUZZLE.x - p.x), 0, 0).normalize();
+  radArrow.setDirection(radDir);
+  radArrow.setLength(clamp((0.9 + vKmh / 90) * Math.abs(Math.cos(theta)), 0.05, 2.2), 0.26, 0.14);
+  radArrow.visible = Math.abs(Math.cos(theta)) > 0.02 && vKmh > 0;
+  beam.visible = true;
+  scopeT += vis;
+  statsAcc += dt;
+  if (statsAcc > 0.25) {
+    statsAcc = 0;
+    const vr = Math.abs(vRad());
+    stV.textContent = vKmh.toFixed(0) + ' km/h';
+    stVr.innerHTML = vr.toFixed(1) + ' <small>m/s</small>';
+    stGun.textContent = (vr * 3.6).toFixed(0) + ' km/h';
+    stGun.className = 'v ' + (Math.cos(theta) < 0.9 && vKmh > 0 ? 'bad' : 'warn');
+    stFd.textContent = fmtFd();
+    updateFormula();
+  }
+  if (tglChart.checked) drawPlot(scopeT);
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on;
+    if (on) r.o.element.textContent = r.text();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化(URL 参数) ================= */
+vKmh = clamp(qsFloat('v', 90), 0, 160);
+theta = clamp(qsFloat('ang', 0), 0, 70) * Math.PI / 180;
+band = clamp(Math.round(qsFloat('band', 1)), 0, 2);
+if (qs.get('dir') === 'still') vKmh = 0;
+setDirBtns();
+applyTheme();
+applyLang();
+syncSliders();
+setPlayLabel();
+start();
+</script>
+</body>
+</html>

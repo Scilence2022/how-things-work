@@ -405,6 +405,46 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **How to play**: switch the three modes, drag heat/drought to move the stomata, scrub day/night in CAM to fill and drain the tank; space to play / pause.
 - **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?mode=` `?hour=` `?heat=` `?spin=`.
 
+### Phase 20 · Candidate-pool batch one (5/5)
+
+- [x] Carbon cycle (four-reservoir box model: fossil carbon poured back in two centuries, Keeling curve and ocean acidification integrated live, net-zero inertia) ✅ **carbon-cycle/**
+- [x] El Niño–Southern Oscillation (trades–thermocline–cold tongue–Walker cell coupled, Bjerknes feedback, La Niña overshoot) ✅ **el-nino/**
+- [x] Radar speed gun (a moving mirror compresses wavefronts, beat f_d=2v/λ, the cosθ radial tax) ✅ **radar-speed/**
+- [x] Smoke detector (Am-241 ionization chamber, a steady 50 pA, smoke mugs the ions — differential alarm) ✅ **smoke-detector/**
+- [x] Airbag (30 g verdict in 10 ms, sodium azide makes 60 L of N₂ in 30 ms, venting catches the head) ✅ **airbag/**
+
+### Phase 20 deep dives
+
+#### Carbon cycle: one atom, four journeys
+
+- **What you see**: a dome of atmosphere plus ocean, biota, a fossil-vault and a volcano, with CO₂ particles riding between them; in 1750 volcanoes emit 0.2 GtC/yr and weathering buries 0.2 — CO₂ pinned at 280 ppm; the "industrial" mode integrates historical emissions live — about 45% stays airborne, +2.5 ppm/yr, surface pH slides 8.20→8.06, and the Keeling curve (with its seasonal breathing band) draws itself out to 2125; the "net zero" mode shows the sky's inertia: excess CO₂ drains with a ~20-year halving time.
+- **How to play**: switch the three scenarios, drag the emissions slider and read the ledger, erupt the volcano, scrub 1750–2125; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?em=` `?mode=` `?spin=`.
+
+#### El Niño–Southern Oscillation: slack the trades and the Pacific turns
+
+- **What you see**: a Pacific cross-section where trades pile warm water west and the cold tongue wedges against Peru, thermocline deep west / shallow east; drag the phase slider and the trades slacken, warm water sloshes back, the eastern thermocline sinks ~100 m, upwelling and the fish school collapse, and the rains move from Indonesia to the mid-Pacific; the Bjerknes feedback formula runs live; "play timeline" walks a 2–7 year irregular beat that overshoots into La Niña.
+- **How to play**: phase slider −1 (strong La Niña) ↔ +1 (strong El Niño), timeline playback of the Niño3.4 index; space to play / pause.
+- **URL parameters**: `?phase=` `?t=` `?pause=` `?speed=` `?labels=` `?mode=` `?spin=`.
+
+#### Radar speed gun: squeezed wavefronts are speed
+
+- **What you see**: a gun beaming 24.125 GHz as blue wavefront rings; an approaching car is a moving mirror — the red reflected rings bunch up (they stretch for a receding one); the mixer's beat f_d = 2v/λ computes live — 90 km/h is a 4 kHz hum; drag the beam angle to 45° and the reading drops to v·cosθ, the systematic under-read; a scope draws transmitted, reflected and the beat.
+- **How to play**: drag speed / beam angle / band (X/K/Ka), toggle approaching / receding / static target and compare ring spacing; space to play / pause.
+- **URL parameters**: `?v=` `?ang=` `?band=` `?dir=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Smoke detector: a wisp of smoke cuts a current
+
+- **What you see**: α tracks from an Am-241 source ripping ion pairs out of the air, a 9 V bias harvesting them into a steady ~50 pA; light a cigarette and 0.1–1 µm grains mug the ions mid-flight — the sensing chamber's current sags past the threshold while the sealed reference chamber holds still, and the differential verdict fires an 85 dB horn; "remove the source" to see the fault self-test.
+- **How to play**: smoke slider / light up / air out / hush, pull the source for the fault state, watch the twin current curves and the −25% line; space to play / pause.
+- **URL parameters**: `?smoke=` `?nosrc=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Airbag: 30 milliseconds of chemistry, 60 liters of nitrogen
+
+- **What you see**: a slow-motion bench crash into a wall at 56 km/h — the MEMS sensor rules "≥30 g sustained" within 10 ms; a hot wire fires sodium azide, 2NaN₃→2Na+3N₂, and the 60 L bag fills in 30 ms; the head arrives just as the bag peaks and side vents bleed the gas, keeping load under 60 g; turn the belt off and the half-filled bag bottoms out, loads going red — the "supplementary" in SRS; "pothole 8 g" shows the sensor holding its nerve.
+- **How to play**: scrub the 0–150 ms timeline frame by frame, slow-mo down to 0.02×, and try all four belt/bag combinations; space to play / pause.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?labels=` `?belt=` `?bag=` `?mode=` `?spin=`.
+
 ### Phase 11 · Earth system (10/10)
 
 - [x] Plate tectonics (mantle convection loops, ridges birth crust, trenches consume it, edges flash with quakes) ✅ **plate-tectonics/**
