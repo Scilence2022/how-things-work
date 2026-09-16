@@ -905,7 +905,8 @@ terminal-velocity/     Terminal velocity: drag catches gravity, the canopy swaps
 ### Ratchet & pawl — one-way clutch
 
 - **What you see**: each swing of the drive arm pushes the ratchet wheel one tooth (22.5°). On the return stroke the pawl flips open and slides over the gentle slope, while the holding pawl keeps the wheel locked — torque flows only along the green arrow. The contact point at each pawl tip is color-coded (red = push, yellow = slide, orange = seated).
-- **How to play**: `space` play / pause; scrub with the phase slider; press the "reverse drive demo" to see why the wheel still won't move.
+- **How to play**: `space` play / pause; scrub with the phase slider; **grab the pawl tip and rock it by hand** — forward strokes tick the wheel along, backward strokes lock it dead; press the "reverse drive demo" to see why the wheel won't move.
+- **URL parameters**: `?t=` `?pause=` `?speed=` `?rev=` `?labels=` `?spin=`.
 
 ### Cam & follower — displacement curves
 
