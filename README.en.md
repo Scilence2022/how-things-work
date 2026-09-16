@@ -181,6 +181,39 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **How to play**: switch the three programs, step once at a time, drag the speed 0.5–20 steps/s, reset anytime; space to play / pause.
 - **URL parameters**: `?p=` `?speed=` `?pause=` `?labels=` `?spin=`.
 
+### Phase 23 · New domain: Fluids & Flight (4/4)
+
+- [x] Wing lift (Bernoulli + Newton, C_L-vs-alpha curve, stall separation and recovery, flaps) ✅ **wing-lift/**
+- [x] Jet engine (station thermodynamics, turbojet ⇄ turbofan, afterburner, start sequence) ✅ **jet-engine/**
+- [x] Buoyancy & stability (Archimedes draft, the GM·sinθ righting arm, capsize, ballast) ✅ **ship-buoyancy/**
+- [x] Terminal velocity (drag catching gravity, the canopy lever, the opening shock) ✅ **terminal-velocity/**
+
+### Phase 23 deep dives
+
+#### Wing lift: angle of attack is everything
+
+- **What you see**: streamline particles sweep past a NACA airfoil — upper tubes squeeze, speed up and warm; drag the angle slider and the green lift vector stretches with C_L; pull past ~15° and the upper flow separates into chaos, the nose buffets and C_L dives; flaps shift the whole curve up and lower the minimum speed. One-click stall and one-click recovery.
+- **How to play**: drag angle/speed, toggle flaps, follow the dot on the C_L-α chart; space to play / pause.
+- **URL parameters**: `?aoa=` `?spd=` `?flap=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Jet engine: making air push you forward
+
+- **What you see**: particles turn blue → white → orange → red as they pass fan, compressor, burner, turbine and nozzle; the twin spools spin at N1/N2; the chart shows pressure and temperature rising through the compressor, peaking in the burner and bleeding through the turbine; switch to a turbofan for the blue bypass stream and a thrust jump; afterburner re-lights the exhaust; the start sequence replays starter → ignition → idle.
+- **How to play**: drag throttle/airspeed, toggle turbofan and afterburner, run the start; space to play / pause.
+- **URL parameters**: `?thr=` `?v0=` `?fan=` `?ab=` `?run=` `?start=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Buoyancy & stability: why steel floats and why it capsizes
+
+- **What you see**: a hull cross-section in a tank whose draft follows the cargo (Archimedes solved by bisection); stack containers five high, switch the ballast off, add a storm — GM goes negative, the roll passes the flood angle and she slowly heels to 90°; open the ballast and G drops, GM recovers, and the same storm only rocks her; the GZ=GM·sinθ curve tracks your working point.
+- **How to play**: drag cargo/stack, hit a swell or a storm, toggle ballast, reset; space to play / pause.
+- **URL parameters**: `?cargo=` `?stack=` `?ballast=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Terminal velocity: gravity is constant, drag calls the shots
+
+- **What you see**: a skydiver exits at 3,000 m and the speed curve settles onto 55 m/s in about 12 s; at the auto altitude the canopy scales CdA from 0.47 to 50, speed snaps to 5 m/s and a ≈3 g red spike marks the opening shock; the altitude ruler and ground slide up as she descends, ending in a soft touchdown.
+- **How to play**: jump, open manually or automatically, replay on the timeline; space to play / pause.
+- **URL parameters**: `?alt=` `?aop=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
 ### Phase 11 · Earth system (10/10)
 
 - [x] Plate tectonics (mantle convection conveyor, ridges birth crust, trenches consume it) ✅ **plate-tectonics/**
@@ -741,6 +774,10 @@ tornado/               Tornado: stretching makes angular momentum a disaster (Th
 rain-shadow/           Rain shadow: adiabats, foehn wind and the desert next door (Three.js, CDN)
 benford/               Benford's law: leading digits on a log circle (Three.js, CDN)
 turing-machine/        Turing machine: tape, head and the universal rule table (Three.js, CDN)
+wing-lift/             Wing lift: angle of attack, stall and flaps (Three.js, CDN)
+jet-engine/            Jet engine: compressor, burner, turbine and thrust (Three.js, CDN)
+ship-buoyancy/         Buoyancy & stability: Archimedes, GM and capsize (Three.js, CDN)
+terminal-velocity/     Terminal velocity: drag catches gravity, the canopy swaps worlds (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
