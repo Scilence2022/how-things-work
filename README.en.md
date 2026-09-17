@@ -22,6 +22,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 | Math & CS | Galton board & CLT, Fourier series, Monty Hall & Bayes, gradient descent, sorting race, RSA |
 | Cross-discipline & engineering | Activation energy & catalysts, titration curve, osmosis & dialysis, heat pump ⇄ fridge, induction cooktop, wireless charging, corrosion ⇄ electroplating |
 | Everyday technology | Microwave oven, capacitive touch, GPS, transistors to adders, fiber optics, camera sensor, ABS, wind turbine, nuclear reactor, MRI, thermostat, hard drive & flash |
+| Fluids & flight | Wing lift & stall, turbofan engines, buoyancy & ship stability, terminal velocity, propeller pitch, submarine ballast, hot-air balloons, Reynolds number, helicopter anti-torque |
 
 ## Planned topics
 
@@ -213,6 +214,46 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **What you see**: a skydiver exits at 3,000 m and the speed curve settles onto 55 m/s in about 12 s; at the auto altitude the canopy scales CdA from 0.47 to 50, speed snaps to 5 m/s and a ≈3 g red spike marks the opening shock; the altitude ruler and ground slide up as she descends, ending in a soft touchdown.
 - **How to play**: jump, open manually or automatically, replay on the timeline; space to play / pause.
 - **URL parameters**: `?alt=` `?aop=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+### Phase 24 · Fluids & flight, continued (5/5)
+
+- [x] Propeller & pitch (blade-element model, why blades twist, fixed pitch ⇄ constant-speed governor, windmill & feather, the η-J curve) ✅ **propeller/**
+- [x] Submarine ballast (fixed volume, variable weight: flood & blow, hover trim, dive planes, crush depth) ✅ **submarine-ballast/**
+- [x] Hot-air balloon (open mouth equalizes pressure, ρ∝1/T, the ceiling, parachute valve, payload vs temperature) ✅ **hot-air-balloon/**
+- [x] Wind tunnel & Reynolds number (four flow regimes, the Kármán street, the drag crisis, fluid/size/speed similarity) ✅ **reynolds-number/**
+- [x] Helicopter anti-torque (τ=P/ω and the tail rotor, pedal trim, failure whirl, coaxial/tandem/NOTAR, autorotation) ✅ **helicopter-tail-rotor/**
+
+### Phase 24 deep dives
+
+#### Propeller & pitch: a wing that rotates
+
+- **What you see**: three spanwise-twisted blades orbit the hub while a floating angle triangle hovers at the 75% span — blue axial speed, orange tangential ωr, gold chord line; drag pitch/rpm/airspeed and the green thrust vector stretches while the dot slides along the η-J curve; "feather" snaps the pitch to 90°, rpm falls away and thrust vanishes; push speed with the pitch fixed and the prop windmills (a red negative-thrust warning).
+- **How to play**: drag rpm/airspeed/pitch, switch climb prop / cruise prop / constant-speed governor, press "feather" to rehearse an engine-out; space to play / pause.
+- **URL parameters**: `?rpm=` `?v=` `?b=` `?mode=` `?feather=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Submarine ballast: fixed volume, variable weight
+
+- **What you see**: water rises and falls in the twin saddle tanks as you flood or blow, bubbles venting at the tops; fully flooded, weight crosses buoyancy and she sinks at ~1 m/s; emergency blow rockets her back to the surface; on the depth-time plot a red dashed line marks crush depth at 350 m; the surface, ruler and crush line slide with depth while the water darkens.
+- **How to play**: hold "flood" or "blow", hit "emergency blow!", try depth steering with speed + planes, and see how tight the 78% hover really is; space to play / pause.
+- **URL parameters**: `?fill=` `?spd=` `?rud=` `?depth=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Hot-air balloon: lifted by a temperature gap
+
+- **What you see**: 240 particles inside the translucent envelope shift color with temperature — hotter is brighter and rises faster; hold "burn" and flame licks into the mouth, the fabric glows, the altimeter climbs and the sky deepens; pull the parachute valve and the crown disc sinks to vent; the chart tracks altitude against the ceiling for the current temperature and load.
+- **How to play**: hold "burn" to climb, toggle the valve to sink, try the autopilot's pulse-burning, drag the payload and watch the ceiling drop; space to play / pause, `B` toggles the burner.
+- **URL parameters**: `?h=` `?t=` `?load=` `?vent=` `?auto=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Wind tunnel & Reynolds number: inertia vs viscosity
+
+- **What you see**: 430 tracer particles negotiate a cylinder inside a glass tunnel — fore-aft symmetric at Re≪1, a pair of standing eddies near Re 30, the alternating Kármán street past Re 60 (with the St·v/L shedding frequency labeled), then the turbulent BL, narrow wake and the C_d cliff near Re 5×10⁵; the log-log C_d-Re chart follows live with the crisis zone highlighted; four media (air/water/oil/honey) plus size and speed all funnel into one Re.
+- **How to play**: sweep the "Re dial" across seven decades, hit the four presets (microbe swim / singing wire / drag crisis / 1:10 model), then swap media and watch Re recompute; space to play / pause.
+- **URL parameters**: `?re=` `?len=` `?vel=` `?med=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Helicopter anti-torque: who holds the fuselage still
+
+- **What you see**: a red arc at the mast = the reaction torque (P/ω), a green arc at the boom tip = tail thrust × arm; zero the pedals and the cabin spins up within seconds; pedal to ~40% and the net torque vanishes; one click of "tail rotor failure" whips her into a whirl, "engine-off" settles into a gentle autorotation; switch to coaxial/tandem to watch counter-rotating pairs cancel, or NOTAR's tail-boom jet.
+- **How to play**: drag collective and pedals, press tail failure / engine-off / reset, flip through the four configurations; space to play / pause.
+- **URL parameters**: `?cfg=tail|coax|tandem|notar` `?col=` `?ped=` `?fail=` `?eng=` `?pause=` `?speed=` `?labels=` `?spin=`.
 
 ### Phase 11 · Earth system (10/10)
 

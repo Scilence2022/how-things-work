@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>直升机反扭矩 · 谁来按住旋转的机身</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#ff8787;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#c92a2a;
+    --bg:#f0efed; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(255,135,135,.6); background: rgba(255,135,135,.12); color: var(--text); }
+  .abtn.crash { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  .abtn.sel { border-color: rgba(116,192,252,.6); background: rgba(116,192,252,.10); color: var(--text); }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(201,42,42,.55); background: rgba(201,42,42,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(255,135,135,.10); border-color: rgba(255,135,135,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(201,42,42,.08); border-color: rgba(201,42,42,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #ffc2c2; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="直升机反扭矩:谁来按住旋转的机身" data-en="Helicopter Anti-Torque: Who Holds the Fuselage Still">直升机反扭矩:谁来按住旋转的机身</h1>
+  <div class="sub" data-zh="发动机通过减速器拧主旋翼,机身就按牛顿第三定律被反向拧回来——单旋翼直升机不处理这个扭矩,悬停时就会原地打转。答案是在尾梁末端立一支横着的螺旋桨:侧向推力 × 尾梁力臂 = 反向扭矩,T=τ/l;脚蹬微调尾桨推力,直升机就能原地转向;尾桨失效或液压卡死,净扭矩把机身几秒内甩成一秒一圈的陀螺——正确处置反而是收油门进自转;共轴/纵列双旋翼让两副桨对转互消,NOTAR 用尾梁喷气替代尾桨;发动机全停时,上行气流让旋翼风车自转,照样能安全落地 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The gearbox twists the main rotor, and by Newton's third law the fuselage is twisted back — ignore it and a single-rotor helicopter pirouettes helplessly in hover. The fix is a sideways propeller at the end of the tail boom: side thrust × boom arm = counter-torque, T=τ/l; pedals trim that thrust for pirouettes on the spot; lose the tail rotor and the net torque whirls the cabin around in seconds — the correct response is actually throttle to idle and autorotate; coaxial or tandem rotors cancel in pairs, NOTAR swaps the rotor for a tail-boom jet; total engine failure? upflowing air windmills the rotor and she still lands softly · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">发动机通过减速器拧主旋翼,机身就按牛顿第三定律被反向拧回来——单旋翼直升机不处理这个扭矩,悬停时就会原地打转。答案是在尾梁末端立一支横着的螺旋桨:侧向推力 × 尾梁力臂 = 反向扭矩,T=τ/l;脚蹬微调尾桨推力,直升机就能原地转向;尾桨失效或液压卡死,净扭矩把机身几秒内甩成一秒一圈的陀螺——正确处置反而是收油门进自转;共轴/纵列双旋翼让两副桨对转互消,NOTAR 用尾梁喷气替代尾桨;发动机全停时,上行气流让旋翼风车自转,照样能安全落地 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="主旋翼扭矩 τ" data-en="Main torque τ">主旋翼扭矩 τ</span><span class="v" id="stT">—</span>
+  <span class="k" data-zh="尾桨侧推力" data-en="Tail thrust">尾桨侧推力</span><span class="v" id="stF">—</span>
+  <span class="k" data-zh="净扭矩" data-en="Net torque">净扭矩</span><span class="v" id="stN">—</span>
+  <span class="k" data-zh="偏航角速率" data-en="Yaw rate">偏航角速率</span><span class="v bad" id="stY">—</span>
+  <span class="k" data-zh="状态" data-en="Status">状态</span><span class="v ok" id="stS">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="偏航角速率-时间:绿线=配平,红线=失控旋转" data-en="Yaw rate vs time: green = trimmed, red = out of control">偏航角速率-时间:绿线=配平,红线=失控旋转</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.r" data-zh="主旋翼反扭矩弧" data-en="reaction torque arc">主旋翼反扭矩弧</span>
+    <span class="chip.g" data-zh="尾桨平衡弧" data-en="tail balance arc">尾桨平衡弧</span>
+    <span class="chip.b" data-zh="NOTAR 尾流" data-en="NOTAR jet">NOTAR 尾流</span>
+  </div>
+  <div id="actions">
+    <button class="abtn sel" id="cTail" data-zh="常规尾桨" data-en="tail rotor">常规尾桨</button>
+    <button class="abtn" id="cCoax" data-zh="共轴双旋翼" data-en="coaxial">共轴双旋翼</button>
+    <button class="abtn" id="cTandem" data-zh="纵列双旋翼" data-en="tandem">纵列双旋翼</button>
+    <button class="abtn" id="cNotar" data-zh="NOTAR 无尾桨" data-en="NOTAR">NOTAR 无尾桨</button>
+    <button class="abtn crash" id="btnFail" data-zh="尾桨失效!" data-en="tail rotor failure!">尾桨失效!</button>
+    <button class="abtn crash" id="btnEngOff" data-zh="发动机全停(自转)" data-en="engine-off (autorotation)">发动机全停(自转)</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="总距(功率)" data-en="Collective">总距(功率)</label><input id="col" type="range" min="40" max="100" step="1" value="85"><span class="val" id="colVal">85%</span></div>
+  <div class="row"><label data-zh="脚蹬(尾推力)" data-en="Pedals">脚蹬(尾推力)</label><input id="ped" type="range" min="-100" max="100" step="2" value="0"><span class="val" id="pedVal">0%</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="曲线" data-en="Chart">曲线</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../swashplate/" data-zh="斜盘:升力与姿态" data-en="swashplate: lift & attitude">斜盘:升力与姿态</a>
+    <a href="../propeller/" data-zh="螺旋桨(风车与顺桨)" data-en="propeller (windmill & feather)">螺旋桨(风车与顺桨)</a>
+    <a href="../angular-momentum/" data-zh="角动量守恒" data-en="angular momentum">角动量守恒</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x18243a, 18, 55);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x18243a : 0xcfe0ef);
+  scene.fog.color = new THREE.Color(dark ? 0x18243a : 0xcfe0ef);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('直升机反扭矩 · 谁来按住旋转的机身', 'Helicopter Anti-Torque · Who Holds the Fuselage Still');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setToggleBtns();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 200);
+camera.position.set(11, 5.4, 14);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 4;
+controls.maxDistance = 40;
+controls.autoRotateSpeed = 0.3;
+
+scene.add(new THREE.HemisphereLight(0xbdd3ea, 0x3a4048, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 1.7);
+key.position.set(5, 9, 6);
+scene.add(key);
+key.castShadow = false;
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.3,
+    emissive: color, emissiveIntensity: 0.05, transparent: true, ...opts });
+}
+
+/* ================= 地面停机坪 ================= */
+const pad = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, 0.3, 48),
+  mat(0x3a4048, { roughness: 0.85, metalness: 0.1, opacity: 1 }));
+pad.position.y = -0.15;
+scene.add(pad);
+for (const [w, d, x, z] of [[0.5, 4.2, 0, -1.15], [0.5, 4.2, 0, 1.15], [2.3, 0.5, 0, 0]]) {
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(w, 0.02, d),
+    mat(0xf2f5f9, { opacity: 0.8 }));
+  bar.position.set(x, 0.01, z);
+  scene.add(bar);
+}
+for (let i = 0; i < 10; i++) {
+  const tree = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 1, 6), mat(0x5a4632, { opacity: 1 }));
+  trunk.position.y = 0.5;
+  tree.add(trunk);
+  const crown = new THREE.Mesh(new THREE.SphereGeometry(0.8 + Math.random() * 0.4, 8, 7), mat(0x4a7d4a, { opacity: 1 }));
+  crown.position.y = 1.6;
+  tree.add(crown);
+  const a = Math.random() * Math.PI * 2, rr = 12 + Math.random() * 12;
+  tree.position.set(Math.cos(a) * rr, 0, Math.sin(a) * rr);
+  scene.add(tree);
+}
+
+/* ================= 直升机 ================= */
+const ARM = 5.6;                                  // 尾梁力臂 (m)
+const heli = new THREE.Group();
+heli.position.y = 3.2;
+scene.add(heli);
+const bodyMat = mat(0x2e6fb8, { roughness: 0.35, metalness: 0.55, opacity: 1 });
+const darkMat = mat(0x2b3138, { roughness: 0.4, metalness: 0.7, opacity: 1 });
+const glassMat = new THREE.MeshStandardMaterial({ color: 0x9fd4ef, roughness: 0.1, metalness: 0.3,
+  transparent: true, opacity: 0.5 });
+const fuselage = new THREE.Mesh(new THREE.CapsuleGeometry(0.85, 2.4, 8, 16), bodyMat);
+fuselage.rotation.z = Math.PI / 2;
+fuselage.scale.set(1, 1, 0.82);
+heli.add(fuselage);
+const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.72, 14, 12), glassMat);
+canopy.position.set(1.55, 0.12, 0);
+canopy.scale.set(1.35, 0.8, 0.9);
+heli.add(canopy);
+/* 尾梁 + 尾鳍 */
+const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.3, ARM, 10), bodyMat);
+boom.rotation.z = Math.PI / 2;
+boom.position.set(-1.2 - ARM / 2 + 0.2, 0.25, 0);
+heli.add(boom);
+const fin = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.15, 0.08), bodyMat);
+fin.position.set(-1.2 - ARM + 0.35, 0.62, 0);
+fin.rotation.z = 0.25;
+heli.add(fin);
+/* 起落橇 */
+for (const zs of [1, -1]) {
+  const skid = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.6, 8), darkMat);
+  skid.rotation.z = Math.PI / 2;
+  skid.position.set(0.2, -1.15, zs * 0.85);
+  heli.add(skid);
+  for (const sx of [0.9, -0.6]) {
+    const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.85, 6), darkMat);
+    strut.position.set(sx, -0.75, zs * 0.85);
+    strut.rotation.x = zs * 0.25;
+    heli.add(strut);
+  }
+}
+/* 主旋翼(桨毂 + 4 桨叶) */
+function makeRotor(nBlades, bladeLen, bladeChord) {
+  const g = new THREE.Group();
+  for (let i = 0; i < nBlades; i++) {
+    const holder = new THREE.Group();
+    const bl = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.045, bladeChord),
+      mat(0x30363d, { metalness: 0.6, roughness: 0.4, opacity: 1 }));
+    bl.geometry.translate(bladeLen / 2, 0, 0);
+    bl.rotation.z = 0.06;
+    holder.add(bl);
+    holder.rotation.y = i * 2 * Math.PI / nBlades;
+    g.add(holder);
+  }
+  const hubC = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.3, 10), darkMat);
+  g.add(hubC);
+  return g;
+}
+const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.9, 10), darkMat);
+mast.position.y = 1.15;
+heli.add(mast);
+const rotorA = makeRotor(4, 6.2, 0.42);
+rotorA.position.y = 1.72;
+heli.add(rotorA);
+/* 共轴第二副旋翼 */
+const rotorB = makeRotor(4, 6.2, 0.42);
+rotorB.position.y = 1.36;
+rotorB.visible = false;
+heli.add(rotorB);
+/* 纵列前旋翼 */
+const pylonF = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.2, 1.1, 10), darkMat);
+pylonF.position.set(3.4, 0.85, 0);
+pylonF.visible = false;
+heli.add(pylonF);
+const rotorF = makeRotor(4, 6.2, 0.42);
+rotorF.position.set(3.4, 1.55, 0);
+rotorF.visible = false;
+heli.add(rotorF);
+/* 尾桨 */
+const tailG = new THREE.Group();
+tailG.position.set(-1.2 - ARM + 0.55, 0.62, 0.22);
+heli.add(tailG);
+const tailRotor = new THREE.Group();
+for (let i = 0; i < 2; i++) {
+  const holder = new THREE.Group();
+  const bl = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.035, 0.2), mat(0x30363d, { metalness: 0.6, roughness: 0.4, opacity: 1 }));
+  bl.geometry.translate(0.6, 0, 0);
+  holder.add(bl);
+  holder.rotation.x = i * Math.PI;
+  tailRotor.add(holder);
+}
+tailG.add(tailRotor);
+/* NOTAR 尾喷 */
+const notarJet = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.6, 10, 1, true),
+  new THREE.MeshBasicMaterial({ color: 0x74c0fc, transparent: true, opacity: 0.5 }));
+notarJet.rotation.z = -Math.PI / 2;
+notarJet.position.set(-1.2 - ARM - 0.4, 0.3, 0);
+notarJet.visible = false;
+heli.add(notarJet);
+/* 扭矩弧形箭头 */
+function arcArrow(color) {
+  const g = new THREE.Group();
+  const m = new THREE.MeshBasicMaterial({ color });
+  const arc = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.045, 8, 40, 4.0), m);
+  g.add(arc);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.34, 10), m);
+  head.position.set(Math.cos(4.0) * 1.05, Math.sin(4.0) * 1.05, 0);
+  head.rotation.z = 4.0 + Math.PI / 2 + Math.PI;
+  g.add(head);
+  g.rotation.x = -Math.PI / 2;
+  return g;
+}
+const arcMain = arcArrow(0xff6b6b);
+arcMain.position.y = 1.72;
+heli.add(arcMain);
+const arcTail = arcArrow(0x69db7c);
+arcTail.scale.setScalar(0.55);
+arcTail.position.set(-1.2 - ARM + 0.55, 0.62, 0);
+heli.add(arcTail);
+/* 地面阴影圈 */
+const shadow = new THREE.Mesh(new THREE.CircleGeometry(3.4, 32),
+  new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 }));
+shadow.rotation.x = -Math.PI / 2;
+shadow.position.y = 0.03;
+scene.add(shadow);
+
+/* ================= 状态与偏航动力学 ================= */
+const OMEGA_M = 25;                               // 主旋翼角速度 rad/s
+const I_Z = 9000;                                 // 机身偏航转动惯量 kg·m²
+const DAMP = 5200;                                // 气动阻尼 N·m·s
+const state = {
+  coll: clamp(qsFloat('col', 85), 40, 100) / 100,
+  ped: clamp(qsFloat('ped', 0), -100, 100),
+  cfg: qs.get('cfg') || 'tail',                   // tail | coax | tandem | notar
+  fail: qsBool('fail', false),
+  engine: qsBool('eng', true),
+  psi: 0, psiDot: 0,
+  alt: 3.2, vv: 0,
+};
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 4);
+let spinOn = qsBool('spin', true);
+let tGlob = 0, rotAng = 0, rotAngB = 0;
+const history = [];
+const torqueMain = () => state.engine ? 34000 * state.coll : 0;
+const tailThrust = () => {
+  if (state.cfg === 'tail') return state.fail || !state.engine ? 0 : state.ped / 100 * 13000;
+  if (state.cfg === 'notar') return !state.engine ? 0 : state.ped / 100 * 9000;
+  return 0;                                        // 共轴/纵列无尾推力
+};
+const netTorque = () => {
+  if (state.cfg === 'coax' || state.cfg === 'tandem')
+    return state.ped / 100 * 7000 - DAMP * state.psiDot;
+  return tailThrust() * ARM - torqueMain() - DAMP * state.psiDot;
+};
+const grounded = () => state.alt <= 0.35;
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblMain = addLabel(() => L(`反扭矩 τ = P/ω = ${(torqueMain() / 1000).toFixed(0)} kN·m`, `reaction τ = P/ω = ${(torqueMain() / 1000).toFixed(0)} kN·m`),
+  new THREE.Vector3(0.4, 3.05, 0), 'r', () => state.cfg === 'tail' || state.cfg === 'notar');
+const lblTail = addLabel(() => state.cfg === 'notar'
+  ? L(`NOTAR 尾喷推力 ${(tailThrust() / 1000).toFixed(1)} kN`, `NOTAR jet thrust ${(tailThrust() / 1000).toFixed(1)} kN`)
+  : L(`尾桨侧推 T = τ/l = ${(tailThrust() / 1000).toFixed(1)} kN`, `tail thrust T = τ/l = ${(tailThrust() / 1000).toFixed(1)} kN`),
+  new THREE.Vector3(-6.4, 4.15, 0), 'g', () => state.cfg !== 'coax' && state.cfg !== 'tandem');
+const lblBoom = addLabel(() => L(`力臂 l = ${ARM} m`, `arm l = ${ARM} m`),
+  new THREE.Vector3(-3.6, 3.75, 0), '');
+const lblWarn = addLabel(() => {
+  if (grounded()) return L('', '');
+  if (!state.engine) return L('自转:上行气流替发动机驱动旋翼', 'autorotation: upflow drives the rotor now');
+  if (state.fail) return L('⚠ 尾桨失效:净扭矩正在把机身甩成陀螺——收油门!', '⚠ tail rotor gone: net torque is spinning the cabin — throttle to idle!');
+  if (Math.abs(state.psiDot) > 1.2) return L('⚠ 偏航失控', '⚠ yaw divergence');
+  return L('', '');
+}, new THREE.Vector3(0, 5.6, 0), 'r', () => state.fail && !grounded() || !state.engine && !grounded() || Math.abs(state.psiDot) > 1.2 && !grounded());
+const lblSpin = addLabel(() => state.cfg === 'coax' ? L('两副旋翼对转:扭矩互相抵消', 'counter-rotating pair: torques cancel')
+  : state.cfg === 'tandem' ? L('前后旋翼对转:扭矩互相抵消', 'tandem pair: torques cancel')
+  : L('', ''), new THREE.Vector3(0, 2.1, 0), 'b', () => state.cfg === 'coax' || state.cfg === 'tandem');
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '反扭矩从哪来', be: 'Where the reaction torque comes from',
+    d: '发动机经减速器以 τ=P/ω 拧动主旋翼;牛顿第三定律说机身同时被反向拧住。悬停中把脚蹬归零,几秒内机身就开始倒转——本页一切设计都为了抵消这一个扭矩。',
+    de: 'The gearbox applies τ=P/ω to the main rotor; Newton\'s third law applies the same torque to the fuselage in reverse. Zero the pedals in hover and the cabin starts to counter-rotate within seconds — everything on this page fights that one torque.',
+    act: () => { setCfg('tail'); state.ped = 0; syncSliders(); } },
+  { b: '尾桨 = 一支横着的螺旋桨', be: 'The tail rotor is a sideways propeller',
+    d: '尾梁末端的小旋翼产生侧向推力 T,力臂 l≈5.6 m:T·l = τ。它消耗约 10% 的功率,换来机身不动——听到的「哒哒」声就来自它切开主旋翼尾流。',
+    de: 'A small rotor at the boom tip makes side thrust T with arm l≈5.6 m: T·l = τ. It burns ~10% of the power to hold the cabin still — the loud \"clack\" is its blades slicing the main wake.',
+    act: () => { setCfg('tail'); state.ped = Math.round(34000 * state.coll / ARM / 130); syncSliders(); } },
+  { b: '脚蹬:原地转圈', be: 'Pedals: pirouette on the spot',
+    d: '脚蹬改变尾桨的总距:多踩一边 T>τ/l 就向一侧转,少踩就向另一侧转,恰好配平就锁住机头。直升机的「方向盘」其实是一支侧向螺旋桨的油门。',
+    de: 'Pedals change tail-rotor pitch: push more and T>τ/l yaws one way, less yaws the other, and perfect trim locks the nose. The helicopter\'s \"steering wheel\" is really a sideways propeller\'s throttle.',
+    act: () => { setCfg('tail'); state.ped = 60; syncSliders(); } },
+  { b: '尾桨失效:陀螺', be: 'Tail rotor failure: the whirl',
+    d: '点「尾桨失效」:净扭矩 = 34 kN·m 全部落到机身上,角加速度 α=τ/I≈3.8 rad/s²,几秒就是一圈——正确处置反直觉:收油门、进自转,让 τ_main 归零,旋转自己停。',
+    de: 'Press \"tail rotor failure\": the full 34 kN·m hits the fuselage at α=τ/I≈3.8 rad/s² — a full turn in seconds. The counter-intuitive fix: throttle to idle and autorotate; τ_main vanishes and the spin dies.',
+    act: () => { setCfg('tail'); state.fail = true; state.ped = 0; syncSliders(); setToggleBtns(); } },
+  { b: '无尾桨的三种答案', be: 'Three answers without a tail rotor',
+    d: '共轴双旋翼:两副桨绕同一轴对转,扭矩互相抵消;纵列双旋翼:前后两副对转(支奴干);NOTAR:风扇往尾梁里打气,从尾喷与缝翼喷出侧流。三条路,同一个目的:净扭矩为零。',
+    de: 'Coaxial: two rotors on one mast, counter-rotating, torques cancel; tandem: front and rear rotors oppose (Chinook); NOTAR: a fan blows down the boom, venting side thrust from a tip jet. Three roads, one goal: net torque zero.',
+    act: () => { setCfg('coax'); state.fail = false; setToggleBtns(); syncSliders(); } },
+  { b: '全发停车:自转着陆', be: 'Total engine failure: autorotation',
+    d: '发动机断力后,下降气流从下方推着旋翼继续转(风车,和螺旋桨同款);贴地前带总距,把储存的转速换成升力——直升机是唯一能安全迫降「无动力滑翔」的旋翼飞行器。',
+    de: 'With the engine dead, upflowing air windmills the rotor (same physics as a propeller); flare at the bottom trades stored rpm for lift — the only rotorcraft that lands safely without power.',
+    act: () => { state.engine = false; state.fail = false; state.ped = 0; setToggleBtns(); syncSliders(); } },
+];
+function setCfg(c) {
+  state.cfg = c;
+  if (c !== 'tail') state.fail = false;
+  applyCfg();
+}
+function stepIndex() {
+  if (!state.engine) return 5;
+  if (state.cfg !== 'tail') return 4;
+  if (state.fail) return 3;
+  if (Math.abs(state.ped) > 35) return 2;
+  if (Math.abs(state.ped) >= 30 && Math.abs(netTorque()) < 4000) return 1;
+  return 0;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+function applyCfg() {
+  tailG.visible = state.cfg === 'tail';
+  tailRotor.visible = state.cfg === 'tail';
+  fin.visible = state.cfg !== 'tandem';
+  rotorB.visible = state.cfg === 'coax';
+  pylonF.visible = rotorF.visible = state.cfg === 'tandem';
+  notarJet.visible = false;
+  mast.visible = true;
+  if (state.cfg === 'coax') rotorA.position.y = 1.85; else rotorA.position.y = 1.72;
+  document.getElementById('cTail').classList.toggle('sel', state.cfg === 'tail');
+  document.getElementById('cCoax').classList.toggle('sel', state.cfg === 'coax');
+  document.getElementById('cTandem').classList.toggle('sel', state.cfg === 'tandem');
+  document.getElementById('cNotar').classList.toggle('sel', state.cfg === 'notar');
+}
+
+/* ================= 曲线图 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const pad = 16, padB = 20;
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const yMax = 400;                                 // °/s
+  const xOf = t => pad + (W - 2 * pad) * clamp(t / 30, 0, 1);
+  const yOf = w => pad + (H - pad - padB) * (1 - clamp(w, -yMax, yMax) / yMax / 2 - 0.5);
+  /* 零线与 ±yMax */
+  ctx.strokeStyle = cTxt; ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(pad, yOf(0)); ctx.lineTo(W - pad, yOf(0)); ctx.stroke();
+  ctx.setLineDash([]);
+  /* 轨迹 */
+  ctx.strokeStyle = state.fail || Math.abs(state.psiDot) > 120 ? '#ff6b6b' : '#69db7c';
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  if (history.length > 1) {
+    const tNow = history[history.length - 1].t;
+    history.forEach((pt, i) => {
+      const x = xOf(30 - (tNow - pt.t));
+      const y = yOf(pt.w);
+      i <= 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+  }
+  ctx.stroke();
+  ctx.fillStyle = cTxt; ctx.font = '12px system-ui';
+  ctx.fillText('+400 °/s', pad + 2, pad + 12);
+  ctx.fillText('0', pad - 10, yOf(0) + 4);
+  ctx.fillText('−400', pad - 6, H - padB - 4);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elCol = document.getElementById('col'), elColVal = document.getElementById('colVal');
+const elPed = document.getElementById('ped'), elPedVal = document.getElementById('pedVal');
+const stT = document.getElementById('stT'), stF = document.getElementById('stF'), stN = document.getElementById('stN'),
+  stY = document.getElementById('stY'), stS = document.getElementById('stS');
+const formulaEl = document.getElementById('formula');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function setToggleBtns() {
+  document.getElementById('btnFail').classList.toggle('on', state.fail);
+  document.getElementById('btnEngOff').classList.toggle('on', !state.engine);
+}
+function syncSliders() {
+  elCol.value = state.coll * 100; elColVal.textContent = (state.coll * 100).toFixed(0) + '%';
+  elPed.value = state.ped; elPedVal.textContent = state.ped.toFixed(0) + '%';
+}
+function syncAll() { syncSliders(); setToggleBtns(); drawPlot(); }
+function updateFormula() {
+  const tm = torqueMain() / 1000, tf = tailThrust() / 1000, net = netTorque() / 1000;
+  formulaEl.innerHTML = L(
+    `τ = P/ω = <b>${tm.toFixed(1)} kN·m</b> · 尾推力×力臂 = <b>${(tf * ARM).toFixed(1)} kN·m</b> (T = ${tf.toFixed(1)} kN × l = ${ARM} m)<br>` +
+    `净扭矩 = <b>${net.toFixed(1)} kN·m</b> · ψ̇ = <b>${(state.psiDot * 180 / Math.PI).toFixed(0)} °/s</b>` +
+    (state.cfg === 'coax' || state.cfg === 'tandem' ? L(' · 双旋翼互消', ' · twin-rotor cancel') : ''),
+    `τ = P/ω = <b>${tm.toFixed(1)} kN·m</b> · tail thrust × arm = <b>${(tf * ARM).toFixed(1)} kN·m</b> (T = ${tf.toFixed(1)} kN × l = ${ARM} m)<br>` +
+    `net torque = <b>${net.toFixed(1)} kN·m</b> · ψ̇ = <b>${(state.psiDot * 180 / Math.PI).toFixed(0)} °/s</b>` +
+    (state.cfg === 'coax' || state.cfg === 'tandem' ? ' · twin-rotor cancel' : ''));
+}
+for (const [id, c] of [['cTail', 'tail'], ['cCoax', 'coax'], ['cTandem', 'tandem'], ['cNotar', 'notar']]) {
+  document.getElementById(id).addEventListener('click', () => { setCfg(c); syncAll(); });
+}
+document.getElementById('btnFail').addEventListener('click', () => {
+  if (state.cfg !== 'tail') setCfg('tail');
+  state.fail = !state.fail;
+  setToggleBtns();
+});
+document.getElementById('btnEngOff').addEventListener('click', () => {
+  state.engine = !state.engine;
+  if (!state.engine) state.fail = false;
+  setToggleBtns();
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+  state.fail = false; state.engine = true; state.psi = 0; state.psiDot = 0;
+  state.alt = 3.2; state.vv = 0; state.ped = 0; state.coll = 0.85;
+  history.length = 0;
+  setCfg('tail');
+  syncAll();
+});
+elCol.addEventListener('input', () => { state.coll = +elCol.value / 100; syncSliders(); });
+elPed.addEventListener('input', () => { state.ped = +elPed.value; syncSliders(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglRotate').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+if (!qsBool('labels', true)) { document.getElementById('tglLabels').checked = false; labelsOn = false; refreshLabels(); }
+controls.autoRotate = spinOn;
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, acc1 = 0, acc2 = 0;
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt = clamp(clock.getDelta(), 0, 0.05) * (playing ? speed : 0);
+  tGlob += dt;
+  /* 偏航动力学 */
+  if (!grounded()) {
+    state.psiDot += (netTorque() / I_Z) * dt;
+    state.psi += state.psiDot * dt;
+  } else {
+    state.psiDot *= Math.exp(-3 * dt);
+    state.psi += state.psiDot * dt;
+  }
+  /* 自转下降 / 悬停呼吸 */
+  if (!state.engine && !grounded()) {
+    state.vv = lerp(state.vv, -4.2, 0.02);
+    state.alt += state.vv * dt;
+    if (state.alt < 0.35) { state.alt = 0.35; state.vv = 0; }
+  } else if (state.engine && !grounded()) {
+    const target = 3.2 + Math.sin(tGlob * 0.5) * 0.25;
+    state.alt = lerp(state.alt, target, 0.02);
+  }
+  heli.position.y = state.alt;
+  heli.rotation.y = state.psi;
+  /* 旋翼旋转 */
+  const wm = state.engine ? (4 + state.coll * 22) : 9;             // rad/s 视觉
+  rotAng += wm * dt;
+  rotAngB -= wm * dt;
+  rotorA.rotation.y = rotAng;
+  rotorB.rotation.y = rotAngB;
+  rotorF.rotation.y = rotAngB;
+  tailRotor.rotation.x += (state.fail ? 0.5 : 26 + Math.abs(state.ped) * 0.1) * dt;
+  /* 扭矩弧 */
+  const tm = Math.abs(torqueMain());
+  arcMain.visible = state.engine && (state.cfg === 'tail' || state.cfg === 'notar');
+  arcMain.scale.setScalar(0.7 + 0.3 * clamp(tm / 34000, 0, 1));
+  arcMain.rotation.x = -Math.PI / 2;
+  const tt = Math.abs(tailThrust() * ARM) / 34000;
+  arcTail.visible = (state.cfg === 'tail' && !state.fail || state.cfg === 'notar') && tt > 0.02;
+  arcTail.scale.setScalar(0.3 + 0.55 * clamp(tt, 0, 1.2));
+  /* NOTAR 尾喷显示 */
+  if (state.cfg === 'notar' && !grounded()) {
+    notarJet.visible = Math.abs(state.ped) > 3;
+    notarJet.rotation.z = state.ped > 0 ? -Math.PI / 2 : Math.PI / 2;
+    notarJet.material.opacity = 0.25 + 0.3 * Math.abs(state.ped) / 100 + Math.sin(tGlob * 20) * 0.05;
+  }
+  /* 面板刷新 */
+  acc2 += dt;
+  if (acc2 > 0.15) {
+    acc2 = 0;
+    stT.textContent = (torqueMain() / 1000).toFixed(1) + ' kN·m';
+    stF.textContent = (tailThrust() / 1000).toFixed(1) + ' kN';
+    const net = netTorque() / 1000;
+    stN.textContent = (net >= 0 ? '+' : '') + net.toFixed(1) + ' kN·m';
+    stN.className = 'v ' + (Math.abs(net) < 2 ? 'ok' : Math.abs(net) < 12 ? 'warn' : 'bad');
+    const yd = state.psiDot * 180 / Math.PI;
+    stY.textContent = yd.toFixed(0) + ' °/s';
+    stY.className = 'v ' + (Math.abs(yd) < 5 ? 'ok' : Math.abs(yd) < 90 ? 'warn' : 'bad');
+    const st = grounded() ? L('已接地', 'landed')
+      : !state.engine ? L('自转下滑', 'autorotating down')
+      : state.fail ? L('⚠ 尾桨失效', '⚠ tail rotor failed')
+      : Math.abs(yd) < 5 ? L('配平', 'trimmed')
+      : yd > 0 ? L('左转中', 'yawing left') : L('右转中', 'yawing right');
+    stS.textContent = st;
+    stS.className = 'v ' + (state.fail ? 'bad' : Math.abs(yd) < 5 ? 'ok' : 'warn');
+    updateFormula();
+  }
+  acc1 += dt;
+  if (acc1 > 0.2) {
+    acc1 = 0;
+    history.push({ t: tGlob, w: state.psiDot * 180 / Math.PI });
+    while (history.length && tGlob - history[0].t > 30) history.shift();
+    drawPlot();
+  }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+if (!['tail', 'coax', 'tandem', 'notar'].includes(state.cfg)) state.cfg = 'tail';
+applyCfg();
+syncSliders();
+setToggleBtns();
+applyTheme();
+applyLang();
+syncAll();
+setPlayLabel();
+start();
+</script>
+</body>
+</html>
