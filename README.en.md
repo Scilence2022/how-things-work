@@ -22,7 +22,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 | Math & CS | Galton board & CLT, Fourier series, Monty Hall & Bayes, gradient descent, sorting race, RSA |
 | Cross-discipline & engineering | Activation energy & catalysts, titration curve, osmosis & dialysis, heat pump ⇄ fridge, induction cooktop, wireless charging, corrosion ⇄ electroplating |
 | Everyday technology | Microwave oven, capacitive touch, GPS, transistors to adders, fiber optics, camera sensor, ABS, wind turbine, nuclear reactor, MRI, thermostat, hard drive & flash |
-| Fluids & flight | Wing lift & stall, turbofan engines, buoyancy & ship stability, terminal velocity, propeller pitch, submarine ballast, hot-air balloons, Reynolds number, helicopter anti-torque |
+| Fluids & flight | Wing lift & stall, turbofan engines, buoyancy & ship stability, terminal velocity, propeller pitch, submarine ballast, hot-air balloons, Reynolds number, helicopter anti-torque, Venturi tube & flow, Pascal's press, sailing upwind, water hammer |
 
 ## Planned topics
 
@@ -254,6 +254,39 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **What you see**: a red arc at the mast = the reaction torque (P/ω), a green arc at the boom tip = tail thrust × arm; zero the pedals and the cabin spins up within seconds; pedal to ~40% and the net torque vanishes; one click of "tail rotor failure" whips her into a whirl, "engine-off" settles into a gentle autorotation; switch to coaxial/tandem to watch counter-rotating pairs cancel, or NOTAR's tail-boom jet.
 - **How to play**: drag collective and pedals, press tail failure / engine-off / reset, flip through the four configurations; space to play / pause.
 - **URL parameters**: `?cfg=tail|coax|tandem|notar` `?col=` `?ped=` `?fail=` `?eng=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+### Phase 25 · Fluids & flight, third batch (4/4)
+
+- [x] Venturi tube & flow (continuity Q=Av, the Bernoulli dive, piezometers, atomizer suction, Δp→Q, diffuser recovery) ✅ **venturi-flow/**
+- [x] Pascal's hydraulic press (pressure for everyone, F₂=F₁·A₂/A₁, stroke repays force, air-bubble failure, release valve) ✅ **pascal-press/**
+- [x] Sailing upwind (sail = vertical wing, apparent wind, lift decomposition, keel side force, the no-go zone, polar) ✅ **sailing-upwind/**
+- [x] Water hammer (Δp=ρcΔv, the wave rattling at 4L/c, slow-close relief, air-chamber cushion) ✅ **water-hammer/**
+
+### Phase 25 deep dives
+
+#### Venturi tube: where it narrows, pressure pays for speed
+
+- **What you see**: 380 droplets ride a glass Venturi, colored by local speed — slow blue at the inlet, fast gold at the throat; three piezometer columns read the local static pressure, the two inlet tubes level while the throat column dives, and the diffuser buys ~80% back; open the dye line and push the flow — throat suction lifts orange dye up the side tube and shears it into a spray; the right plot shows speed and pressure along the pipe with a flowing probe dot.
+- **How to play**: drag flow Q and throat ratio d₂/d₁, press "open the dye line" + "open the pump: max Q" to run the atomizer live; space to play / pause.
+- **URL parameters**: `?q=` `?ratio=` `?dye=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Pascal's hydraulic press: one hand lifts a car
+
+- **What you see**: a small cylinder (10 cm²) and a large one joined by a pipe — the hand force F₁ makes pressure p=F₁/A₁, delivered intact to the big piston where area multiplies it back into F₂=p·A₂; steady pumping lifts a 1.4 t car millimeter by millimeter while the per-stroke readout s₂=s₁·A₁/A₂ shrinks; switch "air in the line" to watch the bubble get squeezed while the force never arrives; "release valve" lets the car settle at your pace.
+- **How to play**: drag the area ratio (×1–×100) and hand force, press the one-click lift preset, run the bubble failure, then the release valve; space to play / pause.
+- **URL parameters**: `?r=` `?f=` `?bubble=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Sailing upwind: the sail is a vertical wing
+
+- **What you see**: five vector arrows — true wind, apparent wind, lift, drag, drive — moving live; speed the boat up and the apparent wind swings forward; a badly trimmed sail luffs visibly (fill → 0, lift gone); the keel pins the side force while the hull heels; the polar plot of boat speed marks the red no-go zone, and a dot below the curve means your trim is off.
+- **How to play**: drag true-wind angle β / sail angle δ / wind speed, press "auto best trim", dive into the no-go zone at β=25°, compare beam reach (fastest) with dead run (slowest); space to play / pause.
+- **URL parameters**: `?beta=` `?trim=` `?wind=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Water hammer: slam the valve, the water strikes back
+
+- **What you see**: a 1-D water-hammer solver running live (time slowed ×1/60) — slam the valve and the pressure at the face spikes to ρcΔv (2 m/s is 24 bar), the water turns blue-to-red and the pipe bulges as the wave races to the reservoir, flips sign there, returns and re-reflects off the shut valve, one round per 4L/c; "close slowly" lets the reflected relief wave hold the rise down; hook up the air chamber and the surge squeezes into the tank, flattening the spike.
+- **How to play**: drag initial speed and closure time (2L/c = 23 ms is the fast/slow divide), press slam / slow / chamber / reset, and watch the valve-pressure trace against the ρcΔv dashed line; space to play / pause.
+- **URL parameters**: `?v=` `?tc=` `?ch=` `?pause=` `?speed=` `?labels=` `?spin=`.
 
 ### Phase 11 · Earth system (10/10)
 
@@ -819,6 +852,15 @@ wing-lift/             Wing lift: angle of attack, stall and flaps (Three.js, CD
 jet-engine/            Jet engine: compressor, burner, turbine and thrust (Three.js, CDN)
 ship-buoyancy/         Buoyancy & stability: Archimedes, GM and capsize (Three.js, CDN)
 terminal-velocity/     Terminal velocity: drag catches gravity, the canopy swaps worlds (Three.js, CDN)
+propeller/             Propeller & pitch: a rotating wing, twist and the constant-speed governor (Three.js, CDN)
+submarine-ballast/     Submarine ballast: fixed volume, variable weight (Three.js, CDN)
+hot-air-balloon/       Hot-air balloon: lift from a temperature gap (Three.js, CDN)
+reynolds-number/       Wind tunnel & Reynolds number: four regimes and similarity (Three.js, CDN)
+helicopter-tail-rotor/ Helicopter anti-torque: tail rotor, failure and autorotation (Three.js, CDN)
+venturi-flow/          Venturi tube & flow: continuity, Bernoulli and the atomizer (Three.js, CDN)
+pascal-press/          Pascal's hydraulic press: pressure transmission and force gain (Three.js, CDN)
+sailing-upwind/        Sailing upwind: the sail as a vertical wing and the polar plot (Three.js, CDN)
+water-hammer/          Water hammer: ρcΔv, the 4L/c period and the air chamber (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
