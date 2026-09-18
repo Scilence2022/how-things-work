@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>元胞自动机:生命游戏 · 换一行规则就是另一个宇宙</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#37b24d;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#2b8a3e;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; cursor: crosshair; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+  #stats .v.acc { color: #8ce99a; }
+  :root[data-theme="light"] #stats .v.acc { color: #2b8a3e; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 30%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 8px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(55,178,77,.6); background: rgba(55,178,77,.12); color: var(--text); }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(43,138,62,.55); background: rgba(43,138,62,.10); }
+  .btnrow { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .btnrow .abtn { flex: 1 1 40%; }
+  .grp { margin: 8px 0 6px; font-size: 11px; color: var(--text2); letter-spacing: 1px; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(55,178,77,.10); border-color: rgba(55,178,77,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(43,138,62,.08); border-color: rgba(43,138,62,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #b2f2bb; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="元胞自动机:生命游戏" data-en="Cellular Automaton: Conway's Game of Life">元胞自动机:生命游戏</h1>
+  <div class="sub" data-zh="每个格子只数 8 个邻居:死格恰有 3 邻复活、活格 2–3 邻续命——B3/S23,两行规则长出无限宇宙;滑翔机=信号、滑翔机枪=每 30 代一响的时钟、碰撞=逻辑门:这块板子图灵完备;换一个出生表(Seeds/HighLife/Day&Night),同一套力学立刻变成另一个宇宙 · 左键画格 / 右键旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Each cell only counts its 8 neighbours: a dead cell with exactly 3 comes alive, a live one with 2–3 survives — B3/S23, two lines of rules growing an infinite universe; gliders are signals, the gun is a clock that fires every 30 generations, collisions are logic gates: this board is Turing complete; swap the birth table (Seeds/HighLife/Day&Night) and the same mechanics become another universe · left-drag draws / right-drag orbits / scroll zooms · Space = play/pause">每个格子只数 8 个邻居:死格恰有 3 邻复活、活格 2–3 邻续命——B3/S23,两行规则长出无限宇宙;滑翔机=信号、滑翔机枪=每 30 代一响的时钟、碰撞=逻辑门:这块板子图灵完备;换一个出生表(Seeds/HighLife/Day&Night),同一套力学立刻变成另一个宇宙 · 左键画格 / 右键旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="代数" data-en="Generation">代数</span><span class="v" id="stGen">0</span>
+  <span class="k" data-zh="存活数" data-en="Alive">存活数</span><span class="v acc" id="stPop">0</span>
+  <span class="k" data-zh="出生/死亡" data-en="Births/Deaths">出生/死亡</span><span class="v" id="stBD">—</span>
+  <span class="k" data-zh="熵 · 活跃度" data-en="Entropy · activity">熵 · 活跃度</span><span class="v" id="stEnt">—</span>
+  <span class="k" data-zh="状态判读" data-en="Regime">状态判读</span><span class="v ok" id="stRegime">—</span>
+  <span class="k" data-zh="当前规则" data-en="Rule">当前规则</span><span class="v acc" id="stRule">B3/S23</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="种群曲线:存活数 vs 世代——可以看见整个生态的兴衰" data-en="Population trace: alive cells vs generation — watch a whole ecology rise and fall">种群曲线:存活数 vs 世代——可以看见整个生态的兴衰</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.g" data-zh="活细胞:2–3 邻续命" data-en="alive: survives on 2–3">活细胞:2–3 邻续命</span>
+    <span class="chip.b" data-zh="亮黄=新生:恰 3 邻复活" data-en="yellow = newborn: exactly 3">亮黄=新生:恰 3 邻复活</span>
+    <span class="chip.r" data-zh="红影=刚死的尸体" data-en="red ghost = freshly dead">红影=刚死的尸体</span>
+    <span class="chip.o" data-zh="滑翔机=信号 · 枪=时钟" data-en="glider = signal · gun = clock">滑翔机=信号 · 枪=时钟</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnStep" data-zh="单步 +1 代" data-en="step +1 gen">单步 +1 代</button>
+    <button class="abtn" id="btnClear" data-zh="清空" data-en="clear">清空</button>
+    <button class="abtn" id="btnSoup" data-zh="随机汤" data-en="random soup">随机汤</button>
+  </div>
+  <div class="grp" data-zh="图案图章 · 盖在场地中央" data-en="STAMPS · placed at the center">图案图章 · 盖在场地中央</div>
+  <div class="btnrow">
+    <button class="abtn" id="stGlider" data-zh="滑翔机" data-en="glider">滑翔机</button>
+    <button class="abtn" id="stLWSS" data-zh="飞船 LWSS" data-en="LWSS ship">飞船 LWSS</button>
+    <button class="abtn" id="stPulsar" data-zh="脉冲星" data-en="pulsar">脉冲星</button>
+    <button class="abtn" id="stGun" data-zh="滑翔机枪" data-en="glider gun">滑翔机枪</button>
+  </div>
+  <div class="grp" data-zh="规则宇宙 · 同一块板,另一行规则" data-en="RULE UNIVERSES · same board, one line changed">规则宇宙 · 同一块板,另一行规则</div>
+  <div class="btnrow">
+    <button class="abtn" id="rLife" data-zh="Life B3/S23" data-en="Life B3/S23">Life B3/S23</button>
+    <button class="abtn" id="rHigh" data-zh="HighLife B36/S23" data-en="HighLife B36/S23">HighLife B36/S23</button>
+    <button class="abtn" id="rSeeds" data-zh="Seeds B2/S" data-en="Seeds B2/S">Seeds B2/S</button>
+    <button class="abtn" id="rDN" data-zh="Day&amp;Night B3678/S34678" data-en="Day&amp;Night B3678/S34678">Day&amp;Night B3678/S34678</button>
+  </div>
+  <div class="row"><label data-zh="速度" data-en="Speed">速度</label><input id="spd" type="range" min="1" max="60" step="1" value="12"><span class="val" id="spdVal">12 代/s</span></div>
+  <div class="row"><label data-zh="随机密度" data-en="Soup density">随机密度</label><input id="den" type="range" min="2" max="50" step="1" value="18"><span class="val" id="denVal">18 %</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="曲线" data-en="Chart">曲线</span></label>
+      <label><input id="tglRotate" type="checkbox"> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../turing-machine/" data-zh="计算的另一个模型:图灵机" data-en="another model of computing: Turing machine">计算的另一个模型:图灵机</a>
+    <a href="../fractals/" data-zh="简单规则×递归:分形与递归" data-en="simple rules × recursion: fractals">简单规则×递归:分形与递归</a>
+    <a href="../sorting-race/" data-zh="算法的可见化:排序竞速" data-en="algorithms made visible: sorting race">算法的可见化:排序竞速</a>
+    <a href="../error-correction/" data-zh="信息在噪声中存活:纠错" data-en="information surviving noise: error correction">信息在噪声中存活:纠错</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x0f1116, 48, 120);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  const bg = dark ? 0x0f1116 : 0xdde5ee;
+  scene.background = new THREE.Color(bg);
+  scene.fog.color = new THREE.Color(bg);
+  boardMatTop.map = makeGridTexture(dark);
+  boardMatTop.needsUpdate = true;
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('元胞自动机:生命游戏 · 换一行规则就是另一个宇宙', "Conway's Game of Life · Change One Rule, Change the Universe");
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+  updateStatsNow();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+  drawPlot();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const GW = 72, GH = 48, CELL = 0.42;
+const BW = GW * CELL, BH = GH * CELL;
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.05, 400);
+camera.position.set(0, 27, 17.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 8;
+controls.maxDistance = 80;
+controls.maxPolarAngle = 1.45;
+controls.autoRotateSpeed = 0.35;
+controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+
+scene.add(new THREE.HemisphereLight(0xbdd3ea, 0x28414e, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 1.5);
+key.position.set(8, 16, 9);
+scene.add(key);
+
+/* ---------------- 棋盘 ---------------- */
+function makeGridTexture(dark) {
+  const cv = document.createElement('canvas');
+  cv.width = GW * 10; cv.height = GH * 10;
+  const c = cv.getContext('2d');
+  c.fillStyle = dark ? '#171c24' : '#e2e7f0';
+  c.fillRect(0, 0, cv.width, cv.height);
+  c.strokeStyle = dark ? 'rgba(255,255,255,.05)' : 'rgba(15,25,40,.08)';
+  c.lineWidth = 1;
+  for (let i = 0; i <= GW; i++) { c.beginPath(); c.moveTo(i * 10 + .5, 0); c.lineTo(i * 10 + .5, cv.height); c.stroke(); }
+  for (let j = 0; j <= GH; j++) { c.beginPath(); c.moveTo(0, j * 10 + .5); c.lineTo(cv.width, j * 10 + .5); c.stroke(); }
+  const tx = new THREE.CanvasTexture(cv);
+  tx.colorSpace = THREE.SRGBColorSpace;
+  tx.anisotropy = 4;
+  return tx;
+}
+const side = new THREE.MeshStandardMaterial({ color: 0x232b36, roughness: 0.7, metalness: 0.2 });
+const boardMatTop = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05 });
+const board = new THREE.Mesh(new THREE.BoxGeometry(BW + 0.5, 0.2, BH + 0.5),
+  [side, side, boardMatTop, side, side, side]);
+board.position.y = -0.1;
+scene.add(board);
+
+/* ================= 元胞引擎(带哨兵边界的板,界外=永死) ================= */
+const WP = GW + 2, HP = GH + 2, NP = WP * HP;
+let cur = new Uint8Array(NP), nxt = new Uint8Array(NP);
+const age = new Uint8Array(NP), ghost = new Uint8Array(NP);
+let gen = 0, pop = 0, births = 0, deaths = 0, changed = 0;
+let B = new Array(9).fill(false), S = new Array(9).fill(false);
+const RULES = {
+  life:     { str: 'B3/S23',        key: 'life',
+    zh: '死格恰 3 邻复活 · 活格 2–3 邻续命', en: 'dead +3 neighbours → born · alive with 2–3 → lives' },
+  highlife: { str: 'B36/S23',       key: 'highlife',
+    zh: '多一条「6 邻也复活」→ 复制子宇宙', en: 'one extra rule, 6 also breeds → replicator universe' },
+  seeds:    { str: 'B2/S',          key: 'seeds',
+    zh: '无人续命:活格代代全灭,2 邻即生 → 永恒烟花', en: 'nothing survives, all die each gen, 2 breeds → eternal fireworks' },
+  daynight: { str: 'B3678/S34678',  key: 'daynight',
+    zh: '黑白对称:夜即昼,死城也会发芽', en: 'black/white symmetric: night is day, dead cities bloom' },
+};
+let ruleKey = 'life';
+function parseRule(str) {
+  const m = /^B([0-8]*)\/S([0-8]*)$/i.exec(str);
+  B = new Array(9).fill(false); S = new Array(9).fill(false);
+  for (const c of m[1]) B[+c] = true;
+  for (const c of m[2]) S[+c] = true;
+}
+function setRule(key) {
+  ruleKey = key;
+  parseRule(RULES[key].str);
+  setRuleBtns(); updateFormula(); updateStatsNow();
+}
+function clearBoard() {
+  cur.fill(0); nxt.fill(0); age.fill(0); ghost.fill(0);
+  gen = 0; pop = 0; histHead = 0; histCount = 0;
+}
+function soup(d) {
+  clearBoard();
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++)
+    if (Math.random() < d) cur[(j + 1) * WP + i + 1] = 1;
+}
+/* 图案(经模拟验证:滑翔机 c/4 ↘ · LWSS c/2 ← · 脉冲星 p3 · 枪每 30 代一架 · 对撞同归于尽) */
+const PAT = {
+  glider: ['.O.', '..O', 'OOO'],
+  g180:   ['OOO', 'O..', '.O.'],
+  lwss:   ['.O..O', 'O....', 'O...O', 'OOOO.'],
+  pulsar: ['..OOO...OOO..', '.............', 'O....O.O....O', 'O....O.O....O', 'O....O.O....O',
+           '..OOO...OOO..', '.............', '..OOO...OOO..', 'O....O.O....O', 'O....O.O....O',
+           'O....O.O....O', '.............', '..OOO...OOO..'],
+  gun:    ['........................O...........',
+           '......................O.O...........',
+           '............OO......OO............OO',
+           '...........O...O....OO............OO',
+           'OO........O.....O...OO..............',
+           'OO........O...O.OO....O.O...........',
+           '..........O.....O.......O...........',
+           '...........O...O....................',
+           '............OO......................'],
+  blinker: ['OOO'], toad: ['.OOO', 'OOO.'], block: ['OO', 'OO'],
+};
+function stamp(rows, ox, oy, wipe = false) {
+  if (wipe) clearBoard();
+  rows.forEach((r, j) => {
+    for (let i = 0; i < r.length; i++) if (r[i] === 'O') {
+      const x = ox + i, y = oy + j;
+      if (x >= 0 && x < GW && y >= 0 && y < GH) {
+        const p = (y + 1) * WP + x + 1;
+        cur[p] = 1; age[p] = 0; ghost[p] = 0;
+      }
+    }
+  });
+}
+const cellX = i => (i - GW / 2 + 0.5) * CELL;
+const cellZ = j => (j - GH / 2 + 0.5) * CELL;
+function stampGun(wipe = true) {
+  stamp(PAT.gun, 4, 8, wipe);
+  lblGun.position.set(cellX(4 + 18), 1.5, cellZ(8 + 4));
+}
+function genStep() {
+  births = 0; deaths = 0; changed = 0; pop = 0;
+  for (let y = 1; y <= GH; y++) {
+    const r = y * WP;
+    for (let x = 1; x <= GW; x++) {
+      const p = r + x;
+      const n = cur[p - WP - 1] + cur[p - WP] + cur[p - WP + 1]
+              + cur[p - 1] + cur[p + 1]
+              + cur[p + WP - 1] + cur[p + WP] + cur[p + WP + 1];
+      const a = cur[p];
+      const v = a ? (S[n] ? 1 : 0) : (B[n] ? 1 : 0);
+      nxt[p] = v;
+      if (v) {
+        pop++;
+        if (!a) { births++; age[p] = 0; ghost[p] = 0; } else if (age[p] < 255) age[p]++;
+      } else {
+        if (a) { deaths++; ghost[p] = 14; age[p] = 0; }
+        else if (ghost[p] > 0) ghost[p]--;
+      }
+      if (v !== a) changed++;
+    }
+  }
+  [cur, nxt] = [nxt, cur];
+  gen++;
+  histPop[histHead] = pop; histHead = (histHead + 1) % PH; if (histCount < PH) histCount++;
+}
+
+/* ================= 渲染:活细胞 + 尸体残影(InstancedMesh) ================= */
+const NCELL = GW * GH;
+const aliveIM = new THREE.InstancedMesh(
+  new THREE.BoxGeometry(CELL * 0.86, 1, CELL * 0.86),
+  new THREE.MeshBasicMaterial({ color: 0xffffff }), NCELL);
+const ghostIM = new THREE.InstancedMesh(
+  new THREE.BoxGeometry(CELL * 0.7, 1, CELL * 0.7),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }), NCELL);
+aliveIM.frustumCulled = ghostIM.frustumCulled = false;
+aliveIM.count = ghostIM.count = 0;
+scene.add(aliveIM, ghostIM);
+const dummy = new THREE.Object3D(), _c = new THREE.Color();
+aliveIM.setColorAt(0, _c); ghostIM.setColorAt(0, _c);
+function updateInstances() {
+  let nA = 0, nG = 0;
+  for (let j = 0; j < GH; j++) {
+    for (let i = 0; i < GW; i++) {
+      const p = (j + 1) * WP + i + 1;
+      if (cur[p]) {
+        const a = age[p];
+        const h = a === 0 ? 0.62 : a === 1 ? 0.5 : a < 4 ? 0.42 : 0.34;
+        dummy.position.set(cellX(i), h / 2, cellZ(j));
+        dummy.scale.set(1, h, 1);
+        dummy.updateMatrix();
+        aliveIM.setMatrixAt(nA, dummy.matrix);
+        _c.setHex(a === 0 ? 0xffe066 : a === 1 ? 0xa9e34b : a === 2 ? 0x69db7c : 0x51cf66);
+        aliveIM.setColorAt(nA, _c);
+        nA++;
+      } else if (ghost[p] > 0) {
+        const t = ghost[p] / 14;
+        const h = 0.03 + 0.025 * t;
+        dummy.position.set(cellX(i), h / 2, cellZ(j));
+        dummy.scale.set(1, h, 1);
+        dummy.updateMatrix();
+        ghostIM.setMatrixAt(nG, dummy.matrix);
+        _c.setHex(0xd0654a).multiplyScalar(0.25 + 0.75 * t);
+        ghostIM.setColorAt(nG, _c);
+        nG++;
+      }
+    }
+  }
+  aliveIM.count = nA; ghostIM.count = nG;
+  aliveIM.instanceMatrix.needsUpdate = true;
+  ghostIM.instanceMatrix.needsUpdate = true;
+  if (aliveIM.instanceColor) aliveIM.instanceColor.needsUpdate = true;
+  if (ghostIM.instanceColor) ghostIM.instanceColor.needsUpdate = true;
+}
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblRule = addLabel(
+  () => L(`规则 ${RULES[ruleKey].str}:${RULES[ruleKey].zh}`, `rule ${RULES[ruleKey].str}: ${RULES[ruleKey].en}`),
+  new THREE.Vector3(-BW / 2 + 2, 0.8, -BH / 2 - 1.4), 'o');
+const lblGun = addLabel(
+  () => L('滑翔机枪:每 30 代吐出一架滑翔机 = 时钟', 'glider gun: one glider every 30 gens = a clock'),
+  new THREE.Vector3(-5.5, 1.5, -4.2), 'g', () => mode === 'gun' || mode === 'turing');
+const lblGlider = addLabel(
+  () => L('滑翔机:5 个格子,速度 c/4,方向形状永恒不变 = 信号', 'glider: 5 cells, speed c/4, shape unchanged forever = a signal'),
+  new THREE.Vector3(-2, 1.6, -5), 'b', () => mode === 'glider');
+const lblGate1 = addLabel(() => L('输入 A:滑翔机 = 1', 'input A: a glider = 1'),
+  new THREE.Vector3(-6.3, 1.2, -6.1), 'b', () => mode === 'gate');
+const lblGate2 = addLabel(() => L('输入 B:反向滑翔机', 'input B: mirrored glider'),
+  new THREE.Vector3(6.5, 1.2, 6.4), 'b', () => mode === 'gate');
+const lblGateC = addLabel(() => L('对撞点:两信号同归于尽 = 逻辑门', 'crash site: both signals annihilate = a logic gate'),
+  new THREE.Vector3(0, 1.8, 0.3), 'r', () => mode === 'gate');
+const lblTuring = addLabel(
+  () => L('滑翔机=信号 · 枪=时钟 · 碰撞=门 → 图灵完备', 'glider = signal · gun = clock · crash = gate → Turing complete'),
+  new THREE.Vector3(0, 2.3, -3), 'o', () => mode === 'turing');
+const lblUniverse = addLabel(
+  () => L('同一套力学,换一行规则 = 另一个宇宙', 'same mechanics, one rule changed = another universe'),
+  new THREE.Vector3(0, 2.3, 3), 'r', () => mode === 'rule' || ruleKey !== 'life');
+
+/* ================= 种群曲线 ================= */
+const PH = 480;
+const histPop = new Int32Array(PH);
+let histHead = 0, histCount = 0;
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const padL = 10, padR = 14, padT = 14, padB = 20;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  let mx = 10;
+  for (let i = 0; i < histCount; i++) mx = Math.max(mx, histPop[i]);
+  const xOf = k => padL + (histCount < 2 ? 0 : k / (histCount - 1)) * iw;
+  const yOf = v => padT + ih - v / mx * ih;
+  ctx.strokeStyle = 'rgba(128,150,170,.3)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, yOf(0)); ctx.lineTo(padL + iw, yOf(0)); ctx.stroke();
+  /* 填充 + 曲线 */
+  if (histCount >= 2) {
+    ctx.beginPath();
+    ctx.moveTo(xOf(0), yOf(0));
+    for (let k = 0; k < histCount; k++) ctx.lineTo(xOf(k), yOf(histPop[k]));
+    ctx.lineTo(xOf(histCount - 1), yOf(0));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(81,207,102,.14)';
+    ctx.fill();
+    ctx.beginPath();
+    for (let k = 0; k < histCount; k++) {
+      const x = xOf(k), y = yOf(histPop[k]);
+      k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.strokeStyle = '#51cf66'; ctx.lineWidth = 2; ctx.stroke();
+    const last = histPop[(histHead - 1 + PH) % PH];
+    ctx.fillStyle = '#51cf66';
+    ctx.beginPath(); ctx.arc(xOf(histCount - 1), yOf(last), 3.5, 0, 6.284); ctx.fill();
+    ctx.font = '15px system-ui';
+    ctx.fillText(String(last), xOf(histCount - 1) - 18, yOf(last) - 8);
+  }
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text2').trim() || '#9fb0c3';
+  ctx.font = '15px system-ui';
+  ctx.fillText('max ' + mx, padL + 4, padT - 2);
+  ctx.fillText(L('第 ' + Math.max(gen - histCount + 1, 0) + ' 代', 'gen ' + Math.max(gen - histCount + 1, 0)), padL + 2, H - 5);
+  ctx.fillText(L('第 ' + gen + ' 代', 'gen ' + gen), padL + iw - 60, H - 5);
+}
+
+/* ================= 讲解步骤 ================= */
+let mode = null;
+let speed = clamp(qsFloat('speed', 12), 1, 60);
+let denPct = 18;
+function demo(f) { return () => { f(); syncAll(); }; }
+const STEPS = [
+  { b: '四个邻居数:比一粒米还简单的物理', be: 'Four-neighbour counting: physics simpler than a grain of rice',
+    d: '每个格子只看周围 8 格:死格恰有 3 个邻居 → 复活;活格有 2–3 个 → 续命;其余 → 死。没有中心指挥——一块砖静止、一排灯闪烁、一只蟾蜍呼吸,全部涌现自这一条本地规则。',
+    de: 'Each cell only checks its 8 neighbours: dead with exactly 3 → born; alive with 2–3 → survives; otherwise → dies. No central command — a block sits still, a blinker flashes, a toad breathes: all emerging from this one local rule.',
+    act: demo(() => { setRule('life'); clearBoard(); stamp(PAT.block, 20, 22); stamp(PAT.blinker, 33, 23); stamp(PAT.toad, 44, 22); mode = 'neighbors'; speed = 3; syncSliders(); playing = true; setPlayLabel(); updateInstances(); }) },
+  { b: '滑翔机:五个格子跑遍整个平面', be: 'The glider: five cells crossing the whole plane',
+    d: '五个格子翻一个筋斗用 4 代,就斜移一格——速度 c/4,方向和形状永远不变。它不消耗、不衰减:宇宙里第一种"东西",一粒可以传递的信号。',
+    de: 'Five cells do one tumbling cycle in 4 generations and shift one cell diagonally — speed c/4, direction and shape unchanged forever. Nothing is spent, nothing decays: the first "thing" in this universe, a transmittable signal.',
+    act: demo(() => { setRule('life'); clearBoard(); stamp(PAT.glider, 22, 14); mode = 'glider'; speed = 8; syncSliders(); playing = true; setPlayLabel(); updateInstances(); }) },
+  { b: '枪:固定结构吐出无限信号', be: 'The gun: a fixed structure spitting out endless signals',
+    d: '高斯帕滑翔机枪(1970):36×9 的固定机构,每 30 代整吐出一架滑翔机,永不疲倦——结构=时钟,滑翔机=它打出的节拍。没有设计者的设计,是 Conway 用"电子电路思维"拼出来的。',
+    de: 'The Gosper glider gun (1970): a 36×9 fixed mechanism that fires one glider every 30 generations, never tiring — the structure is a clock, gliders are its ticks. A design with no designer, assembled by Conway with circuit-builder thinking.',
+    act: demo(() => { setRule('life'); clearBoard(); stampGun(); mode = 'gun'; speed = 12; syncSliders(); playing = true; setPlayLabel(); updateInstances(); }) },
+  { b: '碰撞=逻辑门:与或非都在板上', be: 'Collision = logic gate: AND, OR, NOT live on this board',
+    d: '滑翔机的有/无就是 1/0。两架滑翔机对头相撞会精确地同归于尽(64 代后全场清空)——这就是一个门;换相位还能造非门、或门。用滑翔机流当导线,20 世纪 70 年代有人真的搭出了完整计算机。',
+    de: 'Glider present/absent is 1/0. Two gliders in a head-on crash annihilate exactly (the board clears at gen 64) — that is one gate; other phasings give NOT and OR. With glider streams as wires, people really built a whole computer in the 1970s.',
+    act: demo(() => { setRule('life'); clearBoard(); stamp(PAT.glider, 21, 9); stamp(PAT.g180, 51, 39); mode = 'gate'; speed = 6; syncSliders(); playing = true; setPlayLabel(); updateInstances(); }) },
+  { b: '换一行规则:Seeds 烟花,HighLife 复制子', be: 'Change one rule: Seeds fireworks, HighLife replicators',
+    d: '同一套力学,只改出生/存活表就是另一个宇宙:Seeds B2/S 无物续命,2 邻即生,一锅汤全城大火;HighLife B36/S23 多了「6 邻复活」,里面有一个 12 格复制子能把自己抄满平面;Day&Night 里黑即是白。点右上四个规则按钮,亲手翻宇宙。',
+    de: 'Same mechanics, swap the birth/survival table, get another universe: Seeds B2/S lets nothing survive and 2 neighbours breed — one soup sets the whole city on fire; HighLife B36/S23 adds "6 also breeds" and contains a 12-cell replicator that photocopies itself across the plane; in Day&Night black is white. Click the rule buttons and flip universes yourself.',
+    act: demo(() => { setRule('seeds'); denPct = 12; soup(denPct / 100); mode = 'rule'; speed = 24; syncSliders(); playing = true; setPlayLabel(); updateInstances(); }) },
+  { b: '图灵完备与涌现:没有设计者的设计', be: 'Turing completeness & emergence: design without a designer',
+    d: '滑翔机=信号、枪=时钟、碰撞=门——生命游戏图灵完备:给定足够大的板子,它能计算一切可计算的问题,包括模拟它自己。没有一个格子知道"生命"是什么,但局部规则长出了全局结构。这不是隐喻,这是定理。',
+    de: 'Glider = signal, gun = clock, crash = gate — the Game of Life is Turing complete: on a big enough board it can compute anything computable, including simulating itself. No single cell knows what "life" is, yet global structure grows out of a local rule. This is not a metaphor; it is a theorem.',
+    act: demo(() => { setRule('life'); clearBoard(); stampGun(); mode = 'turing'; speed = 12; syncSliders(); playing = true; setPlayLabel(); updateInstances(); }) },
+];
+function stepIndex() {
+  if (mode === 'neighbors') return 0;
+  if (mode === 'glider') return 1;
+  if (mode === 'gun') return 2;
+  if (mode === 'gate') return 3;
+  if (mode === 'rule') return 4;
+  if (mode === 'turing') return 5;
+  if (ruleKey !== 'life') return 4;
+  if (pop === 0) return 0;
+  return 2;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 统计 / 公式 ================= */
+function blockEntropy() {
+  const hist = new Float64Array(16);
+  let tot = 0;
+  for (let j = 0; j < GH; j += 2) {
+    for (let i = 0; i < GW; i += 2) {
+      const a = cur[j * WP + i + 1] ? 1 : 0, b = cur[j * WP + i + 2] ? 1 : 0;
+      const c = cur[(j + 1) * WP + i + 1] ? 1 : 0, d = cur[(j + 1) * WP + i + 2] ? 1 : 0;
+      hist[a * 8 + b * 4 + c * 2 + d]++; tot++;
+    }
+  }
+  let H = 0;
+  for (const n of hist) {
+    if (!n) continue;
+    const p = n / tot;
+    H -= p * Math.log2(p);
+  }
+  return H;
+}
+const stGen = document.getElementById('stGen'), stPop = document.getElementById('stPop'),
+  stBD = document.getElementById('stBD'), stEnt = document.getElementById('stEnt'),
+  stRegime = document.getElementById('stRegime'), stRule = document.getElementById('stRule');
+const formulaEl = document.getElementById('formula');
+function updateStatsNow() {
+  stGen.textContent = gen;
+  stPop.innerHTML = pop + '<small> · ' + (pop / NCELL * 100).toFixed(1) + '%</small>';
+  stBD.innerHTML = '<span style="color:#8ce99a">+' + births + '</span> / <span style="color:#ffa8a8">−' + deaths + '</span>';
+  const act = changed / NCELL;
+  const H = blockEntropy();
+  stEnt.innerHTML = H.toFixed(2) + ' <small>bit · 活跃 ' + (act * 100).toFixed(2) + '%</small>';
+  let reg, cls;
+  if (pop === 0) { reg = L('死寂', 'extinct'); cls = 'bad'; }
+  else if (changed === 0) { reg = L('静止:稳定结构', 'still: stable structure'); cls = 'ok'; }
+  else if (act < 0.02) { reg = L('结构化:局部有序活动', 'structured: local order'); cls = 'ok'; }
+  else { reg = L('混沌:全城大火', 'chaos: the city burns'); cls = 'warn'; }
+  stRegime.textContent = reg;
+  stRegime.className = 'v ' + cls;
+  stRule.textContent = RULES[ruleKey].str;
+}
+function updateFormula() {
+  const r = RULES[ruleKey];
+  formulaEl.innerHTML = L(
+    `<b>${r.str}</b>:${r.zh} · 边界外=永死 · 局部规则→全局结构<br>` +
+    `滑翔机=信号(速度 c/4) · 枪=时钟(每 30 代) · 碰撞=逻辑门 → <b>图灵完备</b>`,
+    `<b>${r.str}</b>: ${r.en} · outside the border = dead forever · local rules → global structure<br>` +
+    `glider = signal (speed c/4) · gun = clock (every 30 gens) · collision = logic gate → <b>Turing complete</b>`);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elSpd = document.getElementById('spd'), elSpdVal = document.getElementById('spdVal');
+const elDen = document.getElementById('den'), elDenVal = document.getElementById('denVal');
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let spinOn = qsBool('spin', false);
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function setRuleBtns() {
+  document.getElementById('rLife').classList.toggle('on', ruleKey === 'life');
+  document.getElementById('rHigh').classList.toggle('on', ruleKey === 'highlife');
+  document.getElementById('rSeeds').classList.toggle('on', ruleKey === 'seeds');
+  document.getElementById('rDN').classList.toggle('on', ruleKey === 'daynight');
+}
+function syncSliders() {
+  elSpd.value = speed; elSpdVal.textContent = Math.round(speed) + L(' 代/s', ' gens/s');
+  elDen.value = denPct; elDenVal.textContent = denPct + ' %';
+}
+function syncAll() { syncSliders(); updateFormula(); drawPlot(); setRuleBtns(); updateStatsNow(); }
+function userActed() { mode = null; }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('btnStep').addEventListener('click', () => {
+  playing = false; setPlayLabel();
+  genStep(); updateInstances(); updateStatsNow(); drawPlot();
+});
+document.getElementById('btnClear').addEventListener('click', () => { clearBoard(); userActed(); updateInstances(); syncAll(); });
+document.getElementById('btnSoup').addEventListener('click', () => { soup(denPct / 100); userActed(); updateInstances(); syncAll(); });
+document.getElementById('stGlider').addEventListener('click', () => { stamp(PAT.glider, 34, 22); mode = 'glider'; updateInstances(); syncAll(); });
+document.getElementById('stLWSS').addEventListener('click', () => { stamp(PAT.lwss, 32, 22); mode = 'glider'; updateInstances(); syncAll(); });
+document.getElementById('stPulsar').addEventListener('click', () => { stamp(PAT.pulsar, 30, 18); mode = 'neighbors'; updateInstances(); syncAll(); });
+document.getElementById('stGun').addEventListener('click', () => { stampGun(false); mode = 'gun'; updateInstances(); syncAll(); });
+document.getElementById('rLife').addEventListener('click', () => { setRule('life'); mode = null; syncAll(); });
+document.getElementById('rHigh').addEventListener('click', () => { setRule('highlife'); mode = null; syncAll(); });
+document.getElementById('rSeeds').addEventListener('click', () => { setRule('seeds'); mode = null; syncAll(); });
+document.getElementById('rDN').addEventListener('click', () => { setRule('daynight'); mode = null; syncAll(); });
+elSpd.addEventListener('input', () => { speed = +elSpd.value; syncSliders(); });
+elDen.addEventListener('input', () => { denPct = +elDen.value; elDenVal.textContent = denPct + ' %'; });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglRotate').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+if (!qsBool('labels', true)) { document.getElementById('tglLabels').checked = false; labelsOn = false; refreshLabels(); }
+controls.autoRotate = spinOn;
+document.getElementById('tglRotate').checked = spinOn;
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+
+/* ---------------- 点击/拖动编辑格子(左键) ---------------- */
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const pickPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.01);
+const hitV = new THREE.Vector3();
+let painting = false, paintVal = 1;
+function pickCell(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(pickPlane, hitV)) return null;
+  const i = Math.floor((hitV.x + BW / 2) / CELL);
+  const j = Math.floor((hitV.z + BH / 2) / CELL);
+  if (i < 0 || i >= GW || j < 0 || j >= GH) return null;
+  return (j + 1) * WP + i + 1;
+}
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || e.pointerType === 'touch') return;
+  const p = pickCell(e);
+  if (p === null) return;
+  painting = true;
+  paintVal = cur[p] ? 0 : 1;
+  cur[p] = paintVal; age[p] = 0; ghost[p] = 0;
+  userActed(); updateInstances(); updateStatsNow();
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!painting) return;
+  const p = pickCell(e);
+  if (p === null) return;
+  if (cur[p] !== paintVal) { cur[p] = paintVal; age[p] = 0; ghost[p] = 0; updateInstances(); updateStatsNow(); }
+});
+addEventListener('pointerup', () => { painting = false; });
+addEventListener('pointercancel', () => { painting = false; });
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, stepAcc = 0, statsAcc = 0;
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  if (playing) {
+    stepAcc += dt * speed;
+    let ran = false;
+    while (stepAcc >= 1) { stepAcc -= 1; genStep(); ran = true; if (stepAcc > 4) stepAcc = 0; }
+    if (ran) updateInstances();
+  }
+  statsAcc += dt;
+  if (statsAcc > 0.15) {
+    statsAcc = 0;
+    updateStatsNow();
+    drawPlot();
+  }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+{
+  const p = (qs.get('rule') || '').toLowerCase();
+  if (RULES[p]) ruleKey = p;
+  parseRule(RULES[ruleKey].str);
+  speed = clamp(qsFloat('speed', 12), 1, 60);
+  denPct = Math.round(clamp(qsFloat('d', 18), 2, 50));
+  const st = (qs.get('stamp') || '').toLowerCase();
+  if (qs.get('d') !== null) { soup(denPct / 100); mode = null; }
+  else if (st === 'glider') { stamp(PAT.glider, 34, 22); mode = 'glider'; }
+  else if (st === 'pulsar') { stamp(PAT.pulsar, 30, 18); mode = 'neighbors'; }
+  else if (st === 'lwss') { stamp(PAT.lwss, 32, 22); mode = 'glider'; }
+  else { stampGun(); mode = 'gun'; }
+  const t = Math.round(clamp(qsFloat('t', 0), 0, 4000));
+  for (let k = 0; k < t; k++) genStep();
+}
+applyTheme();
+syncSliders();
+buildSteps();
+applyLang();
+setRuleBtns();
+syncAll();
+updateInstances();
+start();
+</script>
+</body>
+</html>
