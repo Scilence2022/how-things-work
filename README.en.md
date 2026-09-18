@@ -22,7 +22,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 | Math & CS | Galton board & CLT, Fourier series, Monty Hall & Bayes, gradient descent, sorting race, RSA |
 | Cross-discipline & engineering | Activation energy & catalysts, titration curve, osmosis & dialysis, heat pump ⇄ fridge, induction cooktop, wireless charging, corrosion ⇄ electroplating |
 | Everyday technology | Microwave oven, capacitive touch, GPS, transistors to adders, fiber optics, camera sensor, ABS, wind turbine, nuclear reactor, MRI, thermostat, hard drive & flash |
-| Fluids & flight | Wing lift & stall, turbofan engines, buoyancy & ship stability, terminal velocity, propeller pitch, submarine ballast, hot-air balloons, Reynolds number, helicopter anti-torque, Venturi tube & flow, Pascal's press, sailing upwind, water hammer, the siphon, the Magnus effect, cavitation & supercavitation, tsunami & shallow-water waves |
+| Fluids & flight | Wing lift & stall, turbofan engines, buoyancy & ship stability, terminal velocity, propeller pitch, submarine ballast, hot-air balloons, Reynolds number, helicopter anti-torque, Venturi tube & flow, Pascal's press, sailing upwind, water hammer, the siphon, the Magnus effect, cavitation & supercavitation, tsunami & shallow-water waves, sonic boom & the Mach cone, the Kármán vortex street, Stokes settling & the centrifuge, capillarity & surface tension, Kelvin–Helmholtz billows, Poiseuille flow, the hydrofoil, swell & deep-water waves |
 
 ## Planned topics
 
@@ -320,6 +320,67 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **What you see**: a second-order 1-D shallow-water solver (Lax-Wendroff with wet/dry isolation, time ×60) — the fault slips and lifts the whole column; in 4000 m of water the crest runs at c = √(gh) = 713 km/h while the surface shows a 1–2 m bump (live DART-buoy reading), unfelt aboard ship; onto the shelf the speed falls 713 → 36 km/h and energy-flux conservation piles the height up by Green's law A ∝ h^(-1/4) (measured 1.9 → 2.5 m across the slope); the trough arrives first — "the sea is draining" — then the crest lands and run-up (≈ 4× the shore height) drives water up the beach and over the huts; the side panel tracks η(x), the bathymetry and the Green's-law prediction live.
 - **How to play**: drag fault slip and playback speed; press "trigger quake" and "slow-mo ×15"; watch the crest speed fall from 713 km/h to tens and the height climb from 1 m to 10; space to play / pause.
 - **URL parameters**: `?a=` `?speed=` `?pause=` `?labels=` `?spin=`.
+
+### Phase 27 · Fluids & flight, fifth batch (8/8)
+
+- [x] Sonic boom & the Mach cone (wavefronts pile into a cone in the aircraft frame, μ = arcsin(1/M), the sound barrier, see first hear later, the N-wave) ✅ **mach-cone/**
+- [x] The Kármán vortex street (alternating shedding f = St·U/d, twin vortices → laminar street → turbulent wake → supercritical, aeolian tones / Tacoma / spoilers) ✅ **vortex-street/**
+- [x] Stokes settling & the centrifuge (F = 6πµrv, v_t = 2Δρgr²/9µ, RCF = 1.118×10⁻⁵·r·RPM², blood fractionation) ✅ **stokes-centrifuge/**
+- [x] Capillarity & surface tension (Jurin's law h = 2γcosθ/(ρgr), contact angle & meniscus, mercury reversal, halve the radius double the height) ✅ **capillarity/**
+- [x] Kelvin–Helmholtz billows (vortex-sheet instability, exponential growth → cat's-eye roll-up → breaking & mixing, billow clouds / Jupiter) ✅ **kelvin-helmholtz/**
+- [x] Poiseuille flow (no-slip wall, parabolic profile, Q = πΔp r⁴/(8µL), the tyranny of r⁴, plaque stenosis, dye-line experiment) ✅ **poiseuille/**
+- [x] The hydrofoil (foil lift ∝ v², the takeoff hump, drag collapse on foils, the cavitation ceiling) ✅ **hydrofoil/**
+- [x] Swell & deep-water waves (ω = √(gk) dispersion, c_p = 2c_g crest overtaking, swell sorting by period, feeling the bottom) ✅ **swell/**
+
+### Phase 27 deep dives
+
+#### Sonic boom & the Mach cone: see first, hear later
+
+- **What you see**: in the aircraft frame the nose emits a spherical wavefront every 0.18 s — each centre slides back at v while the radius grows at the sound speed c: subsonic, the fronts outrun the plane (you hear the engine coming); at M → 1 they pile into a wall at the nose (the sound barrier); past M = 1 their common envelope is the Mach cone of half-angle μ = arcsin(1/M), and a ground observer hears the N-shaped boom only when the cone sweeps over — drag the Mach slider and watch the cone narrow from a near-plane to 30°, while the observer timeline shows the gap between ▲ (overhead) and ● (heard).
+- **How to play**: drag the Mach number (0.3–2.0); press subsonic / near-barrier / supersonic / fast presets and "reset observer" to flip the delay from negative (heard first) to positive (seen first); space to play / pause.
+- **URL parameters**: `?m=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### The Kármán vortex street: alternating eddies behind a cylinder
+
+- **What you see**: 560 tracer particles flow past a cylinder — below Re 47 a quiet pair of standing vortices clings to the lee side; past 47 they shed alternately into two staggered rows, f = St·U/d with St ≈ 0.2; higher still the wake turns turbulent, and beyond Re ≈ 3.5×10⁵ the boundary layer transitions and the wake narrows (the drag crisis); the cylinder's side-force trace F_y locks to the shedding — the "singing wire" and "Tacoma resonance" presets let lock-in pump the amplitude up, "chimney spoilers" flattens F_y to zero.
+- **How to play**: drag the Reynolds number (log 40–10⁶) across the four regimes; switch singing wire / Tacoma resonance / chimney spoilers / reset; space to play / pause.
+- **URL parameters**: `?re=` `?preset=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Stokes settling & the centrifuge: a day at 1 g, a minute at 900 g
+
+- **What you see**: the left tube idles at 1 g — red cells sink through viscous plasma at v_t = 2Δρgr²/(9µ) ≈ 3 µm/s while the equivalent clock burns hours; the right tube spins in a swing-out rotor where RCF = 1.118×10⁻⁵·r(cm)·RPM² multiplies effective gravity a hundredfold, and red cells, white cells and platelets race to the bottom in order of size × density, stacking into plasma / buffy coat / red-cell bands; the concentration-profile histogram watches the bands form, and the size slider verifies v ∝ r² live.
+- **How to play**: drag rpm (watch RCF climb into thousands of g) and particle size; switch plasma / whole blood / glycerol viscosities; press 3000 rpm / 15000 rpm / stop / reset; space to play / pause.
+- **URL parameters**: `?rpm=` `?size=` `?visc=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Capillarity & surface tension: the narrower the tube, the higher the climb
+
+- **What you see**: three glass capillaries stand in a dyed bath, a concave meniscus hauling water up the rim — h = 2γcosθ/(ρgr) is read live: the 0.3 mm tube climbs 4.9 cm, the 1.2 mm only 1.2 cm (halve the radius, double the height); the µN balance between rim pull 2πrγcosθ and column weight ρgπr²h sits in the formula bar; switch to mercury and everything flips — θ = 140°, cosθ < 0, and the convex meniscus presses the level down; the h–r chart redraws its hyperbolas per fluid.
+- **How to play**: drag the middle tube radius (0.1–2 mm) and contact angle (0–160°); switch water / ethanol / mercury and watch columns glide and menisci flip; space to play / pause.
+- **URL parameters**: `?r=` `?theta=` `?fluid=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Kelvin–Helmholtz billows: when two layers rub the wrong way
+
+- **What you see**: two layers sliding past each other make the interface a vortex sheet — any ripple is amplified exponentially (a straight line on the semi-log A(t) plot), grows steep crests, rolls into a chain of cat's-eye spirals, then shreds and mixes; the density-difference slider (gravity's stabilizer) stretches or kills the whole story; the billow-clouds / ocean wind-shear / Jupiter-bands presets re-run the same equation in three settings.
+- **How to play**: drag upper/lower speeds and density difference; press "nudge" and "re-lay the interface" to replay from seed to breaking; space to play / pause.
+- **URL parameters**: `?u2=` `?u1=` `?rho=` `?preset=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Poiseuille flow: radius is the gate, r⁴ is the tyranny
+
+- **What you see**: 520 particles ride a parabolic profile through a transparent vessel — the wall layer is "welded" still, the core runs fastest at u_max = 2ū; a bright dye line at the inlet is sheared into the parabola (the classic 1840 experiment, live); drag the radius and watch Q = πΔp r⁴/(8µL) collapse (half → 1/16); "plaque stenosis" pinches the diameter to half — local speed ×4 by continuity, losses pile up, total flow craters; past Re 2300 the status flips to a turbulence warning.
+- **How to play**: drag pressure / radius / viscosity (water, plasma, blood); press "re-lay dye line", "stenosis 50%", "restore"; the profile and Q–r⁴ charts follow the dot; space to play / pause.
+- **URL parameters**: `?dp=` `?r=` `?mu=` `?sten=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### The hydrofoil: fast enough, the water lifts the boat out
+
+- **What you see**: at low speed the hull floats on Archimedes (draft 0.26 m); as speed builds, foil lift ½ρv²C_L A chases the weight quadratically and the draft reads 0 — the hull clears the water, wetted area shrinks to three foils, and drag first climbs the "takeoff hump" then drops an order of magnitude (2666 N → 701 N); push further and the cavitation ceiling (~30 kn, red line) waits; the D(v) chart and lift share annotate the current regime.
+- **How to play**: drag speed / load / foil trim; press "take off", "ease back to displacement", "overload 900 kg" and watch the equilibrium move; space to play / pause.
+- **URL parameters**: `?v=` `?load=` `?trim=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Swell & deep-water waves: waves travel in sets
+
+- **What you see**: a Gaussian wave packet walks the sea at the group velocity while individual crests overtake at twice the speed — born at the tail, dying at the head, no single crest crosses the packet; a moored buoy logs η(t) and the orange envelope makes "waves arrive in sets" visible; the period slider rescales L₀ = gT²/2π and c_p = gT/2π (14 s → 306 m, 79 km/h); pull the depth below L/2 and the waves feel the bottom, steepen and break in a burst of foam — the shallow limit is the tsunami page's story.
+- **How to play**: drag period T and depth h; switch ocean swell / wind chop / push ashore; read the buoy record and envelope; space to play / pause.
+- **URL parameters**: `?T=` `?h=` `?preset=` `?pause=` `?speed=` `?labels=` `?spin=`.
 
 ### Phase 11 · Earth system (10/10)
 
@@ -898,6 +959,14 @@ siphon/                The siphon: the atmosphere over the hill and the 10.3 m s
 magnus-effect/         The Magnus effect: rotor pressure, banana kick, rotor ship (Three.js, CDN)
 cavitation/            Cavitation & supercavitation: σ, pitting and the gas shroud (Three.js, CDN)
 tsunami/               Tsunami & shallow-water waves: √(gh), Green's law, drawback (Three.js, CDN)
+mach-cone/             Sonic boom & the Mach cone: wavefront envelope, μ = arcsin(1/M) (Three.js, CDN)
+vortex-street/         Kármán vortex street: alternating shedding, St, resonance (Three.js, CDN)
+stokes-centrifuge/     Stokes settling & the centrifuge: v_t, RCF, blood bands (Three.js, CDN)
+capillarity/           Capillarity & surface tension: Jurin's law, contact angle, mercury (Three.js, CDN)
+kelvin-helmholtz/      Kelvin–Helmholtz billows: cat's-eye roll-up and mixing (Three.js, CDN)
+poiseuille/            Poiseuille flow: parabolic profile, the r⁴ law, stenosis (Three.js, CDN)
+hydrofoil/             The hydrofoil: foil lift, the takeoff hump, cavitation (Three.js, CDN)
+swell/                 Swell & deep-water waves: dispersion, c_p = 2c_g, packets (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
