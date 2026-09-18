@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>激光雷达 · 自动驾驶如何用光画出世界</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="激光雷达" data-en="LiDAR">激光雷达</h1>
+  <div class="sub" data-zh="旋转激光头每秒向上百万个方向发出纳秒级光脉冲,给每个回波计时:d=c·t/2——世界被逐点“画”成彩色点云,这就是自动驾驶的眼睛;切 905/1550 nm 看黑漆与雨雾的失败模式,开多重回波看穿树冠,雾一开画面就溶成鬼点噪声 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格扫描/暂停" data-en="A spinning head fires millions of nanosecond light pulses per second and times every round trip: d=c·t/2 — the world is painted point by point into a colored cloud, the eyes of an autonomous car; switch 905/1550 nm for black-paint and fog failure modes, multiple returns see through canopies, and fog dissolves the picture into ghost noise · 3D interactive demo · drag to orbit / scroll to zoom · Space = scan/pause">旋转激光头每秒向上百万个方向发出纳秒级光脉冲,给每个回波计时:d=c·t/2——世界被逐点“画”成彩色点云,这就是自动驾驶的眼睛;切 905/1550 nm 看黑漆与雨雾的失败模式,开多重回波看穿树冠,雾一开画面就溶成鬼点噪声 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格扫描/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="转速" data-en="Spin rate">转速</span><span class="v" id="stSpin">—</span>
+  <span class="k" data-zh="每秒点数" data-en="Points / s">每秒点数</span><span class="v" id="stRate">—</span>
+  <span class="k" data-zh="角分辨率 Δθ" data-en="Angular res Δθ">角分辨率 Δθ</span><span class="v" id="stAz">—</span>
+  <span class="k" data-zh="波长" data-en="Wavelength">波长</span><span class="v" id="stWl">—</span>
+  <span class="k" data-zh="已扫描点数" data-en="Points scanned">已扫描点数</span><span class="v ok" id="stCnt">0</span>
+  <span class="k" data-zh="当前回波 ToF" data-en="Live echo ToF">当前回波 ToF</span><span class="v" id="stToF">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="A-scope:回波强度–距离 · 绿峰=首回波,橙峰=末回波" data-en="A-scope: echo intensity vs distance · green = first, orange = last return">A-scope:回波强度–距离 · 绿峰=首回波,橙峰=末回波</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="每个点=一次 d=c·t/2" data-en="each point = one d=c·t/2">每个点=一次 d=c·t/2</span>
+    <span class="chip.g" data-zh="颜色=高度:蓝(低)→橙(高)" data-en="color = height: blue (low) → orange (high)">颜色=高度:蓝(低)→橙(高)</span>
+    <span class="chip.r" data-zh="灰暗点=雾中鬼点/弱回波" data-en="dim dots = fog ghosts / weak echo">灰暗点=雾中鬼点/弱回波</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnStd" data-zh="标准扫描" data-en="Standard scan">标准扫描</button>
+    <button class="abtn brk" id="btnFog" data-zh="雾天挑战" data-en="Fog challenge">雾天挑战</button>
+    <button class="abtn brk" id="btnDark" data-zh="黑色轿车 905 nm" data-en="Black car 905 nm">黑色轿车 905 nm</button>
+    <button class="abtn" id="btnVeg" data-zh="植被分层(多重回波)" data-en="Canopy layers (multi-return)">植被分层(多重回波)</button>
+    <button class="abtn" id="btnClear" data-zh="清空点云" data-en="Clear point cloud">清空点云</button>
+  </div>
+  <div class="row"><label data-zh="转速" data-en="Spin rate">转速</label><input id="sSpin" type="range" min="5" max="30" step="1" value="20"><span class="val" id="sSpinVal">20 Hz</span></div>
+  <div class="row"><label data-zh="角分辨率 Δθ" data-en="Angular res Δθ">角分辨率 Δθ</label><input id="sDens" type="range" min="0.1" max="0.5" step="0.05" value="0.2"><span class="val" id="sDensVal">0.20°</span></div>
+  <div class="row"><label data-zh="天气(雾)" data-en="Weather (fog)">天气(雾)</label><input id="sFog" type="range" min="0" max="1" step="0.05" value="0"><span class="val" id="sFogVal">0.00</span></div>
+  <div class="row"><label data-zh="目标反射率" data-en="Target reflectivity">目标反射率</label><input id="sRefl" type="range" min="0.1" max="1" step="0.05" value="0.8"><span class="val" id="sReflVal">0.80</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">扫描</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="曲线" data-en="Chart">曲线</span></label>
+      <label><input id="tglMulti" type="checkbox"> <span data-zh="多重回波" data-en="Multi-return">多重回波</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../sonar-ultrasound/" data-zh="同一套回声测距:声呐与超声" data-en="the same echo-ranging: sonar & ultrasound">同一套回声测距:声呐与超声</a>
+    <a href="../fiber-optics/" data-zh="光的另一条路:光纤通信" data-en="light's other road: fiber optics">光的另一条路:光纤通信</a>
+    <a href="../gps/" data-zh="自动驾驶的另一只眼:GPS" data-en="the other eye: GPS">自动驾驶的另一只眼:GPS</a>
+    <a href="../radar-speed/" data-zh="微波表亲:雷达测速" data-en="the microwave cousin: radar speed">微波表亲:雷达测速</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const C_LIGHT = 3e8;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x0e1420, 30, 95);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0e1420 : 0xd8e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x0e1420 : 0xd8e2ea);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('激光雷达 · 自动驾驶如何用光画出世界', 'LiDAR · How Autonomous Cars Draw the World with Light');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+  drawPlot();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 300);
+camera.position.set(12.5, 7.5, 14.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 4;
+controls.maxDistance = 55;
+controls.autoRotateSpeed = 0.35;
+
+scene.add(new THREE.HemisphereLight(0xbdd3ea, 0x2a3038, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 1.5);
+key.position.set(7, 12, 6);
+scene.add(key);
+
+/* ================= 物理状态(真实单位;视觉扫描按比例压缩) ================= */
+const NB = 12;                       // 线束(竖直 12 线)
+const RANGE = 46;                    // 最大量程 m
+const ELS = [];                      // 各线束俯仰角
+for (let b = 0; b < NB; b++) ELS.push((-10 + 26 * b / (NB - 1)) * Math.PI / 180);
+const WLC = { 905: 0xff6b6b, 1550: 0x63e6be };
+let spinHz = clamp(qsFloat('spd', 20), 5, 30);       // 转速 Hz(真实)
+let azRes = clamp(qsFloat('dens', 0.2), 0.05, 0.6);  // 角分辨率 °
+let fogV = clamp(qsFloat('fog', 0), 0, 1);           // 天气 0..1
+let reflV = clamp(qsFloat('refl', 0.8), 0.1, 1);     // 目标反射率
+let wl = qs.get('wl') === '1550' ? 1550 : 905;       // 波长 nm
+let multi = qsBool('multi', false);                  // 多重回波
+let simT = qsFloat('t', 0);
+let az = 0;                                          // 当前扫描方位角
+let lastD = 0, lastPt = null;                        // 最近首回波
+const rateOf = () => Math.round(spinHz * 360 / azRes * NB);   // 真实每秒点数
+
+/* ================= 街景:幽灵线框 + 可命中目标 ================= */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.15,
+    transparent: true, opacity: 0.06, depthWrite: false,
+    emissive: color, emissiveIntensity: 0.04, ...opts });
+}
+const TARGETS = [];
+function addTarget(geo, color, pos, refl, opt = {}) {
+  const m = new THREE.Mesh(geo, mat(color));
+  m.position.copy(pos);
+  m.userData = { refl, ...opt };
+  m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 24),
+    new THREE.LineBasicMaterial({ color: 0x7e95a8, transparent: true, opacity: 0.15 })));
+  scene.add(m);
+  TARGETS.push(m);
+  return m;
+}
+/* 地面(只有幽幽网格,等点云来点亮) */
+{
+  const gGeo = new THREE.PlaneGeometry(92, 64).rotateX(-Math.PI / 2);
+  const ground = new THREE.Mesh(gGeo, mat(0x39424d, { opacity: 0.045 }));
+  ground.userData = { refl: 0.3 };
+  scene.add(ground);
+  TARGETS.push(ground);
+  const grid = new THREE.GridHelper(92, 46, 0x5c7285, 0x3d4f5f);
+  grid.material.transparent = true; grid.material.opacity = 0.2;
+  scene.add(grid);
+}
+/* 楼(盒) */
+[[-16, 3.0, -11, 9, 6, 6, 0x8fa0b5], [-2, 2.6, -12, 11, 5.2, 6, 0xa7b3a0], [13, 3.6, -11, 8, 7.2, 6, 0xb5a08f],
+ [-10, 2.4, 11, 9, 4.8, 6, 0x9aa7bd], [8, 3.0, 12, 10, 6, 6, 0xb0a595]].forEach(b => {
+  addTarget(new THREE.BoxGeometry(b[3], b[4], b[5]), b[6], new THREE.Vector3(b[0], b[1], b[2]), 0.5);
+});
+/* 树(干=柱,冠=球,冠是“植被”可穿透) */
+function tree(x, z, s) {
+  addTarget(new THREE.CylinderGeometry(0.16, 0.22, 1.9, 8), 0x6b4a33, new THREE.Vector3(x, 0.95, z), 0.45);
+  addTarget(new THREE.SphereGeometry(1.5 * s, 10, 8), 0x2f7d4f, new THREE.Vector3(x, 2.8, z), 0.32, { veg: true });
+  addTarget(new THREE.SphereGeometry(1.05 * s, 10, 8), 0x358a58, new THREE.Vector3(x + 0.55, 3.8 * s + 0.5, z), 0.32, { veg: true });
+}
+tree(-7, -6.5, 1); tree(8.5, 7, 1); tree(19, -6, 1.15);
+/* 车:白车正常反射,黑车 userData.dark(905 nm 几乎不亮) */
+function car(x, z, color, dark) {
+  const o = dark ? { dark: true } : {};
+  addTarget(new THREE.BoxGeometry(4.1, 0.95, 1.85), color, new THREE.Vector3(x, 0.62, z), 0.85, o);
+  addTarget(new THREE.BoxGeometry(2.2, 0.62, 1.7), color, new THREE.Vector3(x - 0.15, 1.35, z), 0.85, o);
+  for (const [wx, wz] of [[-1.4, 0.98], [1.4, 0.98], [-1.4, -0.98], [1.4, -0.98]]) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.24, 12).rotateX(Math.PI / 2),
+      mat(0x14161a, { opacity: 0.85, depthWrite: true }));
+    w.position.set(x + wx, 0.33, z + wz);
+    scene.add(w);
+  }
+}
+car(11, 3.4, 0xd8dde2, false);        // 白车
+car(-11, -3.6, 0x17191d, true);       // 黑车(主角)
+/* 行人(柱+球) */
+addTarget(new THREE.CylinderGeometry(0.24, 0.3, 1.1, 10), 0xc2694f, new THREE.Vector3(3, 0.85, -4.8), 0.55);
+addTarget(new THREE.SphereGeometry(0.19, 10, 8), 0xd9a582, new THREE.Vector3(3, 1.56, -4.8), 0.55);
+/* 自车(激光雷达装在车顶) */
+addTarget(new THREE.BoxGeometry(4.5, 1.3, 1.95), 0x7f8a97, new THREE.Vector3(0, 0.75, 0), 0.6);
+addTarget(new THREE.BoxGeometry(2.4, 0.68, 1.78), 0x7f8a97, new THREE.Vector3(-0.2, 1.62, 0), 0.6);
+for (const [wx, wz] of [[-1.5, 0.98], [1.5, 0.98], [-1.5, -0.98], [1.5, -0.98]]) {
+  const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.26, 12).rotateX(Math.PI / 2),
+    mat(0x14161a, { opacity: 0.85, depthWrite: true }));
+  w.position.set(wx, 0.34, wz);
+  scene.add(w);
+}
+/* 旋转头:底座 + 转鼓 + 12 个发光窗口 */
+const LID = new THREE.Vector3(0, 2.16, 0);
+const mount = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.12, 14),
+  mat(0x22262e, { opacity: 1, depthWrite: true, metalness: 0.5 }));
+mount.position.set(0, 2.0, 0);
+scene.add(mount);
+const rotor = new THREE.Group();
+rotor.add(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.16, 20),
+  mat(0x2a2f38, { opacity: 1, depthWrite: true, metalness: 0.6, roughness: 0.35 })));
+const aperMat = new THREE.MeshBasicMaterial({ color: WLC[wl] });
+for (let i = 0; i < 12; i++) {
+  const a = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.085, 0.03), aperMat);
+  const th = i / 12 * Math.PI * 2;
+  a.position.set(Math.cos(th) * 0.17, 0, Math.sin(th) * 0.17);
+  rotor.add(a);
+}
+const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.05, 16),
+  mat(0x3d4552, { opacity: 1, depthWrite: true }));
+cap.position.y = 0.105;
+rotor.add(cap);
+rotor.position.set(0, 2.14, 0);
+scene.add(rotor);
+function applyWl() { fanMat.color.setHex(WLC[wl]); aperMat.color.setHex(WLC[wl]); }
+
+/* 激光扇面(12 条随转鼓扫动的射线) */
+const fanGeo = new THREE.BufferGeometry();
+const fanPos = new Float32Array(NB * 6);
+fanGeo.setAttribute('position', new THREE.BufferAttribute(fanPos, 3));
+const fanMat = new THREE.LineBasicMaterial({ color: WLC[wl], transparent: true, opacity: 0.5 });
+const fan = new THREE.LineSegments(fanGeo, fanMat);
+fan.frustumCulled = false;
+scene.add(fan);
+const fanEnd = new Float32Array(NB).fill(30);
+function updateFan() {
+  const ca = Math.cos(az), sa = Math.sin(az);
+  for (let b = 0; b < NB; b++) {
+    const el = ELS[b], ce = Math.cos(el), d = fanEnd[b];
+    fanPos[b * 6] = LID.x; fanPos[b * 6 + 1] = LID.y; fanPos[b * 6 + 2] = LID.z;
+    fanPos[b * 6 + 3] = LID.x + ca * ce * d; fanPos[b * 6 + 4] = LID.y + Math.sin(el) * d; fanPos[b * 6 + 5] = LID.z + sa * ce * d;
+  }
+  fanGeo.attributes.position.needsUpdate = true;
+}
+/* 点云缓冲区(持久,满后环形覆盖) */
+const MAXP = 100000;
+const pGeo = new THREE.BufferGeometry();
+const pPos = new Float32Array(MAXP * 3), pCol = new Float32Array(MAXP * 3);
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3).setUsage(THREE.DynamicDrawUsage));
+pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3).setUsage(THREE.DynamicDrawUsage));
+pGeo.setDrawRange(0, 0);
+const pcloud = new THREE.Points(pGeo, new THREE.PointsMaterial({ size: 0.085, vertexColors: true, sizeAttenuation: true }));
+pcloud.frustumCulled = false;
+scene.add(pcloud);
+let pHead = 0, pCount = 0, pTotal = 0, pDirty = false;
+const _col = new THREE.Color();
+function pushPt(x, y, z, r, g, b) {
+  const i = pHead * 3;
+  pPos[i] = x; pPos[i + 1] = y; pPos[i + 2] = z;
+  pCol[i] = r; pCol[i + 1] = g; pCol[i + 2] = b;
+  pHead = (pHead + 1) % MAXP;
+  if (pCount < MAXP) pCount++;
+  pTotal++; pDirty = true;
+}
+function pushMeasured(x, y, z, I, veg) {
+  const h = 0.6 - 0.55 * clamp(y / 7, 0, 1);
+  _col.setHSL(veg ? 0.36 : h, 0.75, clamp(0.28 + 0.4 * I, 0.18, 0.72));
+  pushPt(x, y, z, _col.r, _col.g, _col.b);
+}
+function pushGhost(x, y, z) { _col.setHex(0x8a93a5).multiplyScalar(0.55); pushPt(x, y, z, _col.r, _col.g, _col.b); }
+/* 雾滴粒子(天气>0 才显形) */
+const FN = 380;
+const fGeo = new THREE.BufferGeometry();
+{
+  const fp = new Float32Array(FN * 3);
+  for (let i = 0; i < FN; i++) {
+    const r = 2 + Math.random() * 24, th = Math.random() * Math.PI * 2;
+    fp[i * 3] = Math.cos(th) * r; fp[i * 3 + 1] = 0.3 + Math.random() * 5.5; fp[i * 3 + 2] = Math.sin(th) * r;
+  }
+  fGeo.setAttribute('position', new THREE.BufferAttribute(fp, 3));
+}
+const fogPts = new THREE.Points(fGeo, new THREE.PointsMaterial({ color: 0xaebccd, size: 0.32, transparent: true, opacity: 0, depthWrite: false }));
+fogPts.frustumCulled = false;
+scene.add(fogPts);
+
+/* ---------------- 每帧发射:一列 = 12 线束同时出光 ---------------- */
+const rc = new THREE.Raycaster();
+rc.far = RANGE;
+const _dir = new THREE.Vector3();
+const spikes = [];                       // A-scope 峰:{d, I, first, age}
+const effRefl = ud => ud.refl * reflV * (ud.dark ? (wl === 905 ? 0.16 : 0.7) : 1) * (wl === 1550 ? 1.2 : 1);
+const fogDrop = d => clamp(fogV * Math.pow(d / 40, 1.7), 0, 0.93);
+function emitReturn(hit, first) {
+  const d = hit.distance, ud = hit.object.userData;
+  const I = effRefl(ud) * 2.6 / (1 + Math.pow(d / 16, 2));
+  const drop = fogDrop(d) + (effRefl(ud) < 0.14 ? (wl === 905 ? 0.55 : 0.1) : 0);
+  if (Math.random() < drop) return;      // 回波淹没:丢点
+  const p = hit.point;
+  pushMeasured(p.x + (Math.random() - 0.5) * 0.05, p.y + (Math.random() - 0.5) * 0.05, p.z + (Math.random() - 0.5) * 0.05,
+    clamp(I, 0, 1), !first && ud.veg === undefined && hitsVeg);
+  spikes.push({ d, I: Math.min(I, 1.15), first, age: 0 });
+  if (spikes.length > 380) spikes.splice(0, spikes.length - 380);
+  if (first) { lastD = d; lastPt = p; }
+}
+let hitsVeg = false;
+function fireColumn(a) {
+  const ca = Math.cos(a), sa = Math.sin(a);
+  for (let b = 0; b < NB; b++) {
+    const el = ELS[b], ce = Math.cos(el);
+    _dir.set(ce * ca, Math.sin(el), ce * sa);
+    rc.set(LID, _dir);
+    const hits = rc.intersectObjects(TARGETS, false);
+    fanEnd[b] = 34;
+    if (!hits.length) continue;
+    fanEnd[b] = hits[0].distance;
+    hitsVeg = hits[0].object.userData.veg === true;
+    emitReturn(hits[0], true);
+    /* 光只会被植被“分家”:首回波在叶上,末回波穿过枝叶到地面 */
+    if (multi && hitsVeg && hits.length > 1 && hits[hits.length - 1].distance - hits[0].distance > 0.7)
+      emitReturn(hits[hits.length - 1], false);
+    if (Math.random() < fogV * 0.2) {    // 雾滴中途散射:鬼点
+      const dg = 1.5 + Math.random() * Math.min(hits[0].distance, 26);
+      pushGhost(LID.x + _dir.x * dg, LID.y + _dir.y * dg, LID.z + _dir.z * dg);
+    }
+  }
+}
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblHead = addLabel(() => L('旋转头:12 线束 × 转速 = 每秒点数', 'spinning head: 12 beams × rate = points/s'),
+  new THREE.Vector3(0, 2.85, 0), 'b');
+const lblToF = addLabel(() => lastD > 0
+  ? L(`d=c·t/2=${lastD.toFixed(1)} m(t=${(2 * lastD / C_LIGHT * 1e9).toFixed(0)} ns)`,
+      `d=c·t/2=${lastD.toFixed(1)} m (t=${(2 * lastD / C_LIGHT * 1e9).toFixed(0)} ns)`)
+  : '',
+  new THREE.Vector3(0, 1.2, 8), 'o');
+const lblDark = addLabel(() => L(wl === 905 ? '黑车:905 nm 弱反射 → 点稀疏' : '黑车:1550 nm 仍看得见',
+    wl === 905 ? 'black car: weak echo at 905 nm → sparse' : 'black car: still visible at 1550 nm'),
+  new THREE.Vector3(-11, 2.3, -3.6), 'r');
+const lblTree = addLabel(() => L('树冠半透明:首回波=叶,末回波=地', 'canopy is translucent: first = leaves, last = ground'),
+  new THREE.Vector3(8.5, 4.9, 7), 'g', () => multi);
+const lblFog = addLabel(() => L('雾滴散射:远处丢点 + 半路鬼点', 'droplets scatter: dropouts + ghost points'),
+  new THREE.Vector3(6, 1.6, 3), 'r', () => fogV > 0.5);
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '光尺:d=c·t/2', be: 'A ruler of light: d=c·t/2',
+    d: '激光雷达是一把光尺:发出 ~5 ns 短脉冲并启动纳秒级时钟,回波一到就停表。d=c·t/2——必须除以 2,因为光走了往返;忘乘 2(或没除)是所有人写的第一个 bug。20 m 目标:往返 40 m,t≈133 ns。',
+    de: 'A LiDAR is a ruler made of light: fire a ~5 ns pulse, start a nanosecond clock, stop it when the echo returns. d=c·t/2 — divide by 2 because light flies the round trip; forgetting the factor 2 is everyone\'s first bug. A 20 m target: 40 m round trip, t≈133 ns.',
+    act: () => { doStd(); spinHz = 6; } },
+  { b: '旋转+线束:每秒百万点的扇面', be: 'Spin × beam stack: millions of points/s',
+    d: '转鼓把 12 条激光排成竖直扇面,360° 旋转。每秒点数=(360/Δθ)×线数×转速:角分辨率更细就得转更慢——Δθ、转速、点密度是互相牵制的铁三角。拖动滑块感受取舍。',
+    de: 'The drum stacks 12 lasers into a vertical fan and spins it 360°. Points/s = (360/Δθ)×beams×rate: finer resolution forces slower spin — Δθ, spin rate and density form a trade-off triangle. Drag the sliders to feel it.',
+    act: () => { doStd(); spinHz = 28; } },
+  { b: '点云:世界从黑暗里画出来', be: 'The point cloud: the world drawn from darkness',
+    d: '每个回波生成一个点,按高度上色;百万点/秒逐列扫过街道,几秒内“画”出整车视野。点云是自动驾驶的底图:检测、分割、建图都发生在这些点上。按空格,看街道重新亮起。',
+    de: 'Every echo becomes one point, colored by height; millions of points per second sweep the street column by column, painting the car\'s field of view in seconds. The cloud is the base map of autonomy: detection, segmentation and mapping all live on it. Hit Space and watch the street light up.',
+    act: () => { doStd(); } },
+  { b: '905 vs 1550:波长即取舍', be: '905 vs 1550 nm: wavelength is a trade-off',
+    d: '905 nm 用便宜的硅探测器、分辨率高,但眼安全功率受限、黑漆与远距吃亏;1550 nm 要昂贵的 InGaAs 探测器,却允许约 10 倍功率且对人眼更安全,雨雾中更稳。切「黑色轿车」预设对比两个波长的回波密度。',
+    de: '905 nm pairs with cheap silicon detectors and fine resolution, but eye-safe power is limited — black paint and long range hurt. 1550 nm needs pricey InGaAs yet allows ~10× power, safer for eyes and steadier in rain and fog. Compare echo density across wavelengths with the black-car preset.',
+    act: () => { doDark(); wl = 1550; applyWl(); } },
+  { b: '多重回波:树冠是半透明的', be: 'Multiple returns: the canopy is translucent',
+    d: '一束光在树叶上分家:一部分被叶面反射(首回波),剩余穿过枝叶打到地面(末回波)。一次发射记录多个回波=看穿植被——树高、冠层结构、森林测绘全靠这招。看树变成层层透开的点层。',
+    de: 'A beam splits at the leaves: part reflects (first return), the rest slips through branches to the ground (last return). Recording several returns per shot = seeing through vegetation — tree height, canopy structure and forest surveying all rely on it. Watch trees become see-through point layers.',
+    act: () => { doVeg(); } },
+  { b: '雨雾与黑车:为什么它需要朋友', be: 'Fog, black paint: why it needs friends',
+    d: '雾滴把光散射得四面八方:远处丢点、半路冒鬼点;黑色车漆在 905 nm 几乎不反光;正午直射阳光能淹没探测器。所以自动驾驶把激光雷达与摄像头、毫米波雷达融合——各盲区互补,谁也不能单打独斗。',
+    de: 'Fog droplets scatter light everywhere: far range drops out, ghost points appear mid-air; black paint barely reflects at 905 nm; direct noon sun can swamp the detector. So autonomy fuses LiDAR with camera and radar — complementary blind spots, no sensor stands alone.',
+    act: () => { doFog(); } },
+];
+function stepIndex() {
+  if (fogV > 0.45) return 5;
+  if (multi && fogV < 0.2) return 4;
+  if (wl === 1550) return 3;
+  if (spinHz >= 18 && azRes <= 0.25) return 2;
+  if (spinHz >= 10) return 1;
+  return 0;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= A-scope:回波强度–距离 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const pad = 14, padB = 22, padT = 8;
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const xOf = d => pad + d / RANGE * (W - pad - 12);
+  const y0 = H - padB;
+  const yOf = I => y0 - clamp(I, 0, 1.15) / 1.15 * (H - padB - padT);
+  ctx.lineWidth = 1; ctx.font = '15px system-ui';
+  for (const d of [0, 15, 30, 45]) {
+    ctx.strokeStyle = 'rgba(128,150,170,.22)';
+    ctx.beginPath(); ctx.moveTo(xOf(d), padT); ctx.lineTo(xOf(d), y0); ctx.stroke();
+    ctx.fillStyle = cTxt; ctx.fillText(d + ' m', xOf(d) - 12, H - 6);
+  }
+  ctx.strokeStyle = 'rgba(128,150,170,.4)';
+  ctx.beginPath(); ctx.moveTo(pad, y0); ctx.lineTo(W - 12, y0); ctx.stroke();
+  /* 雾:噪声底(散射的本底) */
+  if (fogV > 0.03) {
+    ctx.strokeStyle = `rgba(255,107,107,${(fogV * 0.6).toFixed(2)})`; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let first = true;
+    for (let x = 0; x <= W - pad - 12; x += 3) {
+      const d = x / (W - pad - 12) * RANGE;
+      const n = Math.max(0.004, fogV * 0.3 * (0.55 + 0.45 * Math.sin(d * 2.1 + simT * 7)) * (1 - 0.55 * d / RANGE));
+      first ? ctx.moveTo(xOf(d), yOf(n)) : ctx.lineTo(xOf(d), yOf(n));
+      first = false;
+    }
+    ctx.stroke();
+  }
+  /* 回波峰(余辉衰减) */
+  for (const s of spikes) {
+    const al = Math.exp(-s.age * 2.4);
+    if (al < 0.04) continue;
+    ctx.strokeStyle = s.first ? `rgba(105,219,124,${al.toFixed(2)})` : `rgba(255,169,77,${al.toFixed(2)})`;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(xOf(s.d), y0); ctx.lineTo(xOf(s.d), yOf(s.I)); ctx.stroke();
+  }
+  /* 当前首回波游标 + ToF 算术 */
+  if (lastD > 0) {
+    ctx.strokeStyle = 'rgba(77,171,247,.8)'; ctx.setLineDash([5, 4]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(xOf(lastD), padT); ctx.lineTo(xOf(lastD), y0); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#4dabf7';
+    ctx.fillText('t=2d/c=' + (2 * lastD / C_LIGHT * 1e9).toFixed(0) + ' ns', Math.min(xOf(lastD) + 6, W - 150), padT + 14);
+  }
+  ctx.fillStyle = cTxt;
+  ctx.fillText(L('强度→', 'intensity →'), pad + 4, padT + 12);
+}
+
+/* ================= 预设 ================= */
+function doStd() { spinHz = 20; azRes = 0.2; fogV = 0; reflV = 0.8; wl = 905; multi = false; applyWl(); }
+function doFog() { spinHz = 15; azRes = 0.2; fogV = 0.85; reflV = 0.8; wl = 905; multi = false; applyWl(); }
+function doDark() { spinHz = 15; azRes = 0.15; fogV = 0; reflV = 0.4; wl = 905; multi = false; applyWl(); }
+function doVeg() { spinHz = 8; azRes = 0.3; fogV = 0; reflV = 0.9; wl = 1550; multi = true; applyWl(); }
+function clearCloud() { pHead = 0; pCount = 0; pTotal = 0; pGeo.setDrawRange(0, 0); }
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elSpin = document.getElementById('sSpin'), elSpinVal = document.getElementById('sSpinVal');
+const elDens = document.getElementById('sDens'), elDensVal = document.getElementById('sDensVal');
+const elFog = document.getElementById('sFog'), elFogVal = document.getElementById('sFogVal');
+const elRefl = document.getElementById('sRefl'), elReflVal = document.getElementById('sReflVal');
+const stSpin = document.getElementById('stSpin'), stRate = document.getElementById('stRate'), stAz = document.getElementById('stAz'),
+  stWl = document.getElementById('stWl'), stCnt = document.getElementById('stCnt'), stToF = document.getElementById('stToF');
+const formulaEl = document.getElementById('formula');
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 4);
+let spinOn = qsBool('spin', true);
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('扫描', 'Scan'); }
+function setPresetBtns() {
+  document.getElementById('btnStd').classList.toggle('on',
+    spinHz === 20 && azRes === 0.2 && fogV === 0 && reflV === 0.8 && wl === 905 && !multi);
+  document.getElementById('btnFog').classList.toggle('on', fogV > 0.6 && wl === 905);
+  document.getElementById('btnDark').classList.toggle('on', wl === 905 && reflV <= 0.45 && fogV < 0.2 && !multi);
+  document.getElementById('btnVeg').classList.toggle('on', multi && wl === 1550);
+}
+function syncSliders() {
+  elSpin.value = spinHz; elSpinVal.textContent = spinHz.toFixed(0) + ' Hz';
+  elDens.value = azRes; elDensVal.textContent = azRes.toFixed(2) + '°';
+  elFog.value = fogV; elFogVal.textContent = fogV.toFixed(2);
+  elRefl.value = reflV; elReflVal.textContent = reflV.toFixed(2);
+}
+function updateStats() {
+  stSpin.textContent = spinHz.toFixed(0) + ' Hz';
+  const rate = rateOf();
+  stRate.innerHTML = L((rate / 1e4).toFixed(1) + ' <small>万/s</small>', (rate / 1e3).toFixed(0) + ' <small>k/s</small>');
+  stAz.textContent = azRes.toFixed(2) + '°';
+  stWl.innerHTML = wl + ' <small>nm · ' + (wl === 905 ? 'Si' : 'InGaAs') + '</small>';
+  stWl.className = 'v ' + (wl === 905 ? 'warn' : 'ok');
+  stCnt.textContent = pTotal.toLocaleString();
+  if (lastD > 0) {
+    stToF.innerHTML = lastD.toFixed(1) + ' <small>m · t=2d/c=' + (2 * lastD / C_LIGHT * 1e9).toFixed(0) + ' ns</small>';
+    stToF.className = 'v ok';
+  } else { stToF.textContent = '—'; stToF.className = 'v'; }
+  scene.fog.near = 30 - fogV * 24;
+  scene.fog.far = 95 - fogV * 72;
+  fogPts.material.opacity = fogV * 0.5;
+  fogPts.visible = fogV > 0.02;
+}
+function updateFormula() {
+  const cols = (360 / azRes).toFixed(0), rate = rateOf();
+  const dR = lastD > 0 ? lastD : 20;
+  const tNs = (2 * dR / C_LIGHT * 1e9).toFixed(0);
+  formulaEl.innerHTML = L(
+    `<b>d=c·t/2</b> —— t 是往返时间,忘 ÷2 是所有人写的第一个 bug · 例:d=${dR.toFixed(1)} m → t=<b>${tNs} ns</b><br>` +
+    `每秒点数=(360/Δθ)×线数×转速=${cols}×${NB}×${spinHz.toFixed(0)}=<b>${(rate / 1e4).toFixed(1)} 万点/s</b> · Δθ 细↔转得快:角分辨率与点密度此消彼长<br>` +
+    `905 nm:硅探测器便宜,眼安全功率低,黑漆吃它;1550 nm:InGaAs 贵,功率≈×10,雨雾更稳 · 多重回波:首回波=树叶,末回波=地面<br>` +
+    `视觉扫描按比例压缩(真实 20 Hz 转速会糊成一圈),数字为真实物理量`,
+    `<b>d=c·t/2</b> — t is the round-trip time; forgetting ÷2 is everyone's first bug · e.g. d=${dR.toFixed(1)} m → t=<b>${tNs} ns</b><br>` +
+    `points/s=(360/Δθ)×beams×rate=${cols}×${NB}×${spinHz.toFixed(0)}=<b>${(rate / 1e3).toFixed(0)}k/s</b> · finer Δθ ↔ slower spin: resolution trades against density<br>` +
+    `905 nm: cheap silicon, low eye-safe power, black paint eats it; 1550 nm: costly InGaAs, ≈×10 power, steadier in fog · multi-return: first = leaves, last = ground<br>` +
+    `visual scan is time-compressed (a real 20 Hz drum would blur), numbers shown are the true physics`);
+}
+function syncAll() { syncSliders(); updateFormula(); updateStats(); drawPlot(); setPresetBtns(); }
+document.getElementById('btnStd').addEventListener('click', () => { doStd(); syncAll(); });
+document.getElementById('btnFog').addEventListener('click', () => { doFog(); syncAll(); });
+document.getElementById('btnDark').addEventListener('click', () => { doDark(); syncAll(); });
+document.getElementById('btnVeg').addEventListener('click', () => { doVeg(); syncAll(); });
+document.getElementById('btnClear').addEventListener('click', () => { clearCloud(); syncAll(); });
+elSpin.addEventListener('input', () => { spinHz = +elSpin.value; syncAll(); });
+elDens.addEventListener('input', () => { azRes = +elDens.value; syncAll(); });
+elFog.addEventListener('input', () => { fogV = +elFog.value; syncAll(); });
+elRefl.addEventListener('input', () => { reflV = +elRefl.value; syncAll(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglMulti').addEventListener('change', e => { multi = e.target.checked; syncAll(); });
+if (!qsBool('labels', true)) { document.getElementById('tglLabels').checked = false; labelsOn = false; refreshLabels(); }
+document.getElementById('tglMulti').checked = multi;
+controls.autoRotate = spinOn;
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, statsAcc = 0, colAcc = 0;
+const revVis = () => clamp(spinHz / 16, 0.35, 1.3);          // 视觉转速(压缩)
+const colsPerSec = () => Math.min(revVis() * 360 / azRes, 1250);
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speed * (playing ? 1 : 0);
+  if (dt > 0) {
+    simT += dt;
+    colAcc += colsPerSec() * dt;
+    let n = Math.min(Math.floor(colAcc), 24);
+    colAcc -= Math.floor(colAcc);
+    const squeeze = revVis() * Math.PI * 2 / colsPerSec();
+    while (n-- > 0) { fireColumn(az); az += squeeze; }
+    if (az > Math.PI * 2) az -= Math.PI * 2;
+    let w = 0;
+    for (let i = 0; i < spikes.length; i++) { const s = spikes[i]; s.age += dt; if (s.age < 3) spikes[w++] = s; }
+    spikes.length = w;
+    fogPts.rotation.y += dt * 0.03;
+  }
+  rotor.rotation.y = -az;
+  updateFan();
+  if (pDirty) {
+    pGeo.attributes.position.needsUpdate = true;
+    pGeo.attributes.color.needsUpdate = true;
+    pGeo.setDrawRange(0, pCount);
+    pDirty = false;
+  }
+  if (lastPt) lblToF.position.set(lastPt.x, lastPt.y + 0.4, lastPt.z);
+  statsAcc += dt0;
+  if (statsAcc > 0.15) { statsAcc = 0; updateStats(); updateFormula(); syncSliders(); setPresetBtns(); }
+  drawPlot();
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+{
+  const p = (qs.get('preset') || '').toLowerCase();
+  if (p === 'std' || p === '1') doStd();
+  else if (p === 'fog' || p === '2') doFog();
+  else if (p === 'dark' || p === '3') doDark();
+  else if (p === 'veg' || p === '4') doVeg();
+}
+scene.updateMatrixWorld(true);
+buildSteps();
+applyTheme();
+applyWl();
+applyLang();
+syncAll();
+start();
+</script>
+</body>
+</html>

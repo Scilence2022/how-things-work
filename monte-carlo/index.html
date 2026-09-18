@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蒙特卡洛方法 · 用随机数算出 π</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+  /* —— 本页新增 —— */
+  #apps { margin-top: 10px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #btnBoost { flex: 2 1 58%; border-color: rgba(255,169,77,.55); color: #ffa94d; }
+  #btnBoost:hover { border-color: #ffa94d; color: #ffb45e; }
+  #btnBoost.on { background: rgba(255,169,77,.14); color: #ffb45e; border-color: #ffa94d; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="蒙特卡洛方法" data-en="The Monte Carlo Method">蒙特卡洛方法</h1>
+  <div class="sub" data-zh="把「算不出来」换成「扔得够多」:往立方体里撒点、数命中,π≈6·N_in/N 自己浮现;误差只认 1/√N——减半要 ×4 样本,多一位有效数字要 ×100;蒲丰 1777 年投针、曼哈顿计划数中子、皮克斯追光、华尔街定价期权,全是同一个循环:采样→计数→平均 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Trade “can't compute” for “throw enough”: rain points into a cube, count hits, and π≈6·N_in/N emerges by itself; error obeys 1/√N — halving it costs ×4 samples, one more digit costs ×100; Buffon's 1777 needles, Manhattan-project neutrons, Pixar's light paths, Wall Street pricing — all the same loop: sample → count → average · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">把「算不出来」换成「扔得够多」:往立方体里撒点、数命中,π≈6·N_in/N 自己浮现;误差只认 1/√N——减半要 ×4 样本,多一位有效数字要 ×100;蒲丰 1777 年投针、曼哈顿计划数中子、皮克斯追光、华尔街定价期权,全是同一个循环:采样→计数→平均 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="已投样本 N" data-en="samples N">已投样本 N</span><span class="v" id="stN">0</span>
+  <span class="k" id="stInK">命中 N_in</span><span class="v" id="stIn">0</span>
+  <span class="k" id="stEstK">π 估计值</span><span class="v" id="stEst">—</span>
+  <span class="k" data-zh="实际误差" data-en="actual error">实际误差</span><span class="v" id="stErr">—</span>
+  <span class="k" data-zh="理论误差 ~1/√N" data-en="theory ~1/√N">理论误差 ~1/√N</span><span class="v" id="stSig">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="估计值 vs 样本数 N(对数轴)· 绿虚线=真值 · 橙带=理论 ±k/√N 收敛带" data-en="estimate vs samples N (log axis) · green dash = truth · orange band = theoretical ±k/√N">估计值 vs 样本数 N(对数轴)· 绿虚线=真值 · 橙带=理论 ±k/√N 收敛带</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="青点=命中(球内/压线/曲面下)" data-en="cyan = hit (inside / crossing / under surface)">青点=命中(球内/压线/曲面下)</span>
+    <span class="chip.o" data-zh="橙点=落空" data-en="orange = miss">橙点=落空</span>
+    <span class="chip.g" data-zh="误差 ∝ 1/√N" data-en="error ∝ 1/√N">误差 ∝ 1/√N</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnSphere" data-zh="立方体-球估 π" data-en="cube–sphere π">立方体-球估 π</button>
+    <button class="abtn" id="btnCircle" data-zh="方块-圆估 π" data-en="square–circle π">方块-圆估 π</button>
+    <button class="abtn" id="btnBuffon" data-zh="蒲丰投针" data-en="Buffon's needle">蒲丰投针</button>
+    <button class="abtn" id="btnBlob" data-zh="异形积分" data-en="blob integration">异形积分</button>
+    <button class="abtn" id="btnBoost" data-zh="⚡ ×100 加速" data-en="⚡ ×100 boost">⚡ ×100 加速</button>
+    <button class="abtn" id="btnReset" data-zh="重置" data-en="reset">重置</button>
+  </div>
+  <div class="row"><label data-zh="撒点速度" data-en="throw rate">撒点速度</label><input id="sSpd" type="range" min="1" max="60" step="1" value="6"><span class="val" id="sSpdVal">360 /s</span></div>
+  <div class="row"><label data-zh="样本上限" data-en="sample cap">样本上限</label><input id="sCap" type="range" min="500" max="20000" step="500" value="4000"><span class="val" id="sCapVal">4,000</span></div>
+  <div id="apps" data-zh="现实应用:核反应堆中子输运 · 电影路径追踪渲染 · 期权金融定价 · 芯片良率分析——同一个循环:采样 → 计数 → 平均" data-en="IRL: neutron transport in reactors · path-traced movie rendering · option pricing in finance · chip yield — the same loop: sample → count → average">现实应用:核反应堆中子输运 · 电影路径追踪渲染 · 期权金融定价 · 芯片良率分析——同一个循环:采样 → 计数 → 平均</div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="曲线" data-en="Chart">曲线</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../random-walk/" data-zh="随机的另一副面孔:随机游走与扩散" data-en="another face of randomness: random walks & diffusion">随机的另一副面孔:随机游走与扩散</a>
+    <a href="../galton-board/" data-zh="正态从随机里长出来:伽尔顿板" data-en="normality grows from randomness: Galton board">正态从随机里长出来:伽尔顿板</a>
+    <a href="../birthday-paradox/" data-zh="概率的直觉陷阱:生日悖论" data-en="probability's intuition trap: birthday paradox">概率的直觉陷阱:生日悖论</a>
+    <a href="../benford/" data-zh="分布藏在数据里:本福特" data-en="distributions hide in data: Benford">分布藏在数据里:本福特</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const fmt = n => Math.round(n).toLocaleString('en-US');
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+const lineMat = new THREE.LineBasicMaterial({ transparent: true, opacity: .55 });
+const lineMat2 = new THREE.MeshBasicMaterial({ transparent: true, opacity: .85 });
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x111318 : 0xdde6ee);
+  lineMat.color.setHex(dark ? 0x9fb0c3 : 0x33414f);
+  lineMat2.color.setHex(dark ? 0x8fa5bd : 0x40566c);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('蒙特卡洛方法 · 用随机数算出 π', 'The Monte Carlo Method · Computing π with Randomness');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateStats();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+  drawPlot();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 200);
+camera.position.set(3.8, 2.7, 7.0);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.05, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 30;
+controls.autoRotateSpeed = 0.35;
+
+scene.add(new THREE.HemisphereLight(0xbdd3ea, 0x28414e, 0.95));
+const key = new THREE.DirectionalLight(0xffffff, 1.6);
+key.position.set(5, 9, 6);
+scene.add(key);
+
+/* ================= 几何常量 ================= */
+const R = 1.2;                 // 立方体半边长(内切球半径)
+const TL = 2.4, LN = 1.2;      // 蒲丰:线距 T / 针长 L=T/2
+const DOM = 1.5, BH = 1.2;     // 异形积分:域半宽 / 盒高
+
+/* 异形曲面 f(u,v)∈(0,1] 与数值真值 V* */
+const fBlob = (u, v) => Math.min(.98,
+  .95 * Math.exp(-(((u - .32) ** 2) + ((v - .38) ** 2)) / .05) +
+  .60 * Math.exp(-(((u - .74) ** 2) + ((v - .68) ** 2)) / .018) +
+  .40 * Math.exp(-(((u - .52) ** 2) + ((v - .14) ** 2)) / .11));
+const VSTAR = (() => { const n = 220; let s = 0;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) s += fBlob((i + .5) / n, (j + .5) / n);
+  return s / (n * n); })();
+
+/* ================= 四个模式的布景 ================= */
+const gSphere = new THREE.Group(); scene.add(gSphere);
+{
+  const cube = new THREE.Mesh(new THREE.BoxGeometry(2 * R, 2 * R, 2 * R),
+    new THREE.MeshStandardMaterial({ color: 0x4dabf7, transparent: true, opacity: .05, depthWrite: false }));
+  gSphere.add(cube);
+  gSphere.add(new THREE.LineSegments(new THREE.EdgesGeometry(cube.geometry), lineMat));
+  gSphere.add(new THREE.Mesh(new THREE.SphereGeometry(R, 48, 32),
+    new THREE.MeshStandardMaterial({ color: 0x3bc9db, transparent: true, opacity: .13,
+      depthWrite: false, side: THREE.DoubleSide })));
+}
+const gCircle = new THREE.Group(); scene.add(gCircle);
+{
+  const sq = new THREE.Mesh(new THREE.PlaneGeometry(2 * R, 2 * R),
+    new THREE.MeshBasicMaterial({ color: 0x4dabf7, transparent: true, opacity: .06,
+      side: THREE.DoubleSide, depthWrite: false }));
+  gCircle.add(sq);
+  gCircle.add(new THREE.LineSegments(new THREE.EdgesGeometry(sq.geometry), lineMat));
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(2 * R, 64, 0, Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x3bc9db, transparent: true, opacity: .14,
+      side: THREE.DoubleSide, depthWrite: false }));
+  disc.position.set(-R, -R, -0.01);
+  gCircle.add(disc);
+}
+const gBuffon = new THREE.Group(); scene.add(gBuffon);
+{
+  gBuffon.add(new THREE.Mesh(new THREE.PlaneGeometry(9.6, 10.8).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x4dabf7, transparent: true, opacity: .05, depthWrite: false })));
+  for (const z of [-4.8, -2.4, 0, 2.4, 4.8]) {
+    const ln = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.015, 0.06), lineMat2);
+    ln.position.set(0, 0.008, z);
+    gBuffon.add(ln);
+  }
+}
+const gBlob = new THREE.Group(); scene.add(gBlob);
+{
+  const box = new THREE.Mesh(new THREE.BoxGeometry(3, BH, 3),
+    new THREE.MeshStandardMaterial({ color: 0x4dabf7, transparent: true, opacity: .04, depthWrite: false }));
+  gBlob.add(box);
+  gBlob.add(new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), lineMat));
+  const geo = new THREE.PlaneGeometry(3, 3, 64, 64);
+  geo.rotateX(-Math.PI / 2);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const u = p.getX(i) / 3 + .5, v = p.getZ(i) / 3 + .5;
+    p.setY(i, (fBlob(u, v) - .5) * BH);
+  }
+  geo.computeVertexNormals();
+  gBlob.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x3bc9db, transparent: true,
+    opacity: .5, side: THREE.DoubleSide, roughness: .35, metalness: .1, depthWrite: false })));
+}
+
+/* ================= 撒点:InstancedMesh 点云 + 投针(环形缓冲 + 落下动画) ================= */
+const IMAX = 20000, FALL = 0.55;
+const dots = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.038, 0),
+  new THREE.MeshBasicMaterial(), IMAX);
+dots.frustumCulled = false;
+dots.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(dots);
+const needles = new THREE.InstancedMesh(new THREE.BoxGeometry(LN, 0.026, 0.055),
+  new THREE.MeshBasicMaterial(), IMAX);
+needles.frustumCulled = false;
+needles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(needles);
+
+const dummy = new THREE.Object3D(), _c = new THREE.Color();
+const tx = new Float32Array(IMAX), ty = new Float32Array(IMAX), tz = new Float32Array(IMAX),
+  tsp = new Float32Array(IMAX), trot = new Float32Array(IMAX), gen = new Uint32Array(IMAX);
+const falling = [];
+const C_IN = 0x35d0e8, C_OUT = 0xffa94d;
+let slot = 0, dispWritten = 0, cap = 4000;
+let matDirty = false, colDirty = false;
+
+function zeroSlot(i) {
+  dummy.position.set(0, -99, 0); dummy.rotation.set(0, 0, 0);
+  dummy.scale.setScalar(1e-4); dummy.updateMatrix();
+  dots.setMatrixAt(i, dummy.matrix); needles.setMatrixAt(i, dummy.matrix);
+}
+function zeroMesh(m) {
+  for (let i = 0; i < IMAX; i++) zeroSlot(i);
+  m.count = 0; m.instanceMatrix.needsUpdate = true;
+}
+function place(i, p) {                          // p: 0 刚生成 → 1 落定
+  const e = 1 - p;
+  dummy.rotation.set(0, mode === 'buffon' ? trot[i] : 0, 0);
+  if (mode === 'buffon') dummy.position.set(tx[i], 0.045 + (2.5 - 0.045) * e * e, tz[i]);
+  else dummy.position.set(tx[i], ty[i] + (2.3 - ty[i]) * e * e, tz[i]);
+  dummy.scale.setScalar(1); dummy.updateMatrix();
+  (mode === 'buffon' ? needles : dots).setMatrixAt(i, dummy.matrix);
+}
+
+/* 状态 */
+let mode = 'sphere', Ntot = 0, Nin = 0, simT = 0, acc = 0, nextHist = 20;
+let burstUntil = -1, burstUsed = false;
+const hist = [];
+
+/* 逐模式采样(S 被复用) */
+const S = { x: 0, y: 0, z: 0, th: 0, hit: false };
+function sampleOne() {
+  if (mode === 'sphere') {
+    S.x = 2 * Math.random() - 1; S.y = 2 * Math.random() - 1; S.z = 2 * Math.random() - 1;
+    S.th = 0; S.hit = S.x * S.x + S.y * S.y + S.z * S.z <= 1;
+  } else if (mode === 'circle') {
+    const u = Math.random(), v = Math.random();
+    S.x = (2 * u - 1) * R; S.y = (2 * v - 1) * R; S.z = .04; S.th = 0;
+    S.hit = u * u + v * v <= 1;
+  } else if (mode === 'buffon') {
+    // 采样域取线距的整数倍(±4.8=2T):域边界与线重合,否则边缘密度偏差会污染 P
+    S.x = (Math.random() * 2 - 1) * 4.4; S.z = (Math.random() * 2 - 1) * 4.8;
+    const th = Math.random() * Math.PI; S.th = th; S.y = 0;
+    const r = ((S.z % TL) + TL) % TL, d = Math.min(r, TL - r);
+    S.hit = LN / 2 * Math.abs(Math.sin(th)) >= d;      // 压线判定
+  } else {
+    const u = Math.random(), v = Math.random(), h = Math.random();
+    S.x = (2 * u - 1) * DOM; S.z = (2 * v - 1) * DOM; S.y = (h - .5) * BH; S.th = 0;
+    S.hit = h < fBlob(u, v);
+  }
+  return S;
+}
+function spawnOne(instant) {
+  const s = sampleOne();
+  Ntot++; if (s.hit) Nin++;
+  const i = slot; slot = (slot + 1) % cap;
+  if (dispWritten < cap) dispWritten++;
+  gen[i]++; tx[i] = s.x; ty[i] = s.y; tz[i] = s.z; trot[i] = s.th; tsp[i] = simT;
+  _c.setHex(s.hit ? C_IN : C_OUT);
+  dots.setColorAt(i, _c); needles.setColorAt(i, _c);
+  if (instant) place(i, 1); else falling.push({ i, g: gen[i] });
+  matDirty = colDirty = true;
+  if (Ntot >= nextHist) {                             // 收敛历史(里程碑记录)
+    const e = estNow();
+    if (Number.isFinite(e)) hist.push([Ntot, e]);
+    nextHist = Math.max(Ntot * 1.05, Ntot + 10);
+  }
+}
+function addPoints(n, instant) {
+  for (let k = 0; k < n; k++) spawnOne(instant);
+  dots.count = needles.count = Math.min(dispWritten, cap);
+}
+function resetRun() {
+  Ntot = 0; Nin = 0; acc = 0; nextHist = 20;
+  hist.length = 0; burstUntil = -1; burstUsed = false;
+  falling.length = 0; slot = 0; dispWritten = 0;
+  zeroMesh(dots); zeroMesh(needles);
+}
+
+/* ---------------- 估计量 / 误差 ---------------- */
+const P_OF = { sphere: Math.PI / 6, circle: Math.PI / 4, buffon: 1 / Math.PI, blob: VSTAR };
+const MULT_OF = { sphere: 6, circle: 4, buffon: 1, blob: 1 };
+function targetOf() { return mode === 'blob' ? VSTAR : Math.PI; }
+function estNow() {
+  if (!Ntot) return NaN;
+  if (mode === 'buffon') return Nin > 0 ? Ntot / Nin : NaN;   // 2L/T=1
+  return MULT_OF[mode] * Nin / Ntot;
+}
+function sigmaNow(n) {
+  const p = P_OF[mode];
+  if (mode === 'buffon') return Math.PI * Math.sqrt((1 - p) / (p * n));
+  return MULT_OF[mode] * Math.sqrt(p * (1 - p) / n);
+}
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblTop = addLabel(() =>
+  mode === 'sphere' ? L('球:立方体 = (4π/3):8 = π/6 ≈ 52.4%', 'sphere:cube = (4π/3):8 = π/6 ≈ 52.4%')
+  : mode === 'circle' ? L('四分之一圆占满方格的 π/4 ≈ 78.5%', 'quarter disc fills π/4 ≈ 78.5% of the square')
+  : mode === 'buffon' ? L('P(压线)=2L/(πT)=1/π(L=T/2)', 'P(cross)=2L/(πT)=1/π (L=T/2)')
+  : L('命中比例 × 盒子体积 = 曲面下体积', 'hit fraction × box volume = volume under surface'),
+  new THREE.Vector3(0, 1.95, 0), 'g');
+const lblKey = addLabel(() => mode === 'buffon'
+  ? L('青=压线 · 橙=未压', 'cyan = crossing · orange = clear')
+  : L('青=命中 · 橙=落空', 'cyan = hit · orange = miss'),
+  new THREE.Vector3(0, -1.85, 0), 'b');
+const lblTL = addLabel(() => L('线距 T=2.4 · 针长 L=1.2=T/2', 'spacing T=2.4 · needle L=1.2=T/2'),
+  new THREE.Vector3(3.1, 0.4, 2.4), 'o', () => mode === 'buffon');
+
+/* ================= 模式切换 / 预设 / 加速 ================= */
+function setMode(m) {
+  mode = m;
+  resetRun();
+  gSphere.visible = m === 'sphere'; gCircle.visible = m === 'circle';
+  gBuffon.visible = m === 'buffon'; gBlob.visible = m === 'blob';
+  dots.visible = m !== 'buffon'; needles.visible = m === 'buffon';
+  lblTop.position.set(0, m === 'buffon' ? 1.55 : 1.95, 0);
+  lblKey.position.set(0, m === 'buffon' ? -1.0 : -1.85, 0);
+  refreshLabels();
+  setPresetBtns();
+  updateStats(); updateFormula(); drawPlot();
+}
+function boost() {                                   // 签名时刻:×100 加速
+  if (Ntot >= 2e6) return;
+  burstUntil = simT + 1.1;
+  burstUsed = true;
+  if (!playing) { playing = true; setPlayLabel(); }
+}
+function setCap(nc) {
+  nc = clamp(Math.round(nc / 500) * 500, 500, 20000);
+  if (nc > cap) for (let i = cap; i < nc; i++) zeroSlot(i);
+  cap = nc;
+  dots.count = needles.count = Math.min(dispWritten, cap);
+}
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '把「算」换成「扔」', be: 'Replace calculating with throwing',
+    d: '有些量没有解析解,却可以被“均匀地砸中”:往图形里均匀撒点,命中比例≈面积/体积比——几何概率。只需要“均匀”和“独立”,剩下的交给大数定律。',
+    de: "Some quantities have no closed form but can be hit uniformly: throw points at a shape and the hit fraction estimates the area/volume ratio — geometric probability. Uniformity and independence are all you need; the law of large numbers does the rest.",
+    act: () => { setMode('sphere'); } },
+  { b: '立方体里的球:P=π/6', be: 'Sphere in a cube: P=π/6',
+    d: '边长 2 的立方体体积 8,内切球体积 4π/3,命中概率=(4π/3)/8=π/6≈0.5236。数出频率再乘 6,π 就从随机里浮现——全程没碰圆周长公式。',
+    de: 'A cube of side 2 has volume 8; its inscribed sphere 4π/3; so P(hit)=(4π/3)/8=π/6≈0.5236. Count the frequency, multiply by 6, and π emerges from pure randomness — no circle formula anywhere.',
+    act: () => { setMode('sphere'); spd = 12; syncSliders(); } },
+  { b: '收敛的代价:1/√N', be: 'The price of convergence: 1/√N',
+    d: '统计误差 ∝1/√N:误差减半要 ×4 样本,多一位有效数字要 ×100。按「×100 加速」:点云冻成球的剪影,读数锁定 3.14159,橙色收敛带收紧——随机不是误差的敌人,是方法本身。',
+    de: 'Statistical error ∝1/√N: halving it costs ×4 samples, one more digit ×100. Hit "×100 boost": the cloud freezes into the sphere\u2019s silhouette, the readout locks onto 3.14159, the orange band tightens — randomness is not the enemy of accuracy, it is the method itself.',
+    act: () => { setMode('sphere'); boost(); } },
+  { b: '蒲丰投针:1777 年的先声', be: "Buffon's needle: a 1777 preview",
+    d: '间距 T 的平行线间随机扔长 L 的针,P(压线)=2L/(πT)。取 L=T/2,则 π≈投针数/压线数——没有计算机的年代,几何概率已经能“量”出常数。',
+    de: 'Drop a needle of length L at random among parallel lines spaced T apart: P(cross)=2L/(πT). With L=T/2, π≈throws/crossings — geometry and probability measured a constant 170 years before computers.',
+    act: () => { setMode('buffon'); } },
+  { b: '异形积分:数格子管用的秘密', be: 'Ugly integrals: why counting works',
+    d: '不规则曲面没有解析解?装进规则盒子撒点:命中比例×盒子体积=积分值。维度越高网格法越爆炸(维度灾难),而蒙特卡洛的 1/√N 与维度无关——高维积分几乎只剩这一条路。',
+    de: "No closed form for a lumpy surface? Put it in a box and throw points: hit fraction × box volume = the integral. Grid methods explode with dimension (curse of dimensionality), but Monte Carlo's 1/√N is dimension-free — in high dimensions it is nearly the only road.",
+    act: () => { setMode('blob'); } },
+  { b: '现实:中子输运/光渲染/金融定价', be: 'IRL: neutrons / rendering / finance',
+    d: '同一个循环跑遍世界:反应堆屏蔽里中子的亿万次碰撞、电影里每一束路径追踪的光、期权定价的随机微分方程——采样→计数→平均。随机数够好、样本够多,答案自己收敛。',
+    de: 'The same loop runs the world: billions of neutron collisions in reactor shielding, every path-traced ray in a movie, option prices from stochastic differential equations — sample, count, average. Good random numbers plus enough samples, and the answer converges by itself.',
+    act: () => { setMode('circle'); boost(); } },
+];
+function stepIndex() {
+  if (mode === 'buffon') return 3;
+  if (mode === 'blob') return 4;
+  if (burstUsed && Ntot > 8000) return 2;
+  return Ntot < 400 ? 0 : 1;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 收敛曲线:估计值 vs N(log x)+ 1/√N 带 ================= */
+const plotCv = document.getElementById('plotCv');
+const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const padL = 44, padR = 12, padT = 12, padB = 24;
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const tgt = targetOf();
+  const xMin = 10, xMax = Math.max(2000, Ntot * 1.6);
+  const half = mode === 'blob' ? .35 : .7;
+  const xOf = n => padL + (Math.log10(Math.max(n, xMin)) - 1) / (Math.log10(xMax) - 1) * (W - padL - padR);
+  const yOf = v => padT + (1 - (v - (tgt - half)) / (2 * half)) * (H - padT - padB);
+  /* 十进格 */
+  ctx.font = '15px system-ui'; ctx.fillStyle = cTxt;
+  ctx.strokeStyle = 'rgba(128,150,170,.18)'; ctx.lineWidth = 1;
+  for (let d = 2; d <= 7; d++) {
+    const n = 10 ** d; if (n > xMax) break;
+    const x = xOf(n);
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+    ctx.fillText('10' + SUP[d], x - 12, H - 6);
+  }
+  ctx.fillText((tgt + half / 2).toFixed(2), 2, yOf(tgt + half / 2) + 5);
+  ctx.fillText(tgt.toFixed(3), 2, yOf(tgt) + 5);
+  ctx.fillText((tgt - half / 2).toFixed(2), 2, yOf(tgt - half / 2) + 5);
+  /* 真值线 */
+  ctx.strokeStyle = '#7bd88f'; ctx.lineWidth = 2; ctx.setLineDash([7, 5]);
+  ctx.beginPath(); ctx.moveTo(padL, yOf(tgt)); ctx.lineTo(W - padR, yOf(tgt)); ctx.stroke();
+  ctx.setLineDash([]);
+  /* 理论 ±k/√N 收敛带 */
+  const k = sigmaNow(1);
+  ctx.fillStyle = 'rgba(255,169,77,.14)'; ctx.beginPath();
+  for (let i = 0; i <= 72; i++) {
+    const n = xMin * (xMax / xMin) ** (i / 72);
+    const v = Math.min(tgt + half, tgt + k / Math.sqrt(n));
+    i ? ctx.lineTo(xOf(n), yOf(v)) : ctx.moveTo(xOf(n), yOf(v));
+  }
+  for (let i = 72; i >= 0; i--) {
+    const n = xMin * (xMax / xMin) ** (i / 72);
+    const v = Math.max(tgt - half, tgt - k / Math.sqrt(n));
+    ctx.lineTo(xOf(n), yOf(v));
+  }
+  ctx.closePath(); ctx.fill();
+  /* 估计值折线 */
+  if (hist.length > 1) {
+    ctx.strokeStyle = '#4dabf7'; ctx.lineWidth = 2.4; ctx.beginPath();
+    let first = true;
+    for (const [n, v] of hist) {
+      if (n < xMin) continue;
+      const y = yOf(clamp(v, tgt - half, tgt + half));
+      first ? ctx.moveTo(xOf(n), y) : ctx.lineTo(xOf(n), y);
+      first = false;
+    }
+    ctx.stroke();
+    const last = hist[hist.length - 1];
+    if (last[0] >= xMin) {
+      ctx.fillStyle = '#4dabf7'; ctx.beginPath();
+      ctx.arc(xOf(last[0]), yOf(clamp(last[1], tgt - half, tgt + half)), 4, 0, 7); ctx.fill();
+    }
+  }
+  ctx.fillStyle = cTxt;
+  ctx.fillText(mode === 'blob' ? L('V 估计', 'V est.') : L('π 估计', 'π est.'), padL + 4, padT + 14);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elSpd = document.getElementById('sSpd'), elSpdVal = document.getElementById('sSpdVal');
+const elCap = document.getElementById('sCap'), elCapVal = document.getElementById('sCapVal');
+const stN = document.getElementById('stN'), stIn = document.getElementById('stIn'),
+  stInK = document.getElementById('stInK'), stEst = document.getElementById('stEst'),
+  stEstK = document.getElementById('stEstK'), stErr = document.getElementById('stErr'),
+  stSig = document.getElementById('stSig');
+const btnSphere = document.getElementById('btnSphere'), btnCircle = document.getElementById('btnCircle'),
+  btnBuffon = document.getElementById('btnBuffon'), btnBlob = document.getElementById('btnBlob'),
+  btnBoost = document.getElementById('btnBoost'), btnReset = document.getElementById('btnReset');
+const formulaEl = document.getElementById('formula');
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speedMul = 1, spd = 6;
+
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function setPresetBtns() {
+  btnSphere.classList.toggle('on', mode === 'sphere');
+  btnCircle.classList.toggle('on', mode === 'circle');
+  btnBuffon.classList.toggle('on', mode === 'buffon');
+  btnBlob.classList.toggle('on', mode === 'blob');
+}
+function syncSliders() {
+  elSpd.value = spd; elSpdVal.textContent = fmt(spd * 60) + ' /s';
+  elCap.value = cap; elCapVal.textContent = fmt(cap);
+}
+function updateStats() {
+  stN.textContent = fmt(Ntot);
+  stInK.textContent = mode === 'buffon' ? L('压线 N_cross', 'crossed N_cross') : L('命中 N_in', 'hits N_in');
+  stIn.textContent = fmt(Nin);
+  stEstK.textContent = mode === 'blob' ? L('体积估计 V', 'volume est. V') : L('π 估计值', 'π estimate');
+  const est = estNow();
+  if (Number.isFinite(est)) {
+    stEst.textContent = est.toFixed(5);
+    const err = Math.abs(est - targetOf()), sg = sigmaNow(Math.max(Ntot, 1));
+    stErr.textContent = err.toFixed(5);
+    stSig.textContent = '±' + sg.toFixed(5);
+    stErr.className = 'v ' + (err <= sg ? 'ok' : err <= 2.5 * sg ? 'warn' : 'bad');
+    stEst.className = 'v ' + (err <= 2 * sg ? 'ok' : 'warn');
+  } else {
+    stEst.textContent = '—'; stErr.textContent = '—';
+    stSig.textContent = '±' + sigmaNow(1).toFixed(4);
+    stEst.className = 'v'; stErr.className = 'v';
+  }
+}
+function updateFormula() {
+  const N = Ntot, est = estNow(), sg = sigmaNow(Math.max(N, 1));
+  const eTxt = Number.isFinite(est) ? est.toFixed(5) : '—';
+  const s2 = L(
+    `误差 ∝ 1/√N:σ理论≈<b>${sg.toFixed(5)}</b> · 误差减半 → 样本 ×4(N→<b>${fmt(4 * N)}</b>) · 大数定律是地基`,
+    `error ∝ 1/√N: σ≈<b>${sg.toFixed(5)}</b> · halving error costs ×4 samples (N→<b>${fmt(4 * N)}</b>) · the law of large numbers is the foundation`);
+  let s1;
+  if (mode === 'sphere') s1 = L(
+    `几何概率:P(命中)=V球/V立方=(4π/3)/8=<b>π/6≈0.5236</b> → π≈6·N_in/N=<b>${eTxt}</b>`,
+    `Geometric probability: P(hit)=V sphere/V cube=(4π/3)/8=<b>π/6≈0.5236</b> → π≈6·N_in/N=<b>${eTxt}</b>`);
+  else if (mode === 'circle') s1 = L(
+    `经典二维:P(命中)=四分之一圆/方格=<b>π/4</b> → π≈4·N_in/N=<b>${eTxt}</b>`,
+    `Classic 2D: P(hit)=quarter disc/square=<b>π/4</b> → π≈4·N_in/N=<b>${eTxt}</b>`);
+  else if (mode === 'buffon') s1 = L(
+    `蒲丰投针(1777):P(压线)=2L/(πT)=<b>1/π</b>(L=T/2)→ π≈N/N_压=<b>${eTxt}</b>`,
+    `Buffon's needle (1777): P(cross)=2L/(πT)=<b>1/π</b> (L=T/2) → π≈throws/crossings=<b>${eTxt}</b>`);
+  else s1 = L(
+    `hit-or-miss 积分:V≈N_in/N=<b>${eTxt}</b> · 数值真值 V*=<b>${VSTAR.toFixed(4)}</b>`,
+    `Hit-or-miss integration: V≈N_in/N=<b>${eTxt}</b> · numeric truth V*=<b>${VSTAR.toFixed(4)}</b>`);
+  formulaEl.innerHTML = s1 + '<br>' + s2;
+}
+function syncAll() { syncSliders(); updateStats(); updateFormula(); drawPlot(); setPresetBtns(); }
+
+btnSphere.addEventListener('click', () => { setMode('sphere'); syncAll(); });
+btnCircle.addEventListener('click', () => { setMode('circle'); syncAll(); });
+btnBuffon.addEventListener('click', () => { setMode('buffon'); syncAll(); });
+btnBlob.addEventListener('click', () => { setMode('blob'); syncAll(); });
+btnBoost.addEventListener('click', () => boost());
+btnReset.addEventListener('click', () => { resetRun(); syncAll(); });
+elSpd.addEventListener('input', () => { spd = +elSpd.value; syncSliders(); });
+elCap.addEventListener('input', () => { setCap(+elCap.value); syncSliders(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglRotate').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+if (!qsBool('labels', true)) { document.getElementById('tglLabels').checked = false; labelsOn = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, statsAcc = 0;
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speedMul * (playing ? 1 : 0);
+  if (dt > 0) {
+    simT += dt;
+    if (Ntot < 2e6) {
+      let rate = spd * 60;
+      if (simT < burstUntil) rate *= 100;            // ×100 加速:批量化暴雨
+      acc += rate * dt;
+      let n = Math.min(Math.floor(acc), 9000); acc -= n;
+      if (n > 0) addPoints(n, simT < burstUntil);    // 加速时跳过落下动画→点云冻成剪影
+    }
+    if (falling.length) {
+      let w = 0;
+      for (const e of falling) {
+        if (gen[e.i] !== e.g) continue;
+        const p = (simT - tsp[e.i]) / FALL;
+        if (p >= 1) place(e.i, 1);
+        else { place(e.i, p); falling[w++] = e; }
+      }
+      falling.length = w;
+      dots.instanceMatrix.needsUpdate = true;
+      needles.instanceMatrix.needsUpdate = true;
+    }
+  }
+  if (matDirty) { dots.instanceMatrix.needsUpdate = true; needles.instanceMatrix.needsUpdate = true; matDirty = false; }
+  if (colDirty) {
+    if (dots.instanceColor) dots.instanceColor.needsUpdate = true;
+    if (needles.instanceColor) needles.instanceColor.needsUpdate = true;
+    colDirty = false;
+  }
+  statsAcc += dt0;
+  if (statsAcc > 0.15) {
+    statsAcc = 0;
+    updateStats(); updateFormula(); drawPlot(); setPresetBtns();
+    btnBoost.classList.toggle('on', simT < burstUntil);
+  }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+spd = clamp(qsFloat('spd', 6), 1, 60);
+cap = clamp(Math.round(qsFloat('cap', 4000) / 500) * 500, 500, 20000);
+speedMul = clamp(qsFloat('speed', 1), 0.2, 4);
+{
+  const pm = (qs.get('mode') || '').toLowerCase();
+  mode = ['sphere', 'circle', 'buffon', 'blob'].includes(pm) ? pm : 'sphere';
+}
+buildSteps();
+applyTheme();
+applyLang();
+setMode(mode);
+syncSliders();
+{
+  const pre = clamp(Math.round(qsFloat('t', 0)), 0, 200000);
+  if (pre > 0) addPoints(pre, true);
+}
+syncAll();
+start();
+</script>
+</body>
+</html>

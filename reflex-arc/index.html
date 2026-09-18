@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>脊髓反射弧 · 先斩后奏的 50 ms 短路</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="脊髓反射弧" data-en="The Spinal Reflex Arc">脊髓反射弧</h1>
+  <div class="sub" data-zh="敲击膝腱 → 肌梭放电 → Aα 纤维以 100 m/s 传入 → 脊髓里一个突触直接接通运动神经元 → 股四头肌一收,约 48 ms 小腿已弹起;而大脑要到 ~600 ms 后才「知情」——反射弧=感受器→传入→中枢→传出→效应器,脊髓先斩,大脑后奏 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格=敲击" data-en="Tap the tendon → spindle fires → Aα afferent at 100 m/s → ONE synapse in the cord onto the motor neuron → quadriceps contracts and the leg kicks in ~48 ms; the brain only learns of it ~600 ms later — arc = receptor → afferent → center → efferent → effector. The cord acts first, the brain is informed after · 3D interactive · drag to orbit / scroll to zoom · Space = tap">敲击膝腱 → 肌梭放电 → Aα 纤维以 100 m/s 传入 → 脊髓里一个突触直接接通运动神经元 → 股四头肌一收,约 48 ms 小腿已弹起;而大脑要到 ~600 ms 后才「知情」——反射弧=感受器→传入→中枢→传出→效应器,脊髓先斩,大脑后奏 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格=敲击</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="环路延迟" data-en="Loop latency">环路延迟</span><span class="v ok" id="stLat">—</span>
+  <span class="k" data-zh="传导速度" data-en="Conduction velocity">传导速度</span><span class="v" id="stVel">—</span>
+  <span class="k" data-zh="突触数" data-en="Synapses">突触数</span><span class="v" id="stSyn">—</span>
+  <span class="k" data-zh="大脑知情时刻" data-en="Brain aware at">大脑知情时刻</span><span class="v warn" id="stBrain">—</span>
+  <span class="k" data-zh="当前反射类型" data-en="Reflex type">当前反射类型</span><span class="v" id="stType">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="延迟时间轴 · 踢腿(绿) vs 大脑知情(橙) · 单位 ms" data-en="Latency timeline · kick (green) vs brain aware (orange) · ms">延迟时间轴 · 踢腿(绿) vs 大脑知情(橙) · 单位 ms</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="传入 Aα ~100 m/s" data-en="afferent Aα ~100 m/s">传入 Aα ~100 m/s</span>
+    <span class="chip.o" data-zh="传出 → 效应器" data-en="efferent → effector">传出 → 效应器</span>
+    <span class="chip.r" data-zh="红=抑制 / C 痛觉(慢)" data-en="red = inhibition / slow C pain">红=抑制 / C 痛觉(慢)</span>
+    <span class="chip.g" data-zh="绿=上行脑通路(事后知情)" data-en="green = ascending (awareness)">绿=上行脑通路(事后知情)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnTap" data-zh="敲击膝腱" data-en="Tap tendon">敲击膝腱</button>
+    <button class="abtn brk" id="btnNail" data-zh="踩钉反射" data-en="Nail step">踩钉反射</button>
+    <button class="abtn" id="btnSlow" data-zh="慢放×20" data-en="Slow ×20">慢放×20</button>
+    <button class="abtn" id="btnBrain" data-zh="显示脑通路" data-en="Brain path">显示脑通路</button>
+    <button class="abtn on" id="btnP1" data-zh="预设:膝跳反射" data-en="Preset: patellar">预设:膝跳反射</button>
+    <button class="abtn" id="btnP2" data-zh="预设:撤回反射" data-en="Preset: withdrawal">预设:撤回反射</button>
+    <button class="abtn" id="btnP3" data-zh="对比:有脑通路" data-en="Compare: via brain">对比:有脑通路</button>
+  </div>
+  <div class="row"><label data-zh="敲击力度" data-en="Tap force">敲击力度</label><input id="sForce" type="range" min="0.05" max="1" step="0.01" value="0.6"><span class="val" id="sForceVal">60%</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglRecip" type="checkbox" checked> <span data-zh="交互抑制" data-en="Reciprocal inhib.">交互抑制</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../action-potential/" data-zh="信号的本体:动作电位" data-en="the signal itself: action potential">信号的本体:动作电位</a>
+    <a href="../synaptic-transmission/" data-zh="弧里那一个突触:突触传递" data-en="the one synapse in the arc: synaptic transmission">弧里那一个突触:突触传递</a>
+    <a href="../defibrillator/" data-zh="心肌也有自己的回路:除颤器" data-en="the heart has its own circuit: defibrillator">心肌也有自己的回路:除颤器</a>
+    <a href="../ecg/" data-zh="另一种电信号读出:心电图" data-en="another readout of the signals: ECG">另一种电信号读出:心电图</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+function ss(a, b, x) { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+function bump(t, a, b) { const m = (a + b) / 2; return ss(a, m, t) * (1 - ss(m, b, t)); }
+const v = (x, y, z) => new THREE.Vector3(x, y, z);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'dark' ? 0x10141b : 0xeef1f6);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('脊髓反射弧 · 先斩后奏的 50 ms 短路', 'The Spinal Reflex Arc · a 50 ms shortcut that outruns the brain');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+  setPresetBtns();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+  drawPlot();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 300);
+camera.position.set(9.5, 4.8, 17);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(3.0, 2.2, -0.8);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 4;
+controls.maxDistance = 45;
+controls.autoRotateSpeed = 0.3;
+
+scene.add(new THREE.HemisphereLight(0xbdd3ea, 0x2a2f3a, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 1.7);
+key.position.set(6, 10, 8);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.4);
+fill.position.set(-6, 3, -6);
+scene.add(fill);
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.1,
+    emissive: color, emissiveIntensity: 0.08, transparent: true, ...opts });
+}
+function alignCapsule(a, b, r, material) {
+  const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, a.distanceTo(b), 6, 16), material);
+  m.position.copy(a).add(b).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(v(0, 1, 0), b.clone().sub(a).normalize());
+  return m;
+}
+function tubeOf(pts, r, hex, op = 0.8) {
+  const c = new THREE.CatmullRomCurve3(pts);
+  const m = new THREE.Mesh(new THREE.TubeGeometry(c, 64, r, 8, false),
+    mat(hex, { opacity: op, emissiveIntensity: 0.16 }));
+  scene.add(m);
+  c.getPointAt(0); // 预热弧长表
+  return m;
+}
+function glowMesh(pos, r, hex) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10),
+    new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false }));
+  m.position.copy(pos);
+  scene.add(m);
+  return m;
+}
+function setGlow(m, k) {
+  k = clamp(k, 0, 1);
+  m.material.opacity = k * 0.55;
+  m.scale.setScalar(0.6 + k * 0.9);
+  m.visible = k > 0.01;
+}
+
+/* ================= 颜色 ================= */
+const COL_AFF = 0x4dabf7, COL_EFF = 0xffa94d, COL_INH = 0xff6b6b, COL_PAIN = 0xff5d5d, COL_ASC = 0x69db7c;
+
+/* ================= 场景:腿 / 膝 / 肌肉 ================= */
+const boneMat = mat(0xcfc4b0, { opacity: 1, roughness: 0.6, metalness: 0.05 });
+const quadMat = mat(0xe0697c, { opacity: 0.92, roughness: 0.5 });
+const bicMat = mat(0xa84a58, { opacity: 0.92, roughness: 0.5 });
+scene.add(alignCapsule(v(0.8, 2.35, 0), v(7.8, 1.7, 0), 0.24, boneMat));   // 股骨
+const quad = alignCapsule(v(1.6, 3.0, 0.55), v(7.5, 2.3, 0.5), 0.55, quadMat);
+scene.add(quad);                                                            // 股四头肌(效应器)
+const bic = alignCapsule(v(1.8, 1.7, -0.45), v(7.3, 1.0, -0.4), 0.48, bicMat);
+scene.add(bic);                                                             // 股二头肌(拮抗肌)
+/* 肌梭(感受器) */
+const spindleMat = mat(0xb197fc, { opacity: 0.95, emissiveIntensity: 0.3 });
+scene.add(alignCapsule(v(5.05, 2.92, 0.62), v(5.75, 3.14, 0.62), 0.12, spindleMat));
+const gSpindle = glowMesh(v(5.4, 3.02, 0.62), 0.32, 0xb197fc);
+/* 膝关节 + 小腿(可旋转踢腿) */
+const REST = -0.18;
+const legPivot = new THREE.Group();
+legPivot.position.set(7.8, 1.7, 0);
+legPivot.rotation.z = REST;
+legPivot.add(alignCapsule(v(0, 0, 0), v(0.7, -3.3, 0), 0.2, boneMat));
+legPivot.add(alignCapsule(v(0.75, -3.45, 0.15), v(2.2, -3.5, 0.15), 0.18, boneMat));
+scene.add(legPivot);
+/* 髌腱 + 敲击点 + 锤 */
+scene.add(alignCapsule(v(7.95, 2.25, 0.45), v(8.3, 1.35, 0.35), 0.09, boneMat));
+const tapRing = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 10, 28),
+  mat(0xffa94d, { opacity: 0.6, emissiveIntensity: 0.5 }));
+tapRing.position.set(8.15, 1.85, 0.6);
+scene.add(tapRing);
+const hammer = new THREE.Group();
+hammer.position.set(9.75, 3.0, 0.8);
+{
+  const hd = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 1.5, 10), mat(0x9aa3ad, { opacity: 1 }));
+  hd.position.y = -0.75;
+  const hh = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.55, 14), mat(0x6c757d, { opacity: 1 }));
+  hh.rotation.z = Math.PI / 2;
+  hh.position.y = -1.5;
+  hammer.add(hd, hh);
+}
+const HAM_REST = -0.05, HAM_HIT = -0.98;
+hammer.rotation.z = HAM_REST;
+scene.add(hammer);
+/* 对侧腿(交叉伸肌,撤回反射时出现) */
+const otherLeg = new THREE.Group();
+const bone2Mat = mat(0xcfc4b0, { opacity: 0.55, roughness: 0.6 });
+const othMat = mat(0xc2707f, { opacity: 0.5 });
+otherLeg.add(alignCapsule(v(1.0, 2.2, -5.5), v(7.6, 1.6, -5.5), 0.2, bone2Mat));
+const quad2 = alignCapsule(v(1.8, 2.8, -5.45), v(7.3, 2.2, -5.45), 0.45, othMat);
+otherLeg.add(quad2);
+const REST2 = -0.18;
+const otherPivot = new THREE.Group();
+otherPivot.position.set(7.6, 1.6, -5.5);
+otherPivot.rotation.z = REST2;
+otherPivot.add(alignCapsule(v(0, 0, 0), v(0.65, -3.0, 0), 0.17, bone2Mat));
+otherPivot.add(alignCapsule(v(0.7, -3.1, 0), v(2.0, -3.15, 0), 0.15, bone2Mat));
+otherLeg.add(otherPivot);
+scene.add(otherLeg);
+/* 钉子 + 痛觉感受器(脚跟) */
+const nail = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.8, 12), mat(0xadb5bd, { opacity: 1, metalness: 0.5, roughness: 0.3 }));
+nail.position.set(8.55, -2.4, 0.15);
+scene.add(nail);
+const receptor = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), mat(0xff5d5d, { opacity: 1, emissiveIntensity: 0.4 }));
+receptor.position.set(8.55, -1.82, 0.3);
+scene.add(receptor);
+const gFoot = glowMesh(v(8.55, -1.82, 0.3), 0.35, 0xff5d5d);
+
+/* ================= 场景:脊髓横断面 ================= */
+const C = v(-2.5, 1.6, 0);
+const av = (x, y, z) => C.clone().add(v(x, y, z));
+const cordMat = mat(0xcabfa8, { opacity: 1, roughness: 0.55 });
+const cord = new THREE.Mesh(new THREE.TorusGeometry(2.0, 0.42, 16, 48), cordMat);
+cord.position.copy(C);
+scene.add(cord);
+const whiteMat = mat(0xefe6d2, { opacity: 0.95, roughness: 0.6 });
+const white = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 0.55, 40), whiteMat);
+white.rotation.x = Math.PI / 2;
+white.position.set(C.x, C.y, C.z + 0.02);
+scene.add(white);
+const grayMat = mat(0xd4899f, { opacity: 0.96, emissiveIntensity: 0.12 });
+scene.add(alignCapsule(av(0.18, 0.30, 0.34), av(0.80, 1.02, 0.34), 0.26, grayMat));
+scene.add(alignCapsule(av(-0.18, 0.30, 0.34), av(-0.80, 1.02, 0.34), 0.26, grayMat));
+scene.add(alignCapsule(av(0.18, -0.22, 0.34), av(0.72, -0.72, 0.34), 0.30, grayMat));
+scene.add(alignCapsule(av(-0.18, -0.22, 0.34), av(-0.72, -0.72, 0.34), 0.30, grayMat));
+scene.add(alignCapsule(av(-0.34, 0.02, 0.34), av(0.34, 0.02, 0.34), 0.20, grayMat));
+/* 神经元胞体 */
+function soma(pos, r, hex) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), mat(hex, { opacity: 1, emissiveIntensity: 0.25 }));
+  m.position.copy(pos);
+  scene.add(m);
+  return m;
+}
+const motorSoma = soma(av(0.60, -0.55, 0.40), 0.28, 0xffd166);   // 运动神经元(膝跳)
+const terminal = soma(av(0.84, -0.40, 0.40), 0.14, 0x74c0fc);    // 传入末梢
+const inhibIN = soma(av(-0.45, -0.90, 0.30), 0.15, 0xf06565);    // 抑制性中间神经元
+const IN1 = soma(av(0.00, 0.42, 0.30), 0.17, 0xf06565);          // 撤回:中间神经元链
+const flexSoma = soma(av(-0.55, -0.45, 0.40), 0.24, 0xffd166);   // 屈肌运动神经元
+const inhibIN2 = soma(av(-0.80, 0.40, 0.32), 0.15, 0xf06565);
+const drg = soma(v(0.8, 3.35, 0.12), 0.30, 0x74c0fc);            // 背根神经节
+/* 突触囊泡(膝跳单突触) */
+const vesicles = [];
+for (let i = 0; i < 4; i++) {
+  const d = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6),
+    mat(0xffd166, { opacity: 1, emissiveIntensity: 0.6 }));
+  d.visible = false;
+  scene.add(d);
+  vesicles.push(d);
+}
+const gSyn = glowMesh(av(0.60, -0.55, 0.55), 0.42, 0x69db7c);    // EPSP
+const gNMJ = glowMesh(v(4.9, 2.72, 0.68), 0.4, 0xffa94d);        // 神经肌肉接头
+const gNMJb = glowMesh(v(5.1, 1.25, -0.66), 0.4, 0xffa94d);
+const gIN = glowMesh(IN1.position, 0.34, 0xff5d5d);
+const gIN2 = glowMesh(inhibIN2.position, 0.3, 0xff6b6b);
+const gFlex = glowMesh(flexSoma.position, 0.36, 0xffd166);
+const gCross = glowMesh(v(4.6, 2.62, -5.35), 0.4, 0xffa94d);
+
+/* ================= 场景:脑 ================= */
+const brainMat = mat(0xd9a0b8, { opacity: 0.5, roughness: 0.55 });
+const brain = new THREE.Group();
+{
+  const h1 = new THREE.Mesh(new THREE.SphereGeometry(0.75, 20, 16), brainMat);
+  h1.scale.set(1, 0.8, 0.85); h1.position.x = -0.55;
+  const h2 = h1.clone(); h2.position.x = 0.6;
+  const cb = new THREE.Mesh(new THREE.SphereGeometry(0.35, 14, 10), brainMat);
+  cb.position.set(0, -0.55, -0.25);
+  brain.add(h1, h2, cb);
+}
+brain.position.set(-2.85, 7.15, -1.55);
+scene.add(brain);
+const brainGlow = glowMesh(brain.position, 1.1, 0xff8787);
+
+/* ================= 纤维(曲线) ================= */
+const affCurve = new THREE.CatmullRomCurve3([v(5.35, 3.05, 0.6), v(4.1, 3.5, 0.4), v(2.2, 3.6, 0.2),
+  v(0.8, 3.35, 0.12), v(-0.9, 2.8, 0.15), av(-0.15, 0.9, 0.22), av(0.25, 0.15, 0.34), av(0.84, -0.36, 0.40)]);
+const effCurve = new THREE.CatmullRomCurve3([av(0.56, -0.62, 0.40), av(0.2, -1.0, 0.25), v(-0.8, 0.35, 0.15),
+  v(1.0, 0.35, 0.2), v(3.2, 1.7, 0.45), v(4.9, 2.72, 0.62)]);
+const inhCurve = new THREE.CatmullRomCurve3([av(0.1, 0.75, 0.28), av(-0.45, -0.86, 0.30), av(0.35, -1.25, 0.18),
+  v(1.2, -0.15, 0.05), v(3.4, 0.6, -0.35), v(5.1, 1.25, -0.6)]);
+const ascCurve = new THREE.CatmullRomCurve3([v(-2.5, 3.1, 0), v(-2.3, 4.4, -0.7), v(-2.6, 5.8, -1.3), v(-2.85, 6.7, -1.55)]);
+const painCurve = new THREE.CatmullRomCurve3([v(8.5, -2.0, 0.28), v(8.2, -0.9, 0.3), v(7.3, 0.1, 0.3),
+  v(5.3, 0.35, 0.25), v(2.4, 0.8, 0.2), v(0.2, 1.2, 0.18), av(1.1, 0.35, 0.25), av(0.75, 0.28, 0.32)]);
+const chainCurve = new THREE.CatmullRomCurve3([av(0.75, 0.28, 0.32), av(0.0, 0.42, 0.30), av(-0.35, -0.05, 0.36), av(-0.55, -0.42, 0.40)]);
+const flexCurve = new THREE.CatmullRomCurve3([av(-0.55, -0.50, 0.40), av(-0.1, -0.85, 0.25), v(-1.0, 0.2, 0.15),
+  v(1.2, -0.1, 0.0), v(3.6, 0.7, -0.3), v(5.1, 1.25, -0.6)]);
+const inh2Curve = new THREE.CatmullRomCurve3([av(0.0, 0.42, 0.30), av(-0.80, 0.40, 0.32), av(-0.2, -0.25, 0.38), av(0.56, -0.50, 0.40)]);
+const crossCurve = new THREE.CatmullRomCurve3([av(0.0, 0.42, 0.30), v(-2.7, 2.35, -1.2), v(-2.0, 2.6, -3.5),
+  v(1.5, 3.0, -5.0), v(4.6, 2.62, -5.3)]);
+const T = {
+  aff: tubeOf(affCurve.getPoints(60), 0.075, COL_AFF),
+  eff: tubeOf(effCurve.getPoints(60), 0.075, COL_EFF),
+  inh: tubeOf(inhCurve.getPoints(60), 0.055, COL_INH, 0.7),
+  asc: tubeOf(ascCurve.getPoints(60), 0.06, COL_ASC, 0.28),
+  pain: tubeOf(painCurve.getPoints(60), 0.045, COL_PAIN, 0.75),
+  chain: tubeOf(chainCurve.getPoints(40), 0.045, COL_PAIN, 0.75),
+  flex: tubeOf(flexCurve.getPoints(60), 0.065, COL_EFF),
+  inh2: tubeOf(inh2Curve.getPoints(40), 0.045, COL_INH, 0.75),
+  cross: tubeOf(crossCurve.getPoints(60), 0.055, COL_EFF, 0.75),
+};
+const TUBE_BASE = 0.16;
+
+/* ================= 脉冲池(动作电位波前) ================= */
+const pool = [];
+for (let i = 0; i < 6; i++) {
+  const grp = new THREE.Group();
+  const coreM = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), coreM);
+  const glowM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3,
+    blending: THREE.AdditiveBlending, depthWrite: false });
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 10), glowM);
+  grp.add(glow, core);
+  const tails = [];
+  for (let j = 0; j < 5; j++) {
+    const tm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 - j * 0.07 });
+    const t = new THREE.Mesh(new THREE.SphereGeometry(0.09 - j * 0.01, 8, 6), tm);
+    grp.add(t);
+    tails.push(t);
+  }
+  grp.visible = false;
+  scene.add(grp);
+  pool.push({ grp, core, glow, tails, coreM, glowM });
+}
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+addLabel(() => L('肌梭 · 感受器', 'muscle spindle · receptor'), v(5.4, 3.75, 0.62), 'g');
+addLabel(() => L('传入 Aα · 100 m/s', 'afferent Aα · 100 m/s'), v(2.3, 4.05, 0.25), 'b');
+addLabel(() => L('背根神经节', 'dorsal root ganglion'), v(1.15, 2.8, 0.12), 'b');
+addLabel(() => L('脊髓横断面 · 灰质蝴蝶(中枢)', 'spinal cord · gray butterfly (center)'), v(-2.5, 4.35, 0), 'o');
+addLabel(() => L('单突触:囊泡 → EPSP', 'the one synapse: vesicles → EPSP'), av(0.95, -1.0, 0.5), 'o');
+addLabel(() => L('传出 Aα → 效应器', 'efferent Aα → effector'), v(2.4, -0.6, 0.15), 'o');
+addLabel(() => L('股四头肌 · 效应器', 'quadriceps · effector'), v(6.3, 3.35, 0.55), 'o');
+addLabel(() => L('股二头肌 · 拮抗肌', 'biceps femoris · antagonist'), v(5.6, 0.3, -0.6), 'r');
+addLabel(() => L('抑制性中间神经元', 'inhibitory interneuron'), av(-0.9, -1.45, 0.3), 'r', () => recInh);
+addLabel(() => L('脑 · 事后知情', 'brain · informed afterwards'), v(-3.0, 8.35, -1.55), 'g');
+let ev = null;   // 当前反射事件(须在下方标签闭包前声明)
+addLabel(() => {
+  const lit = ev && simMs - ev.t0 >= ev.brainAt;
+  return lit ? L('大脑知情灯:亮!(晚 ~550 ms)', 'brain lamp: ON! (~550 ms late)')
+             : L('大脑知情灯:未亮…', 'brain lamp: still off…');
+}, v(-2.85, 7.75, -0.9), '');
+addLabel(() => L('痛觉 C 纤维 · ~1 m/s', 'pain C fiber · ~1 m/s'), v(5.9, -1.15, 0.4), 'r', () => mode === 'withdrawal');
+addLabel(() => L('踩钉!痛觉感受器', 'nail! pain receptor'), v(9.7, -2.35, 0.3), 'r', () => mode === 'withdrawal');
+addLabel(() => L('敲这里:髌腱', 'tap here: patellar tendon'), v(9.0, 1.45, 0.7), 'o', () => mode === 'patellar');
+addLabel(() => L('交叉伸肌 · 对侧腿支撑', 'crossed extension · other leg'), v(3.4, 3.4, -5.5), 'g', () => mode === 'withdrawal');
+
+/* ================= 状态 ================= */
+let mode = 'patellar', force = 0.6, recInh = true, brainPath = false, compareMode = false, slowOn = false;
+let simMs = 0, speedMul = clamp(qsFloat('speed', 1), 0.2, 4);
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+
+function applyBrain() {
+  T.asc.material.opacity = brainPath ? 0.65 : 0.28;
+  brainMat.opacity = brainPath ? 0.95 : 0.5;
+  refreshLabels();
+}
+function resetDynamic() {
+  for (const p of pool) p.grp.visible = false;
+  for (const k in T) T[k].material.emissiveIntensity = TUBE_BASE;
+  setMuscle(quad, 0, 0); setMuscle(bic, 0, 0); setMuscle(quad2, 0, 0);
+  legPivot.rotation.z = REST; otherPivot.rotation.z = REST2;
+  hammer.rotation.z = HAM_REST;
+  [gSpindle, gFoot, gSyn, gNMJ, gNMJb, gIN, gIN2, gFlex, gCross, brainGlow].forEach(g => setGlow(g, 0));
+  vesicles.forEach(d => d.visible = false);
+  nail.position.y = -2.4;
+  brainGlow.material.color.setHex(0xff8787);
+}
+function setMode(m) {
+  mode = m;
+  const wd = m === 'withdrawal';
+  nail.visible = wd; receptor.visible = wd;
+  T.pain.visible = wd; T.chain.visible = wd; T.flex.visible = wd; T.inh2.visible = wd; T.cross.visible = wd;
+  otherLeg.visible = wd;
+  hammer.visible = !wd; tapRing.visible = !wd;
+  ev = null;
+  resetDynamic();
+  setPresetBtns();
+  updateStats(); updateFormula(); drawPlot();
+}
+
+/* ================= 触发事件 ================= */
+function runTap() {
+  setMode('patellar');
+  const act = 26 - 13 * force;
+  ev = { mode: 'patellar', t0: simMs, act, kickAt: 29.5 + act, brainAt: 600,
+    specs: [
+      { c: affCurve, t0: 7, dur: 10, col: COL_AFF, s: 1, tube: T.aff },
+      { c: inhCurve, t0: 19, dur: 9, col: COL_INH, s: 0.85, tube: T.inh, on: () => recInh },
+      { c: effCurve, t0: 18.5, dur: 10, col: COL_EFF, s: 1, tube: T.eff },
+      { c: ascCurve, t0: 19, dur: 581, col: COL_ASC, s: 0.8, tube: T.asc }] };
+}
+function runNail() {
+  setMode('withdrawal');
+  ev = { mode: 'withdrawal', t0: simMs, kickAt: 134, brainAt: 600,
+    specs: [
+      { c: painCurve, t0: 6, dur: 92, col: COL_PAIN, s: 0.9, tube: T.pain },
+      { c: chainCurve, t0: 98, dur: 6, col: COL_PAIN, s: 0.8, tube: T.chain },
+      { c: flexCurve, t0: 104, dur: 9, col: COL_EFF, s: 1, tube: T.flex },
+      { c: inh2Curve, t0: 104, dur: 6, col: COL_INH, s: 0.8, tube: T.inh2 },
+      { c: crossCurve, t0: 104, dur: 12, col: COL_EFF, s: 0.9, tube: T.cross },
+      { c: ascCurve, t0: 104, dur: 496, col: COL_PAIN, s: 0.8, tube: T.asc }] };
+}
+function trigger() { mode === 'withdrawal' ? runNail() : runTap(); }
+
+/* ================= 逐帧:由 te(事件内毫秒)解析决定一切 ================= */
+function setMuscle(m, c, e) {
+  const rad = 1 + 0.3 * Math.max(0, c) + 0.10 * Math.max(0, -c);
+  m.scale.set(rad, 1 - 0.24 * c, rad);
+  m.material.emissiveIntensity = 0.10 + 0.9 * clamp(e, 0, 1);
+}
+function updateEvent() {
+  for (const p of pool) p.grp.visible = false;
+  for (const k in T) T[k].material.emissiveIntensity = TUBE_BASE;
+  if (!ev) return;
+  const te = simMs - ev.t0;
+  /* 脉冲波前 */
+  ev.specs.forEach((s, i) => {
+    if (s.on && !s.on()) return;
+    const p = (te - s.t0) / s.dur;
+    if (p > 0 && p < 1) {
+      const u = pool[i];
+      u.grp.visible = true;
+      u.coreM.color.setHex(s.col); u.glowM.color.setHex(s.col);
+      u.tails.forEach(t => t.material.color.setHex(s.col));
+      const hp = s.c.getPointAt(clamp(p, 0.001, 0.999));
+      u.core.position.copy(hp); u.glow.position.copy(hp);
+      u.glow.scale.setScalar(1 + 0.35 * Math.sin(te * 0.8));
+      s.tube.material.emissiveIntensity = TUBE_BASE + 1.0 * bump(te, s.t0, s.t0 + s.dur);
+      s.c.getPointAt(0);
+      u.tails.forEach((t, j) => t.position.copy(s.c.getPointAt(clamp(p - (j + 1) * 0.035, 0.001, 0.999))));
+    }
+  });
+  const lit = te >= ev.brainAt;
+  if (lit) setGlow(brainGlow, 0.35 + 0.65 * Math.exp(-(te - ev.brainAt) / 300));
+  else setGlow(brainGlow, 0);
+
+  if (ev.mode === 'patellar') {
+    const { act, kickAt } = ev;
+    hammer.rotation.z = HAM_REST + (HAM_HIT - HAM_REST) * (ss(0, 5, te) * (1 - ss(5, 70, te)));
+    const str = bump(te, 5, 14);
+    setGlow(gSpindle, bump(te, 4, 18));
+    setMuscle(quad, -0.4 * str + (0.72 + 0.28 * force) * (ss(29.5, 29.5 + act, te) - ss(kickAt + 150, kickAt + 560, te)),
+      0.9 * bump(te, 26, kickAt + 120));
+    let amp = 0.45 + 0.5 * force;
+    if (!recInh) amp *= 0.55;
+    const swing = ss(29.5, 29.5 + act * 1.15, te) - ss(kickAt + 150, kickAt + 560, te);
+    legPivot.rotation.z = REST + amp * swing + (!recInh ? 0.03 * Math.sin(te * 0.09) * bump(te, 35, 420) : 0);
+    if (recInh) setMuscle(bic, -0.28 * ss(19, 32, te) * (1 - ss(kickAt + 150, kickAt + 520, te)), 0);
+    else { const w = bump(te, 19, kickAt + 380); setMuscle(bic, 0.38 * w, 0.7 * w); }
+    /* 单突触:囊泡过间隙 + EPSP */
+    const vk = ss(17, 18.8, te);
+    vesicles.forEach((d, i) => {
+      const pj = clamp(vk * 1.3 - 0.1 * i, 0, 1);
+      const on = pj > 0.02 && pj < 0.98;
+      d.visible = on;
+      if (on) d.position.lerpVectors(terminal.position, motorSoma.position, pj);
+    });
+    setGlow(gSyn, bump(te, 17, 26));
+    setGlow(gNMJ, bump(te, 28.5, 38));
+  } else {
+    /* 撤回反射 */
+    nail.position.y = -2.4 + 0.42 * ss(0, 6, te);
+    setGlow(gFoot, bump(te, 2, 22));
+    setGlow(gIN, bump(te, 97, 105));
+    setGlow(gIN2, bump(te, 99, 107));
+    setGlow(gFlex, bump(te, 101, 111));
+    setMuscle(bic, 0.8 * (ss(114, 136, te) - ss(286, 660, te)), bump(te, 112, 240));
+    setGlow(gNMJb, bump(te, 112, 150));
+    setMuscle(quad, -0.34 * ss(106, 124, te) * (1 - ss(320, 700, te)), 0);
+    legPivot.rotation.z = REST - (0.5 + 0.25 * force) * (ss(114, 138, te) - ss(288, 680, te));
+    setMuscle(quad2, 0.6 * (ss(116, 142, te) - ss(420, 860, te)), bump(te, 116, 260));
+    otherPivot.rotation.z = REST2 + 0.45 * (ss(116, 142, te) - ss(420, 860, te));
+    setGlow(gCross, bump(te, 115, 160));
+    if (lit) brainGlow.material.color.setHex(0xff5d5d);
+  }
+}
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '① 感受器:肌梭瞬间放电', be: 'Receptor: the spindle fires',
+    d: '敲击膝腱,股四头肌被猛地拉长,埋在肌腹里的肌梭被机械拉伸——牵张的一瞬它就开始放电,反射的第一级从不经过意识。',
+    de: 'Tapping the tendon yanks the quadriceps; the muscle spindle buried in its belly is stretched and fires the instant it stretches — reflex grade one never passes through consciousness.',
+    act: () => { slowOn = true; runTap(); } },
+  { b: '② 传入:Aα 一路 100 m/s', be: 'Afferent: Aα runs at 100 m/s',
+    d: '有髓 Aα 纤维是最粗最快的神经:动作电位从一个郎飞结跳到下一个,~100 m/s,几毫秒就把「肌肉被拉长」送进脊髓背根。',
+    de: 'Myelinated Aα is the fastest nerve there is: the AP jumps node to node at ~100 m/s, delivering "stretched!" to the dorsal root in a few ms.',
+    act: () => { slowOn = false; runTap(); } },
+  { b: '③ 脊髓:一个突触的短路法庭', be: 'Cord: a one-synapse shortcut court',
+    d: '传入纤维进背根,直接扣在运动神经元上——单突触,没有中间商、不等大脑。囊泡一放,EPSP 越过阈值,判决立刻执行:先斩后奏。',
+    de: 'The afferent enters the dorsal root and lands straight on the motor neuron — one synapse, no middleman, brain not consulted. Vesicles dump, EPSP crosses threshold, sentence executed at once.',
+    act: () => { slowOn = false; runTap(); } },
+  { b: '④ 传出与效应:小腿弹起', be: 'Efferent & effect: the leg kicks',
+    d: '运动轴突把命令送回同一块肌,神经肌肉接头释放 ACh,股四头肌一收小腿弹起——从敲击到弹起全程 ~50 ms,快过任何「想一想」。',
+    de: 'The motor axon returns the order to the same muscle; the NMJ releases ACh and the quadriceps snaps the leg up — tap to kick in ~50 ms, faster than any deliberation.',
+    act: () => { slowOn = false; runTap(); } },
+  { b: '⑤ 交互抑制:拮抗肌同步松手', be: 'Reciprocal inhibition: the antagonist lets go',
+    d: '传入侧支激活抑制性中间神经元,红色抑制信号同步关掉股二头肌——主动肌收、拮抗肌放,动作才干净。关掉它试试:踢腿立刻又慢又僵。',
+    de: 'A collateral excites an inhibitory interneuron whose red signal silences the biceps femoris — agonist on, antagonist off. Toggle it off: the kick turns slow and rigid.',
+    act: () => { recInh = true; document.getElementById('tglRecip').checked = true; slowOn = false; runTap(); } },
+  { b: '⑥ 大脑只是事后知情', be: 'The brain only learns afterwards',
+    d: '上行通路以 C 纤维 ~1 m/s 的速度把消息慢慢送上皮层,~600 ms 后灯才亮——腿早已弹开。踩钉反射同理:脊髓先指挥缩腿,疼痛迟到。',
+    de: 'Ascending C fibers at ~1 m/s crawl the news to the cortex; the lamp lights ~600 ms later — long after the leg is up. Same for the nail: the cord orders the jerk first, pain arrives late.',
+    act: () => { brainPath = true; document.getElementById('btnBrain').classList.add('on'); applyBrain(); runNail(); } },
+];
+function stepIndex() {
+  if (!ev) return mode === 'withdrawal' ? 5 : (recInh ? 0 : 4);
+  const te = simMs - ev.t0;
+  if (ev.mode === 'patellar') {
+    if (te < 7) return 0;
+    if (te < 17) return 1;
+    if (te < 18.5) return 2;
+    if (te < 29.5 + ev.act * 0.6) return 3;
+    if (!recInh) return 4;
+    return 5;
+  }
+  if (te < 6) return 0;
+  if (te < 98) return 1;
+  if (te < 104) return 2;
+  if (te < 114) return 3;
+  if (te < 140) return 4;
+  return 5;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 延迟时间轴(图) ================= */
+const plotCv = document.getElementById('plotCv');
+function kickNow() { return ev ? ev.kickAt : (mode === 'withdrawal' ? 134 : 29.5 + 26 - 13 * force); }
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const cDim = css.getPropertyValue('--text3').trim() || '#c7d2de';
+  const padL = 46, padR = 14, padT = 10, padB = 26;
+  const XMAX = compareMode ? 1300 : 700;
+  const X = val => padL + (val / XMAX) * (W - padL - padR);
+  ctx.strokeStyle = 'rgba(128,150,170,.4)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB); ctx.lineTo(W - padR, H - padB); ctx.stroke();
+  ctx.fillStyle = cTxt; ctx.font = '15px system-ui';
+  const stepv = XMAX > 700 ? 200 : 100;
+  for (let m = 0; m <= XMAX; m += stepv) {
+    const x = X(m);
+    ctx.fillText(String(m), x - 8, H - padB + 18);
+    if (m > 0) {
+      ctx.strokeStyle = 'rgba(128,150,170,.15)';
+      ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+    }
+  }
+  ctx.fillText('ms', W - padR - 22, H - padB + 18);
+  const rows = [[kickNow(), '#51cf66', L('踢腿', 'kick')], [600, '#ffa94d', L('大脑知情', 'brain aware')]];
+  if (compareMode) rows.push([kickNow() + 1200, '#b197fc', L('若绕行大脑', 'via brain')]);
+  const rh = (H - padT - padB - 14) / rows.length;
+  rows.forEach((r, i) => {
+    const y = padT + 8 + i * rh, bh = rh * 0.42, val = Math.min(r[0], XMAX);
+    ctx.fillStyle = r[1]; ctx.globalAlpha = 0.85;
+    ctx.fillRect(X(0), y, X(val) - X(0), bh);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = cDim; ctx.font = '500 15px system-ui';
+    ctx.fillText(`${r[2]} ${Math.round(r[0])} ms`, Math.min(X(val) + 8, W - 150), y + bh - 2);
+  });
+  if (ev) {
+    const te = simMs - ev.t0;
+    if (te >= 0 && te <= XMAX) {
+      ctx.strokeStyle = '#ff8787'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(X(te), padT); ctx.lineTo(X(te), H - padB); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elForce = document.getElementById('sForce'), elForceVal = document.getElementById('sForceVal');
+const stLat = document.getElementById('stLat'), stVel = document.getElementById('stVel'), stSyn = document.getElementById('stSyn'),
+  stBrain = document.getElementById('stBrain'), stType = document.getElementById('stType');
+const formulaEl = document.getElementById('formula');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function setPresetBtns() {
+  document.getElementById('btnP1').classList.toggle('on', mode === 'patellar');
+  document.getElementById('btnP2').classList.toggle('on', mode === 'withdrawal');
+  document.getElementById('btnP3').classList.toggle('on', compareMode);
+  document.getElementById('btnSlow').classList.toggle('on', slowOn);
+  document.getElementById('btnBrain').classList.toggle('on', brainPath);
+}
+function syncSliders() { elForce.value = force; elForceVal.textContent = Math.round(force * 100) + '%'; }
+function updateStats() {
+  stLat.innerHTML = Math.round(kickNow()) + ' <small>ms</small>';
+  stLat.className = 'v ok';
+  stVel.innerHTML = mode === 'patellar' ? '100 <small>m/s · Aα</small>' : '12 <small>m/s · Aδ</small>';
+  stSyn.textContent = mode === 'patellar' ? L('1(单突触)', '1 (mono)') : L('4(多突触)', '4 (poly)');
+  stBrain.innerHTML = '~600 <small>ms</small>';
+  stBrain.className = 'v warn';
+  stType.textContent = mode === 'patellar' ? L('膝跳 · 牵张/单突触', 'patellar · stretch/mono')
+                                           : L('撤回 · 多突触+交叉伸肌', 'withdrawal · poly+crossed');
+}
+function updateFormula() {
+  const k = Math.round(kickNow());
+  formulaEl.innerHTML = L(
+    `反射弧 = 感受器→传入→中枢→传出→效应器<br>Aα 有髓纤维 <b>~100 m/s</b> · 单突触弧=最快反射 · 拮抗抑制=交互抑制 · C 纤维痛觉 <b>~1 m/s</b>(0.6 m 爬 ~600 ms):先弹开,后喊疼<br>本次环路:踢腿 ≈ <b>${k} ms</b> · 大脑知情 ≈ <b>600 ms</b> —— 脊髓先斩,大脑后奏`,
+    `arc = receptor → afferent → center → efferent → effector<br>Aα myelinated <b>~100 m/s</b> · one-synapse arc = fastest reflex · antagonist brake = reciprocal inhibition · C pain fibers <b>~1 m/s</b> (0.6 m ≈ 600 ms): kick first, yell later<br>this loop: kick ≈ <b>${k} ms</b> · brain aware ≈ <b>600 ms</b> — the cord acts first, the brain is told after`);
+}
+function syncAll() { syncSliders(); updateStats(); updateFormula(); drawPlot(); setPresetBtns(); }
+
+document.getElementById('btnTap').addEventListener('click', () => { runTap(); syncAll(); });
+document.getElementById('btnNail').addEventListener('click', () => { runNail(); syncAll(); });
+document.getElementById('btnSlow').addEventListener('click', () => { slowOn = !slowOn; setPresetBtns(); });
+document.getElementById('btnBrain').addEventListener('click', () => { brainPath = !brainPath; applyBrain(); setPresetBtns(); });
+document.getElementById('btnP1').addEventListener('click', () => { setMode('patellar'); syncAll(); });
+document.getElementById('btnP2').addEventListener('click', () => { setMode('withdrawal'); syncAll(); });
+document.getElementById('btnP3').addEventListener('click', () => {
+  compareMode = !compareMode;
+  if (compareMode) { brainPath = true; applyBrain(); runTap(); }
+  syncAll();
+});
+elForce.addEventListener('input', () => { force = +elForce.value; syncAll(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglRecip').addEventListener('change', e => { recInh = e.target.checked; });
+document.getElementById('tglRotate').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+if (!qsBool('labels', true)) { document.getElementById('tglLabels').checked = false; labelsOn = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+document.getElementById('tglRotate').checked = controls.autoRotate;
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); trigger(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, statsAcc = 0;
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  if (playing) simMs += dt0 * 1000 * (slowOn ? 0.05 : speedMul);
+  updateEvent();
+  if (tapRing.visible) tapRing.material.opacity = 0.35 + 0.25 * Math.sin(performance.now() * 0.004);
+  statsAcc += dt0;
+  if (statsAcc > 0.15) {
+    statsAcc = 0;
+    updateStats(); updateFormula(); drawPlot();
+  }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+{
+  const p = (qs.get('reflex') || 'patellar').toLowerCase();
+  mode = p === 'withdrawal' ? 'withdrawal' : 'patellar';
+}
+slowOn = qsBool('slow', false);
+brainPath = qsBool('brain', false);
+force = clamp(qsFloat('f', 0.6), 0.05, 1);
+const wd0 = mode === 'withdrawal';
+nail.visible = wd0; receptor.visible = wd0;
+T.pain.visible = wd0; T.chain.visible = wd0; T.flex.visible = wd0; T.inh2.visible = wd0; T.cross.visible = wd0;
+otherLeg.visible = wd0; hammer.visible = !wd0; tapRing.visible = !wd0;
+applyBrain();
+resetDynamic();
+buildSteps();
+applyTheme();
+applyLang();
+syncAll();
+updateStats();
+start();
+if (qs.has('t')) setTimeout(trigger, clamp(qsFloat('t', 0), 0, 60) * 1000);
+</script>
+</body>
+</html>
