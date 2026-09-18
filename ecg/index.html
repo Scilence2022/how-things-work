@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>心电图 · 心脏电活动的投影</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="心电图" data-en="Electrocardiogram">心电图</h1>
+  <div class="sub" data-zh="心脏电活动的投影:每个心肌细胞除极时都是一台小电池,几克组织的偶极子在导联轴上投影,就成了体表那支电压曲线——P=心房除极,QRS=浦肯野全网点火的心室快除极,T=反方向的复极;盯着 3D 心脏看波前扫到哪里,QRS 尖峰就在那一刻被画出来 · 切到房颤:P 波当场消失 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The heart's electrical projection: every depolarizing cell is a tiny battery; the dipole of a few hundred grams of tissue, projected onto the lead axis, draws the voltage curve on the skin — P = atrial depolarization, QRS = rapid ventricular depolarization via the Purkinje network, T = repolarization in the opposite direction; watch the 3D wavefront and see the QRS spike drawn at that very instant · switch to AFib and the P wave vanishes · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">心脏电活动的投影:每个心肌细胞除极时都是一台小电池,几克组织的偶极子在导联轴上投影,就成了体表那支电压曲线——P=心房除极,QRS=浦肯野全网点火的心室快除极,T=反方向的复极;盯着 3D 心脏看波前扫到哪里,QRS 尖峰就在那一刻被画出来 · 切到房颤:P 波当场消失 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="心率" data-en="Heart rate">心率</span><span class="v" id="stHR">—</span>
+  <span class="k" data-zh="PR 间期" data-en="PR interval">PR 间期</span><span class="v" id="stPR">—</span>
+  <span class="k" data-zh="QRS 时限" data-en="QRS width">QRS 时限</span><span class="v" id="stQRS">—</span>
+  <span class="k" data-zh="RR 规整度" data-en="RR regularity">RR 规整度</span><span class="v" id="stRR">—</span>
+  <span class="k" data-zh="节律判读" data-en="Rhythm reading">节律判读</span><span class="v ok" id="stDx">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="II 导联心电图 · 25 mm/s · 10 mm/mV · 由心脏偶极子实时投影生成" data-en="Lead II ECG · 25 mm/s · 10 mm/mV · live projection of the cardiac dipole">II 导联心电图 · 25 mm/s · 10 mm/mV · 由心脏偶极子实时投影生成</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.o" data-zh="黄白亮带=除极波前" data-en="bright band = depol wavefront">黄白亮带=除极波前</span>
+    <span class="chip.g" data-zh="P=心房除极" data-en="P = atrial depol.">P=心房除极</span>
+    <span class="chip.b" data-zh="QRS=心室快除极" data-en="QRS = fast ventricular depol.">QRS=心室快除极</span>
+    <span class="chip.r" data-zh="T=复极(反向)" data-en="T = repol. (reverse)">T=复极(反向)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnSinus" data-zh="窦性心律" data-en="Sinus rhythm">窦性心律</button>
+    <button class="abtn" id="btnAfib" data-zh="房颤" data-en="AFib">房颤</button>
+    <button class="abtn brk" id="btnVt" data-zh="室速" data-en="VT">室速</button>
+  </div>
+  <div class="row"><label data-zh="心率(窦性)" data-en="Rate (sinus)">心率(窦性)</label><input id="sBPM" type="range" min="40" max="180" step="1" value="75"><span class="val" id="sBPMVal">75 /min</span></div>
+  <div class="row"><label data-zh="播放速度" data-en="Speed">播放速度</label><input id="sSpeed" type="range" min="0.25" max="3" step="0.05" value="1"><span class="val" id="sSpeedVal">1.00×</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="曲线" data-en="Strip">曲线</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../heart-cycle/" data-zh="同一场跳动的机械面:心动周期" data-en="the mechanical side: cardiac cycle">同一场跳动的机械面:心动周期</a>
+    <a href="../action-potential/" data-zh="每个心肌细胞的电学:动作电位" data-en="electricity of each cell: action potential">每个心肌细胞的电学:动作电位</a>
+    <a href="../defibrillator/" data-zh="乱了的电怎么治:除颤器" data-en="fixing chaotic electricity: defibrillator">乱了的电怎么治:除颤器</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const ss = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };  // smoothstep
+const dss = x => { x = clamp(x, 0, 1); return 6 * x * (1 - x); };     // 其导数:波前偶极强度
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xe6edf3 : 0x101116);
+  axisLine.material.color.set(THEME === 'light' ? 0x5b6b7d : 0x9fb0c3);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('心电图 · 心脏电活动的投影', 'ECG · The Heart\'s Electrical Projection');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+  drawPlot();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(0.6, 0.7, 5.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.05, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.4;
+controls.maxDistance = 13;
+controls.autoRotateSpeed = 0.5;
+
+scene.add(new THREE.HemisphereLight(0xbdd3ea, 0x2c3038, 0.85));
+const key = new THREE.DirectionalLight(0xffffff, 1.8);
+key.position.set(3, 6, 7);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.45);
+fill.position.set(-5, 2, -4);
+scene.add(fill);
+
+/* ================= II 导联轴(右肩 → 左腿,左腿为正极) ================= */
+const RS = new THREE.Vector3(1.05, 1.6, -1.15), LL = new THREE.Vector3(-1.4, -1.95, -1.15);
+const AH = LL.clone().sub(RS).normalize();           // 指向左腿(+)的导联轴单位向量
+const axisLine = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([RS.clone(), LL.clone().addScaledVector(AH, -0.16)]),
+  new THREE.LineDashedMaterial({ color: 0x9fb0c3, dashSize: 0.09, gapSize: 0.06, transparent: true, opacity: 0.75 }));
+axisLine.computeLineDistances();
+scene.add(axisLine);
+const cone = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.17, 10),
+  new THREE.MeshStandardMaterial({ color: 0x4dabf7, roughness: 0.4, emissive: 0x4dabf7, emissiveIntensity: 0.35 }));
+cone.position.copy(LL.clone().addScaledVector(AH, 0.09));
+cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), AH);
+scene.add(cone);
+
+/* ================= 心脏组织:4 个腔室 + 预计算激活时间 ================= */
+const heartG = new THREE.Group();
+scene.add(heartG);
+const tissueMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.05 });
+const TIS = [];
+const C_REST = [0.42, 0.13, 0.17], C_DEP = [0.98, 0.40, 0.24], C_HOT = [1.0, 0.96, 0.72];
+function tissue(rx, ry, rz, cx, cy, cz, ws, hs, type) {
+  const geo = new THREE.SphereGeometry(1, ws, hs);
+  const p = geo.attributes.position, n = p.count;
+  const P = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    P[i * 3] = p.getX(i) * rx + cx; P[i * 3 + 1] = p.getY(i) * ry + cy; P[i * 3 + 2] = p.getZ(i) * rz + cz;
+    p.setXYZ(i, P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
+  }
+  geo.computeVertexNormals();
+  const col = new Float32Array(n * 3);
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const g = { n, P, col, attr: geo.attributes.color, type,
+    act: new Float32Array(n), s: new Float32Array(n), apd: new Float32Array(n),
+    act2: null, s2: null, fire: new Float32Array(n), w: new Float32Array(n) };
+  TIS.push(g);
+  heartG.add(new THREE.Mesh(geo, tissueMat));
+  return g;
+}
+const aRA = tissue(0.34, 0.26, 0.30, 0.34, 0.72, 0.05, 26, 20, 'a');
+const aLA = tissue(0.38, 0.29, 0.33, -0.36, 0.74, -0.05, 26, 20, 'a');
+const vLV = tissue(0.50, 0.72, 0.48, -0.28, -0.35, 0, 34, 26, 'v');
+const vRV = tissue(0.40, 0.58, 0.40, 0.34, -0.28, 0.02, 30, 22, 'v');
+const APEX_L = [-0.28, -1.05, 0], APEX_R = [0.34, -0.85, 0.02];
+const SA_P = [0.42, 0.98, 0.12], AV_P = [0.03, 0.30, 0.08], FOC = [-0.62, -0.30, 0.12];
+const nV = vLV.n + vRV.n, nA = aRA.n + aLA.n;
+{ /* 窦性激活图:心房自 SA 下扫 ~90 ms;心室自心尖经浦肯野 ~85 ms + 复极反向 */
+  const it = [];
+  for (const g of [aRA, aLA]) for (let i = 0; i < g.n; i++) {
+    const dx = g.P[i * 3] - SA_P[0], dy = g.P[i * 3 + 1] - SA_P[1], dz = g.P[i * 3 + 2] - SA_P[2];
+    it.push([dx * dx + dy * dy + dz * dz, g, i]);
+  }
+  it.sort((a, b) => a[0] - b[0]);
+  it.forEach((e, j) => { const q = j / (it.length - 1);
+    e[1].act[e[2]] = 10 + 84 * q; e[1].s[e[2]] = 0.85; e[1].apd[e[2]] = 190; e[1].w[e[2]] = 0.12 / nA; });
+}
+{
+  const it = [];
+  for (const g of [vLV, vRV]) for (let i = 0; i < g.n; i++) {
+    const x = g.P[i * 3], y = g.P[i * 3 + 1], z = g.P[i * 3 + 2];
+    const ap = x < 0.03 ? APEX_L : APEX_R;
+    it.push([(x - ap[0]) ** 2 + (y - ap[1]) ** 2 + (z - ap[2]) ** 2 + (x < 0.03 ? 0 : 4e-4), g, i]);
+  }
+  it.sort((a, b) => a[0] - b[0]);
+  it.forEach((e, j) => { const q = j / (it.length - 1);
+    e[1].act[e[2]] = 12 + 86 * q;
+    /* 复极顺序与除极相反:先激活的主量最后、缓慢复极(宽梯度→T 波),边缘先复极成锐利波前 */
+    const rs = q < 0.12 ? 250 : q < 0.8 ? 300 + 250 * q : 260 + 150 * (q - 0.8);
+    e[1].apd[e[2]] = rs - e[1].act[e[2]];                          // 复极起点(ms,相对心室起搏)
+    e[1].s[e[2]] = q < 0.12 ? -0.2 : q < 0.8 ? 0.92 - 0.38 * q : -0.5;  // 小 q → 大 R → S 的偶极子旋转移
+    e[1].w[e[2]] = 1 / nV; });
+}
+{ /* VT 激活图:自左室局灶慢速辐射 → QRS 宽大畸形 */
+  for (const g of [vLV, vRV]) { g.act2 = new Float32Array(g.n); g.s2 = new Float32Array(g.n); }
+  const it = [];
+  for (const g of [vLV, vRV]) for (let i = 0; i < g.n; i++) {
+    const dx = g.P[i * 3] - FOC[0], dy = g.P[i * 3 + 1] - FOC[1], dz = g.P[i * 3 + 2] - FOC[2];
+    it.push([dx * dx + dy * dy + dz * dz, g, i]);
+  }
+  it.sort((a, b) => a[0] - b[0]);
+  it.forEach((e, j) => { const q = j / (it.length - 1), g = e[1], i = e[2];
+    g.act2[i] = 10 + 128 * q;
+    const d = Math.sqrt(e[0]) + 1e-6;
+    const nx = (g.P[i * 3] - FOC[0]) / d, ny = (g.P[i * 3 + 1] - FOC[1]) / d, nz = (g.P[i * 3 + 2] - FOC[2]) / d;
+    g.s2[i] = g.s[i] * 0.7 + (nx * AH.x + ny * AH.y + nz * AH.z) * 1.5; });
+}
+
+/* ================= 传导系统(发光管:结间束 → AV 结 → His → 束支 → 浦肯野) ================= */
+function tubeMat(hex) { return new THREE.MeshStandardMaterial({ color: 0x6b5326, roughness: 0.4, emissive: hex, emissiveIntensity: 0.15 }); }
+function tube(pts, r, m) {
+  const mesh = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p))), 12, r, 6), m);
+  heartG.add(mesh); return mesh;
+}
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const mSA = tubeMat(0xfff3bf), mAV = tubeMat(0xffa94d), mIN = tubeMat(0xffb454),
+  mHI = tubeMat(0xffd43b), mBU = tubeMat(0xffc078), mPU = tubeMat(0xffe066);
+{ const s = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 10), mSA); s.position.set(...SA_P); heartG.add(s); }
+{ const s = new THREE.Mesh(new THREE.SphereGeometry(0.045, 14, 10), mAV); s.position.set(...AV_P); heartG.add(s); }
+tube([SA_P, [0.5, 0.66, 0.26], AV_P], 0.014, mIN);
+tube([SA_P, [0.3, 0.62, -0.28], AV_P], 0.014, mIN);
+tube([SA_P, [0.05, 0.72, 0.12], AV_P], 0.012, mIN);
+tube([AV_P, [0.0, -0.08, 0.06]], 0.02, mHI);
+tube([[0, -0.08, 0.06], [-0.14, -0.5, 0.04], [-0.26, -0.92, 0.0]], 0.017, mBU);
+tube([[0, -0.08, 0.06], [0.16, -0.45, 0.05], [0.32, -0.78, 0.04]], 0.017, mBU);
+for (const g of [vLV, vRV]) for (let k = 2; k < g.n / 2; k += Math.max(6, Math.floor(g.n / 14))) {
+  const i = k * 2 % g.n;
+  if (g.P[i * 3 + 1] > 0.05) continue;
+  const x = g.P[i * 3], y = g.P[i * 3 + 1], z = g.P[i * 3 + 2];
+  const ap = x < 0.03 ? APEX_L : APEX_R;
+  tube([ap, [(x + ap[0]) / 2 * 1.4, (y + ap[1]) / 2 - 0.05, (z + ap[2]) / 2 * 1.4], [x, y, z]], 0.010, mPU);
+}
+const COND = [                                    // {mat, 组, 相对起搏偏移 ms, 时长}
+  { m: mSA, grp: 'A', off: 0, dur: 45, seed: 1 }, { m: mIN, grp: 'A', off: 5, dur: 55, seed: 2 },
+  { m: mAV, grp: 'A', off: 40, dur: 120, seed: 3 },                // AV 结亮着=正在延搁
+  { m: mHI, grp: 'V', off: 0, dur: 22, seed: 4 }, { m: mBU, grp: 'V', off: 8, dur: 30, seed: 5 },
+  { m: mPU, grp: 'V', off: 16, dur: 55, seed: 6 }];
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() { for (const r of labelReg) r.o.visible = labelsOn && r.vis(); }
+addLabel(() => L('窦房结·起搏点', 'SA node · pacemaker'), V3(0.55, 1.12, 0.1), 'g');
+addLabel(() => L('房室结(延搁 ≈0.1 s)', 'AV node (delay ≈0.1 s)'), V3(0.1, 0.42, 0.2), 'o');
+addLabel(() => L('His 束', 'His bundle'), V3(0.06, -0.12, 0.28), 'b');
+addLabel(() => L('右肩 −', 'right shoulder −'), RS.clone().add(V3(0.1, 0.14, 0)), 'b');
+addLabel(() => L('左腿 +', 'left leg +'), LL.clone().add(V3(-0.1, -0.2, 0)), 'b');
+let wfOn = false, waveTxt = '';
+const lblWF = addLabel(() => L('除极波前', 'depolarization front'), V3(0, -0.5, 0.5), 'o', () => wfOn);
+const lblWave = addLabel(() => waveTxt, V3(0, 1.62, 0), 'g');
+
+/* ================= 节律调度 + ECG 合成(ECG = d/dt Σ wᵢ·sᵢ·mᵢ) ================= */
+let MODE = 'sinus', bpm = clamp(qsFloat('bpm', 75), 40, 180);
+let simT = 0, nextA = 0.05, nextV = 0.05;
+const beatA = [], beatV = [], RRs = [], EV = [];
+const CLof = () => 60 / bpm;
+const apdK = cl => clamp(cl / 0.8, 0.55, 1.05);
+function ev(t, ch) { EV.push({ t, ch }); if (EV.length > 48) EV.shift(); }
+function schedule() {
+  if (MODE === 'sinus') {
+    while (nextA < simT) {
+      const k = apdK(CLof());
+      beatA.push({ t0: nextA, vt: 0 }); beatV.push({ t0: nextA + 0.14, vt: 0, k });
+      RRs.push(CLof()); if (RRs.length > 5) RRs.shift();
+      ev(nextA + 0.055, 'P'); ev(nextA + 0.188, 'QRS'); ev(nextA + 0.14 + 0.4 * k + 0.03, 'T');
+      nextA += CLof();
+    }
+  } else if (MODE === 'afib') {
+    while (nextV < simT) {
+      const rr = 0.38 + Math.random() * 0.77, k = apdK(rr);
+      beatV.push({ t0: nextV, vt: 0, k });
+      RRs.push(rr); if (RRs.length > 5) RRs.shift();
+      ev(nextV + 0.19, 'QRS'); ev(nextV + 0.17 + 0.4 * k, 'T');
+      nextV += rr;
+    }
+  } else {
+    while (nextV < simT) { beatV.push({ t0: nextV, vt: 1, k: 0.55 }); RRs.push(0.34); if (RRs.length > 5) RRs.shift(); ev(nextV + 0.07, 'QRS'); nextV += 0.34; }
+    while (nextA < simT) { beatA.push({ t0: nextA, vt: 0 }); ev(nextA + 0.055, 'P'); nextA += 0.8; }  // 房室分离:窦性 P 照常
+  }
+  while (beatA.length > 3) beatA.shift();
+  while (beatV.length > 3) beatV.shift();
+}
+function afibFires() {                                     // 房颤:心房各顶点随机乱起搏
+  for (const g of [aRA, aLA]) for (let i = 0; i < g.n; i++) {
+    if (g.fire[i] < simT - 0.3) g.fire[i] = simT + Math.random() * 0.12;
+    else if (g.fire[i] <= simT) g.fire[i] += 0.055 + Math.random() * 0.12;
+  }
+}
+const SPAN_V = 640, SPAN_A = 300;
+function sumS(t) {   // 返回 dS/dt(每 ms):偶极 = 除极上升沿 + 复极沿(偶极翻转与 m 回落相消 → T 与 QRS 同向)
+  let S = 0;
+  for (const g of TIS) {
+    if (g.type === 'a' && MODE === 'afib') {
+      for (let i = 0; i < g.n; i++) {
+        const u = (t - g.fire[i]) * 1000;
+        if (u <= 0 || u > SPAN_A) continue;
+        S += g.w[i] * g.s[i] * (dss(u / 35) / 35 + dss((u - 150) / 110) / 110);
+      }
+    } else {
+      const bl = g.type === 'a' ? beatA : beatV;
+      for (const b of bl) {
+        const arr = b.vt ? g.act2 : g.act, sv = b.vt ? g.s2 : g.s;
+        const k = b.vt ? b.k : (b.k || apdK(b.cl || 0.8));
+        for (let i = 0; i < g.n; i++) {
+          const u = (t - b.t0) * 1000 - arr[i];
+          if (u <= 0 || u > SPAN_V) continue;
+          S += g.w[i] * sv[i] * (dss(u / 26) / 26 + dss((u - g.apd[i] * k) / 70) / 70);
+        }
+      }
+    }
+  }
+  return S;
+}
+/* 固定 2 ms 网格采样:sumS 已是解析导数,直接换算成 mV */
+const RN = 2600, H = 0.002, KECG = 0.085;
+const tS = new Float32Array(RN), vS = new Float32Array(RN);
+let head = 0, cnt = 0, tGrid = 0, sampAcc = 0;
+function pushSample(t, v) { tS[head] = t; vS[head] = v; head = (head + 1) % RN; if (cnt < RN) cnt++; }
+function advance(dts) {
+  simT += dts;
+  schedule();
+  if (MODE === 'afib') afibFires();
+  sampAcc += dts;
+  let guard = 0;
+  while (sampAcc >= H - 1e-9 && guard++ < 300) {
+    sampAcc -= H; tGrid += H;
+    pushSample(tGrid, sumS(tGrid) * 1000 * KECG);   // dS/dt(ms⁻¹) → mV
+  }
+}
+/* 顶点着色:黄白波前 + 除极红 + 静息暗红 */
+function paint() {
+  for (const g of TIS) {
+    const c = g.col;
+    if (g.type === 'a' && MODE === 'afib') {
+      for (let i = 0; i < g.n; i++) {
+        const u = (simT - g.fire[i]) * 1000;
+        const md = u > 0 ? ss(u / 30) : 0, mr = u > 0 ? ss((u - 150) / 120) : 0;
+        const m = md * (1 - mr), bo = md * (1 - md) * 3.2 + mr * (1 - mr) * 0.8, j = i * 3;
+        c[j] = C_REST[0] + m * (C_DEP[0] - C_REST[0]) + bo * (C_HOT[0] - C_DEP[0]);
+        c[j + 1] = C_REST[1] + m * (C_DEP[1] - C_REST[1]) + bo * (C_HOT[1] - C_DEP[1]);
+        c[j + 2] = C_REST[2] + m * (C_DEP[2] - C_REST[2]) + bo * (C_HOT[2] - C_DEP[2]);
+      }
+    } else {
+      const bl = g.type === 'a' ? beatA : beatV;
+      const b = bl[bl.length - 1];
+      const kk = b && b.k ? b.k : 1;
+      for (let i = 0; i < g.n; i++) {
+        const u = b ? (simT - b.t0) * 1000 - (b.vt ? g.act2[i] : g.act[i]) : -1;
+        const md = u > 0 ? ss(u / 26) : 0, mr = u > 0 ? ss((u - g.apd[i] * kk) / 70) : 0;
+        const m = md * (1 - mr), bo = md * (1 - md) * 3.4 + mr * (1 - mr) * 0.9, j = i * 3;
+        c[j] = C_REST[0] + m * (C_DEP[0] - C_REST[0]) + bo * (C_HOT[0] - C_DEP[0]);
+        c[j + 1] = C_REST[1] + m * (C_DEP[1] - C_REST[1]) + bo * (C_HOT[1] - C_DEP[1]);
+        c[j + 2] = C_REST[2] + m * (C_DEP[2] - C_REST[2]) + bo * (C_HOT[2] - C_DEP[2]);
+      }
+    }
+    g.attr.needsUpdate = true;
+  }
+}
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '窦房结:司令部', be: 'SA node: headquarters',
+    d: '右心房上方的窦房结是全心的自然起搏点,每 0.8 s(60–100 次/min)自发除极一次——电令从这里发出,不需要大脑插手。',
+    de: 'The SA node atop the right atrium is the heart\'s natural pacemaker, firing spontaneously every ~0.8 s (60–100 /min). The order leaves here — no brain required.',
+    act: () => { setMode('sinus'); } },
+  { b: 'P 波:心房除极', be: 'P wave: atrial depolarization',
+    d: '除极波从窦房结向外扫过两个心房(约 90 ms),心房随之收缩把血挤进心室——在 ECG 上留下一支矮圆的 P 波。',
+    de: 'The wave sweeps from the SA node across both atria (~90 ms); the atria contract and top up the ventricles — leaving the small rounded P wave.',
+    act: () => { setMode('sinus'); } },
+  { b: 'AV 结:故意延搁 0.1 s', be: 'AV node: deliberate 0.1 s delay',
+    d: '电信号在房室结被刻意放慢约 0.1 s——心房趁这段时间把血排完。看:AV 结在这段「等待」里一直亮着;PR 间期就是等待的读数。',
+    de: 'The signal is deliberately slowed ~0.1 s in the AV node so the atria finish emptying. Watch: the AV node stays lit through the wait; the PR interval is that wait, measured.',
+    act: () => { setMode('sinus'); } },
+  { b: 'QRS:浦肯野全网点火', be: 'QRS: the Purkinje network fires',
+    d: '信号经 His 束 → 左右束支 → 浦肯野纤维全网,几万心肌细胞几乎同时除极(≈80–100 ms)——这就是最高的尖峰 R 波。',
+    de: 'His bundle → bundle branches → Purkinje network: tens of thousands of cells depolarize almost together (~80–100 ms) — the tallest spike, the R wave.',
+    act: () => { setMode('sinus'); } },
+  { b: 'T 波:反向复极', be: 'T wave: repolarization in reverse',
+    d: '心室复极从相反方向、更慢地进行;方向相反 + 复极时偶极子也翻转 = T 波仍然直立——心室「充电」,等待下一跳。',
+    de: 'Ventricular repolarization runs the opposite way, slower; reversed direction plus flipped dipole = the T wave is still upright. The ventricles recharge for the next beat.',
+    act: () => { setMode('sinus'); } },
+  { b: '读片:缺什么就是什么病', be: 'Reading: what\'s missing is the diagnosis',
+    d: '波形的缺失与变形即诊断:房颤没有 P、代之细碎 f 波,RR 绝对不齐;室速 QRS 宽大畸形,可恶化为室颤(见除颤器页)。',
+    de: 'Missing or deformed waves are the diagnosis: AFib has no P — fine chaotic f waves and irregularly irregular RR; VT has wide bizarre QRS and can degenerate to VF (see defibrillator page).',
+    act: () => { setMode('afib'); } },
+];
+function stepIndex() {
+  if (MODE !== 'sinus') return 5;
+  const b0 = beatA.length ? beatA[beatA.length - 1].t0 : nextA - CLof();
+  const u = (simT - b0) * 1000;
+  if (u < 15) return 0;
+  if (u < 110) return 1;
+  if (u < 170) return 2;
+  if (u < 280) return 3;
+  if (u < 580) return 4;
+  return 5;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= ECG 纸带绘制(25 mm/s · 10 mm/mV) ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const Hh = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, Hh);
+  const mmPx = 9, winS = W / mmPx / 25, t1 = tGrid, t0 = t1 - winS, mid = Hh / 2;
+  const dark = THEME === 'dark';
+  /* 心电纸网格:小格 1 mm=0.04 s,粗格 5 mm=0.2 s */
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.strokeStyle = dark ? `rgba(255,120,120,${pass ? 0.22 : 0.09})` : `rgba(190,60,60,${pass ? 0.30 : 0.13})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let t = Math.ceil(t0 / 0.04) * 0.04; t <= t1; t += 0.04) {
+      const maj = Math.abs(t / 0.2 - Math.round(t / 0.2)) < 1e-6;
+      if ((pass === 1) !== maj) continue;
+      const x = (t - t0) / winS * W;
+      ctx.moveTo(x, 0); ctx.lineTo(x, Hh);
+    }
+    for (let k = -Math.ceil(Hh / 2 / mmPx); k <= Math.ceil(Hh / 2 / mmPx); k++) {
+      const maj = k % 5 === 0;
+      if ((pass === 1) !== maj) continue;
+      ctx.moveTo(0, mid + k * mmPx); ctx.lineTo(W, mid + k * mmPx);
+    }
+    ctx.stroke();
+  }
+  /* 走纸的曲线 */
+  ctx.strokeStyle = dark ? '#2fd07f' : '#0d8a4a';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  let first = true;
+  for (let i = 0; i < cnt; i++) {
+    const idx = (head - 1 - i + RN * 2) % RN;
+    if (tS[idx] < t0) break;
+    const x = (tS[idx] - t0) / winS * W;
+    const y = clamp(mid - vS[idx] * mmPx * 10, 4, Hh - 4);
+    first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    first = false;
+  }
+  ctx.stroke();
+  /* P / QRS / T 自动标注 */
+  ctx.font = '700 17px system-ui';
+  for (const e of EV) {
+    if (e.t < t0 || e.t > t1) continue;
+    ctx.fillStyle = e.ch === 'P' ? '#51cf66' : e.ch === 'QRS' ? '#4dabf7' : '#ff8787';
+    ctx.fillText(e.ch, (e.t - t0) / winS * W - 8, 16);
+  }
+  ctx.fillStyle = dark ? '#9fb0c3' : '#5b6b7d';
+  ctx.font = '13px system-ui';
+  ctx.fillText('1 mV', 6, mid - mmPx * 10 + 4);
+  ctx.fillText('-' + winS.toFixed(1) + ' s', 6, Hh - 6);
+  ctx.fillText(L('现在', 'now'), W - 34, Hh - 6);
+}
+
+/* ================= 模式预设 ================= */
+function setMode(m) {
+  MODE = m;
+  beatA.length = 0; beatV.length = 0; RRs.length = 0; EV.length = 0;
+  nextA = simT + 0.05; nextV = simT + 0.05;
+  if (m === 'afib') for (const g of [aRA, aLA]) for (let i = 0; i < g.n; i++) g.fire[i] = simT + Math.random() * 0.12;
+  document.getElementById('btnSinus').classList.toggle('on', m === 'sinus');
+  document.getElementById('btnAfib').classList.toggle('on', m === 'afib');
+  document.getElementById('btnVt').classList.toggle('on', m === 'vt');
+  updateFormula();
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elBPM = document.getElementById('sBPM'), elBPMVal = document.getElementById('sBPMVal');
+const elSpd = document.getElementById('sSpeed'), elSpdVal = document.getElementById('sSpeedVal');
+const stHR = document.getElementById('stHR'), stPR = document.getElementById('stPR'), stQRS = document.getElementById('stQRS'),
+  stRR = document.getElementById('stRR'), stDx = document.getElementById('stDx');
+const formulaEl = document.getElementById('formula');
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.25, 3);
+let spinOn = qsBool('spin', true);
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function syncSliders() {
+  elBPM.value = bpm; elBPMVal.textContent = MODE === 'sinus' ? Math.round(bpm) + ' /min' : L('(窦性无效)', '(sinus only)');
+  elSpd.value = speed; elSpdVal.textContent = speed.toFixed(2) + '×';
+}
+function updateFormula() {
+  const cur = MODE === 'sinus' ? L(`窦性 ${Math.round(bpm)} 次/min · PR≈140 ms · QRS≈95 ms · 心室应答规整`, `sinus ${Math.round(bpm)} bpm · PR≈140 ms · QRS≈95 ms · regular response`)
+    : MODE === 'afib' ? L('房颤:P 消失 → 细颤 f 波 · RR 绝对不齐(心房 350–600 次/min 乱颤)', 'AFib: P gone → fine f waves · irregularly irregular RR (atria 350–600 /min)')
+    : L('室速:QRS 宽大畸形 · 房室分离 · 可恶化为室颤', 'VT: wide bizarre QRS · AV dissociation · may degenerate to VF');
+  formulaEl.innerHTML = L(
+    `ECG = −d/dt Σᵢ qᵢ·(rᵢ·â)——偶极子在导联轴上的投影 · SA 结 60–100 次/min · AV 延搁 ≈0.1 s(留给心室充盈) · QRS &lt; 120 ms<br><b>${cur}</b>`,
+    `ECG = −d/dt Σᵢ qᵢ·(rᵢ·â) — the cardiac dipole projected on the lead axis · SA node 60–100 /min · AV delay ≈0.1 s (time to fill) · QRS &lt; 120 ms<br><b>${cur}</b>`);
+}
+function syncAll() { syncSliders(); updateFormula(); drawPlot(); }
+document.getElementById('btnSinus').addEventListener('click', () => { setMode('sinus'); syncAll(); });
+document.getElementById('btnAfib').addEventListener('click', () => { setMode('afib'); syncAll(); });
+document.getElementById('btnVt').addEventListener('click', () => { setMode('vt'); syncAll(); });
+elBPM.addEventListener('input', () => { bpm = +elBPM.value; if (MODE === 'sinus') RRs.length = 0; syncAll(); });
+elSpd.addEventListener('input', () => { speed = +elSpd.value; syncSliders(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglRotate').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+if (!qsBool('labels', true)) { document.getElementById('tglLabels').checked = false; labelsOn = false; refreshLabels(); }
+controls.autoRotate = spinOn;
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 波前位置 / 当前波形标签 / 传导管发光 ================= */
+function phaseInfo() {                                   // → {wave, q} 当前除极波前
+  if (MODE === 'sinus') {
+    const a0 = beatA.length ? beatA[beatA.length - 1].t0 : nextA - CLof();
+    const u = (simT - a0) * 1000;
+    if (u > 8 && u < 100) return { wave: 'P', q: (u - 8) / 92 };
+  }
+  const b = beatV[beatV.length - 1];
+  if (b) {
+    const u = (simT - b.t0) * 1000;
+    if (b.vt && u > 5 && u < 150) return { wave: 'QRS', q: (u - 5) / 145, vt: true };
+    if (!b.vt && u > 8 && u < 105) return { wave: 'QRS', q: (u - 8) / 97 };
+  }
+  return null;
+}
+function updateWaveExtras() {
+  const pi = phaseInfo();
+  if (pi) {
+    if (pi.wave === 'P') lblWF.position.set(0.42 - 0.4 * pi.q, 0.98 - 0.62 * pi.q, 0.38);
+    else if (pi.vt) lblWF.position.set(FOC[0] + (0.5 - FOC[0]) * pi.q, FOC[1] + (0.2 - FOC[1]) * pi.q, FOC[2] + 0.25);
+    else lblWF.position.set(0, -1.0 + 1.3 * pi.q, 0.42);
+    wfOn = true;
+  } else wfOn = false;
+  let txt = '', cls = 'o';
+  if (MODE === 'afib') { txt = L('房颤 · f 波:心房乱颤', 'AFib · f waves: chaotic atria'); cls = 'o'; }
+  else if (pi) {
+    if (pi.wave === 'P') { txt = L('P 波 · 心房除极', 'P · atrial depol.'); cls = 'g'; }
+    else { txt = pi.vt ? L('QRS′ · 室速:宽大畸形', 'QRS′ · VT: wide, bizarre') : L('QRS · 心室快除极', 'QRS · rapid ventricular depol.'); cls = 'b'; }
+  } else {
+    const b = beatV[beatV.length - 1];
+    if (b && !(b.vt) && (simT - b.t0) * 1000 > 250 && (simT - b.t0) * 1000 < 560) { txt = L('T 波 · 心室复极', 'T · ventricular repol.'); cls = 'r'; }
+  }
+  waveTxt = txt;
+  lblWave.element.className = 'lbl ' + cls;
+  for (const p of COND) {
+    let I = 0.15;
+    if (p.grp === 'V') {
+      const b = beatV[beatV.length - 1];
+      if (b && !b.vt) {
+        const u = (simT - b.t0) * 1000 - p.off;
+        if (u > 0 && u < p.dur + 90) I = 0.15 + 2.6 * ss(u / 7) * (1 - ss((u - p.dur) / 70));
+      }
+    } else if (MODE === 'afib') {
+      const f = Math.max(0, Math.sin(simT * 8 + p.seed * 2.3));
+      I = 0.15 + 2.2 * f * f * f;
+    } else {
+      const b = beatA[beatA.length - 1];
+      if (b) {
+        const u = (simT - b.t0) * 1000 - p.off;
+        if (u > 0 && u < p.dur + 120) I = 0.15 + 2.6 * ss(u / 8) * (1 - ss((u - p.dur) / 90));
+      }
+    }
+    p.m.emissiveIntensity = I;
+  }
+}
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, statsAcc = 0;
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speed * (playing ? 1 : 0);
+  if (dt > 0) advance(dt);
+  paint();
+  updateWaveExtras();
+  statsAcc += dt0;
+  if (statsAcc > 0.15) {
+    statsAcc = 0;
+    if (RRs.length >= 2) {
+      const mean = RRs.slice(-4).reduce((a, b) => a + b, 0) / Math.min(RRs.length, 4);
+      const meanAll = RRs.reduce((a, b) => a + b, 0) / RRs.length;
+      const cv = Math.sqrt(RRs.reduce((a, b) => a + (b - meanAll) ** 2, 0) / RRs.length) / meanAll * 100;
+      stHR.textContent = Math.round(60 / mean) + ' bpm';
+      const irreg = cv > 12;
+      stRR.textContent = irreg ? L(`绝对不齐 ${cv.toFixed(0)}%`, `irregular ${cv.toFixed(0)}%`) : (60 / mean > 120 ? L(`规整·快 ${cv.toFixed(0)}%`, `regular·fast ${cv.toFixed(0)}%`) : L(`规整 ${cv.toFixed(0)}%`, `regular ${cv.toFixed(0)}%`));
+      let dx, c;
+      if (MODE === 'sinus') { dx = L('正常窦性心律', 'Normal sinus rhythm'); c = 'ok'; }
+      else if (MODE === 'afib') { dx = L('心房颤动', 'Atrial fibrillation'); c = 'warn'; }
+      else { dx = L('室性心动过速', 'Ventricular tachycardia'); c = 'bad'; }
+      stDx.textContent = dx; stDx.className = 'v ' + c;
+    } else { stHR.textContent = '—'; stRR.textContent = '—'; }
+    stPR.innerHTML = MODE === 'sinus' ? '140 <small>ms</small>' : MODE === 'afib' ? L('无 P', 'no P') : L('分离', 'dissoc.');
+    stQRS.innerHTML = (MODE === 'vt' ? '165' : '95') + ' <small>ms</small>';
+    drawPlot();
+  }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+bpm = clamp(qsFloat('bpm', 75), 40, 180);
+speed = clamp(qsFloat('speed', 1), 0.25, 3);
+{
+  const p = (qs.get('mode') || 'sinus').toLowerCase();
+  setMode(p === 'afib' || p === 'af' ? 'afib' : p === 'vt' ? 'vt' : 'sinus');
+}
+syncSliders();
+buildSteps();
+applyTheme();
+applyLang();
+{ /* 预热:直接推进仿真,让纸带上先有历史波形 */
+  const tStart = clamp(qsFloat('t', 3.6), 0.5, 12);
+  for (let s = 0; s < tStart; s += 0.05) advance(0.05);
+  simT = tStart; tGrid = tStart;
+}
+syncAll();
+start();
+</script>
+</body>
+</html>

@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>非牛顿流体 · 一推就稀,一搅就硬</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="非牛顿流体" data-en="Non-Newtonian Fluids">非牛顿流体</h1>
+  <div class="sub" data-zh="τ=µγ̇ 只是水的故事。转动内筒对环隙里的流体施加剪切,350 个示踪粒子按当地有效粘度 µ_eff=τ/γ̇ 变色:番茄酱越搅越稀(剪切变稀,瓶子倒不出、一拍就流),淀粉浆越搅越硬(剪切增稠,快搅能在浆上跑步,非牛顿防弹衣同款),牙膏不到屈服应力 τ_y 纹丝不动(宾汉塑性);看速度剖面被扭弯、µ_eff 读数暴涨——而雷诺数用 µ_eff 一算,快搅反而更「层流」 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="τ=µγ̇ is only water's story. The inner cylinder shears the annulus while 350 tracer particles color by local effective viscosity µ_eff=τ/γ̇: ketchup gets runnier the faster you stir (shear-thinning — won't pour, flows at a tap), cornstarch slime sets the harder you whip it (shear-thickening — run across a pool of it; liquid armor), toothpaste ignores you entirely below its yield stress τ_y (Bingham plastic). Watch the velocity profile bend and the µ_eff readout rocket — and note Re computed with µ_eff: fast stirring is actually more laminar · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">τ=µγ̇ 只是水的故事。转动内筒对环隙里的流体施加剪切,350 个示踪粒子按当地有效粘度 µ_eff=τ/γ̇ 变色:番茄酱越搅越稀(剪切变稀,瓶子倒不出、一拍就流),淀粉浆越搅越硬(剪切增稠,快搅能在浆上跑步,非牛顿防弹衣同款),牙膏不到屈服应力 τ_y 纹丝不动(宾汉塑性);看速度剖面被扭弯、µ_eff 读数暴涨——而雷诺数用 µ_eff 一算,快搅反而更「层流」 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="剪切率 γ̇" data-en="Shear rate γ̇">剪切率 γ̇</span><span class="v" id="stG">—</span>
+  <span class="k" data-zh="剪应力 τ" data-en="Stress τ">剪应力 τ</span><span class="v" id="stTau">—</span>
+  <span class="k" data-zh="有效粘度 µ_eff=τ/γ̇" data-en="Effective µ_eff=τ/γ̇">有效粘度 µ_eff=τ/γ̇</span><span class="v" id="stMu">—</span>
+  <span class="k" data-zh="流态" data-en="Flow state">流态</span><span class="v ok" id="stState">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="τ–γ̇ 流动曲线(双对数)· 橙虚线=µ_eff" data-en="τ–γ̇ flow curves (log-log) · dashed = µ_eff">τ–γ̇ 流动曲线(双对数)· 橙虚线=µ_eff</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="粒子颜色=当地 µ_eff:蓝软→红硬" data-en="particle color = local µ_eff: blue soft → red hard">粒子颜色=当地 µ_eff:蓝软→红硬</span>
+    <span class="chip.g" data-zh="彩带=速度剖面 v_θ(r)" data-en="ribbon = velocity profile v_θ(r)">彩带=速度剖面 v_θ(r)</span>
+    <span class="chip.o" data-zh="橙虚线=µ_eff(γ̇) 工作粘度" data-en="orange dashed = µ_eff(γ̇)">橙虚线=µ_eff(γ̇) 工作粘度</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnWater" data-zh="水 · 牛顿" data-en="water · Newtonian">水 · 牛顿</button>
+    <button class="abtn" id="btnKetch" data-zh="番茄酱 · 剪切变稀" data-en="ketchup · shear-thinning">番茄酱 · 剪切变稀</button>
+    <button class="abtn" id="btnOo" data-zh="淀粉浆 · 剪切增稠" data-en="oobleck · shear-thickening">淀粉浆 · 剪切增稠</button>
+    <button class="abtn" id="btnTooth" data-zh="牙膏 · 宾汉塑性" data-en="toothpaste · Bingham">牙膏 · 宾汉塑性</button>
+  </div>
+  <div class="row"><label data-zh="搅拌速率 γ̇" data-en="Stir rate γ̇">搅拌速率 γ̇</label><input id="sRate" type="range" min="0" max="1" step="0.001" value="0.6"><span class="val" id="sRateVal">—</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="曲线" data-en="Chart">曲线</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../poiseuille/" data-zh="管里的粘性:泊肃叶流动" data-en="viscosity in a pipe: Poiseuille flow">管里的粘性:泊肃叶流动</a>
+    <a href="../reynolds-number/" data-zh="粘性的标尺:雷诺数" data-en="the yardstick of viscosity: Reynolds number">粘性的标尺:雷诺数</a>
+    <a href="../capillarity/" data-zh="另一种流变:毛细与表面张力" data-en="another rheology story: capillarity & surface tension">另一种流变:毛细与表面张力</a>
+    <a href="../stokes-centrifuge/" data-zh="血浆也是非牛顿:斯托克斯沉降" data-en="plasma is non-Newtonian too: Stokes settling">血浆也是非牛顿:斯托克斯沉降</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const fmtS = x => x >= 1000 ? (x / 1000).toFixed(1) + 'k' : x >= 100 ? x.toFixed(0)
+  : x >= 10 ? x.toFixed(1) : x >= 1 ? x.toFixed(2) : x >= 0.01 ? x.toFixed(2) : x.toExponential(0);
+const fmtRe = x => x >= 1e5 ? x.toExponential(1) : fmtS(x);
+const SUP = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶' };
+const sup = n => String(n).split('').map(c => SUP[c] || c).join('');
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141c, 16, 46);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141c : 0xd8e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x10141c : 0xd8e2ea);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('非牛顿流体 · 一推就稀,一搅就硬', 'Non-Newtonian Fluids · Thins When Pushed, Sets When Whipped');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+  drawPlot();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 300);
+camera.position.set(6.6, 4.9, 8.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 4;
+controls.maxDistance = 40;
+controls.autoRotateSpeed = 0.35;
+
+scene.add(new THREE.HemisphereLight(0xbdd3ea, 0x28414e, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 1.7);
+key.position.set(6, 10, 7);
+scene.add(key);
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.3,
+    emissive: color, emissiveIntensity: 0.05, transparent: true, ...opts });
+}
+
+/* ================= 流变模型(真实单位:棒-杯流变仪) ================= */
+const RR = 0.05, rr = 0.04;                     // 外杯/内筒半径 m(间隙 1 cm)
+const MODES = {
+  water:      { type: 'n', K: 0.001, n: 1 },          // τ=µγ̇, µ=1 mPa·s
+  ketchup:    { type: 'p', K: 25,    n: 0.4 },        // τ=Kγ̇ⁿ, n<1 剪切变稀
+  oobleck:    { type: 'p', K: 1.2,   n: 2 },          // n>1 剪切增稠
+  toothpaste: { type: 'b', ty: 50,   mup: 10 },       // τ=τ_y+µ_p·γ̇
+};
+const FLUID = { water: 0x4dabf7, ketchup: 0xff6b6b, oobleck: 0xf1f3f5, toothpaste: 0x3bc9db };
+const ACCENT = { water: '#4dabf7', ketchup: '#ff6b6b', oobleck: '#ffd43b', toothpaste: '#3bc9db' };
+let mode = 'water', gdot = 10, simT = 0;        // gdot:壁面剪切率 γ̇_w=ωr/(R−r), s⁻¹
+let solCache = null, hardAmt = 0, blocked = false;
+const isBlocked = () => mode === 'toothpaste' && gdot * MODES.toothpaste.mup < MODES.toothpaste.ty;
+function tauOf(key, g) {                        // 本构模型 τ(γ̇)
+  const m = MODES[key];
+  if (m.type === 'n') return m.K * g;
+  if (m.type === 'p') return m.K * Math.pow(g, m.n);
+  return g * m.mup < m.ty ? m.mup * g : m.ty + m.mup * g;   // 未屈服:只抗到驱动应力
+}
+const tauDisp = () => tauOf(mode, gdot);
+/* 求解精确环隙 Couette 解:τ(r)=C/r²,由内筒角速度 ω=gdot(R−r)/r 定 C */
+function solveC() {
+  const om = gdot * (RR - rr) / rr;
+  if (isBlocked()) return null;                 // 驱动应力<τ_y:整体不屈服
+  const m = MODES[mode];
+  if (m.type === 'b') {                         // 宾汉:屈服面 ρy,二分求 C
+    const { ty, mup } = m;
+    const wOf = C => { const ry = Math.min(Math.sqrt(C / ty), RR);
+      return (C / 2 * (1 / (rr * rr) - 1 / (ry * ry)) - ty * Math.log(ry / rr)) / mup; };
+    let lo = ty * rr * rr * (1 + 1e-9), hi = 1e6;
+    for (let i = 0; i < 45; i++) { const mid = (lo + hi) / 2; wOf(mid) < om ? lo = mid : hi = mid; }
+    const C = (lo + hi) / 2;
+    return { C, ry: Math.min(Math.sqrt(C / ty), RR) };
+  }
+  if (m.n === 1) return { C: 2 * m.K * om / (1 / (rr * rr) - 1 / (RR * RR)), ry: RR };
+  return { C: m.K * Math.pow(2 * om / (m.n * (Math.pow(rr, -2 / m.n) - Math.pow(RR, -2 / m.n))), m.n), ry: RR };
+}
+/* 周向速度 v(ρ):宾汉在 ρy 之外是静止栓区 */
+function vAt(rho, sol) {
+  if (!sol) return 0;
+  const m = MODES[mode];
+  if (m.type === 'b') {
+    if (rho >= sol.ry) return 0;
+    return rho * (sol.C / 2 * (1 / (rho * rho) - 1 / (sol.ry * sol.ry)) - m.ty * Math.log(sol.ry / rho)) / m.mup;
+  }
+  if (m.n === 1) return sol.C / (2 * m.K) * (1 / rho - rho / (RR * RR));
+  return (m.n / 2) * Math.pow(sol.C / m.K, 1 / m.n) * (Math.pow(rho, 1 - 2 / m.n) - rho / Math.pow(RR, 2 / m.n));
+}
+/* 当地有效粘度 µ_eff(ρ)=τ(ρ)/γ̇(ρ) */
+function muLocal(rho) {
+  if (!solCache) return Infinity;
+  const tau = solCache.C / (rho * rho);
+  const m = MODES[mode];
+  if (m.type === 'n') return m.K;
+  if (m.type === 'b') { if (rho >= solCache.ry) return 1e9; return m.mup * tau / (tau - m.ty); }
+  const g = Math.pow(tau / m.K, 1 / m.n);
+  return tau / g;
+}
+
+/* ================= 几何:外杯 / 流体 / 内筒 ================= */
+const RS = 2.3, RSI = 1.84, CUP_H = 3.1, FL_H = 2.5;      // 场景尺寸
+const rToS = r => RSI + (r - rr) / (RR - rr) * (RS - RSI); // 物理半径→场景半径
+const cup = new THREE.Mesh(new THREE.CylinderGeometry(RS, RS, CUP_H, 72, 1, true),
+  new THREE.MeshPhysicalMaterial({ color: 0xa8c6dd, transparent: true, opacity: 0.16,
+    roughness: 0.1, metalness: 0, side: THREE.DoubleSide, depthWrite: false }));
+scene.add(cup);
+const cupBottom = new THREE.Mesh(new THREE.CircleGeometry(RS, 72).rotateX(-Math.PI / 2),
+  mat(0x93a9bd, { opacity: 0.35, roughness: 0.6, metalness: 0.1 }));
+cupBottom.position.y = -CUP_H / 2;
+scene.add(cupBottom);
+const rim = new THREE.Mesh(new THREE.TorusGeometry(RS, 0.04, 10, 90).rotateX(Math.PI / 2),
+  mat(0xcfd9e4, { opacity: 0.8 }));
+rim.position.y = CUP_H / 2;
+scene.add(rim);
+const base = new THREE.Mesh(new THREE.CylinderGeometry(RS + 0.7, RS + 1.0, 0.22, 72),
+  mat(0x39434e, { opacity: 1, roughness: 0.8, metalness: 0.2 }));
+base.position.y = -CUP_H / 2 - 0.11;
+scene.add(base);
+const fluidTint = new THREE.Mesh(new THREE.CylinderGeometry(RS - 0.03, RS - 0.03, FL_H, 72),
+  new THREE.MeshBasicMaterial({ color: FLUID.water, transparent: true, opacity: 0.10, depthWrite: false }));
+scene.add(fluidTint);
+const fluidTop = new THREE.Mesh(new THREE.RingGeometry(RSI, RS - 0.04, 72).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: FLUID.water, transparent: true, opacity: 0.22,
+    depthWrite: false, side: THREE.DoubleSide }));
+fluidTop.position.y = FL_H / 2;
+scene.add(fluidTop);
+/* 内筒(转子):旋转可见的条纹 */
+const rotor = new THREE.Group();
+const rotorBody = new THREE.Mesh(new THREE.CylinderGeometry(RSI, RSI, CUP_H + 0.6, 48),
+  mat(0x7f8c9b, { opacity: 1, roughness: 0.35, metalness: 0.75 }));
+rotor.add(rotorBody);
+for (let k = 0; k < 3; k++) {
+  const a = k * Math.PI * 2 / 3;
+  const st = new THREE.Mesh(new THREE.BoxGeometry(0.05, CUP_H + 0.4, 0.1),
+    mat(0xffa94d, { opacity: 1, roughness: 0.5, emissiveIntensity: 0.25 }));
+  st.position.set(Math.cos(a) * (RSI + 0.02), 0, Math.sin(a) * (RSI + 0.02));
+  st.rotation.y = -a;
+  rotor.add(st);
+}
+const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.5, 16),
+  mat(0x9aa7b5, { opacity: 1, roughness: 0.3, metalness: 0.8 }));
+shaft.position.y = (CUP_H + 0.6) / 2 + 0.75;
+rotor.add(shaft);
+const knob = new THREE.Mesh(new THREE.SphereGeometry(0.2, 20, 14),
+  mat(0xffa94d, { opacity: 1, roughness: 0.4, emissiveIntensity: 0.3 }));
+knob.position.y = (CUP_H + 0.6) / 2 + 1.55;
+rotor.add(knob);
+scene.add(rotor);
+
+/* ================= 示踪粒子:InstancedMesh ×350,按当地 µ_eff 着色 ================= */
+const PN = 350;
+const pIM = new THREE.InstancedMesh(new THREE.SphereGeometry(0.05, 8, 6),
+  new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.05 }), PN);
+pIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(pIM);
+const dummy = new THREE.Object3D();
+const _c = new THREE.Color();
+const parts = [];
+for (let i = 0; i < PN; i++) parts.push({
+  rho: rr + 0.0012 + Math.random() * (RR - rr - 0.0024),
+  th: Math.random() * 6.283,
+  y: (Math.random() - 0.5) * (FL_H - 0.3),
+  ph: Math.random() * 6.283,
+});
+const sceneOmega = () => { const u = (Math.log10(gdot) + 2) / 5; return 0.15 + 3.85 * Math.pow(u, 1.5); };
+function updateParticles(dt) {
+  const v0 = solCache ? Math.max(vAt(rr, solCache), 1e-12) : 1;
+  const om = sceneOmega();
+  for (let i = 0; i < PN; i++) {
+    const p = parts[i];
+    if (dt > 0) {
+      const w = solCache ? vAt(p.rho, solCache) / v0 : 0;   // 未屈服:0,纹丝不动
+      const lurch = hardAmt * Math.sin(simT * (9 + p.ph * 3) + p.ph * 7) * om * 0.85;
+      p.th += (w * om + lurch) * dt;
+    }
+    const wob = hardAmt * 0.02 * Math.sin(simT * 21 + p.ph * 11);
+    const rw = rToS(p.rho) * (1 + wob);
+    dummy.position.set(rw * Math.cos(p.th),
+      p.y + hardAmt * 0.02 * Math.sin(simT * 17 + p.ph * 13), rw * Math.sin(p.th));
+    dummy.scale.setScalar(1 + hardAmt * 0.25 * (0.5 + 0.5 * Math.sin(simT * 13 + p.ph * 9)));
+    dummy.updateMatrix();
+    pIM.setMatrixAt(i, dummy.matrix);
+  }
+  pIM.instanceMatrix.needsUpdate = true;
+}
+function updateParticleColors() {
+  const muLo = muLocal(RR), muHi = muLocal(rr);
+  const l0 = Math.log10(Math.max(Math.min(muLo, muHi), 1e-9));
+  const l1 = Math.log10(Math.min(Math.max(Math.max(muLo, muHi), 1e-9), 1e12));
+  for (let i = 0; i < PN; i++) {
+    const mu = muLocal(parts[i].rho);
+    let t = (l1 > l0 && Number.isFinite(mu)) ? (Math.log10(clamp(mu, 1e-9, 1e12)) - l0) / (l1 - l0) : 0.5;
+    if (!solCache) t = 1;                                   // 未屈服:整体"固态"红
+    _c.setHSL(0.58 - 0.58 * clamp(t, 0, 1), 0.75, 0.55);
+    pIM.setColorAt(i, _c);
+  }
+  pIM.instanceColor.needsUpdate = true;
+}
+
+/* ================= 速度剖面带:v_θ(r) 沿间隙展开 ================= */
+const RBN = 48, TH0 = 0.85, RIBSPAN = 1.35;
+const ribGeo = new THREE.BufferGeometry();
+const ribPos = new Float32Array(RBN * 2 * 3);
+ribGeo.setAttribute('position', new THREE.BufferAttribute(ribPos, 3));
+{
+  const idx = [];
+  for (let i = 0; i < RBN - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  ribGeo.setIndex(idx);
+}
+const ribbon = new THREE.Mesh(ribGeo, new THREE.MeshBasicMaterial({ color: 0x8ce99a,
+  transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
+scene.add(ribbon);
+function updateRibbon() {
+  const v0 = solCache ? Math.max(vAt(rr, solCache), 1e-12) : 1;
+  for (let i = 0; i < RBN; i++) {
+    const rho = rr + (RR - rr) * i / (RBN - 1);
+    const s = solCache ? vAt(rho, solCache) / v0 : 0;
+    const ang = TH0 + s * RIBSPAN;
+    const rw = rToS(rho), ca = Math.cos(ang), sa = Math.sin(ang), o = i * 6;
+    ribPos[o] = rw * ca; ribPos[o + 1] = 0.13; ribPos[o + 2] = rw * sa;
+    ribPos[o + 3] = rw * ca; ribPos[o + 4] = -0.13; ribPos[o + 5] = rw * sa;
+  }
+  ribGeo.attributes.position.needsUpdate = true;
+}
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+addLabel(() => L('内筒:施加剪切 ω', 'inner cylinder: applies shear ω'),
+  new THREE.Vector3(0, CUP_H / 2 + 2.1, 0), 'o');
+addLabel(() => L('外杯(静止):r=R', 'outer cup (static): r=R'),
+  new THREE.Vector3(-(RS + 0.55), 1.0, 0.6), 'b');
+const lblProfile = addLabel(() => L('速度剖面 v_θ(r)', 'velocity profile v_θ(r)'),
+  new THREE.Vector3(2, 0.6, 1.5), 'g');
+addLabel(() => L('变硬区:粒子挤成"固体"', 'set zone: particles jam into a "solid"'),
+  new THREE.Vector3(RSI + 0.5, 1.55, 0), 'r', () => mode === 'oobleck' && hardAmt > 0.3);
+addLabel(() => solCache && solCache.ry < RR * 0.99
+    ? L('屈服层:贴筒被剪,向外生长', 'yielded layer: sheared at the wall, growing outward')
+    : L('全间隙屈服:整体流动', 'fully yielded: plug-free flow'),
+  new THREE.Vector3(RSI + 0.55, -0.5, 0.55), 'g', () => mode === 'toothpaste' && !blocked);
+addLabel(() => blocked
+    ? L('低于 τ_y:整杯纹丝不动', 'below τ_y: nothing moves at all')
+    : L('栓区(未屈服):整体停着', 'plug (unyielded): rigid body'),
+  new THREE.Vector3(0.5, -1.8, 0.9), 'r',
+  () => mode === 'toothpaste' && (blocked || (solCache && solCache.ry < RR * 0.99)));
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '粘度=剪应力÷剪切率', be: 'Viscosity = stress ÷ shear rate',
+    d: 'µ_eff=τ/γ̇:推得越快越费劲,粘度就是劲头与快慢之比。转动内筒施加剪切,粒子颜色=当地 µ_eff。先看水的基准:颜色处处相同,剖面近直线。',
+    de: 'µ_eff=τ/γ̇: the harder you push, the faster it yields — viscosity is that ratio. The inner cylinder applies shear; particle color = local µ_eff. Start from water: uniform color, near-straight profile.',
+    act: () => { gdot = 10; setMode('water'); } },
+  { b: '牛顿流体:粘度是常数', be: 'Newtonian: viscosity is a constant',
+    d: '水/空气/蜂蜜:τ=µγ̇,双对数图上斜率为 1 的直线,µ_eff 不随 γ̇ 变;速度剖面跨间隙近线性——筒多快,流体按比例多快。',
+    de: 'Water/air/honey: τ=µγ̇ gives a slope-1 line on the log-log chart and µ_eff never changes. The profile is nearly linear across the gap — the fluid obeys proportionally.',
+    act: () => { gdot = 300; setMode('water'); } },
+  { b: '剪切变稀:番茄酱', be: 'Shear-thinning: ketchup',
+    d: 'τ=Kγ̇ⁿ,n≈0.4<1:µ_eff=Kγ̇ⁿ⁻¹ 随 γ̇ 下降。瓶子倒不出——重力给的剪切率太低,µ_eff 上百 Pa·s;一拍瓶底,γ̇ 瞬时上千,µ_eff 掉两个量级,酱才出来。',
+    de: 'τ=Kγ̇ⁿ with n≈0.4<1: µ_eff=Kγ̇ⁿ⁻¹ drops as γ̇ rises. The bottle will not pour — gravity gives too little shear and µ_eff is huge; one tap spikes γ̇, µ_eff collapses, out comes the ketchup.',
+    act: () => { gdot = 0.5; setMode('ketchup'); } },
+  { b: '剪切增稠:淀粉浆', be: 'Shear-thickening: oobleck',
+    d: 'n≈2>1:µ_eff∝γ̇。慢搅如奶油;快搅粒子被剪应力挤成"固体"——搅不动,甚至能在浆上跑步;非牛顿防弹衣(液体装甲)就是这个原理。看粒子变红、成块颠簸。',
+    de: 'n≈2>1: µ_eff ∝ γ̇. Stir slowly like cream; whip it hard and the particles jam into a "solid" — you can run across a pool of it. Shear-thickening liquid armor works exactly this way. Watch particles turn red and lurch in clumps.',
+    act: () => { gdot = 400; setMode('oobleck'); } },
+  { b: '宾汉塑性:牙膏', be: 'Bingham plastic: toothpaste',
+    d: 'τ=τ_y+µ_p·γ̇:应力不到屈服值 τ_y≈50 Pa,整杯纹丝不动(内筒空转);过了 τ_y 才流动——先贴内筒薄层屈服、再向外生长,未屈服的"栓区"整体不动。',
+    de: 'τ=τ_y+µ_p·γ̇: below the yield stress τ_y≈50 Pa nothing moves at all (the cylinder spins idle); above it, a thin yielded layer hugs the cylinder and grows outward while the unyielded plug stays put.',
+    act: () => { gdot = 2; setMode('toothpaste'); } },
+  { b: '现实:处处是非牛顿', be: 'In the real world',
+    d: '油漆要"易刷不流挂"=剪切变稀(刷时稀、静时稠);泥浆/纸浆管道要防剪切增稠堵管;血液流变学、酸奶、面糊、电池浆料——全是 τ=Kγ̇ⁿ 或 τ_y 的游戏。',
+    de: 'Paint must brush easily yet not sag = shear-thinning (thin while brushing, thick at rest); slurry pipelines fight shear-thickening clogging; blood rheology, yogurt, batter, battery slurries — all play the τ=Kγ̇ⁿ or τ_y game.',
+    act: () => { gdot = 300; setMode('ketchup'); } },
+];
+function stepIndex() {
+  if (mode === 'water') return gdot < 0.05 ? 0 : 1;
+  if (mode === 'ketchup') return 2;
+  if (mode === 'oobleck') return 3;
+  return 4;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 曲线图:τ–γ̇ 双对数 + µ_eff + 工作点 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  if (!W || !H) return;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const pad = 30, padR = 12, padB = 26, padT = 10;
+  const X0 = -2, X1 = 3, Y0 = -5, Y1 = 6;
+  const xOf = g => pad + (Math.log10(g) - X0) / (X1 - X0) * (W - pad - padR);
+  const yOf = t => (H - padB) - (Math.log10(clamp(t, 1e-5, 1e7)) - Y0) / (Y1 - Y0) * (H - padB - padT);
+  ctx.strokeStyle = 'rgba(128,150,170,.18)'; ctx.lineWidth = 1;
+  ctx.fillStyle = cTxt; ctx.font = '15px system-ui';
+  for (let d = X0; d <= X1; d++) {
+    const x = xOf(Math.pow(10, d));
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+    ctx.fillText('10' + sup(d), x - 10, H - 8);
+  }
+  for (let d = Y0; d <= Y1; d++) {
+    const y = yOf(Math.pow(10, d));
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.fillText('10' + sup(d), 2, y + 5);
+  }
+  /* 四条模型曲线(非当前=淡) */
+  for (const key of Object.keys(MODES)) {
+    ctx.strokeStyle = ACCENT[key];
+    ctx.globalAlpha = key === mode ? 1 : 0.25;
+    ctx.lineWidth = key === mode ? 2.5 : 1.5;
+    ctx.beginPath();
+    for (let i = 0; i <= 160; i++) {
+      const g = Math.pow(10, X0 + (X1 - X0) * i / 160);
+      i ? ctx.lineTo(xOf(g), yOf(tauOf(key, g))) : ctx.moveTo(xOf(g), yOf(tauOf(key, g)));
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  /* τ_y 参考线(宾汉) */
+  if (mode === 'toothpaste') {
+    const y = yOf(MODES.toothpaste.ty);
+    ctx.strokeStyle = 'rgba(255,107,107,.5)'; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillText('τ_y', W - padR - 34, y - 5);
+  }
+  /* µ_eff 虚线(当前模式) */
+  ctx.strokeStyle = '#ffa94d'; ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
+  ctx.beginPath();
+  for (let i = 0; i <= 160; i++) {
+    const g = Math.pow(10, X0 + (X1 - X0) * i / 160);
+    i ? ctx.lineTo(xOf(g), yOf(tauOf(mode, g) / g)) : ctx.moveTo(xOf(g), yOf(tauOf(mode, g) / g));
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+  /* 工作点 */
+  ctx.fillStyle = ACCENT[mode];
+  ctx.beginPath(); ctx.arc(xOf(gdot), yOf(tauDisp()), 6, 0, 6.284); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = cTxt;
+  ctx.fillText(L('τ (Pa) · µ_eff (Pa·s)', 'τ (Pa) · µ_eff (Pa·s)'), pad + 2, padT + 2);
+  ctx.fillText('γ̇ (s⁻¹)', W - padR - 58, H - padB + 20);
+}
+
+/* ================= 模式 / UI ================= */
+function updatePhysics() {
+  blocked = isBlocked();
+  hardAmt = mode === 'oobleck' ? clamp((gdot - 25) / 55, 0, 1) : 0;
+  solCache = solveC();
+  updateRibbon();
+}
+const modeBtns = [
+  { key: 'water', el: document.getElementById('btnWater') },
+  { key: 'ketchup', el: document.getElementById('btnKetch') },
+  { key: 'oobleck', el: document.getElementById('btnOo') },
+  { key: 'toothpaste', el: document.getElementById('btnTooth') },
+];
+function setMode(key) {
+  mode = key;
+  for (const b of modeBtns) b.el.classList.toggle('on', b.key === key);
+  fluidTint.material.color.setHex(FLUID[key]);
+  fluidTop.material.color.setHex(FLUID[key]);
+  updatePhysics();
+}
+const elPlay = document.getElementById('play');
+const elRate = document.getElementById('sRate'), elRateVal = document.getElementById('sRateVal');
+const stG = document.getElementById('stG'), stTau = document.getElementById('stTau'),
+  stMu = document.getElementById('stMu'), stState = document.getElementById('stState');
+const formulaEl = document.getElementById('formula');
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 4);
+let spinOn = qsBool('spin', true);
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function setModeBtns() { for (const b of modeBtns) b.el.classList.toggle('on', b.key === mode); }
+function syncSliders() {
+  elRate.value = (Math.log10(gdot) + 2) / 5;
+  elRateVal.textContent = 'γ̇=' + fmtS(gdot) + ' s⁻¹';
+}
+function syncAll() { syncSliders(); updateFormula(); drawPlot(); setModeBtns(); }
+function updateFormula() {
+  const tau = tauDisp(), mu = tau / gdot;
+  const om = gdot * (RR - rr) / rr;
+  const Re = 1000 * om * RR * RR / mu;
+  const g = fmtS(gdot), t = fmtS(tau);
+  let l1;
+  if (mode === 'water')
+    l1 = L(`水·牛顿:τ=µγ̇ · µ=<b>0.001 Pa·s 常数</b> · γ̇=<b>${g} s⁻¹</b> → τ=<b>${t} Pa</b>`,
+      `water·Newtonian: τ=µγ̇ · µ=<b>0.001 Pa·s const</b> · γ̇=<b>${g} s⁻¹</b> → τ=<b>${t} Pa</b>`);
+  else if (mode === 'ketchup')
+    l1 = L(`番茄酱·幂律:τ=Kγ̇ⁿ · K=25, n=0.4<1 变稀 · γ̇=<b>${g} s⁻¹</b> → τ=<b>${t} Pa</b>`,
+      `ketchup·power law: τ=Kγ̇ⁿ · K=25, n=0.4<1 thins · γ̇=<b>${g} s⁻¹</b> → τ=<b>${t} Pa</b>`);
+  else if (mode === 'oobleck')
+    l1 = L(`淀粉浆·幂律:τ=Kγ̇ⁿ · K=1.2, n=2>1 增稠 · γ̇=<b>${g} s⁻¹</b> → τ=<b>${t} Pa</b>`,
+      `oobleck·power law: τ=Kγ̇ⁿ · K=1.2, n=2>1 thickens · γ̇=<b>${g} s⁻¹</b> → τ=<b>${t} Pa</b>`);
+  else if (blocked)
+    l1 = L(`牙膏·宾汉:驱动 µ_p·γ̇=<b>${fmtS(MODES.toothpaste.mup * gdot)} Pa</b> &lt; τ_y=<b>50 Pa</b> → 不屈服,纹丝不动`,
+      `toothpaste·Bingham: drive µ_p·γ̇=<b>${fmtS(MODES.toothpaste.mup * gdot)} Pa</b> &lt; τ_y=<b>50 Pa</b> → unyielded, nothing moves`);
+  else
+    l1 = L(`牙膏·宾汉:τ=τ_y+µ_p·γ̇ · τ_y=50, µ_p=10 · γ̇=<b>${g} s⁻¹</b> → τ=<b>${t} Pa</b>`,
+      `toothpaste·Bingham: τ=τ_y+µ_p·γ̇ · τ_y=50, µ_p=10 · γ̇=<b>${g} s⁻¹</b> → τ=<b>${t} Pa</b>`);
+  formulaEl.innerHTML = l1 + '<br>' +
+    L(`µ_eff=τ/γ̇=<b>${fmtS(mu)} Pa·s</b> · Re=ρωR²/µ_eff(用实时值)=<b>${fmtRe(Re)}</b> —— 淀粉浆快搅 µ_eff 暴涨,反而压低 Re`,
+      `µ_eff=τ/γ̇=<b>${fmtS(mu)} Pa·s</b> · Re=ρωR²/µ_eff (live value)=<b>${fmtRe(Re)}</b> — fast-stirred oobleck inflates µ_eff and pushes Re back down`);
+}
+modeBtns.forEach(b => b.el.addEventListener('click', () => { setMode(b.key); syncAll(); }));
+elRate.addEventListener('input', () => { gdot = Math.pow(10, -2 + 5 * (+elRate.value)); updatePhysics(); syncAll(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglRotate').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+if (!qsBool('labels', true)) { document.getElementById('tglLabels').checked = false; labelsOn = false; refreshLabels(); }
+controls.autoRotate = spinOn;
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, statsAcc = 0, rotAngle = 0;
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speed * (playing ? 1 : 0);
+  if (dt > 0) {
+    simT += dt;
+    rotAngle += sceneOmega() * dt;      // 未屈服时内筒照转:流体"不理它"
+    rotor.rotation.y = rotAngle;
+    updateParticles(dt);
+  }
+  lblProfile.position.set(rToS(rr) * Math.cos(TH0 + RIBSPAN), 0.55, rToS(rr) * Math.sin(TH0 + RIBSPAN));
+  statsAcc += dt0;
+  if (statsAcc > 0.15) {
+    statsAcc = 0;
+    const tau = tauDisp(), mu = tau / gdot;
+    stG.innerHTML = fmtS(gdot) + ' <small>s⁻¹</small>';
+    stTau.innerHTML = fmtS(tau) + ' <small>Pa</small>';
+    stMu.innerHTML = fmtS(mu) + ' <small>Pa·s</small>';
+    stMu.className = 'v ' + (mu > 500 ? 'bad' : mu > 25 ? 'warn' : '');
+    let st, cls;
+    if (blocked) { st = L('不动(未屈服)', 'jammed (below yield)'); cls = 'bad'; }
+    else if (hardAmt > 0.25) { st = L('变硬(剪切增稠)', 'set (shear-thickened)'); cls = 'warn'; }
+    else { st = L('流动', 'flowing'); cls = 'ok'; }
+    stState.textContent = st;
+    stState.className = 'v ' + cls;
+    updateParticleColors();
+    updateFormula();
+    drawPlot();
+  }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+{
+  const f = (qs.get('f') || '').toLowerCase();
+  if (MODES[f]) mode = f;
+}
+gdot = clamp(qsFloat('rate', 10), 0.01, 1000);
+simT = Math.max(0, qsFloat('t', 0));
+setMode(mode);
+updateParticles(0);
+updateParticleColors();
+syncSliders();
+buildSteps();
+applyTheme();
+applyLang();
+syncAll();
+start();
+</script>
+</body>
+</html>
