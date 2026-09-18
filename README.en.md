@@ -22,7 +22,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 | Math & CS | Galton board & CLT, Fourier series, Monty Hall & Bayes, gradient descent, sorting race, RSA |
 | Cross-discipline & engineering | Activation energy & catalysts, titration curve, osmosis & dialysis, heat pump ⇄ fridge, induction cooktop, wireless charging, corrosion ⇄ electroplating |
 | Everyday technology | Microwave oven, capacitive touch, GPS, transistors to adders, fiber optics, camera sensor, ABS, wind turbine, nuclear reactor, MRI, thermostat, hard drive & flash |
-| Fluids & flight | Wing lift & stall, turbofan engines, buoyancy & ship stability, terminal velocity, propeller pitch, submarine ballast, hot-air balloons, Reynolds number, helicopter anti-torque, Venturi tube & flow, Pascal's press, sailing upwind, water hammer |
+| Fluids & flight | Wing lift & stall, turbofan engines, buoyancy & ship stability, terminal velocity, propeller pitch, submarine ballast, hot-air balloons, Reynolds number, helicopter anti-torque, Venturi tube & flow, Pascal's press, sailing upwind, water hammer, the siphon, the Magnus effect, cavitation & supercavitation, tsunami & shallow-water waves |
 
 ## Planned topics
 
@@ -287,6 +287,39 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **What you see**: a 1-D water-hammer solver running live (time slowed ×1/60) — slam the valve and the pressure at the face spikes to ρcΔv (2 m/s is 24 bar), the water turns blue-to-red and the pipe bulges as the wave races to the reservoir, flips sign there, returns and re-reflects off the shut valve, one round per 4L/c; "close slowly" lets the reflected relief wave hold the rise down; hook up the air chamber and the surge squeezes into the tank, flattening the spike.
 - **How to play**: drag initial speed and closure time (2L/c = 23 ms is the fast/slow divide), press slam / slow / chamber / reset, and watch the valve-pressure trace against the ρcΔv dashed line; space to play / pause.
 - **URL parameters**: `?v=` `?tc=` `?ch=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+### Phase 26 · Fluids & flight, fourth batch (4/4)
+
+- [x] The siphon (the atmosphere pushes water over the hill, crest absolute-pressure gauge, the 10.07 m snap, level pools stop the flow) ✅ **siphon/**
+- [x] The Magnus effect (three arenas: pressure-tinted wind-tunnel rotor, banana kick with no-spin ghost, Flettner rotor ship) ✅ **magnus-effect/**
+- [x] Cavitation & supercavitation (the σ criterion, collapse micro-jet pitting, diving to suppress, a gas-fed shroud at 85 m/s) ✅ **cavitation/**
+- [x] Tsunami & shallow-water waves (second-order solver, c = √(gh), Green's-law shoaling, drawback then run-up) ✅ **tsunami/**
+
+### Phase 26 deep dives
+
+#### The siphon: air pressure pushes water over the hill
+
+- **What you see**: two pools, one tube over a dam — the atmosphere (101 kPa) pressing on the upper surface pushes water up and over; past the crest gravity takes over and the drop Δh is the only engine, v = C·√(2gΔh); the crest vacuum gauge reads absolute p = p₀ − ρg·h_c − ½ρv²(1+ζ), with the 10.07 m vapor line ruled on the ruler — hoist the crest past it and the column boils apart at the top, air rushes in, flow dies; pool levels drift (time-lapse) until the drop is spent and the flow stops by itself: no perpetual motion.
+- **How to play**: drag crest height and pool drop; press prime, "hoist crest to 11.5 m" (watch the gauge snap), and "level the pools" for the self-stop; space to play / pause.
+- **URL parameters**: `?hc=` `?dh=` `?prime=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### The Magnus effect: a spinning ball bends the wind
+
+- **What you see**: one force, three arenas — ① a spinning cylinder in a wind tunnel: 420 streamline particles tinted by Bernoulli, the side running with the flow turns red (low pressure), the side against it blue (high), the whole wake shoved aside, the red arrow is F = ρUΓ (Kutta–Joukowski); ② the banana kick: sidespin pushes sideways via F ∝ ω×v — the ball is aimed wide of the wall, lateral speed builds, and the arc bends hard back inside the post while the grey ghost, launched identically without spin, sails straight out; ③ the 1925 Buckau rotor ship: Magnus ⟂ apparent wind, decomposed into forward thrust — best on a beam wind, dead downwind it stalls (exactly like a sail).
+- **How to play**: switch wind tunnel / banana kick / rotor ship; drag surface speed, sidespin, wind angle; try "perfect curl" and "spin it backwards"; space to play / pause.
+- **URL parameters**: `?mode=wind|kick|ship` `?us=` `?u=` `?spin=` `?v0=` `?beta=` `?wind=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Cavitation & supercavitation: low pressure tears water open
+
+- **What you see**: ① a propeller in a test tank: raise the rpm and suction-side pressure falls below vapor (2.3 kPa) — bubbles are born at the tips, drift downstream, and collapse in flashes, their micro-jets hammering pits into the blades (a running counter); "dive to 40 m" squeezes the bubbles out of existence; ② the supercavitating torpedo: feed gas and the cavity grows aft from the cavitator into a full shroud — wetted area ≈ 4%, the drag curve switches from red to green, and the same thrust now balances at 85 m/s instead of 37 (the Shkval trick).
+- **How to play**: drag rpm & depth (propeller) or thrust (torpedo); press max rpm, dive to 40 m, gas feed, full sprint; read the σ-vs-rpm and drag-vs-speed charts; space to play / pause.
+- **URL parameters**: `?mode=prop|torp` `?rpm=` `?depth=` `?f=` `?v=` `?gas=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Tsunami & shallow-water waves: a jump in the deep, a wall at the beach
+
+- **What you see**: a second-order 1-D shallow-water solver (Lax-Wendroff with wet/dry isolation, time ×60) — the fault slips and lifts the whole column; in 4000 m of water the crest runs at c = √(gh) = 713 km/h while the surface shows a 1–2 m bump (live DART-buoy reading), unfelt aboard ship; onto the shelf the speed falls 713 → 36 km/h and energy-flux conservation piles the height up by Green's law A ∝ h^(-1/4) (measured 1.9 → 2.5 m across the slope); the trough arrives first — "the sea is draining" — then the crest lands and run-up (≈ 4× the shore height) drives water up the beach and over the huts; the side panel tracks η(x), the bathymetry and the Green's-law prediction live.
+- **How to play**: drag fault slip and playback speed; press "trigger quake" and "slow-mo ×15"; watch the crest speed fall from 713 km/h to tens and the height climb from 1 m to 10; space to play / pause.
+- **URL parameters**: `?a=` `?speed=` `?pause=` `?labels=` `?spin=`.
 
 ### Phase 11 · Earth system (10/10)
 
@@ -861,6 +894,10 @@ venturi-flow/          Venturi tube & flow: continuity, Bernoulli and the atomiz
 pascal-press/          Pascal's hydraulic press: pressure transmission and force gain (Three.js, CDN)
 sailing-upwind/        Sailing upwind: the sail as a vertical wing and the polar plot (Three.js, CDN)
 water-hammer/          Water hammer: ρcΔv, the 4L/c period and the air chamber (Three.js, CDN)
+siphon/                The siphon: the atmosphere over the hill and the 10.3 m snap (Three.js, CDN)
+magnus-effect/         The Magnus effect: rotor pressure, banana kick, rotor ship (Three.js, CDN)
+cavitation/            Cavitation & supercavitation: σ, pitting and the gas shroud (Three.js, CDN)
+tsunami/               Tsunami & shallow-water waves: √(gh), Green's law, drawback (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
