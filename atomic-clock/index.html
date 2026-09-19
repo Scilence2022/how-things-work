@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>原子钟 · 超精细跃迁与反馈锁定</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="原子钟 · 超精细跃迁与反馈锁定" data-en="Atomic Clock · Hyperfine Transition & Feedback Lock">原子钟 · 超精细跃迁与反馈锁定</h1>
+  <div class="sub" data-zh="铯-133 两个超精细能级差=9,192,631,770 Hz——这一跳本身就是"秒"的定义→炉子喷出原子束,磁选态器只放行基态→微波腔用 9.19 GHz 光子敲门,越接近共振跃迁越多→检测器电流画出钟形共振峰→反馈回路把石英晶振死死按在峰顶→扰动来了自己爬回去——GPS 每天靠它修正 38 μs · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="The Cs-133 hyperfine gap = 9,192,631,770 Hz — the jump itself defines the second → an oven beams atoms, magnets select the ground state → the cavity knocks at 9.19 GHz; the closer to resonance, the more atoms flip → detector current traces the bell-shaped resonance → feedback pins a quartz oscillator to the peak → perturb it and it climbs back — GPS corrects 38 μs a day on this · 3D interactive demo · drag to orbit · Space = run/pause">铯-133 两个超精细能级差=9,192,631,770 Hz——这一跳本身就是"秒"的定义→炉子喷出原子束,磁选态器只放行基态→微波腔用 9.19 GHz 光子敲门,越接近共振跃迁越多→检测器电流画出钟形共振峰→反馈回路把石英晶振死死按在峰顶→扰动来了自己爬回去——GPS 每天靠它修正 38 μs · 3D 交互演示 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="微波频率" data-en="Microwave freq">微波频率</span><span class="v" id="stF">—</span>
+  <span class="k" data-zh="跃迁概率" data-en="Flip chance">跃迁概率</span><span class="v warn" id="stP">—</span>
+  <span class="k" data-zh="检测器电流" data-en="Detector">检测器电流</span><span class="v ok" id="stI">—</span>
+  <span class="k" data-zh="误差信号" data-en="Error signal">误差信号</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="锁定状态" data-en="Lock">锁定状态</span><span class="v" id="stL">—</span>
+  <span class="k" data-zh="一天累计偏差" data-en="Day drift">一天累计偏差</span><span class="v bad" id="stD">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="共振曲线:跃迁概率 P(f) 钟形峰——锁定=把工作点按在峰顶" data-en="Resonance: flip probability P(f) — locked means pinned on the peak">共振曲线:跃迁概率 P(f) 钟形峰——锁定=把工作点按在峰顶</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="铯原子:蓝=基态,橙=已跃迁" data-en="cesium atoms: blue = ground, orange = flipped">铯原子:蓝=基态,橙=已跃迁</span>
+    <span class="chip.o" data-zh="磁铁 A/B:不均匀场偏折不同自旋态" data-en="magnets A/B: gradient fields sort spin states">磁铁 A/B:不均匀场偏折不同自旋态</span>
+    <span class="chip.r" data-zh="微波腔:9.19 GHz 的敲门声" data-en="microwave cavity: the 9.19 GHz knock">微波腔:9.19 GHz 的敲门声</span>
+    <span class="chip.g" data-zh="反馈:误差信号驯服石英晶振" data-en="feedback: the error signal tames quartz">反馈:误差信号驯服石英晶振</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnLock" data-zh="反馈锁定:开" data-en="Feedback lock: ON">反馈锁定:开</button>
+    <button class="abtn brk" id="btnKick" data-zh="热扰动一下!" data-en="Thermal kick!">热扰动一下!</button>
+    <button class="abtn" id="btnScan" data-zh="扫描共振峰" data-en="Sweep the peak">扫描共振峰</button>
+  </div>
+  <div class="row"><label data-zh="频率偏移" data-en="Freq offset">频率偏移</label><input id="sF" type="range" min="-400" max="400" step="0.5" value="0"><span class="val" id="sFVal">+0.0 Hz</span></div>
+  <div class="row"><label data-zh="C 场(线宽)" data-en="C-field (width)">C 场(线宽)</label><input id="sW" type="range" min="0.3" max="2.5" step="0.05" value="1"><span class="val" id="sWVal">×1.0</span></div>
+  <div class="row"><label data-zh="模拟速度" data-en="Sim speed">模拟速度</label><input id="sSpd" type="range" min="0.25" max="3" step="0.05" value="1"><span class="val" id="sSpdVal">×1.0</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="共振图" data-en="Chart">共振图</span></label>
+      <label><input id="tglBeam" type="checkbox" checked> <span data-zh="原子束" data-en="Beam">原子束</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../quartz-watch/" data-zh="石英表:被驯服的手下" data-en="quartz watch: the tamed subordinate">石英表:被驯服的手下</a>
+    <a href="../gps/" data-zh="GPS:最大用户" data-en="GPS: the biggest customer">GPS:最大用户</a>
+    <a href="../time-dilation/" data-zh="时间膨胀:38 μs 的来由" data-en="time dilation: where 38 μs comes from">时间膨胀:38 μs 的来由</a>
+    <a href="../laser/" data-zh="激光:受激跃迁的同族" data-en="the laser: stimulated jumps, same family">激光:受激跃迁的同族</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, f) => a + (b - a) * f;
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const F0 = 9192631770;   /* Hz */
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141b, 16, 60);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  benchM.color.setHex(dark ? 0x1c2027 : 0xb0bcc8);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('原子钟 · 超精细跃迁与反馈锁定', 'Atomic Clock · Hyperfine Transition & Feedback Lock');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 120);
+camera.position.set(2.6, 3.0, 8.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.3, 0.3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.5;
+controls.maxDistance = 40;
+controls.autoRotateSpeed = 0.35;
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.55);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 1.0);
+key.position.set(5, 8, 6);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9ab8ff, 0.3);
+fill.position.set(-6, 5, -6);
+scene.add(fill);
+
+/* ================= 状态 ================= */
+let fOff = clamp(qsFloat('f', 0), -400, 400);       /* Hz 偏移 */
+let widthMul = clamp(qsFloat('w', 1), 0.3, 2.5);
+let speed = clamp(qsFloat('speed', 1), 0.25, 3);
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let locked = true, scanMode = false, scanDir = 1;
+let drift = 0;                                       /* 热扰动造成的缓变偏移 */
+let labelsOn = true, chartOn = true, beamOn = true;
+let prob = 0, errSig = 0, dayNs = 0, phaseIdx = 0;
+let notifyT = 0, notifyZ = '', notifyE = '';
+
+/* ---------------- 材质 ---------------- */
+const benchM = new THREE.MeshStandardMaterial({ color: 0x1c2027, roughness: 0.95 });
+const tubeM = new THREE.MeshStandardMaterial({ color: 0x2e343d, metalness: 0.5, roughness: 0.6, transparent: true, opacity: 0.5 });
+const steelM = new THREE.MeshStandardMaterial({ color: 0x9aa3ae, metalness: 0.85, roughness: 0.3 });
+const magnetM = new THREE.MeshStandardMaterial({ color: 0xb03535, metalness: 0.6, roughness: 0.45 });
+const magnetM2 = new THREE.MeshStandardMaterial({ color: 0x3a55b0, metalness: 0.6, roughness: 0.45 });
+const cavityM = new THREE.MeshStandardMaterial({ color: 0xc9a44a, metalness: 0.85, roughness: 0.35 });
+const ovenM = new THREE.MeshStandardMaterial({ color: 0x452018, emissive: 0xff4400, emissiveIntensity: 1.1, roughness: 0.7 });
+const wireM = new THREE.MeshStandardMaterial({ color: 0x8a5a2a, metalness: 0.7, roughness: 0.5, emissive: 0xffaa00, emissiveIntensity: 0 });
+const quartzM = new THREE.MeshStandardMaterial({ color: 0x365a8a, metalness: 0.4, roughness: 0.4, emissive: 0x1a6aff, emissiveIntensity: 0.4 });
+const waveM = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xffb703, emissiveIntensity: 1.6, transparent: true, opacity: 0.55 });
+
+/* ---------------- 场景:台面 + 束管 ---------------- */
+const bench = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, 0.3, 36), benchM);
+bench.position.y = -2.2;
+scene.add(bench);
+function box(w, h, d, mat, x, y, z, parent) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  (parent || scene).add(m);
+  return m;
+}
+/* 主管体(剖切透明) */
+const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 10.4, 24, 1, true), tubeM);
+tube.rotation.z = Math.PI / 2;
+tube.position.set(0.4, 0.6, 0);
+scene.add(tube);
+/* 炉子 */
+const oven = box(0.9, 0.9, 0.9, ovenM, -5.3, 0.6, 0);
+const ovenGlow = new THREE.PointLight(0xff5a1a, 25, 5, 2);
+ovenGlow.position.set(-5.3, 0.6, 0);
+scene.add(ovenGlow);
+/* 准直小孔板 */
+box(0.12, 0.9, 0.9, steelM, -4.6, 0.6, 0);
+/* 磁铁 A(上红下蓝双极) */
+box(1.1, 0.5, 0.9, magnetM, -3.4, 1.15, 0);
+box(1.1, 0.5, 0.9, magnetM2, -3.4, 0.05, 0);
+/* 微波腔 */
+const cavity = box(1.7, 1.3, 1.3, cavityM, -0.6, 0.6, 0);
+const cavityCut = box(1.7, 1.3, 0.02, cavityM, -0.6, 0.6, 0.66);
+/* 微波波形(腔内驻波圈) */
+const wave = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.025, 8, 30), waveM);
+wave.position.set(-0.6, 0.6, 0);
+wave.rotation.y = Math.PI / 2;
+scene.add(wave);
+/* 磁铁 B */
+box(1.1, 0.5, 0.9, magnetM, 2.3, 1.15, 0);
+box(1.1, 0.5, 0.9, magnetM2, 2.3, 0.05, 0);
+/* 检测器热丝 */
+const wire = box(0.5, 0.06, 0.5, wireM, 4.4, 1.2, 0);
+const ionCollector = box(0.4, 0.3, 0.4, steelM, 4.4, 0.5, 0);
+/* 石英晶振盒(下方) + 反馈线 */
+box(1.0, 0.55, 0.8, quartzM, -0.6, -1.15, 0);
+const cableMat = new THREE.MeshStandardMaterial({ color: 0x444a55, roughness: 0.8 });
+const feedback = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+  new THREE.Vector3(-1.4, -0.9, 0.3), new THREE.Vector3(-2.4, -0.4, 0.5),
+  new THREE.Vector3(-3.2, 0.3, 0.5), new THREE.Vector3(-3.4, 0.8, 0.3)
+]), 20, 0.05, 8), cableMat);
+scene.add(feedback);
+const cable2 = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+  new THREE.Vector3(0.2, -0.9, 0.3), new THREE.Vector3(1.6, -0.2, 0.5),
+  new THREE.Vector3(4.2, 0.2, 0.4), new THREE.Vector3(4.4, 0.4, 0.2)
+]), 20, 0.05, 8), cableMat);
+scene.add(cable2);
+/* 原子束 */
+const NA = 110;
+const atoms = new THREE.InstancedMesh(new THREE.SphereGeometry(0.05, 8, 6),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }), NA);
+atoms.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+atoms.frustumCulled = false;
+scene.add(atoms);
+const ap = [];
+for (let i = 0; i < NA; i++) ap.push({ x: -5.2 + Math.random() * 9.6, v: 1.6 + Math.random() * 0.7, state: 0, flipT: 0, y: (Math.random() - 0.5) * 0.14, z: (Math.random() - 0.5) * 0.2 });
+const atomBlue = new THREE.Color(0x4da3ff), atomOrange = new THREE.Color(0xffa02e);
+const _M4 = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _V = new THREE.Vector3(), _S = new THREE.Vector3(), _C = new THREE.Color();
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblOven = addLabel(() => L('铯炉:100 °C 喷出原子束', 'cesium oven: beams atoms at 100 °C'), new THREE.Vector3(-5.3, 1.5, 0), 'r');
+const lblMagA = addLabel(() => L('磁选态器 A:只放行"钟态"原子', 'state-selector A: only clock-state atoms pass'), new THREE.Vector3(-3.4, 1.9, 0), 'o');
+const lblCav = addLabel(() => L('微波腔:9.19 GHz 光子敲门,共振则翻转', 'microwave cavity: 9.19 GHz knock — flips at resonance'), new THREE.Vector3(-0.6, 1.75, 0), 'r');
+const lblMagB = addLabel(() => L('磁选态器 B:翻转者被送上热丝', 'state-selector B: flipped atoms hit the hot wire'), new THREE.Vector3(2.3, 1.9, 0), 'o');
+const lblWire = addLabel(() => L(`检测器:电流 ∝ 跃迁数 ${(prob * 100).toFixed(0)}%`, `detector: current ∞ flips, now ${(prob * 100).toFixed(0)}%`), new THREE.Vector3(4.4, 1.75, 0), 'g');
+const lblQuartz = addLabel(() => locked ? L('石英晶振:被误差信号按在峰顶', 'quartz: pinned to the peak by the error signal') : L('石英晶振:自由漂移中…', 'quartz: drifting free…'), new THREE.Vector3(-0.6, -1.75, 0), locked ? 'g' : 'r');
+const lblNotify = addLabel(() => {
+  if (notifyT > 0) return L(notifyZ, notifyE);
+  return '';
+}, new THREE.Vector3(0, 2.8, 0), 'r');
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+const STEPS = [
+  { b: '铯-133:一台天然的钟', be: 'Cs-133: a clock built into nature',
+    d: '铯原子核自旋与电子自旋耦合出两个超精细能级,能量差对应 9,192,631,770 次振荡——1967 年起,这一跳就是"一秒"的定义,不随温度磨损而改变。',
+    de: 'Nuclear and electron spin couple into two hyperfine levels whose gap oscillates 9,192,631,770 times — since 1967 that jump IS the second, immune to wear, temperature or opinion.',
+    act: () => { phaseIdx = 0; flyTo([0.6, 1.6, 7.0], [0.3, 0.4, 0]); } },
+  { b: '炉子与磁选态器 A', be: 'The oven and state-selector A',
+    d: '铯在 100 °C 汽化喷出原子束;第一块不均匀磁铁像筛子:不同磁矩的原子受力不同,只有我们想要的"钟态"被送进微波腔。',
+    de: 'Cesium vapor beams from a 100 °C oven; the first gradient magnet is a sieve — different magnetic moments bend differently, and only the desired clock state enters the cavity.',
+    act: () => { phaseIdx = 1; flyTo([-3.6, 1.8, 4.6], [-3.6, 0.7, 0]); } },
+  { b: '微波腔:9.19 GHz 的敲门声', be: 'The cavity: knocking at 9.19 GHz',
+    d: '腔里充满来自石英晶振的 9.19 GHz 微波:频率越接近能级差,原子吸收光子翻上能级的概率越高——钟的指针就是这扇"翻与不翻"的概率。',
+    de: 'The cavity floods with 9.19 GHz microwaves from the quartz oscillator: the closer to the level gap, the more atoms absorb a photon and flip — the clock hand is this flip probability.',
+    act: () => { phaseIdx = 2; flyTo([-0.6, 1.4, 3.6], [-0.6, 0.6, 0]); } },
+  { b: '检测器:画出钟形共振峰', be: 'The detector: tracing the bell',
+    d: '第二个磁铁把翻上去的原子偏到热丝上,电流大小=跃迁数:扫频率,电流画出钟形共振峰——峰的宽度由 C 场与作用时间决定。',
+    de: 'The second magnet bends flipped atoms onto a hot wire; current = flips. Sweep frequency and the current draws the bell-shaped resonance — its width set by the C-field and interaction time.',
+    act: () => { phaseIdx = 3; scanMode = true; btnScan.classList.add('on'); flyTo([3.4, 1.6, 4.4], [3.4, 0.8, 0]); } },
+  { b: '反馈锁定=秒的定义落地', be: 'Feedback lock: the second, made real',
+    d: '电子学不停问"峰顶偏哪边了",把修正量喂回石英晶振:石英管走时,铯管校准——输出频率的误差 <10⁻¹³,三千万年差一秒。',
+    de: 'Electronics keep asking "which side of the peak?" and feed corrections back to the quartz: quartz runs, cesium corrects — errors below 10⁻¹³, one second in thirty million years.',
+    act: () => { phaseIdx = 4; scanMode = false; locked = true; btnLock.classList.add('on'); btnScan.classList.remove('on'); flyTo([-0.6, 0.4, 5.4], [-0.6, 0, 0]); } },
+  { b: '扰动实验:漂了再爬回来', be: 'Perturb it: drift away, climb back',
+    d: '点"热扰动":腔温一变,共振中心漂移,误差信号立刻报警,反馈拖着频率追回去——这就是为什么原子钟不怕环境,只怕没人给它闭环。',
+    de: 'Press "thermal kick": the cavity warms, the resonance center drifts, the error signal complains and feedback drags the frequency back — clocks fear open loops, not weather.',
+    act: () => { phaseIdx = 5; document.getElementById('btnKick').click(); flyTo([0.4, 1.6, 5.6], [0, 0.6, 0]); } },
+  { b: 'GPS:每天要修 38 μs', be: 'GPS: 38 μs a day',
+    d: '卫星钟每天因相对论净快 38 μs(引力 +27,速度 −13):不修,定位每天漂 10 km——原子钟不是奢侈品,是导航、电网与互联网的心跳。',
+    de: 'Satellite clocks run a net +38 μs/day from relativity (+27 gravity, −13 speed): uncorrected, positions drift 10 km daily — atomic clocks are the heartbeat of navigation, grids and the internet.',
+    act: () => { phaseIdx = 6; flyTo([2.2, 2.2, 6.6], [1.2, 0.6, 0]); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 物理 ================= */
+function probOf(foff, drift0) {
+  const w = 60 * widthMul;                 /* Hz 线宽(示教) */
+  const d = foff + drift0;
+  return Math.exp(-(d * d) / (2 * w * w)) * 0.92;
+}
+/* ================= 绘图:共振曲线 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const padL = 40, padR = 14, padT = 14, padB = 26;
+  const xOf = f => padL + (f + 400) / 800 * (W - padL - padR);
+  const yOf = p => (H - padB) - clamp(p, 0, 1) * (H - padB - padT);
+  ctx.font = '16px system-ui';
+  ctx.strokeStyle = 'rgba(128,150,170,.22)';
+  ctx.fillStyle = cTxt;
+  for (const f of [-400, -200, 0, 200, 400]) {
+    ctx.beginPath(); ctx.moveTo(xOf(f), padT); ctx.lineTo(xOf(f), H - padB); ctx.stroke();
+    ctx.fillText((f > 0 ? '+' : '') + f, xOf(f) - 14, H - 8);
+  }
+  for (const p of [0.25, 0.5, 0.75]) {
+    ctx.beginPath(); ctx.moveTo(padL, yOf(p)); ctx.lineTo(W - padR, yOf(p)); ctx.stroke();
+    ctx.fillText(p.toFixed(2), padL - 34, yOf(p) + 6);
+  }
+  ctx.fillText(L('频率偏移 (Hz)', 'offset (Hz)'), W - padR - 90, H - 6);
+  ctx.fillText('P', 8, padT + 14);
+  /* 共振峰(含漂移) */
+  ctx.strokeStyle = '#4dabf7';
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  for (let f = -400; f <= 400; f += 4) {
+    const x = xOf(f), y = yOf(probOf(f, drift));
+    f <= -396 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  /* 真共振中心 */
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = 'rgba(123,216,143,.5)';
+  ctx.beginPath(); ctx.moveTo(xOf(drift), padT); ctx.lineTo(xOf(drift), H - padB); ctx.stroke();
+  ctx.setLineDash([]);
+  /* 工作点 */
+  ctx.fillStyle = '#ffa94d';
+  ctx.beginPath(); ctx.arc(xOf(fOff), yOf(probOf(fOff, drift)), 7, 0, 7); ctx.fill();
+  ctx.fillStyle = cTxt;
+  ctx.fillText(L('工作点', 'working point'), xOf(fOff) - 30, yOf(probOf(fOff, drift)) - 12);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elF = document.getElementById('sF'), elFVal = document.getElementById('sFVal');
+const elW = document.getElementById('sW'), elWVal = document.getElementById('sWVal');
+const elSpd = document.getElementById('sSpd'), elSpdVal = document.getElementById('sSpdVal');
+const stF = document.getElementById('stF'), stP = document.getElementById('stP'), stI = document.getElementById('stI'),
+  stE = document.getElementById('stE'), stL = document.getElementById('stL'), stD = document.getElementById('stD');
+const formulaEl = document.getElementById('formula');
+const btnLock = document.getElementById('btnLock'), btnKick = document.getElementById('btnKick'), btnScan = document.getElementById('btnScan');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elF.value = fOff; elFVal.textContent = (fOff >= 0 ? '+' : '') + fOff.toFixed(1) + ' Hz';
+  elW.value = widthMul; elWVal.textContent = '×' + widthMul.toFixed(2);
+  elSpd.value = speed; elSpdVal.textContent = '×' + speed.toFixed(2);
+}
+function updateStats() {
+  const disp = fOff + drift;
+  stF.textContent = '9,192,631,770 ' + (disp >= 0 ? '+' : '−') + Math.abs(disp).toFixed(1) + ' Hz';
+  stP.textContent = (prob * 100).toFixed(0) + ' %';
+  stI.textContent = (prob * 100).toFixed(0) + ' %';
+  stE.textContent = (errSig * 100).toFixed(1) + ' %';
+  stL.textContent = locked ? L('锁定', 'LOCKED') : L('开环!', 'OPEN LOOP!');
+  stL.className = 'v ' + (locked ? 'ok' : 'bad');
+  dayNs.textContent = Math.abs(disp * 1000 / 9192631770 * 86400 * 1e9).toFixed(0) + ' ns';
+}
+function updateFormula() {
+  formulaEl.innerHTML = L(
+    `<b>1 s ≡ 9,192,631,770 次铯超精细振荡</b>:秒不再靠天文观测,而由一块原子的能级差定义<br>` +
+    `<b>P(f) = exp(−Δf²/2σ²)</b>:检测电流即跃迁概率,峰宽 ~${(60 * widthMul).toFixed(0)} Hz——越窄的峰,越狠的锁定<br>` +
+    `<b>误差信号 = 峰两侧的斜率</b>:偏左就加频、偏右就减频——石英负责跑,铯负责准,闭环 <10⁻¹³`,
+    `<b>1 s ≡ 9,192,631,770 Cs hyperfine oscillations</b>: the second is no longer astronomical — an atom's level gap defines it<br>` +
+    `<b>P(f) = exp(−Δf²/2σ²)</b>: detector current is the flip probability; peak width ~${(60 * widthMul).toFixed(0)} Hz — narrower peak, harder lock<br>` +
+    `<b>Error = the peak's slope</b>: left of center, add frequency; right, subtract — quartz runs, cesium keeps it honest, loops close below 10⁻¹³`);
+}
+function syncAll() {
+  syncSliders(); updateFormula(); updateStats(); drawPlot();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+  btnLock.classList.toggle('on', locked);
+  btnScan.classList.toggle('on', scanMode);
+}
+elF.addEventListener('input', () => { fOff = +elF.value; syncSliders(); updateStats(); drawPlot(); });
+elW.addEventListener('input', () => { widthMul = +elW.value; syncSliders(); updateFormula(); drawPlot(); });
+elSpd.addEventListener('input', () => { speed = +elSpd.value; syncSliders(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+btnLock.addEventListener('click', () => {
+  locked = !locked;
+  if (locked) { fOff = drift; }
+  notifyT = 2;
+  notifyZ = locked ? '闭环恢复:误差信号接管石英' : '开环:石英自由漂移,误差越积越大';
+  notifyE = locked ? 'loop closed: error signal back in charge' : 'open loop: quartz drifting, error accumulating';
+  syncAll();
+});
+btnKick.addEventListener('click', () => {
+  drift += (Math.random() - 0.35) * 180;
+  drift = clamp(drift, -300, 300);
+  notifyT = 2.2;
+  notifyZ = '热扰动!共振中心漂了,看反馈怎么追';
+  notifyE = 'thermal kick! the resonance drifted — watch the feedback chase it';
+});
+btnScan.addEventListener('click', () => {
+  scanMode = !scanMode;
+  if (scanMode) locked = false;
+  syncAll();
+});
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { chartOn = e.target.checked; document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglBeam').addEventListener('change', e => { beamOn = e.target.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speed * (playing ? 1 : 0);
+  if (notifyT > 0) notifyT -= dt0;
+  if (dt > 0) {
+    /* 反馈/扫描 */
+    if (scanMode) {
+      fOff += 90 * dt * scanDir;
+      if (fOff > 380) scanDir = -1;
+      if (fOff < -380) scanDir = 1;
+      elF.value = fOff;
+    } else if (locked) {
+      const e1 = probOf(fOff - 8, drift), e2 = probOf(fOff + 8, drift);
+      errSig = clamp((e2 - e1) * 2.2, -1, 1);
+      fOff -= errSig * 60 * dt;
+      fOff += (drift - fOff) * 0.4 * dt;
+      elF.value = clamp(fOff, -400, 400);
+    } else {
+      errSig = 0;
+      fOff += (Math.random() - 0.5) * 6 * dt;
+    }
+    syncSliders();
+    prob = probOf(fOff, drift);
+    /* 原子束推进 */
+    for (const a of ap) {
+      a.x += a.v * dt * 1.4;
+      if (a.x > 5.4) { a.x = -5.3; a.state = 0; a.flipT = 0; a.y = (Math.random() - 0.5) * 0.14; a.z = (Math.random() - 0.5) * 0.2; }
+      /* 磁铁 A:钟态沿中心,其它态被弹开(简化:全部视为钟态进入) */
+      if (a.x > -3.9 && a.x < -2.9 && a.state === 0) {
+        a.y = lerp(a.y, 0.12 + (a.z > 0 ? 0.04 : -0.04), Math.min(1, dt * 4));
+      }
+      /* 微波腔:按概率翻转 */
+      if (a.x > -1.45 && a.x < 0.25 && a.state === 0 && Math.random() < prob * dt * 6) {
+        a.state = 1;
+      }
+      /* 磁铁 B:翻转者上偏到热丝 */
+      if (a.x > 1.75 && a.x < 2.85) {
+        a.y = a.state === 1 ? lerp(a.y, 1.12, Math.min(1, dt * 6)) : lerp(a.y, -0.2, Math.min(1, dt * 6));
+      }
+    }
+    dayNs = Math.abs(fOff + drift) * 1000 / 9192631770 * 86400 * 1e9;
+  }
+  /* 波形动画 */
+  wave.rotation.x += dt * 3;
+  waveM.opacity = 0.3 + 0.25 * Math.sin(performance.now() / 180);
+  wireM.emissiveIntensity = prob * 2.4;
+  ovenM.emissiveIntensity = 0.9 + 0.3 * Math.sin(performance.now() / 300);
+  /* 原子实例 */
+  let n = 0;
+  if (beamOn) {
+    for (const a of ap) {
+      _V.set(a.x, 0.6 + a.y, a.z);
+      _C.copy(a.state ? atomOrange : atomBlue);
+      _M4.compose(_V, _Q.identity(), _S.set(1, 1, 1));
+      atoms.setMatrixAt(n, _M4);
+      atoms.setColorAt(n, _C);
+      n++;
+    }
+  }
+  atoms.count = n;
+  atoms.instanceMatrix.needsUpdate = true;
+  if (atoms.instanceColor) atoms.instanceColor.needsUpdate = true;
+  /* 相机飞行 */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.14) { acc = 0; updateStats(); drawPlot(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncAll();
+start();
+</script>
+</body>
+</html>
