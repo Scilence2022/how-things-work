@@ -15,14 +15,14 @@ A collection of animated explanations. We use animation to make "invisible princ
 
 | Domain | Sample topics |
 | --- | --- |
-| Mechanisms | Lockstitch sewing, four-stroke valve timing, planetary gears, worm self-locking, universal joints, escapements, Watt's governor, ball screw, derailleur, flywheel KERS |
-| Chemistry | SN1/SN2/E1/E2 quartet, galvanic ⇄ electrolytic cells, electrophilic addition & Markovnikov's rule, radical chain reactions, benzene aromaticity, conjugation & color, enzyme kinetics, ozone depletion |
-| Biology | DNA replication & telomere wear, ATP synthase, glycolysis → TCA → fermentation, cardiac cycle, alveolar gas exchange, nephron counter-current, cochlea & eye, kinesin |
-| Physics & space | Motor ⇄ generator, double-slit, laser, EM waves, lens imaging, kinetic theory, entropy & phase change, liquid crystals & LCD |
-| Math & CS | Galton board & CLT, Fourier series, Monty Hall & Bayes, gradient descent, sorting race, RSA |
+| Mechanisms | Lockstitch sewing, four-stroke valve timing, planetary gears, worm self-locking, universal joints, escapements, Watt's governor, ball screw, derailleur, flywheel KERS, the CVT, the diesel engine |
+| Chemistry | SN1/SN2/E1/E2 quartet, galvanic ⇄ electrolytic cells, electrophilic addition & Markovnikov's rule, radical chain reactions, benzene aromaticity, conjugation & color, enzyme kinetics, ozone depletion, the catalytic converter, the nitrogen cycle |
+| Biology | DNA replication & telomere wear, ATP synthase, glycolysis → TCA → fermentation, cardiac cycle, the ECG, alveolar gas exchange, nephron counter-current, cochlea & eye, kinesin, antibiotic resistance, the reflex arc, phototropism |
+| Physics & space | Motor ⇄ generator, double-slit, laser, EM waves, lens imaging, kinetic theory, entropy & phase change, liquid crystals & LCD, the tropical cyclone, exoplanet transits, the harmonic oscillator, Foucault's pendulum, the inverter, thermoelectrics, piezoelectricity |
+| Math & CS | Galton board & CLT, Fourier series, Monty Hall & Bayes, gradient descent, sorting race, RSA, information entropy, the Game of Life, Monte Carlo |
 | Cross-discipline & engineering | Activation energy & catalysts, titration curve, osmosis & dialysis, heat pump ⇄ fridge, induction cooktop, wireless charging, corrosion ⇄ electroplating |
-| Everyday technology | Microwave oven, capacitive touch, GPS, transistors to adders, fiber optics, camera sensor, ABS, wind turbine, nuclear reactor, MRI, thermostat, hard drive & flash |
-| Fluids & flight | Wing lift & stall, turbofan engines, buoyancy & ship stability, terminal velocity, propeller pitch, submarine ballast, hot-air balloons, Reynolds number, helicopter anti-torque, Venturi tube & flow, Pascal's press, sailing upwind, water hammer, the siphon, the Magnus effect, cavitation & supercavitation, tsunami & shallow-water waves |
+| Everyday technology | Microwave oven, capacitive touch, GPS, transistors to adders, fiber optics, camera sensor, ABS, wind turbine, nuclear reactor, MRI, thermostat, hard drive & flash, elevators & counterweights, the quartz watch, hydro & pumped storage, LiDAR |
+| Fluids & flight | Wing lift & stall, turbofan engines, buoyancy & ship stability, terminal velocity, propeller pitch, submarine ballast, hot-air balloons, Reynolds number, helicopter anti-torque, Venturi tube & flow, Pascal's press, sailing upwind, water hammer, the siphon, the Magnus effect, cavitation & supercavitation, tsunami & shallow-water waves, sonic boom & the Mach cone, the Kármán vortex street, Stokes settling & the centrifuge, capillarity & surface tension, Kelvin–Helmholtz billows, Poiseuille flow, the hydrofoil, swell & deep-water waves, the centrifugal pump & cavitation, non-Newtonian fluids, the boundary layer & separation, the de Laval nozzle, Rayleigh–Bénard convection, river meanders, flapping flight |
 
 ## Planned topics
 
@@ -320,6 +320,182 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **What you see**: a second-order 1-D shallow-water solver (Lax-Wendroff with wet/dry isolation, time ×60) — the fault slips and lifts the whole column; in 4000 m of water the crest runs at c = √(gh) = 713 km/h while the surface shows a 1–2 m bump (live DART-buoy reading), unfelt aboard ship; onto the shelf the speed falls 713 → 36 km/h and energy-flux conservation piles the height up by Green's law A ∝ h^(-1/4) (measured 1.9 → 2.5 m across the slope); the trough arrives first — "the sea is draining" — then the crest lands and run-up (≈ 4× the shore height) drives water up the beach and over the huts; the side panel tracks η(x), the bathymetry and the Green's-law prediction live.
 - **How to play**: drag fault slip and playback speed; press "trigger quake" and "slow-mo ×15"; watch the crest speed fall from 713 km/h to tens and the height climb from 1 m to 10; space to play / pause.
 - **URL parameters**: `?a=` `?speed=` `?pause=` `?labels=` `?spin=`.
+
+### Phase 27 · Fluids & flight, fifth batch (8/8)
+
+- [x] Sonic boom & the Mach cone (wavefronts pile into a cone in the aircraft frame, μ = arcsin(1/M), the sound barrier, see first hear later, the N-wave) ✅ **mach-cone/**
+- [x] The Kármán vortex street (alternating shedding f = St·U/d, twin vortices → laminar street → turbulent wake → supercritical, aeolian tones / Tacoma / spoilers) ✅ **vortex-street/**
+- [x] Stokes settling & the centrifuge (F = 6πµrv, v_t = 2Δρgr²/9µ, RCF = 1.118×10⁻⁵·r·RPM², blood fractionation) ✅ **stokes-centrifuge/**
+- [x] Capillarity & surface tension (Jurin's law h = 2γcosθ/(ρgr), contact angle & meniscus, mercury reversal, halve the radius double the height) ✅ **capillarity/**
+- [x] Kelvin–Helmholtz billows (vortex-sheet instability, exponential growth → cat's-eye roll-up → breaking & mixing, billow clouds / Jupiter) ✅ **kelvin-helmholtz/**
+- [x] Poiseuille flow (no-slip wall, parabolic profile, Q = πΔp r⁴/(8µL), the tyranny of r⁴, plaque stenosis, dye-line experiment) ✅ **poiseuille/**
+- [x] The hydrofoil (foil lift ∝ v², the takeoff hump, drag collapse on foils, the cavitation ceiling) ✅ **hydrofoil/**
+- [x] Swell & deep-water waves (ω = √(gk) dispersion, c_p = 2c_g crest overtaking, swell sorting by period, feeling the bottom) ✅ **swell/**
+
+### Phase 27 deep dives
+
+#### Sonic boom & the Mach cone: see first, hear later
+
+- **What you see**: in the aircraft frame the nose emits a spherical wavefront every 0.18 s — each centre slides back at v while the radius grows at the sound speed c: subsonic, the fronts outrun the plane (you hear the engine coming); at M → 1 they pile into a wall at the nose (the sound barrier); past M = 1 their common envelope is the Mach cone of half-angle μ = arcsin(1/M), and a ground observer hears the N-shaped boom only when the cone sweeps over — drag the Mach slider and watch the cone narrow from a near-plane to 30°, while the observer timeline shows the gap between ▲ (overhead) and ● (heard).
+- **How to play**: drag the Mach number (0.3–2.0); press subsonic / near-barrier / supersonic / fast presets and "reset observer" to flip the delay from negative (heard first) to positive (seen first); space to play / pause.
+- **URL parameters**: `?m=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### The Kármán vortex street: alternating eddies behind a cylinder
+
+- **What you see**: 560 tracer particles flow past a cylinder — below Re 47 a quiet pair of standing vortices clings to the lee side; past 47 they shed alternately into two staggered rows, f = St·U/d with St ≈ 0.2; higher still the wake turns turbulent, and beyond Re ≈ 3.5×10⁵ the boundary layer transitions and the wake narrows (the drag crisis); the cylinder's side-force trace F_y locks to the shedding — the "singing wire" and "Tacoma resonance" presets let lock-in pump the amplitude up, "chimney spoilers" flattens F_y to zero.
+- **How to play**: drag the Reynolds number (log 40–10⁶) across the four regimes; switch singing wire / Tacoma resonance / chimney spoilers / reset; space to play / pause.
+- **URL parameters**: `?re=` `?preset=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Stokes settling & the centrifuge: a day at 1 g, a minute at 900 g
+
+- **What you see**: the left tube idles at 1 g — red cells sink through viscous plasma at v_t = 2Δρgr²/(9µ) ≈ 3 µm/s while the equivalent clock burns hours; the right tube spins in a swing-out rotor where RCF = 1.118×10⁻⁵·r(cm)·RPM² multiplies effective gravity a hundredfold, and red cells, white cells and platelets race to the bottom in order of size × density, stacking into plasma / buffy coat / red-cell bands; the concentration-profile histogram watches the bands form, and the size slider verifies v ∝ r² live.
+- **How to play**: drag rpm (watch RCF climb into thousands of g) and particle size; switch plasma / whole blood / glycerol viscosities; press 3000 rpm / 15000 rpm / stop / reset; space to play / pause.
+- **URL parameters**: `?rpm=` `?size=` `?visc=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Capillarity & surface tension: the narrower the tube, the higher the climb
+
+- **What you see**: three glass capillaries stand in a dyed bath, a concave meniscus hauling water up the rim — h = 2γcosθ/(ρgr) is read live: the 0.3 mm tube climbs 4.9 cm, the 1.2 mm only 1.2 cm (halve the radius, double the height); the µN balance between rim pull 2πrγcosθ and column weight ρgπr²h sits in the formula bar; switch to mercury and everything flips — θ = 140°, cosθ < 0, and the convex meniscus presses the level down; the h–r chart redraws its hyperbolas per fluid.
+- **How to play**: drag the middle tube radius (0.1–2 mm) and contact angle (0–160°); switch water / ethanol / mercury and watch columns glide and menisci flip; space to play / pause.
+- **URL parameters**: `?r=` `?theta=` `?fluid=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Kelvin–Helmholtz billows: when two layers rub the wrong way
+
+- **What you see**: two layers sliding past each other make the interface a vortex sheet — any ripple is amplified exponentially (a straight line on the semi-log A(t) plot), grows steep crests, rolls into a chain of cat's-eye spirals, then shreds and mixes; the density-difference slider (gravity's stabilizer) stretches or kills the whole story; the billow-clouds / ocean wind-shear / Jupiter-bands presets re-run the same equation in three settings.
+- **How to play**: drag upper/lower speeds and density difference; press "nudge" and "re-lay the interface" to replay from seed to breaking; space to play / pause.
+- **URL parameters**: `?u2=` `?u1=` `?rho=` `?preset=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Poiseuille flow: radius is the gate, r⁴ is the tyranny
+
+- **What you see**: 520 particles ride a parabolic profile through a transparent vessel — the wall layer is "welded" still, the core runs fastest at u_max = 2ū; a bright dye line at the inlet is sheared into the parabola (the classic 1840 experiment, live); drag the radius and watch Q = πΔp r⁴/(8µL) collapse (half → 1/16); "plaque stenosis" pinches the diameter to half — local speed ×4 by continuity, losses pile up, total flow craters; past Re 2300 the status flips to a turbulence warning.
+- **How to play**: drag pressure / radius / viscosity (water, plasma, blood); press "re-lay dye line", "stenosis 50%", "restore"; the profile and Q–r⁴ charts follow the dot; space to play / pause.
+- **URL parameters**: `?dp=` `?r=` `?mu=` `?sten=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### The hydrofoil: fast enough, the water lifts the boat out
+
+- **What you see**: at low speed the hull floats on Archimedes (draft 0.26 m); as speed builds, foil lift ½ρv²C_L A chases the weight quadratically and the draft reads 0 — the hull clears the water, wetted area shrinks to three foils, and drag first climbs the "takeoff hump" then drops an order of magnitude (2666 N → 701 N); push further and the cavitation ceiling (~30 kn, red line) waits; the D(v) chart and lift share annotate the current regime.
+- **How to play**: drag speed / load / foil trim; press "take off", "ease back to displacement", "overload 900 kg" and watch the equilibrium move; space to play / pause.
+- **URL parameters**: `?v=` `?load=` `?trim=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Swell & deep-water waves: waves travel in sets
+
+- **What you see**: a Gaussian wave packet walks the sea at the group velocity while individual crests overtake at twice the speed — born at the tail, dying at the head, no single crest crosses the packet; a moored buoy logs η(t) and the orange envelope makes "waves arrive in sets" visible; the period slider rescales L₀ = gT²/2π and c_p = gT/2π (14 s → 306 m, 79 km/h); pull the depth below L/2 and the waves feel the bottom, steepen and break in a burst of foam — the shallow limit is the tsunami page's story.
+- **How to play**: drag period T and depth h; switch ocean swell / wind chop / push ashore; read the buoy record and envelope; space to play / pause.
+- **URL parameters**: `?T=` `?h=` `?preset=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+### Phase 28 · Cross-family gap-filling, first batch (8/8)
+
+- [x] Centrifugal pump & cavitation (the impeller throws water, the volute trades velocity for pressure, the H-Q duty point, affinity laws Q∝N H∝N² P∝N³, the NPSH red line) ✅ **centrifugal-pump/**
+- [x] Non-Newtonian fluids (τ = Kγ̇ⁿ shear-thinning/thickening, Bingham yield, water/ketchup/oobleck/toothpaste flow curves) ✅ **non-newtonian/**
+- [x] Boundary layer & separation (no-slip, δ ∝ √(νx/U), adverse-pressure separation, golf-ball dimples 0.47→0.25, the root of stall) ✅ **boundary-layer/**
+- [x] Tropical cyclone: a heat engine (SST ≥ 26.5 °C fuel line, latent-heat chimney, angular-momentum eyewall, WISHE feedback, landfall decay) ✅ **tropical-cyclone/**
+- [x] The ECG (the cardiac dipole projected on a lead draws P-QRS-T, the AV delay, AFib loses the P, VT runs wide and bizarre) ✅ **ecg/**
+- [x] Exoplanets: the transit method (depth δ = (Rp/R★)² gives the radius, Kepler III turns period into distance, RV gives mass, past i ≈ 89.7° the planet vanishes) ✅ **exoplanet-transit/**
+- [x] Information entropy: the compression limit (information = −log₂p, H = Σ −p log₂p, Shannon's L̄ ≥ H, the Huffman tree rebuilt live hugging the line) ✅ **information-entropy/**
+- [x] Elevator & counterweight (traction is friction, not a hook; P = Δm·g·v ≈ 0 when balanced; governor + safety gear bite the rails) ✅ **elevator/**
+
+### Phase 28 deep dives
+
+#### Centrifugal pump & cavitation: a pump never sucks
+
+- **What you see**: a transparent volute and a six-blade impeller fling water outward, leaving low pressure at the eye — atmospheric pressure pushes water in; the widening volute channel trades velocity head for pressure. On the H-Q chart the pump curve (lifting with N²) meets the system curve (set by the valve) at the duty point; 1450→2900 rpm measures Q×2, H×4, P×8; when NPSHa = p₀/ρg + h_s − kQ² dips below NPSHr, vapor bubbles erupt at the eye and the head collapses.
+- **How to play**: drag RPM to 2900 and watch the curve lift ×4; pull the suction level down and watch cavitation explode; close the discharge valve toward shut-off H₀; space to play / pause.
+- **URL parameters**: `?rpm=` `?hs=` `?valve=` `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Non-Newtonian fluids: thin under a push, hard under a stir
+
+- **What you see**: 350 tracers in a Couette rheometer color by effective viscosity µ_eff = τ/γ̇ — water stays linear; ketchup (power law n ≈ 0.4) pours only after a tap; oobleck (n ≈ 2) sets solid under fast stirring; toothpaste (Bingham, τ_y = 50 Pa) ignores the spinning cylinder until yield. The log-log chart overlays all four τ–γ̇ models with the live duty point.
+- **How to play**: switch water / ketchup / oobleck / toothpaste; drag the shear-rate slider (0.01–1000 s⁻¹, log) and watch melting, setting and unlocking; space to play / pause.
+- **URL parameters**: `?f=water|ketchup|oobleck|toothpaste` `?rate=` `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Boundary layer & separation: golf-ball dimples are not decoration
+
+- **What you see**: 450 tracers colored by local speed — the layer touching the wall is frozen (no-slip), and profile stacks show u(y) climbing back to U∞; past the shoulder the adverse gradient reverses the near-wall flow into a wake. Toggle the golf ball: dimples force a turbulent layer, the separation point slides 82°→120°, the wake halves, C_d drops 0.47→0.25; in airfoil mode past ~15° AoA the upper surface separates wholesale — stall.
+- **How to play**: switch smooth sphere / golf ball / stall demo; drag wind speed and AoA; "forced turbulence" is a vortex generator; the C_d–Re drag-crisis dot follows live; space to play / pause.
+- **URL parameters**: `?mode=smooth|golf|stall` `?u=` `?aoa=` `?turb=` `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Tropical cyclone: a Carnot heat engine
+
+- **What you see**: the sea recolors from cold blue to hot orange; ragged disturbance particles spiral inward along rainbands and erupt upward in the eyewall — flashing orange at the condensation level (latent heat ignites); aloft they spread into an anvil while the eye itself sinks, calm. Drag SST past 26.5 °C to spin up, back below to kill it; the landfall preset tears the machine apart in a day; within 5° of the equator Coriolis vanishes and nothing organizes. Status reads disturbance → depression → storm → typhoon → severe typhoon while central pressure falls.
+- **How to play**: drag SST / latitude / development days; press West Pacific / cold-water stall / landfall / near-equator presets; toggle the cutaway for inflow–updraft–outflow; space to play / pause.
+- **URL parameters**: `?sst=` `?lat=` `?day=` `?land=1` `?cut=1` `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### The ECG: the dipole's projection draws P-QRS-T
+
+- **What you see**: a 3-D heart with the full conduction system (SA node → AV node → His bundle → Purkinje network); ~3900 myocardial elements light up on precomputed activation times — the atrial wave raises the P, the AV junction deliberately dawdles 0.1 s to let the ventricles fill, the Purkinje network firing all at once erects the QRS, and slower reverse repolarization draws the upright T. The trace is not drawn by hand — it is the live projection of the net dipole on lead II. Switch to AFib: the P vanishes into f-waves and the RR intervals scatter; VT runs wide, bizarre complexes.
+- **How to play**: switch sinus / AFib / VT; drag heart rate (40–180); the standard 25 mm/s, 10 mm/mV paper scrolls with auto-labeled waves; space to play / pause.
+- **URL parameters**: `?mode=sinus|afib|vt` `?bpm=` `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Exoplanets: a thousandth of the light tells all
+
+- **What you see**: a planet crosses its star on a Kepler ellipse while a photometer watches; the light curve dips by δ = (Rp/R★)² — the radius; Kepler III turns the period into orbital distance and equilibrium temperature against the green habitable-zone ring; the RV mode shows the star wobbling with spectral lines sliding blue-red, K ∝ Mp·sin i/√P giving the mass — with radius, density settles rock vs gas. Drag the inclination past ~89.7° and the transit vanishes: only edge-on orbits are ever detected.
+- **How to play**: drag radius / period / inclination / star luminosity; press hot Jupiter / Earth twin (watch the noise) / TRAPPIST-1 / inclination-miss presets; toggle transit / RV modes; space to play / pause.
+- **URL parameters**: `?mode=transit|rv` `?rp=` `?per=` `?inc=` `?lum=` `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Information entropy: the compression limit
+
+- **What you see**: a golden dome is the entropy surface H(p₁,p₂,p₃) — highest at uniform (log₂3 ≈ 1.585 bit), zero at the corners; beside the four probability bars, stacked cubes show the live-rebuilt Huffman codewords — frequent symbols short, rare ones long; a symbol stream encodes into a 0/1 bit ribbon whose counter converges to L̄, hugging H but never crossing (Shannon: L̄ ≥ H, Huffman within 1 bit). Uniform 4 symbols: H = 2 bit, nothing to squeeze; extreme 97/1/1/1: H ≈ 0.24 yet Huffman still needs 1.05.
+- **How to play**: drag p(A)/p(B)/p(C) and watch codewords reshape; press uniform / skewed / extreme / English-frequency presets; the H vs L̄ vs fixed-length bars update live; space to play / pause.
+- **URL parameters**: `?pa=` `?pb=` `?pc=` `?preset=` `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+#### Elevator & counterweight: the motor pushes a balance
+
+- **What you see**: a six-floor shaft cross-section — car and concrete counterweight hang off the same grooved traction sheave: gripped by friction, not hooked. At half load with the 50% counterweight, Δm ≈ 0 and cruise power reads ≈ 0 (a green "balanced" tag) — the motor only pays for acceleration and friction; switch to no-counterweight and the same trip glows red; the overspeed test flings the governor weights open, the linkage yanks the wedge safety gear into the rails with a clang, and the oil buffer waits at the pit.
+- **How to play**: call floors 1F–6F; drag load (0–1000 kg); switch counterweight 0/40/50%; the chart records the last trip's power curve with its green ≈0 cruise stretch; space to play / pause.
+- **URL parameters**: `?load=` `?cw=` `?floor=` `?mode=` `?t=` `?pause=` `?speed=` `?labels=` `?spin=`.
+
+### Phase 29 · Cross-family gap-filling, second batch (24/24)
+
+- [x] The de Laval nozzle & shock diamonds (throat chokes at M=1, area ratio fixes exit Mach, over/matched/underexpanded plumes) ✅ **laval-nozzle/**
+- [x] Rayleigh–Bénard convection (Ra past 1708 breaks the conducting layer into counter-rotating cells) ✅ **rayleigh-benard/**
+- [x] River meanders & oxbow lakes (helical flow erodes the outer bank, wavelength locks at ~5 widths, cutoffs) ✅ **river-meander/**
+- [x] Flapping flight (the outer wing is a propeller blade: downstroke = lift + thrust, shed vortex rings) ✅ **flapping-flight/**
+- [x] The CVT (sliding sheaves glide the ratio continuously, engine pinned at its power peak) ✅ **cvt/**
+- [x] The diesel engine (compression is the igniter at ~570 °C, the constant-pressure shoulder, the lean burn) ✅ **diesel-engine/**
+- [x] The harmonic oscillator (F = −kx, the phase-plane circle, the damping spiral, resonance at ω₀) ✅ **harmonic-oscillator/**
+- [x] Foucault's pendulum (the plane stays inertial, the floor turns at 15°·sin φ) ✅ **foucault-pendulum/**
+- [x] The inverter & rectifier (H-bridge + SPWM + LC carve DC into AC; run it backward to rectify) ✅ **inverter/**
+- [x] Seebeck ⇄ Peltier (heat to current and current to heat — reverse it and hot/cold swap) ✅ **thermoelectric/**
+- [x] Piezoelectricity (squeeze for kV sparks, drive for 40 kHz ultrasound, quartz at 2¹⁵ Hz) ✅ **piezoelectricity/**
+- [x] The catalytic converter (Rh splits NOₓ, Pt/Pd oxidizes CO/HC, light-off at 250 °C, the λ=1 window) ✅ **catalytic-converter/**
+- [x] The nitrogen cycle (the 945 kJ/mol N≡N door and three keys, fertilizer overload chokes lakes) ✅ **nitrogen-cycle/**
+- [x] Antibiotics & resistance (selection is a sieve: sub-doses breed superbugs, full courses clear the field) ✅ **antibiotic-resistance/**
+- [x] The spinal reflex arc (one synapse, ~48 ms — the brain is informed at ~600 ms) ✅ **reflex-arc/**
+- [x] Phototropism (auxin pumped to the shaded side: the stem is pushed toward the light) ✅ **phototropism/**
+- [x] The Roche limit (the tidal differential ∝ 1/d³ tears a moon into a ring) ✅ **roche-limit/**
+- [x] Lagrange points (the effective-potential landscape, Coriolis guards L4/L5, JWST station-keeping) ✅ **lagrange-points/**
+- [x] Cepheid variables (the κ mechanism, the period–luminosity law, rung one of the distance ladder) ✅ **cepheid/**
+- [x] Conway's Game of Life (B3/S23: gliders, guns, logic gates — Turing complete) ✅ **game-of-life/**
+- [x] The Monte Carlo method (count hits, π emerges, error obeys 1/√N) ✅ **monte-carlo/**
+- [x] The quartz watch (a 2¹⁵ Hz fork divided fifteen times into one tick per second) ✅ **quartz-watch/**
+- [x] Hydro & pumped storage (P = ρQghη ≈ 85%, the reversible unit, the grid's biggest battery) ✅ **hydroelectric/**
+- [x] LiDAR (ToF point clouds paint the street; fog and black paint are its blind spots) ✅ **lidar/**
+
+### Phase 29 deep dives (condensed)
+
+- **laval-nozzle/** — 380 gas parcels flow a half-cut bell nozzle colored by Mach: the subsonic half accelerates as A shrinks, the throat welds at M = 1.00 capping mass flow, and past it the nozzle widens only to go *faster* — area ratio alone fixes exit Mach. Drag back pressure from sea level to 20 km: the plume pinches under lip shocks (overexpanded), flows clean (matched), then balloons out with pulsing shock diamonds. URL: `?pc= ?pa= ?ar= ?preset= ?pause= ?speed= ?labels= ?spin=`.
+- **rayleigh-benard/** — 500 temperature-colored grains between a red-hot floor and cold lid jiggle conductively until Ra crosses 1708, then self-organize into counter-rotating rolls with the Nu jump on the chart. Drag ΔT slowly to watch the instability, re-seed to see cells regrow from noise. URL: `?dt= ?h= ?pause= ?speed= ?labels= ?spin=`.
+- **river-meander/** — a near-straight channel grows loops over simulated millennia: the outer bank erodes, point bars build inside, wavelength locks at ~5 widths; a flood cuts the neck and the loop becomes a greening oxbow. Scrub the timeline, force a cutoff, toggle the helical-flow annotation. URL: `?tm= ?er= ?cut=1 ?pause= ?speed= ?labels= ?spin=`.
+- **flapping-flight/** — a stylized bird beats time-accurate wings in a particle wind: 3 span stations show lift/thrust arrows growing toward the tip, vortex rings stack behind, hover mode switches to a figure-8 with lift on both strokes. Slow-mo single-cycle dissection with frame stepping. URL: `?f= ?u= ?mode= ?pause= ?speed= ?labels= ?spin=`.
+- **cvt/** — two cone pulleys and a 68-plate push-belt; the ratio slider glides both sheaves continuously (0.4–2.6) with zero shifts, and the 0–100 race shows CVT rpm pinned at the power peak versus the manual's sawtooth; overload the belt and it slips red. URL: `?i= ?rpm= ?mode= ?pause= ?speed= ?labels= ?spin=`.
+- **diesel-engine/** — a cutaway single cylinder over 720°: compression glows to ~570 °C, the injector fires and fuel self-ignites along the P–V square shoulder; pull the ratio below ~12 and it refuses to fire; full load soots, idle runs λ≈7. URL: `?cr= ?rpm= ?load= ?glow= ?pause= ?speed= ?labels= ?spin=`.
+- **harmonic-oscillator/** — a mass on a gold spring with force/velocity arrows and an energy ledger; the phase portrait melts time into a circle that damping spirals inward, and a drive sweep blows up the resonance peak at ω₀. Drag m ×4 and the period exactly doubles. URL: `?m= ?k= ?c= ?x0= ?mode= ?pause= ?speed= ?labels= ?spin=`.
+- **foucault-pendulum/** — the swing plane topples 24 pegs as it precesses 15°·sin φ: Paris 31.8 h/circle, pole 24 h, equator never; flip to the space frame and the hall rotates instead. URL: `?lat= ?mult= ?view= ?pause= ?speed= ?labels= ?spin=`.
+- **inverter/** — battery, glowing H-bridge, LC choke and a motor follow frequency; the scope stacks square wave → SPWM pulses (dashed average = the sine) → filtered output; rectifier mode runs the same bridge backward with a smoothing capacitor. URL: `?mode=inv|rec ?f= ?c= ?pause= ?speed= ?labels= ?spin=`.
+- **thermoelectric/** — one N/P module, two jobs: heat the base and carriers light the bulb (U = αΔT), drive it and carriers pump heat until the cold plate frosts; reverse the current and the faces swap in seconds; ZT ≈ 1 keeps Carnot laughing. URL: `?mode=seebeck|peltier ?th= ?i= ?pause= ?speed= ?labels= ?spin=`.
+- **piezoelectricity/** — a magnified quartz lattice: hammer it and charge centers split, faces pile kV and the spark gap fires; drive it with AC and the same slab pumps ultrasound rings, peaking at resonance (40 kHz buzzer, 32768 Hz watch fork). URL: `?mode=squeeze|drive ?f= ?v= ?pause= ?speed= ?labels= ?spin=`.
+- **catalytic-converter/** — a honeycomb brick with Rh upstream splitting NOₓ and Pt/Pd downstream oxidizing CO/HC: molecules flash as they convert, the brick "lights off" at 250 °C (cold start = the pollution peak), stray λ starves one bed, lead poisons the sites. URL: `?tp= ?lam= ?lead=1 ?pause= ?speed= ?labels= ?spin=`.
+- **nitrogen-cycle/** — a diorama with an N₂ dome, soil cross-section, root nodules, factory and lake: lightning and rhizobia crack the triple bond, soil bacteria nitrate it, denitrification closes the loop; push the fertilizer slider and the lake blooms while fish vanish. URL: `?fert= ?rain= ?preset= ?pause= ?speed= ?labels= ?spin=`.
+- **antibiotic-resistance/** — 350 bacteria carry hidden resistance r = 0…3 that "reveals" at first dosing: full course cures, early stop breeds a resistant rebound, low dose sieves to 100%, plasmid conjugation copies resistance, and off-drug fitness cost slowly fades it. URL: `?dose= ?days= ?plasmid=1 ?pause= ?speed= ?labels= ?spin=`.
+- **reflex-arc/** — tap the tendon: spindle → 100 m/s Aα fiber → one cord synapse → kick at ~48 ms while the brain-informed lamp waits until 600 ms; withdrawal mode adds interneuron inhibition and crossed extension. URL: `?reflex= ?slow=1 ?brain=1 ?pause= ?speed= ?labels= ?spin=`.
+- **phototropism/** — drag the sun around a seedling and the stem chases it over time-lapse days while the cross-section heatmap shows auxin always pooling on the shaded side; darkness etiolates, twin lights cancel, roots brake and bend away. URL: `?az= ?lux= ?day= ?root=1 ?pause= ?speed= ?labels= ?spin=`.
+- **roche-limit/** — grab the rubble moon and drag it inside the red ring: it stretches, bursts into a bead chain, and Kepler shear smears the necklace into a ring; fluid vs rigid limits at 2.44 vs 1.26 R. URL: `?d= ?rhom= ?mode= ?pause= ?speed= ?labels= ?spin=`.
+- **lagrange-points/** — an effective-potential terrain under the co-rotating Sun-Earth system: drag the probe, watch JWST librate at L2 (and drift when station-keeping is off), scatter 240 Trojans into tadpole orbits, then switch Coriolis off and the hill dumps them all. URL: `?mu= ?preset= ?cor=0 ?pause= ?speed= ?labels= ?spin=`.
+- **cepheid/** — a breathing supergiant with its κ-valve, a triple chart (light curve, period–luminosity line, HR instability strip): drag the period 3→50 days and the distance readout leaps from ~4 to ~17 kpc; leave the strip and the pulsation dies. URL: `?P= ?m= ?teff= ?preset= ?pause= ?speed= ?labels= ?spin=`.
+- **game-of-life/** — a 72×48 board where B3/S23 births gliders, an endless Gosper gun, and two-glider logic gates (a 64-generation exact annihilation); switch rules to Seeds fireworks or HighLife replicators. URL: `?rule= ?stamp= ?d= ?t= ?speed= ?pause= ?labels= ?spin=`.
+- **monte-carlo/** — points rain into a cube until the sphere's silhouette crystallizes and π ≈ 6·N_in/N locks toward 3.14159 under the 1/√N band; Buffon needles and blob integration ride the same loop. URL: `?mode=sphere|circle|buffon|blob ?spd= ?cap= ?pause= ?speed= ?labels= ?spin=`.
+- **quartz-watch/** — a movement cutaway: the fork flexes visibly only at ×32768 slow-mo, fifteen divider lamps ripple one carry per second, the stepper ticks 180°, low battery drops to two-second jumps, and the temperature parabola peaks at 25 °C. URL: `?temp= ?slow= ?batt= ?pause= ?speed= ?labels= ?spin=`.
+- **hydroelectric/** — 300 water parcels run reservoir → penstock → Francis runner → tailrace at P = ρQghη ≈ 85%; pump mode spins the same runner backwards to fill the mountain lake, and the 24 h demand chart shows hydro covering in seconds what coal ramps in 90 minutes. URL: `?h= ?q= ?mode=gen|pump ?day= ?pause= ?speed= ?labels= ?spin=`.
+- **lidar/** — the street starts as ghost wireframe; the spinning head's 12 beams paint a height-colored point cloud while the A-scope shows first/last returns; fog dissolves it into ghosts, black paint starves 905 nm where 1550 nm still sees, and vegetation splits into layers. URL: `?spd= ?dens= ?fog= ?wl= ?preset= ?pause= ?speed= ?labels= ?spin=`.
 
 ### Phase 11 · Earth system (10/10)
 
@@ -898,6 +1074,46 @@ siphon/                The siphon: the atmosphere over the hill and the 10.3 m s
 magnus-effect/         The Magnus effect: rotor pressure, banana kick, rotor ship (Three.js, CDN)
 cavitation/            Cavitation & supercavitation: σ, pitting and the gas shroud (Three.js, CDN)
 tsunami/               Tsunami & shallow-water waves: √(gh), Green's law, drawback (Three.js, CDN)
+mach-cone/             Sonic boom & the Mach cone: wavefront envelope, μ = arcsin(1/M) (Three.js, CDN)
+vortex-street/         Kármán vortex street: alternating shedding, St, resonance (Three.js, CDN)
+stokes-centrifuge/     Stokes settling & the centrifuge: v_t, RCF, blood bands (Three.js, CDN)
+capillarity/           Capillarity & surface tension: Jurin's law, contact angle, mercury (Three.js, CDN)
+kelvin-helmholtz/      Kelvin–Helmholtz billows: cat's-eye roll-up and mixing (Three.js, CDN)
+poiseuille/            Poiseuille flow: parabolic profile, the r⁴ law, stenosis (Three.js, CDN)
+hydrofoil/             The hydrofoil: foil lift, the takeoff hump, cavitation (Three.js, CDN)
+swell/                 Swell & deep-water waves: dispersion, c_p = 2c_g, packets (Three.js, CDN)
+centrifugal-pump/      Centrifugal pump & cavitation: H-Q duty point, affinity laws, NPSH (Three.js, CDN)
+non-newtonian/         Non-Newtonian fluids: shear-thinning/thickening, Bingham yield (Three.js, CDN)
+boundary-layer/        Boundary layer & separation: no-slip, dimples, the root of stall (Three.js, CDN)
+tropical-cyclone/      Tropical cyclone: a Carnot heat engine (Three.js, CDN)
+ecg/                   The ECG: the cardiac dipole projects P-QRS-T (Three.js, CDN)
+exoplanet-transit/     Exoplanets: the transit method (Three.js, CDN)
+information-entropy/   Information entropy: Shannon's limit, Huffman hugging it (Three.js, CDN)
+elevator/              Elevator & counterweight: traction, P = Δm·g·v, the safety gear (Three.js, CDN)
+laval-nozzle/          de Laval nozzle & shock diamonds: choking, area-Mach, plumes (Three.js, CDN)
+rayleigh-benard/       Rayleigh–Bénard convection: instability at Ra 1708 (Three.js, CDN)
+river-meander/         River meanders & oxbow lakes: helical flow, cutoffs (Three.js, CDN)
+flapping-flight/       Flapping flight: downstroke = lift + thrust, vortex rings (Three.js, CDN)
+cvt/                   The CVT: sliding sheaves, continuously variable ratio (Three.js, CDN)
+diesel-engine/         The diesel engine: compression ignition, the square shoulder (Three.js, CDN)
+harmonic-oscillator/   The harmonic oscillator: phase circle, damping spiral, resonance (Three.js, CDN)
+foucault-pendulum/     Foucault's pendulum: 15°·sin φ precession (Three.js, CDN)
+inverter/              Inverter & rectifier: H-bridge, SPWM, LC filtering (Three.js, CDN)
+thermoelectric/        Seebeck ⇄ Peltier: thermoelectric reversibility (Three.js, CDN)
+piezoelectricity/      Piezoelectricity: squeeze for sparks, drive for ultrasound (Three.js, CDN)
+catalytic-converter/   The catalytic converter: three-way chemistry, light-off (Three.js, CDN)
+nitrogen-cycle/        The nitrogen cycle: three fixation keys, runoff (Three.js, CDN)
+antibiotic-resistance/ Antibiotics & resistance: selection is a sieve (Three.js, CDN)
+reflex-arc/            The spinal reflex arc: one synapse, 50 ms (Three.js, CDN)
+phototropism/          Phototropism: auxin pools on the shaded side (Three.js, CDN)
+roche-limit/           The Roche limit: tides tear moons into rings (Three.js, CDN)
+lagrange-points/       Lagrange points: the effective-potential landscape (Three.js, CDN)
+cepheid/               Cepheid variables: the period-luminosity yardstick (Three.js, CDN)
+game-of-life/          Conway's Game of Life: B3/S23, Turing-complete (Three.js, CDN)
+monte-carlo/           The Monte Carlo method: π from counting, 1/√N error (Three.js, CDN)
+quartz-watch/          The quartz watch: 32768 = 2¹⁵, divided to 1 Hz (Three.js, CDN)
+hydroelectric/         Hydro & pumped storage: the grid's biggest battery (Three.js, CDN)
+lidar/                 LiDAR: ToF point clouds paint the street (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
