@@ -497,7 +497,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **hydroelectric/** — 300 water parcels run reservoir → penstock → Francis runner → tailrace at P = ρQghη ≈ 85%; pump mode spins the same runner backwards to fill the mountain lake, and the 24 h demand chart shows hydro covering in seconds what coal ramps in 90 minutes. URL: `?h= ?q= ?mode=gen|pump ?day= ?pause= ?speed= ?labels= ?spin=`.
 - **lidar/** — the street starts as ghost wireframe; the spinning head's 12 beams paint a height-colored point cloud while the A-scope shows first/last returns; fog dissolves it into ghosts, black paint starves 905 nm where 1550 nm still sees, and vegetation splits into layers. URL: `?spd= ?dens= ?fog= ?wl= ?preset= ?pause= ?speed= ?labels= ?spin=`.
 
-### Phase 30 · Cross-family gap-filling, batch 3 (8/8)
+### Phase 31 · Cross-family gap-filling, batch 3 (8/8)
 
 - [x] Ackermann steering (cot δo − cot δi = B/L, one instant center, the trapezoid synthesizes both angles; parallel steering scrubs, anti-Ackermann races) ✅ **ackermann-steering/**
 - [x] The buck converter (Vout = D·Vin, the inductor as a current flywheel, LC smooths the chops; linear mode burns 14 W vs 95% efficiency) ✅ **buck-converter/**
@@ -508,7 +508,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] Glacier flow (Glen's τ³ law, accumulation vs ablation tug-of-war, crevasses & moraines, the U-valley, a climate dial over centuries) ✅ **glacier-flow/**
 - [x] Tidal locking (the bulge leads by δ, a sin2δ brake until spin = orbit; the Moon recedes 3.8 cm/yr; Mercury's 3:2, Io's tidal heat) ✅ **tidal-locking/**
 
-### Phase 30 deep dives (condensed)
+### Phase 31 deep dives (condensed)
 
 - **ackermann-steering/** — a translucent-chassis car drives real arcs while its four wheel trails draw concentric circles around the glowing instant center; in Ackermann mode all four axle lines meet exactly on the rear-axle extension (δ=14° → δi=15.0°/δo=13.1°, L=2.6 m, B=1.5 m verified live), parallel steering misses the point and sparks red scrub at the front patches, anti-Ackermann over-steers the outer wheel like a race car. URL: `?st= ?g=ack|par|anti ?v= ?axes= ?pause= ?speed= ?labels= ?spin=`.
 - **buck-converter/** — blue electrons pulse through the MOSFET only on-phase, orange through the freewheel diode only off-phase, while the green flow after the LC runs smooth; the scope stacks the node square wave, the I_L triangle with its ΔI_L band, and a near-flat Vout; linear mode glows red-hot burning 14 W at 42% versus buck's 95%, and a 1→4 A load step shows the inductor ramp and the dip-recover. URL: `?d= ?load= ?mode=lin|buck ?pause= ?speed= ?labels= ?spin=`.
