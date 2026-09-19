@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>卡尔曼滤波 · 在噪声中做最优估计</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.c { color: var(--text2); border-color: rgba(148,163,179,.55); }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="卡尔曼滤波" data-en="Kalman Filter">卡尔曼滤波</h1>
+  <div class="sub" data-zh="传感器会抖、模型会歪——单靠谁都要翻车。卡尔曼滤波把状态记成一个高斯分布(均值+方差):预测一步,方差膨胀;测量一来,按增益 K 加权融合,方差收缩;K 自动权衡信模型还是信测量(R 小多信测量,Q 小多信模型),对线性高斯系统是最优估计——雷达跟踪、GPS+IMU 融合、阿波罗登月全靠它 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格运行/暂停" data-en="Sensors jitter and models err — relying on either alone ends in a wreck. The Kalman filter holds the state as a Gaussian (mean + variance): predict one step and the variance inflates; a measurement arrives and the gain K fuses them, shrinking the variance; K automatically weighs model vs measurement (small R → trust the sensor, small Q → trust the model), optimal for linear-Gaussian systems — radar tracking, GPS+IMU fusion and Apollo all ran on it · 3D interactive demo · drag to orbit / scroll to zoom · Space = run/pause">传感器会抖、模型会歪——单靠谁都要翻车。卡尔曼滤波把状态记成一个高斯分布(均值+方差):预测一步,方差膨胀;测量一来,按增益 K 加权融合,方差收缩;K 自动权衡信模型还是信测量(R 小多信测量,Q 小多信模型),对线性高斯系统是最优估计——雷达跟踪、GPS+IMU 融合、阿波罗登月全靠它 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="卡尔曼增益 K" data-en="Kalman gain K">卡尔曼增益 K</span><span class="v" id="stK">—</span>
+  <span class="k" data-zh="估计方差 P" data-en="Variance P">估计方差 P</span><span class="v" id="stP">—</span>
+  <span class="k" data-zh="测量误差 RMS" data-en="Meas. error RMS">测量误差 RMS</span><span class="v" id="stMr">—</span>
+  <span class="k" data-zh="估计误差 RMS" data-en="Estimate error RMS">估计误差 RMS</span><span class="v ok" id="stEr">—</span>
+  <span class="k" data-zh="新息 |ν|" data-en="Innovation |ν|">新息 |ν|</span><span class="v" id="stIn">—</span>
+  <span class="k" data-zh="最近测量源" data-en="Last sensor">最近测量源</span><span class="v" id="stSn">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="上:误差 km — 红=测量,绿=估计 · 下:卡尔曼增益 K" data-en="Top: error km — red = measurement, green = estimate · Bottom: Kalman gain K">上:误差 km — 红=测量,绿=估计 · 下:卡尔曼增益 K</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.c" data-zh="灰线=真值 · 蓝线=纯模型外推(不修正必漂移)" data-en="gray = truth · blue = model-only extrapolation (always drifts)">灰线=真值 · 蓝线=纯模型外推(不修正必漂移)</span>
+    <span class="chip.r" data-zh="红点=测量回波(σ=√R)· GPS 模式:淡红=IMU、橙=GPS" data-en="red = measurement echoes (σ=√R) · GPS mode: pale-red = IMU, orange = GPS">红点=测量回波(σ=√R)· GPS 模式:淡红=IMU、橙=GPS</span>
+    <span class="chip.g" data-zh="绿线=卡尔曼融合估计 · 椭圆=2σ 误差(随 P 呼吸)" data-en="green = Kalman fused estimate · ellipse = 2σ error (breathes with P)">绿线=卡尔曼融合估计 · 椭圆=2σ 误差(随 P 呼吸)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnAuto" data-zh="自动融合" data-en="Auto fusion">自动融合</button>
+    <button class="abtn" id="btnModel" data-zh="只信模型(退化)" data-en="Model only (degenerate)">只信模型(退化)</button>
+    <button class="abtn brk" id="btnMeas" data-zh="只信测量(退化)" data-en="Meas. only (degenerate)">只信测量(退化)</button>
+    <button class="abtn" id="btnGPS" data-zh="GPS+IMU 双频模式" data-en="GPS+IMU dual mode">GPS+IMU 双频模式</button>
+    <button class="abtn" id="btnReset" data-zh="重置滤波器" data-en="Reset filter">重置滤波器</button>
+  </div>
+  <div class="row"><label data-zh="测量噪声 R" data-en="Meas. noise R">测量噪声 R</label><input id="sR" type="range" min="0.1" max="4" step="0.05" value="1"><span class="val" id="sRVal">σ=1.00 km</span></div>
+<div class="row"><label data-zh="过程噪声 Q" data-en="Process noise Q">过程噪声 Q</label><input id="sQ" type="range" min="0.01" max="2" step="0.01" value="0.15"><span class="val" id="sQVal">0.15</span></div>
+<div class="row"><label data-zh="采样间隔" data-en="Sampling interval">采样间隔</label><input id="sRate" type="range" min="0.25" max="2" step="0.05" value="0.8"><span class="val" id="sRateVal">0.80 s</span></div>
+  <div class="row"><label data-zh="模拟速度" data-en="Sim speed">模拟速度</label><input id="sSpd" type="range" min="0.3" max="4" step="0.1" value="1"><span class="val" id="sSpdVal">×1.0</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="曲线" data-en="Chart">曲线</span></label>
+      <label><input id="tglBeam" type="checkbox" checked> <span data-zh="波束" data-en="Beam">波束</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../pid-controller/" data-zh="反馈控制的另一门武功" data-en="the other martial art of feedback control">反馈控制的另一门武功</a>
+    <a href="../gps/" data-zh="定位信号的来源" data-en="where the positioning signal comes from">定位信号的来源</a>
+    <a href="../bayes-screening/" data-zh="贝叶斯更新的离散亲戚" data-en="a discrete cousin of Bayesian updating">贝叶斯更新的离散亲戚</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+let gSpare = null;
+function gauss() {
+  if (gSpare !== null) { const v = gSpare; gSpare = null; return v; }
+  let u = 0; while (!u) u = Math.random();
+  const v = Math.random(), m = Math.sqrt(-2 * Math.log(u));
+  gSpare = m * Math.sin(TAU * v);
+  return m * Math.cos(TAU * v);
+}
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x0e1420, 55, 170);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0e1420 : 0xd8e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x0e1420 : 0xd8e2ea);
+  groundMat.color.setHex(dark ? 0x141a22 : 0xc7d3de);
+  grid.material.opacity = dark ? 0.20 : 0.30;
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('卡尔曼滤波 · 在噪声中做最优估计', 'Kalman Filter · optimal estimation in a noisy world');
+  setPlayLabel();
+  buildSteps();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+  drawPlot();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 400);
+camera.position.set(14.5, 11, 19);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.4, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 5;
+controls.maxDistance = 70;
+controls.autoRotateSpeed = 0.3;
+
+scene.add(new THREE.HemisphereLight(0xcfe0f2, 0x30363f, 0.75));
+const key = new THREE.DirectionalLight(0xfff4e0, 1.6);
+key.position.set(9, 14, 6);
+scene.add(key);
+
+/* 地面 + 网格 */
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x141a22, roughness: 1, metalness: 0 });
+const ground = new THREE.Mesh(new THREE.CircleGeometry(34, 48), groundMat);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+const grid = new THREE.GridHelper(56, 28, 0x6b7c8f, 0x6b7c8f);
+grid.material.transparent = true;
+grid.material.opacity = 0.20;
+grid.position.y = 0.03;
+scene.add(grid);
+
+/* ================= 物理参数与滤波器状态 ================= */
+let R = clamp(qsFloat('r', 1), 0.1, 4);            // 测量噪声方差
+let Q = clamp(qsFloat('q', 0.15), 0.01, 2);        // 过程噪声强度
+let measInt = clamp(qsFloat('rate', 0.8), 0.25, 2);// 采样间隔(s)
+let speed = clamp(qsFloat('speed', 1), 0.3, 4);
+let trustMode = ['model', 'meas'].includes(qs.get('trust')) ? qs.get('trust') : 'auto';
+let gpsMode = qs.get('mode') === 'gps';
+let tSim = 0;
+
+let xh = [0, 0, 0, 0];                             // 状态 [x, z, vx, vz]
+const P = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0.6, 0], [0, 0, 0, 0.6]];
+const PN = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+const K2 = [[0, 0], [0, 0], [0, 0], [0, 0]];
+const m0 = new Float64Array(4), m1 = new Float64Array(4);
+let kDisp = 0, pDisp = 1, innov = 0;
+let measRMS = 0, estRMS = 0, measCount = 0, lastSensor = '';
+let lastRadarT = -9, lastImuT = -9, lastGpsT = -9, lastUpdT = -999, lastResetT = -999;
+let bigInnovHold = 0;
+const bP = { x: 0, z: 0 }, bV = { x: 0, z: 0 }, bB = { x: 0, z: 0 };   // 纯模型外推(蓝)
+const iP = { x: 0, z: 0 }, iV = { x: 0, z: 0 }, iB = { x: 0, z: 0 };   // IMU 推算状态
+
+/* 真值航迹:光滑闭合曲线(匀速模型对它是「歪」的;曲率压低,让滞后处于真实量级) */
+const OM = 0.12;
+const TP = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0, ddx: 0, ddy: 0, ddz: 0 };
+function truthAt(t) {
+  const u = OM * t;
+  TP.x = 9.5 * Math.sin(u) + 1.1 * Math.sin(2 * u + 1.1);
+  TP.z = 5.2 * Math.sin(u + 0.5) + 1.6 * Math.sin(2 * u - 0.4);
+  TP.y = 3.3 + 1.0 * Math.sin(2 * u + 0.7);
+  TP.dx = OM * (9.5 * Math.cos(u) + 2.2 * Math.cos(2 * u + 1.1));
+  TP.dz = OM * (5.2 * Math.cos(u + 0.5) + 3.2 * Math.cos(2 * u - 0.4));
+  TP.dy = OM * 2.0 * Math.cos(2 * u + 0.7);
+  TP.ddx = OM * OM * (-9.5 * Math.sin(u) - 4.4 * Math.sin(2 * u + 1.1));
+  TP.ddz = OM * OM * (-5.2 * Math.sin(u + 0.5) - 6.4 * Math.sin(2 * u - 0.4));
+  TP.ddy = OM * OM * (-4.0 * Math.sin(2 * u + 0.7));
+  return TP;
+}
+
+/* 预测:x̂ ← F x̂;P ← F P Fᵀ + Q(F = 匀速模型;状态序 [x, z, vx, vz]) */
+function kalmanPredict(dt) {
+  xh[0] += xh[2] * dt;
+  xh[1] += xh[3] * dt;
+  const d2 = dt * dt;
+  for (let j = 0; j < 4; j++) { m0[j] = P[0][j] + dt * P[2][j]; m1[j] = P[1][j] + dt * P[3][j]; }
+  const a20 = P[2][0] + dt * P[2][2], a21 = P[2][1] + dt * P[2][3];
+  const a30 = P[3][0] + dt * P[3][2], a31 = P[3][1] + dt * P[3][3];
+  P[0][0] = m0[0] + dt * m0[2]; P[0][1] = m0[1] + dt * m0[3];
+  P[0][2] = m0[2]; P[0][3] = m0[3];
+  P[1][0] = m1[0] + dt * m1[2]; P[1][1] = m1[1] + dt * m1[3];
+  P[1][2] = m1[2]; P[1][3] = m1[3];
+  P[2][0] = a20; P[2][1] = a21; P[3][0] = a30; P[3][1] = a31;
+  /* Q:位置方差 q·dt³/3 · 位置-速度交叉 q·dt²/2 · 速度方差 q·dt */
+  const q1 = Q * d2 * dt / 3, q2 = Q * d2 / 2, q3 = Q * dt;
+  P[0][0] += q1; P[1][1] += q1; P[2][2] += q3; P[3][3] += q3;
+  P[0][2] += q2; P[2][0] += q2; P[1][3] += q2; P[3][1] += q2;
+  for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
+    const s = (P[i][j] + P[j][i]) / 2; P[i][j] = P[j][i] = s;
+  }
+  pDisp = (P[0][0] + P[1][1]) / 2;
+}
+/* 更新:K = P Hᵀ(HPHᵀ+R)⁻¹;x̂ += Kν;P ← (I−KH)P;返回归一化新息平方 χ² */
+function kalmanUpdate(zx, zz, rVar) {
+  const nux = zx - xh[0], nuz = zz - xh[1];
+  innov = Math.hypot(nux, nuz);
+  const s00 = P[0][0] + rVar, s01 = P[0][1], s10 = P[1][0], s11 = P[1][1] + rVar;
+  const det = s00 * s11 - s01 * s10;
+  if (!(Math.abs(det) > 1e-12)) return 0;
+  const chi2 = (s11 * nux * nux - (s01 + s10) * nux * nuz + s00 * nuz * nuz) / det;
+  if (trustMode === 'model') { kDisp = 0; return chi2; }        // K := 0,永不修正
+  if (trustMode === 'meas') {                                    // K := 1,直接跳到测量
+    xh[0] = zx; xh[1] = zz;
+    for (let j = 0; j < 4; j++) { P[0][j] = 0; P[1][j] = 0; P[j][0] = 0; P[j][1] = 0; }
+    kDisp = 1; pDisp = 0;
+    return chi2;
+  }
+  for (let i = 0; i < 4; i++) {
+    K2[i][0] = ( P[i][0] * s11 - P[i][1] * s10) / det;
+    K2[i][1] = (-P[i][0] * s01 + P[i][1] * s00) / det;
+  }
+  xh[0] += K2[0][0] * nux + K2[0][1] * nuz;
+  xh[1] += K2[1][0] * nux + K2[1][1] * nuz;
+  xh[2] += K2[2][0] * nux + K2[2][1] * nuz;
+  xh[3] += K2[3][0] * nux + K2[3][1] * nuz;
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++)
+    PN[i][j] = P[i][j] - (K2[i][0] * P[0][j] + K2[i][1] * P[1][j]);
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) P[i][j] = PN[i][j];
+  kDisp = (K2[0][0] + K2[1][1]) / 2;
+  return chi2;
+}
+function resetFilter() {
+  const t = truthAt(tSim);
+  xh = [t.x + gauss() * 0.9, t.z + gauss() * 0.9, t.dx + gauss() * 0.35, t.dz + gauss() * 0.35];
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) P[i][j] = i === j ? (i < 2 ? 1 : 0.6) : 0;
+  bP.x = xh[0]; bP.z = xh[1]; bV.x = xh[2]; bV.z = xh[3]; bB.x = 0; bB.z = 0;
+  iP.x = xh[0]; iP.z = xh[1]; iV.x = xh[2]; iV.z = xh[3]; iB.x = 0; iB.z = 0;
+  clearTrails();
+  pHist.length = 0;
+  measRMS = 0; estRMS = 0; innov = 0; kDisp = 0; pDisp = 1; bigInnovHold = 0;
+  lastRadarT = lastImuT = lastGpsT = tSim - 0.2;
+  lastUpdT = -999; lastResetT = tSim;
+}
+
+/* ================= 场景物件 ================= */
+/* 小飞机(真值载体) */
+const planeGroup = new THREE.Group();
+scene.add(planeGroup);
+const matBody = new THREE.MeshStandardMaterial({ color: 0xe8edf3, roughness: 0.45, metalness: 0.15 });
+const matDark = new THREE.MeshStandardMaterial({ color: 0x2a3138, roughness: 0.6 });
+const matRed = new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.5 });
+const fus = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.95, 6, 12), matBody);
+fus.rotation.x = Math.PI / 2;
+planeGroup.add(fus);
+const nose = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10),
+  new THREE.MeshStandardMaterial({ color: 0x9fd0ff, roughness: 0.3, metalness: 0.2 }));
+nose.position.set(0, 0.13, 0.42);
+planeGroup.add(nose);
+const wing = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.05, 0.46), matBody);
+wing.position.set(0, 0.02, 0.05);
+planeGroup.add(wing);
+const fin = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.36, 0.3), matRed);
+fin.position.set(0, 0.2, -0.62);
+planeGroup.add(fin);
+const stab = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.04, 0.22), matBody);
+stab.position.set(0, 0.02, -0.62);
+planeGroup.add(stab);
+const prop = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.85, 0.05), matDark);
+prop.position.set(0, 0, 0.66);
+planeGroup.add(prop);
+planeGroup.scale.setScalar(1.15);
+
+/* 雷达站(旋转碟跟踪) */
+const radarGroup = new THREE.Group();
+scene.add(radarGroup);
+const base = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.85, 0.35, 20),
+  new THREE.MeshStandardMaterial({ color: 0x39424e, roughness: 0.8 }));
+base.position.y = 0.17;
+radarGroup.add(base);
+const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.17, 0.75, 12),
+  new THREE.MeshStandardMaterial({ color: 0x4a5665, roughness: 0.7 }));
+tower.position.y = 0.72;
+radarGroup.add(tower);
+const head = new THREE.Group();
+head.position.y = 1.22;
+radarGroup.add(head);
+const dish = new THREE.Mesh(new THREE.SphereGeometry(0.5, 24, 10, 0, TAU, 0, Math.PI * 0.36),
+  new THREE.MeshStandardMaterial({ color: 0xd6dde6, roughness: 0.4, metalness: 0.1, side: THREE.DoubleSide }));
+dish.rotation.x = Math.PI / 2;
+head.add(dish);
+const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6),
+  new THREE.MeshStandardMaterial({ color: 0x8a97a5 }));
+rod.rotation.x = Math.PI / 2;
+rod.position.z = 0.32;
+head.add(rod);
+const feed = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), matDark);
+feed.position.z = 0.56;
+head.add(feed);
+
+/* 波束(雷达→飞机) */
+const beam = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 18, 1, true),
+  new THREE.MeshBasicMaterial({ color: 0xff922b, transparent: true, opacity: 0.10, side: THREE.DoubleSide, depthWrite: false }));
+beam.visible = false;
+scene.add(beam);
+
+/* GPS 卫星(GPS 模式出现) */
+function makeSat() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.22, 0.22),
+    new THREE.MeshStandardMaterial({ color: 0xc9a86a, roughness: 0.4, metalness: 0.5 }));
+  g.add(body);
+  const pm = new THREE.MeshStandardMaterial({ color: 0x27436e, roughness: 0.35, metalness: 0.4, emissive: 0x0d1e3a, emissiveIntensity: 0.6 });
+  const p1 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.03, 0.34), pm);
+  p1.position.x = 0.68;
+  g.add(p1);
+  const p2 = p1.clone();
+  p2.position.x = -0.68;
+  g.add(p2);
+  g.visible = false;
+  scene.add(g);
+  return g;
+}
+const sats = [makeSat(), makeSat()];
+
+/* 测量噪点(InstancedMesh,循环缓冲) */
+const DOTS = 256;
+const dotMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.095, 10, 8),
+  new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95 }), DOTS);
+dotMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+dotMesh.frustumCulled = false;
+scene.add(dotMesh);
+const dotT = new Float32Array(DOTS).fill(-99);
+const dotP = new Float32Array(DOTS * 3);
+const dotS = new Float32Array(DOTS);
+let dotHead = 0;
+const tmpObj = new THREE.Object3D();
+const tmpCol = new THREE.Color();
+for (let i = 0; i < DOTS; i++) {
+  tmpObj.scale.setScalar(0);
+  tmpObj.updateMatrix();
+  dotMesh.setMatrixAt(i, tmpObj.matrix);
+  dotMesh.setColorAt(i, tmpCol.setHex(0xffffff));
+}
+function addDot(x, y, z, sensor) {
+  const i = dotHead;
+  dotHead = (dotHead + 1) % DOTS;
+  dotT[i] = tSim;
+  dotP[i * 3] = x; dotP[i * 3 + 1] = y; dotP[i * 3 + 2] = z;
+  dotS[i] = sensor === 'gps' ? 1.9 : sensor === 'imu' ? 0.72 : 1;
+  dotMesh.setColorAt(i, tmpCol.setHex(sensor === 'gps' ? 0xffa94d : sensor === 'imu' ? 0xf2a5a5 : 0xff6b6b));
+  if (dotMesh.instanceColor) dotMesh.instanceColor.needsUpdate = true;
+}
+
+/* 轨迹线(预分配缓冲) */
+const TR_N = 520;
+function makeTrail(color, op) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TR_N * 3), 3));
+  g.setDrawRange(0, 0);
+  const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: op }));
+  l.frustumCulled = false;
+  scene.add(l);
+  return l;
+}
+const trailT = makeTrail(0x94a3b3, 0.6), trailB = makeTrail(0x339af0, 0.8), trailG = makeTrail(0x51cf66, 0.95);
+const arrT = [], arrB = [], arrG = [];
+let trailsDirty = false;
+function pushTrail(arr, x, y, z) { arr.push([x, y, z]); if (arr.length > TR_N) arr.shift(); }
+function writeTrail(line, arr) {
+  const a = line.geometry.attributes.position;
+  for (let i = 0; i < arr.length; i++) a.setXYZ(i, arr[i][0], arr[i][1], arr[i][2]);
+  line.geometry.setDrawRange(0, arr.length);
+  a.needsUpdate = true;
+}
+function clearTrails() {
+  arrT.length = arrB.length = arrG.length = 0;
+  trailT.geometry.setDrawRange(0, 0); trailB.geometry.setDrawRange(0, 0); trailG.geometry.setDrawRange(0, 0);
+  trailsDirty = false;
+}
+
+/* 估计/外推动点、误差椭圆、影子、新息线、脉冲圈 */
+const gMark = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 10), new THREE.MeshBasicMaterial({ color: 0x51cf66 }));
+scene.add(gMark);
+const bMark = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), new THREE.MeshBasicMaterial({ color: 0x339af0 }));
+scene.add(bMark);
+const ellipse = (() => {
+  const pts = [];
+  for (let i = 0; i <= 56; i++) { const a = i / 56 * TAU; pts.push(new THREE.Vector3(Math.cos(a), 0, Math.sin(a))); }
+  const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: 0x69db7c, transparent: true, opacity: 0.85 }));
+  l.frustumCulled = false;
+  scene.add(l);
+  return l;
+})();
+const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.55, 20),
+  new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.16, depthWrite: false }));
+shadow.rotation.x = -Math.PI / 2;
+shadow.position.y = 0.02;
+scene.add(shadow);
+const dropGeo = new THREE.BufferGeometry();
+dropGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+const dropLine = new THREE.Line(dropGeo, new THREE.LineBasicMaterial({ color: 0x8a97a5, transparent: true, opacity: 0.3 }));
+dropLine.frustumCulled = false;
+scene.add(dropLine);
+const innovGeo = new THREE.BufferGeometry();
+innovGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+const innovMat = new THREE.LineBasicMaterial({ color: 0xff8787, transparent: true, opacity: 0 });
+const innovLine = new THREE.Line(innovGeo, innovMat);
+innovLine.frustumCulled = false;
+innovLine.visible = false;
+scene.add(innovLine);
+function makeRing(color) {
+  const pts = [];
+  for (let i = 0; i < 48; i++) { const a = i / 48 * TAU; pts.push(new THREE.Vector3(Math.cos(a), 0, Math.sin(a))); }
+  const m = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0 }));
+  m.visible = false;
+  m.frustumCulled = false;
+  scene.add(m);
+  return { m, t: 9 };
+}
+const pingR = makeRing(0xffa94d), pingG = makeRing(0xffa94d);
+function fireRing(r, x, z) { r.t = 0; r.m.position.set(x, 0.06, z); }
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+const lblPlane = addLabel(() => L('真值轨迹', 'true track'), new THREE.Vector3(0, 4, 0));
+const lblRadar = addLabel(() => gpsMode
+  ? L('地面站 · 待命', 'ground station · standby')
+  : L(`雷达站 · 回波 σ=${Math.sqrt(R).toFixed(2)} km`, `radar · echo σ=${Math.sqrt(R).toFixed(2)} km`),
+  new THREE.Vector3(0, 2.15, 0), 'o');
+const lblGreen = addLabel(() => {
+  const s = (2 * Math.sqrt(Math.max(pDisp, 0))).toFixed(2);
+  return L(`卡尔曼估计 · K=${kDisp.toFixed(2)} · 2σ=${s} km`, `Kalman estimate · K=${kDisp.toFixed(2)} · 2σ=${s} km`);
+}, new THREE.Vector3(0, 2, 0), 'g');
+const lblBlue = addLabel(() => {
+  const d = Math.hypot(bP.x - TP.x, bP.z - TP.z).toFixed(1);
+  return gpsMode
+    ? L(`纯 IMU 推算 · 漂移 ${d} km`, `IMU-only · drifted ${d} km`)
+    : L(`纯模型外推 · 已漂 ${d} km`, `model-only · drifted ${d} km`);
+}, new THREE.Vector3(0, 2, 0), 'b');
+const lblSat = addLabel(() => L('GPS · 中轨卫星 ≈2 万 km', 'GPS · MEO ≈ 20,000 km'),
+  new THREE.Vector3(0, 14, 0), 'o', () => gpsMode);
+
+/* ---------------- 测量与仿真推进 ---------------- */
+function fireMeasurement(sensor) {
+  let zx, zz, rVar;
+  if (sensor === 'radar') {
+    lastRadarT = tSim; rVar = R;
+    zx = TP.x + gauss() * Math.sqrt(R); zz = TP.z + gauss() * Math.sqrt(R);
+    fireRing(pingR, 0, 0);
+  } else if (sensor === 'imu') {
+    lastImuT = tSim; rVar = R;
+    zx = iP.x + gauss() * Math.sqrt(R); zz = iP.z + gauss() * Math.sqrt(R);
+  } else {
+    lastGpsT = tSim; rVar = R * 0.5;
+    zx = TP.x + gauss() * Math.sqrt(rVar); zz = TP.z + gauss() * Math.sqrt(rVar);
+    fireRing(pingG, TP.x, TP.z);
+    iP.x = zx; iP.z = zz; iV.x = xh[2]; iV.z = xh[3];   // GPS 修正 IMU 推算
+  }
+  measCount++; lastSensor = sensor;
+  const e = Math.hypot(zx - TP.x, zz - TP.z);
+  measRMS += (e - measRMS) * 0.06;
+  addDot(zx, TP.y, zz, sensor);
+  const ap = innovGeo.attributes.position;               // 新息线:x̂′ → z
+  ap.setXYZ(0, xh[0], TP.y, xh[1]);
+  ap.setXYZ(1, zx, TP.y, zz);
+  ap.needsUpdate = true;
+  innovMat.opacity = 0.85;
+  innovLine.visible = true;
+  const chi2 = kalmanUpdate(zx, zz, rVar);
+  if (chi2 > 4.6 && trustMode === 'auto') bigInnovHold = 0.9;
+  lastUpdT = tSim;
+}
+let histAcc = 0, plotAcc = 0;
+function physStep(dt) {
+  tSim += dt;
+  const t = truthAt(tSim);
+  /* 蓝:纯模型外推(GPS 模式下加惯性漂移) */
+  const bb = gpsMode ? 0.16 : 0;
+  bB.x += gauss() * bb * Math.sqrt(dt);
+  bB.z += gauss() * bb * Math.sqrt(dt);
+  bV.x += bB.x * dt; bV.z += bB.z * dt;
+  bP.x += bV.x * dt; bP.z += bV.z * dt;
+  /* IMU 推算(会漂) */
+  if (gpsMode) {
+    iB.x += gauss() * 0.16 * Math.sqrt(dt);
+    iB.z += gauss() * 0.16 * Math.sqrt(dt);
+    iV.x += iB.x * dt; iV.z += iB.z * dt;
+    iP.x += iV.x * dt; iP.z += iV.z * dt;
+  }
+  kalmanPredict(dt);
+  if (!gpsMode) {
+    if (tSim - lastRadarT >= measInt) fireMeasurement('radar');
+  } else {
+    if (tSim - lastImuT >= 0.16) fireMeasurement('imu');
+    if (tSim - lastGpsT >= clamp(measInt * 3, 2, 6)) fireMeasurement('gps');
+  }
+  bigInnovHold = Math.max(0, bigInnovHold - dt);
+  histAcc += dt;
+  if (histAcc >= 0.06) {
+    histAcc = 0;
+    pushTrail(arrT, t.x, t.y, t.z);
+    pushTrail(arrB, bP.x, t.y, bP.z);
+    pushTrail(arrG, xh[0], t.y, xh[1]);
+    trailsDirty = true;
+    const e = Math.hypot(xh[0] - t.x, xh[1] - t.z);
+    estRMS += (e - estRMS) * 0.05;
+    plotAcc += 0.06;
+    if (plotAcc >= 0.12) {
+      plotAcc = 0;
+      pHist.push({ t: tSim, er: measRMS, ee: estRMS, k: kDisp });
+      if (pHist.length > 340) pHist.shift();
+    }
+  }
+}
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '噪声世界:两条腿都不可全信', be: 'A noisy world: no single leg to stand on',
+    d: '传感器会抖(红点散在真值周围,σ=√R),模型也会歪(匀速假设一遇转弯就偏,蓝线纯外推慢慢漂走)。谁都不是真相,但两个带噪信息源的最优融合,能比任何单一来源都准。',
+    de: 'Sensors jitter (red dots scatter around the truth, σ=√R) and models err (the constant-velocity assumption bends at every turn — the blue extrapolation drifts away). Neither is the truth, yet the optimal fusion of two noisy sources beats either one alone.',
+    act: () => { if (gpsMode) setGPS(false); setTrust('auto'); R = 1; Q = 0.15; measInt = 0.8; resetFilter(); } },
+  { b: '预测:外推一步,方差胀开', be: 'Predict: extrapolate one step, variance inflates',
+    d: '用运动模型把状态外推一步(这里是最简单的匀速模型),同时 P′=APAᵀ+Q:离开测量越久、Q 越大,绿色误差椭圆就胀得越大——滤波器在坦白「光靠模型,我越来越不确定」。',
+    de: 'The motion model extrapolates the state one step (here the simplest constant-velocity model) while P′=APAᵀ+Q: the longer since a measurement and the larger Q, the more the green error ellipse swells — the filter admits "on model alone I grow less certain".',
+    act: () => { if (gpsMode) setGPS(false); setTrust('auto'); measInt = 1.2; } },
+  { b: '更新:测量进来,增益 K 融合', be: 'Update: measurement arrives, fuse with gain K',
+    d: '测量一到,先算新息 ν=z−Hx̂′,再按 K=PHᵀ(HPHᵀ+R)⁻¹ 把估计往测量拉一段;同时 P=(I−KH)P,椭圆瞬间收缩,随后又开始下一轮膨胀——椭圆的呼吸节律,就是不确定性的涨落。',
+    de: 'When a measurement lands, form the innovation ν=z−Hx̂′, then pull the estimate toward it by K=PHᵀ(HPHᵀ+R)⁻¹; meanwhile P=(I−KH)P snaps the ellipse tight — then prediction inflates it again. The breathing of the ellipse is uncertainty rising and falling.',
+    act: () => { if (gpsMode) setGPS(false); setTrust('auto'); measInt = 0.45; } },
+  { b: '谁更可信,就多听谁的', be: 'Weight whoever is more credible',
+    d: 'R 小(传感器准)→ K 大 → 绿线贴着红点走;Q 小(模型可靠)→ K 小 → 绿线平滑,转弯时滞后。极端:「只信模型」退化为蓝线漂走;「只信测量」退化为绿线抖如红点。拖 R、Q 试试。',
+    de: 'Small R (accurate sensor) → large K → green hugs the red dots; small Q (trusted model) → small K → green is smooth but lags in turns. Extremes: "model only" degenerates to the drifting blue line; "measurement only" to green jittering like the red dots. Drag R and Q.',
+    act: () => { if (gpsMode) setGPS(false); setTrust('auto'); R = 0.15; Q = 0.8; } },
+  { b: '雷达现场:绿线穿过噪点云', be: 'Radar scene: green through the noise cloud',
+    d: '合起来:旋转的雷达碟按采样间隔收到模糊回波,匀速模型负责外推,绿色估计线平滑地穿过红色噪点云的中心——比测量稳,比模型准。1960 年 Kalman 的论文处理正是这类雷达跟踪问题。',
+    de: 'Put it together: a spinning dish receives fuzzy echoes at the sampling interval, the constant-velocity model extrapolates, and the green estimate glides through the center of the red noise cloud — steadier than the measurement, truer than the model. This is Kalman\u2019s 1960 radar-tracking problem.',
+    act: () => { if (gpsMode) setGPS(false); setTrust('auto'); R = 1; Q = 0.15; measInt = 1.0; resetFilter(); } },
+  { b: 'GPS+IMU 联姻:阿波罗的副驾', be: 'GPS + IMU: Apollo\u2019s silent co-pilot',
+    d: 'IMU 高频推算但会漂(淡红点密而渐偏),GPS 定位准但低频(橙点稀而抖)。同一套 K 机制融合两者:IMU 撑起高频平滑,GPS 压住低频漂移——阿波罗登月的导航系统正是卡尔曼滤波最早的传奇应用之一。',
+    de: 'An IMU propagates at high rate but drifts (dense pale-red dots biasing away); GPS is accurate but sparse (orange dots). The same K machinery fuses them: IMU carries the smooth high-rate motion, GPS pins down the drift — Apollo\u2019s guidance was Kalman filtering\u2019s first legendary application.',
+    act: () => { setGPS(true); } },
+];
+function stepIndex() {
+  if (gpsMode) return 5;
+  if (trustMode !== 'auto' || R <= 0.2 || R >= 3.2 || Q <= 0.04 || Q >= 1.5) return 3;
+  if (tSim - lastUpdT < 0.3 && lastUpdT > -900) return 2;
+  if (bigInnovHold > 0) return 4;
+  if (tSim - lastResetT < 6) return 0;
+  return 1;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:误差 + K ================= */
+const plotCv = document.getElementById('plotCv');
+const pHist = [];
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  ctx.font = '12px system-ui';
+  const pad = 10, padR = 36, TW = 32, t0 = tSim - TW;
+  const xOf = tt => pad + (tt - t0) / TW * (W - pad - padR);
+  const topT = 10, topB = Math.floor(H * 0.52);
+  let m = 2.2 * Math.sqrt(R);
+  for (const p of pHist) { if (p.t < t0) continue; m = Math.max(m, p.er, p.ee); }
+  m *= 1.12;
+  const yOfE = v => topB - clamp(v, 0, m) / m * (topB - topT);
+  ctx.strokeStyle = 'rgba(255,107,107,.35)';
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(pad, yOfE(Math.sqrt(R))); ctx.lineTo(W - padR, yOfE(Math.sqrt(R))); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ff8787';
+  ctx.fillText('σ=' + Math.sqrt(R).toFixed(1), W - padR + 2, yOfE(Math.sqrt(R)) + 4);
+  if (pHist.length > 1) {
+    ctx.strokeStyle = 'rgba(255,107,107,.9)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); let first = true;
+    for (const p of pHist) { if (p.t < t0) continue; const x = xOf(p.t), y = yOfE(p.er); first ? ctx.moveTo(x, y) : ctx.lineTo(x, y); first = false; }
+    ctx.stroke();
+    ctx.strokeStyle = '#51cf66'; ctx.lineWidth = 2.2;
+    ctx.beginPath(); first = true;
+    for (const p of pHist) { if (p.t < t0) continue; const x = xOf(p.t), y = yOfE(p.ee); first ? ctx.moveTo(x, y) : ctx.lineTo(x, y); first = false; }
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = cTxt;
+    ctx.fillText(L('等待测量…', 'waiting for measurements…'), pad + 8, (topT + topB) / 2);
+  }
+  ctx.fillStyle = cTxt;
+  ctx.fillText('km', W - padR + 2, topT + 10);
+  const bT = Math.floor(H * 0.60), bB = H - 16;
+  const yOfK = v => bB - clamp(v, 0, 1) * (bB - bT);
+  ctx.strokeStyle = 'rgba(128,150,170,.25)';
+  ctx.beginPath(); ctx.moveTo(pad, yOfK(0.5)); ctx.lineTo(W - padR, yOfK(0.5)); ctx.stroke();
+  ctx.fillStyle = cTxt;
+  ctx.fillText('1', W - padR + 4, bT + 8);
+  ctx.fillText('0', W - padR + 4, bB + 2);
+  if (pHist.length > 1) {
+    ctx.strokeStyle = '#4dabf7'; ctx.lineWidth = 2;
+    ctx.beginPath(); let first = true;
+    for (const p of pHist) { if (p.t < t0) continue; const x = xOf(p.t), y = yOfK(p.k); first ? ctx.moveTo(x, y) : ctx.lineTo(x, y); first = false; }
+    ctx.stroke();
+    ctx.fillStyle = '#4dabf7';
+    ctx.beginPath(); ctx.arc(xOf(tSim), yOfK(pHist[pHist.length - 1].k), 4, 0, 7); ctx.fill();
+  }
+  ctx.fillStyle = cTxt;
+  ctx.fillText('t=' + Math.round(tSim), W - padR - 30, H - 4);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elR = document.getElementById('sR'), elRVal = document.getElementById('sRVal');
+const elQ = document.getElementById('sQ'), elQVal = document.getElementById('sQVal');
+const elRate = document.getElementById('sRate'), elRateVal = document.getElementById('sRateVal');
+const elSpd = document.getElementById('sSpd'), elSpdVal = document.getElementById('sSpdVal');
+const stK = document.getElementById('stK'), stP = document.getElementById('stP'),
+  stMr = document.getElementById('stMr'), stEr = document.getElementById('stEr'),
+  stIn = document.getElementById('stIn'), stSn = document.getElementById('stSn');
+const formulaEl = document.getElementById('formula');
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let beamOn = true;
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elR.value = R; elRVal.textContent = 'σ=' + Math.sqrt(R).toFixed(2);
+  elQ.value = Q; elQVal.textContent = Q.toFixed(2);
+  elRate.value = measInt; elRateVal.textContent = measInt.toFixed(2) + ' s';
+  elSpd.value = speed; elSpdVal.textContent = '×' + speed.toFixed(1);
+}
+function refreshTrustBtns() {
+  document.getElementById('btnAuto').classList.toggle('on', trustMode === 'auto');
+  document.getElementById('btnModel').classList.toggle('on', trustMode === 'model');
+  document.getElementById('btnMeas').classList.toggle('on', trustMode === 'meas');
+}
+function setTrust(m) { trustMode = m; refreshTrustBtns(); syncAll(); }
+function setGPS(on) {
+  gpsMode = on;
+  document.getElementById('btnGPS').classList.toggle('on', on);
+  resetFilter();
+  syncAll();
+}
+function updateStats() {
+  stK.textContent = kDisp.toFixed(2);
+  stK.className = 'v ' + (trustMode !== 'auto' || kDisp < 0.05 || kDisp > 0.9 ? 'warn' : 'ok');
+  stP.innerHTML = pDisp.toFixed(2) + ' <small>km²</small>';
+  stP.className = 'v ' + (pDisp > 4 ? 'bad' : '');
+  stMr.innerHTML = measRMS.toFixed(2) + ' <small>km</small>';
+  stEr.innerHTML = estRMS.toFixed(2) + ' <small>km</small>';
+  stEr.className = 'v ' + (estRMS > 0.01 && estRMS < measRMS * 0.9 ? 'ok' : 'warn');
+  stIn.textContent = innov.toFixed(2);
+  stSn.textContent = lastSensor === '' ? '—'
+    : lastSensor === 'radar' ? L('雷达', 'radar') : lastSensor === 'imu' ? L('IMU', 'IMU') : L('GPS 定位', 'GPS fix');
+}
+function updateFormula() {
+  const kp = Math.round(kDisp * 100);
+  formulaEl.innerHTML = L(
+    `<b>K = PHᵀ(HPHᵀ+R)⁻¹</b> · x̂ ← x̂′ + K(z−Hx̂′):当前 K=${kDisp.toFixed(2)} → 测量占 ${kp}%、模型占 ${100 - kp}%` +
+    `<br><b>预测</b> P′ = APAᵀ + Q(σ²=${pDisp.toFixed(2)} 胀) · <b>更新</b> P = (I−KH)P(缩) · 状态 [x, z, vₓ, vz] 匀速模型,H 取位置` +
+    `<br>R = 测量噪声方差 · Q = 过程噪声 · <b>线性+高斯 ⇒ K 是最小方差增益 ⇒ 整体最优</b>(雷达跟踪 / GPS+IMU / 阿波罗导航)`,
+    `<b>K = PHᵀ(HPHᵀ+R)⁻¹</b> · x̂ ← x̂′ + K(z−Hx̂′): now K=${kDisp.toFixed(2)} → ${kp}% measurement, ${100 - kp}% model` +
+    `<br><b>Predict</b> P′ = APAᵀ + Q (σ²=${pDisp.toFixed(2)}, grows) · <b>Update</b> P = (I−KH)P (shrinks) · state [x, z, vₓ, vz], constant-velocity model, H picks position` +
+    `<br>R = measurement variance · Q = process noise · <b>linear + Gaussian ⇒ K is the minimum-variance gain ⇒ globally optimal</b> (radar tracking / GPS+IMU / Apollo guidance)`);
+}
+let lastStep = -1;
+function syncAll() {
+  syncSliders();
+  updateFormula();
+  updateStats();
+  drawPlot();
+  lastStep = stepIndex();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === lastStep));
+}
+elR.addEventListener('input', () => { R = +elR.value; syncAll(); });
+elQ.addEventListener('input', () => { Q = +elQ.value; syncAll(); });
+elRate.addEventListener('input', () => { measInt = +elRate.value; syncAll(); });
+elSpd.addEventListener('input', () => { speed = +elSpd.value; syncSliders(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('btnAuto').addEventListener('click', () => setTrust('auto'));
+document.getElementById('btnModel').addEventListener('click', () => setTrust('model'));
+document.getElementById('btnMeas').addEventListener('click', () => setTrust('meas'));
+document.getElementById('btnGPS').addEventListener('click', () => setGPS(!gpsMode));
+document.getElementById('btnReset').addEventListener('click', () => { resetFilter(); syncAll(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; });
+document.getElementById('tglChart').addEventListener('change', e => { document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglBeam').addEventListener('change', e => { beamOn = e.target.checked; });
+if (!qsBool('labels', true)) { document.getElementById('tglLabels').checked = false; labelsOn = false; }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, statsAcc = 0;
+const lookT = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0), tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speed * (playing ? 1 : 0);
+  if (dt > 0) {
+    const nSub = Math.min(6, Math.max(1, Math.ceil(dt / 0.034)));
+    for (let k = 0; k < nSub; k++) physStep(dt / nSub);
+  }
+  const t = truthAt(tSim);
+  /* 飞机:朝向速度方向,转弯压坡度 */
+  planeGroup.position.set(t.x, t.y, t.z);
+  lookT.set(t.x + t.dx, t.y + t.dy, t.z + t.dz);
+  planeGroup.lookAt(lookT);
+  const yawRate = (t.dx * t.ddz - t.dz * t.ddx) / (t.dx * t.dx + t.dz * t.dz + 1e-6);
+  planeGroup.rotateZ(clamp(-1.5 * yawRate, -0.9, 0.9));
+  prop.rotation.z += dt * 42;
+  shadow.position.set(t.x, 0.02, t.z);
+  shadow.scale.setScalar(clamp(1.7 - t.y * 0.22, 0.55, 1.5));
+  const dp = dropGeo.attributes.position;
+  dp.setXYZ(0, t.x, t.y - 0.15, t.z);
+  dp.setXYZ(1, t.x, 0.03, t.z);
+  dp.needsUpdate = true;
+  /* 动点与误差椭圆 */
+  gMark.position.set(xh[0], t.y, xh[1]);
+  bMark.position.set(bP.x, t.y, bP.z);
+  const pa = P[0][0], pb = P[0][1], pc = P[1][1];
+  const trr = pa + pc, df = pa - pc, disc = Math.hypot(df, 2 * pb);
+  const l1 = Math.max((trr + disc) / 2, 1e-6), l2 = Math.max((trr - disc) / 2, 1e-6);
+  ellipse.position.copy(gMark.position);
+  ellipse.rotation.y = -0.5 * Math.atan2(2 * pb, df);
+  ellipse.scale.set(clamp(2 * Math.sqrt(l1), 0.08, 9), 1, clamp(2 * Math.sqrt(l2), 0.08, 9));
+  if (trailsDirty) {
+    trailsDirty = false;
+    writeTrail(trailT, arrT);
+    writeTrail(trailB, arrB);
+    writeTrail(trailG, arrG);
+  }
+  /* 测量噪点渐隐 */
+  for (let i = 0; i < DOTS; i++) {
+    const age = tSim - dotT[i];
+    if (age < 0 || age > 7) tmpObj.scale.setScalar(0);
+    else {
+      tmpObj.position.set(dotP[i * 3], dotP[i * 3 + 1], dotP[i * 3 + 2]);
+      tmpObj.scale.setScalar(dotS[i] * (1 - 0.55 * age / 7));
+    }
+    tmpObj.updateMatrix();
+    dotMesh.setMatrixAt(i, tmpObj.matrix);
+  }
+  dotMesh.instanceMatrix.needsUpdate = true;
+  /* 雷达碟跟踪 / 待机扫描 */
+  if (gpsMode) tmpV.set(9 * Math.sin(tSim * 0.6), 2.5, 9 * Math.cos(tSim * 0.42));
+  else tmpV.copy(planeGroup.position);
+  head.lookAt(tmpV);
+  /* 波束 */
+  beam.visible = beamOn && !gpsMode;
+  if (beam.visible) {
+    tmpV2.set(0, 1.2, 0);
+    tmpV.copy(planeGroup.position).sub(tmpV2);
+    const len = tmpV.length();
+    tmpV.normalize();
+    beam.position.copy(tmpV2).addScaledVector(tmpV, len / 2);
+    beam.scale.set(1, len, 1);
+    beam.quaternion.setFromUnitVectors(UP, tmpV2.set(-tmpV.x, -tmpV.y, -tmpV.z));
+  }
+  /* GPS 卫星 */
+  for (let i = 0; i < sats.length; i++) {
+    const s = sats[i];
+    s.visible = gpsMode;
+    if (!gpsMode) continue;
+    const ph = tSim * 0.21 + i * 2.6;
+    s.position.set(12.5 * Math.cos(ph), 13.4 + 1.1 * Math.sin(ph * 1.7 + i), 9.5 * Math.sin(ph));
+    s.rotation.y = ph;
+  }
+  /* 脉冲圈 */
+  for (const r of [pingR, pingG]) {
+    r.t += dt0;
+    if (r.t < 0.8) {
+      r.m.visible = true;
+      const ph = r.t / 0.8;
+      r.m.scale.setScalar(0.5 + ph * 5.5);
+      r.m.material.opacity = 0.7 * (1 - ph);
+    } else r.m.visible = false;
+  }
+  /* 新息线渐隐 */
+  if (innovLine.visible) {
+    innovMat.opacity *= Math.exp(-dt0 * 3.2);
+    if (innovMat.opacity < 0.02) innovLine.visible = false;
+  }
+  /* 标签 */
+  lblPlane.position.set(t.x, t.y + 0.85, t.z);
+  lblGreen.position.set(xh[0], t.y - 0.7, xh[1]);
+  lblBlue.position.set(bP.x, t.y + 0.4, bP.z);
+  lblSat.position.copy(sats[0].position).add(tmpV.set(0, 1, 0));
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+  }
+  statsAcc += dt0;
+  if (statsAcc > 0.12) {
+    statsAcc = 0;
+    updateStats(); updateFormula(); drawPlot();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+document.getElementById('tglBeam').checked = true;
+document.getElementById('btnGPS').classList.toggle('on', gpsMode);
+refreshTrustBtns();
+buildSteps();
+applyLang();
+resetFilter();
+const tPre = clamp(qsFloat('t', 0), 0, 240);
+for (let i = 0, n = Math.max(30, Math.round(tPre * 24)); i < n; i++) physStep(1 / 24);
+syncAll();
+start();
+</script>
+</body>
+</html>

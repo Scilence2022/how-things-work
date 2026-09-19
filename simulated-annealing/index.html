@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模拟退火 · 先翻山,后落谷</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.gr { border-color: rgba(173,181,189,.9); color: #e9ecef; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.gr { color:#495057; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.gr { color: #dee2e6; border-color: rgba(173,181,189,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.gr { color:#495057; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="模拟退火" data-en="Simulated Annealing">模拟退火</h1>
+  <div class="sub" data-zh="解空间是一片起伏山地:贪心法只下坡,一步不回,卡死在最近的小山头;退火给出另一条路——先加热让解乱跳,再缓慢降温,更差的步也按 p=e^(−ΔE/T) 放行:高温满山翻,低温只下坡,最后稳稳沉入全球最深谷。降温表决定命运:急冷淬火得缺陷,慢冷退火得晶体 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格运行/暂停" data-en="The search space is rolling terrain: greedy descent only goes downhill and freezes on the nearest hilltop; annealing offers another way — heat up so the solution jumps wildly, then cool slowly, letting worse moves pass with p=e^(−ΔE/T): hot roams the whole range, cold goes downhill only, until the ball settles into the deepest valley on the map. The schedule decides the fate: quench freezes in defects, slow cooling finds the crystal · 3D interactive demo · drag to orbit / scroll to zoom · Space = run/pause">解空间是一片起伏山地:贪心法只下坡,一步不回,卡死在最近的小山头;退火给出另一条路——先加热让解乱跳,再缓慢降温,更差的步也按 p=e^(−ΔE/T) 放行:高温满山翻,低温只下坡,最后稳稳沉入全球最深谷。降温表决定命运:急冷淬火得缺陷,慢冷退火得晶体 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="温度 T" data-en="Temperature T">温度 T</span><span class="v warn" id="stT">—</span>
+  <span class="k" data-zh="当前能量 E" data-en="Energy E">当前能量 E</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="全局最优 E*" data-en="Global min E*">全局最优 E*</span><span class="v ok" id="stBest">—</span>
+  <span class="k" data-zh="距最优 ΔE" data-en="Gap to best">距最优 ΔE</span><span class="v" id="stGap">—</span>
+  <span class="k" data-zh="已走步数 k" data-en="Steps k">已走步数 k</span><span class="v" id="stK">—</span>
+  <span class="k" data-zh="接受 / 拒绝" data-en="Accept / reject">接受 / 拒绝</span><span class="v" id="stAR">—</span>
+  <span class="k" data-zh="接受率" data-en="Accept rate">接受率</span><span class="v" id="stRate">—</span>
+  <span class="k" data-zh="状态" data-en="Phase">状态</span><span class="v" id="stState">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="降温曲线 T(橙)· 能量 E:绿=退火,灰=贪心 · 金虚线=全局最优" data-en="cooling T (orange) · energy E: green=annealing, gray=greedy · gold dash=global min">降温曲线 T(橙)· 能量 E:绿=退火,灰=贪心 · 金虚线=全局最优</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.g" data-zh="绿球=退火:变差也按 e^(−ΔE/T) 放行" data-en="green ball = annealing: worse moves pass by e^(−ΔE/T)">绿球=退火:变差也按 e^(−ΔE/T) 放行</span>
+    <span class="chip.gr" data-zh="灰球=贪心:只下坡,卡在最近山头" data-en="gray ball = greedy: downhill only, stuck on nearest hill">灰球=贪心:只下坡,卡在最近山头</span>
+    <span class="chip.o" data-zh="金旗=全球最深谷 · 轨迹颜色随温度(热橙→冷绿)" data-en="gold flag = deepest valley · trail color = temperature (hot orange → cold green)">金旗=全球最深谷 · 轨迹颜色随温度(热橙→冷绿)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnAnneal" data-zh="重新退火" data-en="Restart annealing">重新退火</button>
+    <button class="abtn" id="btnGreedy" data-zh="贪心对比球" data-en="Greedy ball">贪心对比球</button>
+    <button class="abtn" id="btnTerrain" data-zh="重新随机地形" data-en="New random terrain">重新随机地形</button>
+    <button class="abtn" id="btnStep" data-zh="单步慢放" data-en="Step (slow-mo)">单步慢放</button>
+  </div>
+  <div class="row"><label data-zh="初始温度 T₀" data-en="Initial temp T₀">初始温度 T₀</label><input id="sT0" type="range" min="0.4" max="4" step="0.05" value="2"><span class="val" id="sT0Val">2.00</span></div>
+  <div class="row"><label data-zh="降温速率 α" data-en="Cooling rate α">降温速率 α</label><input id="sCool" type="range" min="0.9" max="0.996" step="0.001" value="0.993"><span class="val" id="sCoolVal">0.993</span></div>
+  <div class="row"><label data-zh="模拟速度" data-en="Sim speed">模拟速度</label><input id="sSpd" type="range" min="0.3" max="4" step="0.1" value="1"><span class="val" id="sSpdVal">×1.0</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="曲线" data-en="Chart">曲线</span></label>
+      <label><input id="tglTrail" type="checkbox" checked> <span data-zh="轨迹" data-en="Trails">轨迹</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../monte-carlo/" data-zh="随机采样的基本盘" data-en="the ground rules of random sampling">随机采样的基本盘</a>
+    <a href="../neural-gradient/" data-zh="梯度下降:只下坡的对照" data-en="gradient descent: the downhill-only cousin">梯度下降:只下坡的对照</a>
+    <a href="../phase-transition/" data-zh="退火的本尊:温度与结构" data-en="the real annealing: temperature vs structure">退火的本尊:温度与结构</a>
+    <a href="../entropy/" data-zh="温度是乱度的定价" data-en="temperature as the price of disorder">温度是乱度的定价</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const TAU = Math.PI * 2;
+const mulberry = s => () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10151d, 45, 130);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10151d : 0xd9e3ec);
+  scene.fog.color = new THREE.Color(dark ? 0x10151d : 0xd9e3ec);
+  wireMat.opacity = dark ? 0.10 : 0.17;
+  wireMat.color.setHex(dark ? 0xafc6dd : 0x5a6b7d);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('模拟退火 · 先翻山,后落谷', 'Simulated Annealing · roam hot, settle cold');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+  drawPlot();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 300);
+camera.position.set(15, 12.5, 17);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 6;
+controls.maxDistance = 60;
+controls.autoRotateSpeed = 0.35;
+
+scene.add(new THREE.HemisphereLight(0xcfe0f2, 0x11141c, 0.7));
+const key = new THREE.DirectionalLight(0xfff4e0, 1.6);
+key.position.set(10, 14, 7);
+scene.add(key);
+
+/* ================= 能量地形:多峰多谷的解空间 =================
+   E(x,z) = 缓基底起伏 + 若干高斯山峰(坏) − 若干高斯盆地(好);
+   最深盆地 = 全局最优 E*,解析生成后数值扫描定位。 */
+const FIELD = 22, HALF = 11, SEG = 150;
+let wells = [], hills = [], eMin = 0, eMax = 1;
+const minPos = { x: 0, z: 0 }, saddlePos = { x: 0, z: 0 };
+function E(x, z) {
+  let e = 0.22 * Math.sin(x * 0.23 + 1.7) * Math.cos(z * 0.19) + 0.15 * Math.sin(x * 0.10 - 0.4) * Math.sin(z * 0.13 + 2.1);
+  for (const w of wells) { const dx = x - w.x, dz = z - w.z; e -= w.d * Math.exp(-(dx * dx + dz * dz) / (2 * w.s * w.s)); }
+  for (const h of hills) { const dx = x - h.x, dz = z - h.z; e += h.h * Math.exp(-(dx * dx + dz * dz) / (2 * h.s * h.s)); }
+  return e;
+}
+function makeField(s) {
+  const R = mulberry(s);
+  wells = []; hills = [];
+  const nW = 3 + (R() * 2 | 0);
+  let guard = 0;
+  while (wells.length < nW && guard++ < 600) {
+    const x = (R() * 2 - 1) * (HALF - 3), z = (R() * 2 - 1) * (HALF - 3);
+    if (wells.every(w => Math.hypot(w.x - x, w.z - z) > 5.6)) wells.push({ x, z, d: 0.6 + R() * 0.4, s: 1.1 + R() * 0.4 });
+  }
+  const g = wells[(R() * wells.length) | 0];
+  g.d += 2.0; g.s += 2.2;                              // 全球谷:宽而深的大漏斗
+  wells.push({ x: g.x, z: g.z, d: 1.8, s: 0.9 });      // 谷心的内坑:低温下绝对吸收
+  guard = 0;
+  while (hills.length < 4 && guard++ < 600) {
+    const x = (R() * 2 - 1) * (HALF - 2.5), z = (R() * 2 - 1) * (HALF - 2.5);
+    if (hills.every(h => Math.hypot(h.x - x, h.z - z) > 3.2) && wells.every(w => Math.hypot(w.x - x, w.z - z) > 3.4))
+      hills.push({ x, z, h: 0.5 + R() * 0.5, s: 1.3 + R() * 0.9 });
+  }
+  eMin = 1e9; eMax = -1e9;
+  for (let i = 0; i <= 220; i++) for (let j = 0; j <= 220; j++) {
+    const x = (i / 220 * 2 - 1) * (HALF - 0.3), z = (j / 220 * 2 - 1) * (HALF - 0.3), e = E(x, z);
+    if (e < eMin) { eMin = e; minPos.x = x; minPos.z = z; }
+    if (e > eMax) eMax = e;
+  }
+  let near = null, bd = 1e9;                           // 鞍部标签:深谷与最近的浅盆之间
+  for (const w of wells) {
+    if (w === g || w.s <= 1) continue;
+    const dd = Math.hypot(w.x - g.x, w.z - g.z);
+    if (dd < bd) { bd = dd; near = w; }
+  }
+  if (near) {
+    saddlePos.x = clamp((g.x + near.x) / 2, -HALF + 2, HALF - 2);
+    saddlePos.z = clamp((g.z + near.z) / 2, -HALF + 2, HALF - 2);
+  } else { saddlePos.x = g.x; saddlePos.z = g.z; }
+}
+
+/* 地形网格(顶点着色:低=蓝绿 → 高=橙红) */
+const terrGeo = new THREE.PlaneGeometry(FIELD, FIELD, SEG, SEG);
+terrGeo.rotateX(-Math.PI / 2);
+const vCount = terrGeo.attributes.position.count;
+terrGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vCount * 3), 3));
+const terrMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.02,
+  polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+const terrain = new THREE.Mesh(terrGeo, terrMat);
+scene.add(terrain);
+const wireMat = new THREE.MeshBasicMaterial({ wireframe: true, transparent: true, opacity: 0.10, color: 0xafc6dd });
+const wire = new THREE.Mesh(terrGeo, wireMat);
+wire.position.y = 0.015;
+scene.add(wire);
+const RAMP = [[0, 0x1b5e7d], [0.34, 0x2fae6e], [0.58, 0xd9c05a], [0.8, 0xef8c3f], [1, 0xd64545]];
+const cTmp = new THREE.Color(), cTmpB = new THREE.Color();
+function rampColor(t, out) {
+  for (let i = 1; i < RAMP.length; i++) if (t <= RAMP[i][0]) {
+    out.setHex(RAMP[i - 1][1]).lerp(cTmpB.setHex(RAMP[i][1]), (t - RAMP[i - 1][0]) / (RAMP[i][0] - RAMP[i - 1][0])); return;
+  }
+  out.setHex(RAMP[RAMP.length - 1][1]);
+}
+let lblMin = null, lblSaddle = null;
+function rebuildTerrain(seed) {
+  makeField(seed);
+  const pos = terrGeo.attributes.position, col = terrGeo.attributes.color;
+  for (let i = 0; i < vCount; i++) {
+    const x = pos.getX(i), z = pos.getZ(i), e = E(x, z);
+    pos.setY(i, e);
+    rampColor((e - eMin) / Math.max(0.001, eMax - eMin), cTmp);
+    col.setXYZ(i, cTmp.r, cTmp.g, cTmp.b);
+  }
+  pos.needsUpdate = true; col.needsUpdate = true;
+  terrGeo.computeVertexNormals();
+  const yMin = E(minPos.x, minPos.z);
+  flagGroup.position.set(minPos.x, yMin + 0.02, minPos.z);
+  glowSprite.position.set(minPos.x, yMin + 0.7, minPos.z);
+  sparkBase.set(minPos.x, yMin + 0.4, minPos.z);
+  if (lblMin) lblMin.position.set(minPos.x, yMin + 2.2, minPos.z);
+  if (lblSaddle) lblSaddle.position.set(saddlePos.x, E(saddlePos.x, saddlePos.z) + 1.7, saddlePos.z);
+}
+
+/* 金旗 + 金光(全球最优的招牌时刻) */
+const flagGroup = new THREE.Group();
+{
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.5, 8),
+    new THREE.MeshStandardMaterial({ color: 0xe9ecef, roughness: 0.4, metalness: 0.6 }));
+  pole.position.y = 0.75;
+  flagGroup.add(pole);
+}
+const flagClothMat = new THREE.MeshStandardMaterial({ color: 0xffd43b, emissive: 0xf59f00,
+  emissiveIntensity: 0.18, roughness: 0.5, side: THREE.DoubleSide });
+const flagCloth = new THREE.Mesh(new THREE.PlaneGeometry(0.66, 0.34), flagClothMat);
+flagCloth.geometry.translate(0.33, 0, 0);
+flagCloth.position.y = 1.3;
+flagGroup.add(flagCloth);
+scene.add(flagGroup);
+const glowTex = (() => {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const c = cv.getContext('2d');
+  const g = c.createRadialGradient(64, 64, 4, 64, 64, 62);
+  g.addColorStop(0, 'rgba(255,232,140,.95)');
+  g.addColorStop(0.4, 'rgba(255,212,59,.45)');
+  g.addColorStop(1, 'rgba(255,212,59,0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(cv);
+})();
+const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffd43b,
+  transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+glowSprite.scale.set(3.2, 3.2, 1);
+scene.add(glowSprite);
+const goldLight = new THREE.PointLight(0xffd43b, 0, 9, 2);
+scene.add(goldLight);
+/* 收敛金屑粒子(InstancedMesh) */
+const SPN = 40;
+const sparkMesh = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.06),
+  new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.95 }), SPN);
+sparkMesh.visible = false; sparkMesh.frustumCulled = false;
+scene.add(sparkMesh);
+const sparkVel = Array.from({ length: SPN }, () => new THREE.Vector3());
+const dummy = new THREE.Object3D();
+const sparkBase = new THREE.Vector3();
+let sparkT = 0;
+function burst() {
+  sparkT = 0; sparkMesh.visible = true;
+  for (let i = 0; i < SPN; i++) {
+    const a = Math.random() * TAU, r = 0.5 + Math.random() * 1.5;
+    sparkVel[i].set(Math.cos(a) * r, 1.6 + Math.random() * 2.4, Math.sin(a) * r);
+  }
+}
+
+/* ================= 退火 / 贪心 双跑者 ================= */
+let T0 = clamp(qsFloat('t0', 2.0), 0.4, 4);
+let alpha = (() => {
+  const v = qs.get('cool');
+  if (v === 'slow') return 0.995;
+  if (v === 'fast' || v === 'quench') return 0.93;
+  return clamp(qsFloat('cool', 0.993), 0.9, 0.996);
+})();
+let speed = clamp(qsFloat('speed', 1), 0.3, 4);
+let greedyOn = qsBool('greedy', false);
+let converged = false, forcedStep = -1;
+const A = { x: 0, z: 0, fx: 0, fz: 0, tx: 0, tz: 0, ph: 1, dur: 1, arc: 0, k: 0, T: T0, acc: 0, rej: 0, done: false, accNow: true };
+const G = { x: 0, z: 0, fx: 0, fz: 0, tx: 0, tz: 0, ph: 1, dur: 1, arc: 0, accNow: true, streak: 0 };
+const hist = [];
+
+function randomStart() {
+  for (let i = 0; i < 60; i++) {
+    const x = (Math.random() * 2 - 1) * 9.8, z = (Math.random() * 2 - 1) * 9.8;
+    if (Math.hypot(x - minPos.x, z - minPos.z) > 8 && E(x, z) > eMin + 0.7) return { x, z };
+  }
+  return { x: -8, z: 8 };
+}
+/* Metropolis 提议:更优必收,更差以 e^(−ΔE/T) 放行;贪心永远拒绝上坡。
+   步长:热相 ∝ T(下限 2.4 保持跨盆地机动),T<0.2 转入精修小步,
+   每 4 步夹一次 1.1 的探测步(混合提议分布),好翻过坑沿落底。 */
+function decide(b) {
+  const isA = b === A;
+  const sig = isA ? (b.T < 0.2 ? (A.k % 4 === 0 ? 1.1 : 0.3) : clamp(3.5 * b.T, 2.4, 4.2)) : 0.55;
+  const ang = Math.random() * TAU, rad = sig * Math.sqrt(Math.random());
+  const nx = clamp(b.x + Math.cos(ang) * rad, -HALF + 0.6, HALF - 0.6);
+  const nz = clamp(b.z + Math.sin(ang) * rad, -HALF + 0.6, HALF - 0.6);
+  const dE = E(nx, nz) - E(b.x, b.z);
+  const acc = dE < 0 || (isA && Math.random() < Math.exp(-dE / Math.max(b.T, 0.02)));
+  if (isA) { A.k++; A.T = Math.max(0.015, T0 * Math.pow(alpha, A.k)); acc ? A.acc++ : A.rej++; }
+  else { b.streak = acc ? 0 : b.streak + 1; }
+  b.accNow = acc;
+  b.fx = b.x; b.fz = b.z;
+  b.tx = acc ? nx : b.x; b.tz = acc ? nz : b.z;
+  const dist = Math.hypot(b.tx - b.fx, b.tz - b.fz);
+  b.arc = acc ? dist * 0.22 + (isA ? 0.55 * clamp(b.T / T0, 0, 1) : 0.08) : 0.16;
+  const hot = isA ? clamp(b.T / T0, 0, 1) : 0.4;
+  b.dur = 1 / ((isA ? 2.6 + 6.0 * hot : 3.1) * (acc ? 1 : 1.35));
+  b.ph = 0;
+}
+const colHot = new THREE.Color(0xffa94d), colCold = new THREE.Color(0x51cf66), colGray = new THREE.Color(0xadb5bd);
+const trailCol = new THREE.Color();
+function commit(b) {
+  b.x = b.tx; b.z = b.tz;
+  if (b === A) {
+    const eNow = E(A.x, A.z);
+    hist.push({ k: A.k, T: A.T, e: eNow, g: greedyOn ? E(G.x, G.z) : null });
+    if (hist.length > 1500) hist.splice(0, hist.length - 1500);
+    if (A.accNow) {
+      trailCol.copy(colCold).lerp(colHot, clamp(A.T / T0, 0, 1));
+      trailA.push(A.x, eNow + 0.3, A.z, trailCol);
+    }
+    if (A.T <= 0.032 && !A.done) {
+      if (eNow - eMin < 0.1) { A.done = true; converged = true; burst(); }
+    }
+  } else if (G.accNow) {
+    trailG.push(G.x, E(G.x, G.z) + 0.3, G.z, colGray);
+  }
+}
+function placeGreedy() {
+  G.x = A.x; G.z = A.z; G.fx = G.tx = G.x; G.fz = G.tz = G.z; G.streak = 0; G.ph = 1;
+  ballG.visible = true; trailG.clear();
+  decide(G);
+}
+function restart() {
+  A.k = 0; A.T = T0; A.acc = 0; A.rej = 0; A.done = false; converged = false; forcedStep = -1;
+  hist.length = 0; trailA.clear(); trailG.clear();
+  const s = randomStart();
+  A.x = s.x; A.z = s.z; A.fx = A.tx = A.x; A.fz = A.tz = A.z; A.ph = 1;
+  sparkMesh.visible = false; goldLight.intensity = 0; glowSprite.material.opacity = 0;
+  decide(A);
+  if (greedyOn) placeGreedy();
+  document.getElementById('btnGreedy').classList.toggle('on', greedyOn);
+  ballG.visible = greedyOn;
+  drawPlot();
+}
+
+/* 球与发光轨迹 */
+function makeBall(color, emissive) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.27, 26, 18),
+    new THREE.MeshStandardMaterial({ color, emissive, roughness: 0.35, metalness: 0.1, emissiveIntensity: 0.5 }));
+  scene.add(m); return m;
+}
+const ballA = makeBall(0x51cf66, 0x2f9e44);
+const ballG = makeBall(0x9aa1a8, 0x495057);
+ballG.visible = greedyOn;
+const annealLight = new THREE.PointLight(0xffa94d, 0.8, 7, 2);
+scene.add(annealLight);
+const TRAIL_MAX = 900;
+function makeTrail(opacity) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 3), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 3), 3));
+  g.setDrawRange(0, 0);
+  const l = new THREE.Line(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity, depthWrite: false }));
+  l.frustumCulled = false;
+  scene.add(l);
+  return {
+    line: l, n: 0,
+    push(x, y, z, c) {
+      const P = g.attributes.position.array, C = g.attributes.color.array;
+      if (this.n >= TRAIL_MAX) { P.copyWithin(0, 3); C.copyWithin(0, 3); this.n = TRAIL_MAX - 1; }
+      const i = this.n * 3;
+      P[i] = x; P[i + 1] = y; P[i + 2] = z; C[i] = c.r; C[i + 1] = c.g; C[i + 2] = c.b;
+      this.n++;
+      g.setDrawRange(0, this.n);
+      g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true;
+    },
+    clear() { this.n = 0; g.setDrawRange(0, 0); }
+  };
+}
+const trailA = makeTrail(0.95), trailG = makeTrail(0.5);
+function placeBall(b, mesh) {
+  const ph = Math.min(1, b.ph);
+  const x = lerp(b.fx, b.tx, ph), z = lerp(b.fz, b.tz, ph);
+  const yf = E(b.fx, b.fz) + 0.26, yt = E(b.tx, b.tz) + 0.26;
+  mesh.position.set(x, lerp(yf, yt, ph) + Math.sin(Math.PI * ph) * b.arc, z);
+}
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+function phaseText() {
+  if (A.done) return L('退火完成:稳稳停进全球最深谷——金光与旗帜就是结局', 'annealed: settled in the deepest valley on the map — gold light and a flag');
+  if (A.T <= 0.032) return (E(A.x, A.z) - eMin < 0.1)
+    ? L('低温:只下坡,滑向谷底', 'cold: downhill only, sliding to the bottom')
+    : L('淬火缺陷:冻在半山腰的小盆地里', 'quenched: frozen in a roadside basin — defects');
+  return (A.T / T0 > 0.5)
+    ? L('高温:跳得高、落得远,上坡也常被放行', 'hot: big frequent jumps — uphill moves mostly pass')
+    : L('降温:跳幅收敛,轨迹越来越贴地', 'cooling: jumps shrink, the trail hugs the ground');
+}
+const lblBall = addLabel(() => L(`退火球 E=${E(A.x, A.z).toFixed(2)}`, `annealer E=${E(A.x, A.z).toFixed(2)}`),
+  new THREE.Vector3(0, 1, 0), 'g');
+const lblGreedy = addLabel(() => G.streak > 25
+    ? L('贪心:已卡死(局部最优)', 'greedy: stuck (local min)')
+    : L('贪心球:只下坡', 'greedy: downhill only'),
+  new THREE.Vector3(0, 1, 0), 'gr', () => greedyOn);
+lblMin = addLabel(() => L(`全球最优 E*=${eMin.toFixed(2)} · 最深谷`, `global min E*=${eMin.toFixed(2)} · deepest valley`),
+  new THREE.Vector3(minPos.x, 3, minPos.z), 'o');
+lblSaddle = addLabel(() => L('鞍部:只有高温才飞得过去', 'saddle: only heat gets you across'),
+  new THREE.Vector3(saddlePos.x, 2, saddlePos.z), 'r', () => A.T / T0 > 0.45 && !A.done);
+const lblPhase = addLabel(phaseText, new THREE.Vector3(0, 6.4, 0), 'o');
+lblMin.position.set(minPos.x, E(minPos.x, minPos.z) + 2.2, minPos.z);
+lblSaddle.position.set(saddlePos.x, E(saddlePos.x, saddlePos.z) + 1.7, saddlePos.z);
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: '贪心的死穴:只下坡', be: 'Greedy\u2019s blind spot: downhill only',
+    d: '贪心法每步只接受能量更低的解,从不回头——看似稳赚,其实一步就滑进离起点最近的盆地,从此原地打转。点「贪心对比球」放一只灰球:它很快冻结在小山头里,离全球最深谷还隔着一道山脊。',
+    de: 'Greedy search only accepts lower-energy moves and never backtracks — safe-looking, but it slides straight into the nearest basin and circles there forever. Enable the gray greedy ball: it freezes on a local hilltop, a whole ridge away from the deepest valley.',
+    act: () => { greedySet(true); restart(); forcedStep = 0; } },
+  { b: '冶金学的启示:退火', be: 'The metallurgy lesson: annealing',
+    d: '金属为什么要退火?先加热,原子挣脱晶格乱跑;再缓慢降温,原子一次次换到更低的排布,冷下来就是缺陷极少的完整晶体。急冷(淬火)则把高温的混乱冻成一身缺陷。在解空间里找全局最优,用的是同一套火候。',
+    de: 'Why anneal metal? Heat it so atoms break loose and wander, then cool slowly: each re-arrangement settles lower, yielding a near-perfect crystal. Quench instead and the high-temperature chaos freezes into defects. Global optimization borrows the exact same recipe.',
+    act: () => { T0 = 2.0; setAlpha(0.993); restart(); syncSliders(); } },
+  { b: 'Metropolis 准则:e^(−ΔE/T)', be: 'The Metropolis criterion: e^(−ΔE/T)',
+    d: '每步随机试一个新位置:能量更低,无条件接受;更高,以概率 p=e^(−ΔE/T) 放行——变差越少、温度越高,越容易被放行。盯绿球:被拒时它原地一弹;每一次被接受的上坡,都是它翻山的资本。',
+    de: 'Each step tries a random new spot: lower energy is always accepted; higher energy passes with probability p=e^(−ΔE/T) — the smaller the loss and the hotter the system, the more likely it gets through. Watch the green ball bounce in place on a rejection; every accepted uphill move is a mountain crossed.',
+    act: () => { T0 = 2.2; setAlpha(0.99); restart(); syncSliders(); } },
+  { b: '高温探索,低温利用', be: 'Explore hot, exploit cold',
+    d: '温度是「探索/利用」的换挡杆:高温时跳幅大、频率高,轨迹常向上爬,甚至直接飞越鞍部换盆地;降温后跳幅随 T 指数收敛,轨迹越来越贴地。拖动 T₀ 与降温速率 α,亲手换一次挡。',
+    de: 'Temperature is the explore/exploit gear stick: hot means long, frequent jumps whose trails climb uphill and even fly over saddles into new basins; as T falls, jump length shrinks exponentially and the path hugs the ground. Drag the T₀ and α sliders to shift gears yourself.',
+    act: () => { T0 = 2.4; setAlpha(0.98); restart(); syncSliders(); } },
+  { b: '降温表决定命运', be: 'The schedule decides the fate',
+    d: 'T(k)=T₀·αᵏ:把 α 拉向急冷,几十步就冻住,多半困在第一个碰到的山头——淬火出缺陷;给足慢冷,系统有时间翻过每一道山脊,最终沉入全球最深谷——慢冷出晶体。允许暂时变差,换来跳出局部陷阱。',
+    de: 'T(k)=T₀·αᵏ: crank α toward quenching and it freezes within dozens of steps, usually in the first basin it meets — defects. Cool slowly and it has time to cross every ridge, sinking into the deepest valley — a crystal. Tolerating temporary setbacks is the price of escaping local traps.',
+    act: () => { setAlpha(0.93); restart(); syncSliders(); } },
+  { b: '旅行商·芯片·蛋白质', be: 'TSP · chips · proteins',
+    d: '这套「先翻山、后落谷」到处在用:旅行商问题用它跳出劣质的访问顺序;芯片布局布线用它安放百万级元件;蛋白质折叠晶格模型用它搜寻能量最低的构象。只要解空间多峰多谷、梯度靠不住,退火就值得一试。',
+    de: 'Roam hot, settle cold is everywhere: the travelling-salesman problem escapes bad tours with it; chip place-and-route seats millions of components with it; lattice protein models hunt the lowest-energy fold with it. Whenever the landscape is rugged and gradients lie, annealing earns its keep.',
+    act: () => { forcedStep = 5; } },
+];
+function stepIndex() {
+  if (forcedStep >= 0) return forcedStep;
+  if (A.done) return 0;
+  if (A.k < 4) return 1;
+  const r = A.T / T0;
+  if (r > 0.5) return 2;
+  if (r > 0.12) return 3;
+  return 4;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:降温曲线 + 能量轨迹 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2, H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  ctx.font = '12px system-ui'; ctx.lineWidth = 1;
+  const pad = 10, padR = 46, y0 = H - 16, yT = 10;
+  if (hist.length < 2) {
+    ctx.fillStyle = cTxt;
+    ctx.fillText(L('运行退火:绿线=能量,橙线=温度…', 'run the annealer: green=energy, orange=temp…'), pad + 4, (y0 + yT) / 2);
+    return;
+  }
+  let eTop = 0.4;
+  for (const p of hist) { if (p.e > eTop) eTop = p.e; if (p.g != null && p.g > eTop) eTop = p.g; }
+  eTop += 0.4;
+  const eBot = eMin - 0.3;
+  const yOfE = e => y0 - clamp((e - eBot) / (eTop - eBot), 0, 1) * (y0 - yT);
+  const kA = hist[0].k, kB = hist[hist.length - 1].k, kSpan = Math.max(1, kB - kA);
+  const xOf = k => pad + (k - kA) / kSpan * (W - pad - padR);
+  const stride = Math.max(1, Math.floor(hist.length / 380));
+  if (0 > eBot && 0 < eTop) {
+    ctx.strokeStyle = 'rgba(128,150,170,.18)';
+    ctx.beginPath(); ctx.moveTo(pad, yOfE(0)); ctx.lineTo(W - padR, yOfE(0)); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,212,59,.6)'; ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(pad, yOfE(eMin)); ctx.lineTo(W - padR, yOfE(eMin)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ffd43b';
+  ctx.fillText('E*=' + eMin.toFixed(2), W - padR + 2, yOfE(eMin) + 4);
+  const yOfT = t => yT + (1 - clamp(t / T0, 0, 1)) * (y0 - yT) * 0.45;
+  ctx.strokeStyle = 'rgba(255,169,77,.9)'; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  let first = true;
+  for (let i = 0; i < hist.length; i += stride) {
+    const p = hist[i], x = xOf(p.k), y = yOfT(p.T);
+    first ? ctx.moveTo(x, y) : ctx.lineTo(x, y); first = false;
+  }
+  ctx.lineTo(xOf(kB), yOfT(hist[hist.length - 1].T));
+  ctx.stroke();
+  ctx.fillStyle = '#ffa94d';
+  ctx.fillText('T', W - padR + 2, yT + 10);
+  if (hist.some(p => p.g != null)) {
+    ctx.strokeStyle = 'rgba(158,166,174,.85)'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); first = true;
+    for (let i = 0; i < hist.length; i += stride) {
+      const p = hist[i]; if (p.g == null) continue;
+      const x = xOf(p.k), y = yOfE(p.g);
+      first ? ctx.moveTo(x, y) : ctx.lineTo(x, y); first = false;
+    }
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#51cf66'; ctx.lineWidth = 2.4;
+  ctx.beginPath(); first = true;
+  for (let i = 0; i < hist.length; i += stride) {
+    const p = hist[i], x = xOf(p.k), y = yOfE(p.e);
+    first ? ctx.moveTo(x, y) : ctx.lineTo(x, y); first = false;
+  }
+  ctx.stroke();
+  const last = hist[hist.length - 1];
+  ctx.fillStyle = '#51cf66';
+  ctx.beginPath(); ctx.arc(xOf(last.k), yOfE(last.e), 4, 0, TAU); ctx.fill();
+  ctx.fillStyle = cTxt;
+  ctx.fillText('k=' + last.k, pad, H - 4);
+}
+
+/* ================= UI ================= */
+let tglTrailOn = true, stepReq = false;
+const elPlay = document.getElementById('play');
+const elT0 = document.getElementById('sT0'), elT0Val = document.getElementById('sT0Val');
+const elCool = document.getElementById('sCool'), elCoolVal = document.getElementById('sCoolVal');
+const elSpd = document.getElementById('sSpd'), elSpdVal = document.getElementById('sSpdVal');
+const stT = document.getElementById('stT'), stE = document.getElementById('stE'),
+  stBest = document.getElementById('stBest'), stGap = document.getElementById('stGap'),
+  stK = document.getElementById('stK'), stAR = document.getElementById('stAR'),
+  stRate = document.getElementById('stRate'), stState = document.getElementById('stState');
+const formulaEl = document.getElementById('formula');
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function setAlpha(v) { alpha = clamp(v, 0.9, 0.996); elCool.value = alpha; }
+function regime() { return alpha >= 0.992 ? L('慢冷', 'slow') : alpha >= 0.95 ? L('适中', 'mid') : L('急冷', 'quench'); }
+function syncSliders() {
+  elT0.value = T0; elT0Val.textContent = T0.toFixed(2);
+  elCool.value = alpha; elCoolVal.textContent = alpha.toFixed(3) + ' ' + regime();
+  elSpd.value = speed; elSpdVal.textContent = '×' + speed.toFixed(1);
+}
+function stateText() {
+  if (A.done) return [L('已收敛·全球最深谷', 'converged · global min'), 'ok'];
+  if (A.T <= 0.032) return (E(A.x, A.z) - eMin < 0.1)
+    ? [L('低温精修·滑向谷底', 'cold · sliding to bottom'), 'ok']
+    : [L('淬火冻结·困在局部', 'quenched · stuck local'), 'bad'];
+  if (A.T / T0 > 0.5) return [L('高温探索·满山翻', 'hot · exploring'), 'warn'];
+  return [L('降温换挡·渐贴地面', 'cooling · hugging ground'), 'warn'];
+}
+function updateStats() {
+  const eNow = E(A.x, A.z), gap = eNow - eMin;
+  stT.innerHTML = A.T.toFixed(A.T < 0.1 ? 3 : 2) + ' <small>αᵏ</small>';
+  stT.className = 'v ' + (A.done ? 'ok' : A.T / T0 > 0.5 ? 'warn' : '');
+  stE.textContent = eNow.toFixed(2);
+  stBest.textContent = eMin.toFixed(2);
+  stGap.textContent = (gap >= 0 ? '+' : '') + gap.toFixed(2);
+  stGap.className = 'v ' + (gap < 0.1 ? 'ok' : gap < 0.5 ? 'warn' : 'bad');
+  stK.textContent = A.k;
+  stAR.textContent = A.acc + ' / ' + A.rej;
+  stRate.textContent = (100 * A.acc / Math.max(1, A.acc + A.rej)).toFixed(1) + '%';
+  const [s, cls] = stateText();
+  stState.textContent = s; stState.className = 'v ' + cls;
+}
+function updateFormula() {
+  const p05 = Math.exp(-0.5 / Math.max(A.T, 0.02));
+  formulaEl.innerHTML = L(
+    `<b>p = e<sup>−ΔE/T</sup></b>:更优必收,更差以 p 放行 — 当前 T=${A.T.toFixed(2)},ΔE=+0.5 的步 p=${Math.round(p05 * 100)}% · T 高 p≈1(满山翻),T→0 p≈0(只下坡)<br>` +
+    `<b>T(k) = T₀·α<sup>k</sup></b>:T₀=${T0.toFixed(2)} · α=${alpha.toFixed(3)} · k=${A.k} → T=${A.T.toFixed(3)} · 接受 ${A.acc} / 拒绝 ${A.rej}<br>` +
+    `旅行商路线 · 芯片布局布线 · 蛋白质折叠 — 都在用「允许暂时变差」换「跳出局部陷阱」`,
+    `<b>p = e<sup>−ΔE/T</sup></b>: better is always kept; worse passes with p — at T=${A.T.toFixed(2)} a ΔE=+0.5 step passes p=${Math.round(p05 * 100)}% · hot p≈1 (roam), T→0 p≈0 (downhill only)<br>` +
+    `<b>T(k) = T₀·α<sup>k</sup></b>: T₀=${T0.toFixed(2)} · α=${alpha.toFixed(3)} · k=${A.k} → T=${A.T.toFixed(3)} · accepted ${A.acc} / rejected ${A.rej}<br>` +
+    `TSP tours · chip place-and-route · protein folding — all trade “temporary setbacks” for “escaping local traps”`);
+}
+function greedySet(on) {
+  greedyOn = on;
+  document.getElementById('btnGreedy').classList.toggle('on', on);
+  if (on) placeGreedy(); else { ballG.visible = false; trailG.clear(); }
+  drawPlot();
+}
+function syncAll() {
+  syncSliders(); updateFormula(); updateStats(); drawPlot();
+  const si = stepIndex();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+}
+let seed = Math.abs(Math.round(qsFloat('terrain', 20260919))) || 1;
+document.getElementById('btnAnneal').addEventListener('click', () => { restart(); syncAll(); });
+document.getElementById('btnGreedy').addEventListener('click', () => { greedySet(!greedyOn); syncAll(); });
+document.getElementById('btnTerrain').addEventListener('click', () => {
+  seed = (Math.random() * 2 ** 31) | 0; rebuildTerrain(seed); restart(); syncAll();
+});
+document.getElementById('btnStep').addEventListener('click', () => {
+  if (playing) { playing = false; setPlayLabel(); }
+  stepReq = true;
+});
+elT0.addEventListener('input', () => { T0 = clamp(+elT0.value, 0.4, 4); restart(); syncAll(); });
+elCool.addEventListener('input', () => { alpha = clamp(+elCool.value, 0.9, 0.996); syncSliders(); updateFormula(); });
+elSpd.addEventListener('input', () => { speed = clamp(+elSpd.value, 0.3, 4); syncSliders(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglTrail').addEventListener('change', e => {
+  tglTrailOn = e.target.checked;
+  trailA.line.visible = tglTrailOn; trailG.line.visible = tglTrailOn;
+});
+if (!qsBool('labels', true)) { document.getElementById('tglLabels').checked = false; labelsOn = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, statsAcc = 0, perfT = 0;
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  perfT += dt0;
+  if (playing || stepReq) {
+    const slow = (!playing && stepReq) ? 0.42 : 1;
+    if (!A.done) {
+      A.ph += dt0 / A.dur * speed * slow;
+      if (A.ph >= 1) { commit(A); if (stepReq) stepReq = false; if (!A.done) decide(A); }
+    }
+    if (greedyOn) {
+      G.ph += dt0 / G.dur * speed * slow;
+      if (G.ph >= 1) { commit(G); if (stepReq) stepReq = false; decide(G); }
+    }
+  }
+  /* 球位姿 / 发光 */
+  placeBall(A, ballA);
+  const hot = clamp(A.T / T0, 0, 1);
+  ballA.material.emissiveIntensity = 0.25 + 1.5 * hot;
+  ballA.scale.setScalar(1 + 0.12 * hot);
+  annealLight.color.copy(colCold).lerp(colHot, hot);
+  annealLight.intensity = A.done ? 0.3 : 0.5 + 1.4 * hot;
+  annealLight.position.copy(ballA.position);
+  if (greedyOn) placeBall(G, ballG);
+  /* 收敛金光与金屑 */
+  if (sparkMesh.visible) {
+    sparkT += dt0;
+    const f = Math.max(0, 1 - sparkT / 1.5);
+    for (let i = 0; i < SPN; i++) {
+      dummy.position.set(
+        sparkBase.x + sparkVel[i].x * sparkT,
+        sparkBase.y + sparkVel[i].y * sparkT - 0.8 * sparkT * sparkT,
+        sparkBase.z + sparkVel[i].z * sparkT);
+      dummy.scale.setScalar(Math.max(0.001, 0.16 * f + 0.02));
+      dummy.rotation.set(sparkT * 3 + i, sparkT * 2, 0);
+      dummy.updateMatrix();
+      sparkMesh.setMatrixAt(i, dummy.matrix);
+    }
+    sparkMesh.instanceMatrix.needsUpdate = true;
+    if (sparkT > 1.6) sparkMesh.visible = false;
+  }
+  const goldPulse = converged ? 0.55 + 0.15 * Math.sin(perfT * 3) : Math.max(0, glowSprite.material.opacity - dt0 * 1.5);
+  glowSprite.material.opacity = goldPulse;
+  glowSprite.scale.setScalar(converged ? 3.2 + 0.4 * Math.sin(perfT * 3) : 3.2);
+  glowSprite.material.rotation = perfT * 0.2;
+  goldLight.intensity = converged ? 1.6 + 0.5 * Math.sin(perfT * 3) : Math.max(0, goldLight.intensity - dt0 * 3);
+  flagClothMat.emissiveIntensity = converged ? 0.7 + 0.3 * Math.sin(perfT * 3) : 0.18;
+  /* 标签跟随 */
+  lblBall.position.set(ballA.position.x, ballA.position.y + 0.85, ballA.position.z);
+  lblGreedy.position.set(ballG.position.x, ballG.position.y + 0.85, ballG.position.z);
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  statsAcc += dt0;
+  if (statsAcc > 0.12) {
+    statsAcc = 0;
+    updateStats(); updateFormula(); syncSliders(); drawPlot();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+rebuildTerrain(seed);
+buildSteps();
+applyLang();
+restart();
+const kStart = clamp(Math.round(qsFloat('t', 0)), 0, 4000);
+if (kStart > 0) {
+  for (let i = 0; i < kStart; i++) {
+    decide(A); commit(A);
+    if (A.done) break;
+    if (greedyOn) { decide(G); commit(G); }
+  }
+}
+syncAll();
+start();
+</script>
+</body>
+</html>
