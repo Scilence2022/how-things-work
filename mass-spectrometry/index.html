@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>质谱仪 · 按质量称量分子</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  #smpRow { display: flex; gap: 8px; margin-bottom: 8px; }
+  #smpRow .abtn { flex: 1 1 0; padding: 6px 4px; font-size: 12px; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="质谱仪 · 按质量称量分子" data-en="Mass Spectrometer · Weighing Molecules by Mass">质谱仪 · 按质量称量分子</h1>
+  <div class="sub" data-zh="70 eV 电子束轰掉一个电子→分子离子+碎片离子;电场加速 qV=½mv²,同价离子进同一条赛道;磁场弯转 r=mv/(qB)=√(2mV/q)/B,轻的急弯、重的走外道;扫描磁场,不同 m/z 依次穿过检测缝——谱峰就是分子的质量指纹(甲醇 31/29/15);¹³C 天然丰度 ~1.1%/碳送出 M+1 小峰,数一数峰就能反推碳数 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格运行/暂停" data-en="A 70 eV electron beam knocks one electron off a vaporised molecule → molecular + fragment ions; an electric field accelerates them, qV=½mv² — same charge, same racetrack; the magnetic field bends them, r=mv/(qB)=√(2mV/q)/B — light ions turn hard, heavy ones take the outside lane; scanning the field lets each m/z through the slit in turn — the spectrum is a mass fingerprint (methanol 31/29/15); ¹³C at ~1.1% per carbon adds a small M+1 peak — count it to count the carbons · 3D interactive demo · drag to orbit / scroll to zoom · Space = run/pause">70 eV 电子束轰掉一个电子→分子离子+碎片离子;电场加速 qV=½mv²,同价离子进同一条赛道;磁场弯转 r=mv/(qB)=√(2mV/q)/B,轻的急弯、重的走外道;扫描磁场,不同 m/z 依次穿过检测缝——谱峰就是分子的质量指纹(甲醇 31/29/15);¹³C 天然丰度 ~1.1%/碳送出 M+1 小峰,数一数峰就能反推碳数 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="当前离子 m/z" data-en="Current ion m/z">当前离子 m/z</span><span class="v" id="stMz">—</span>
+  <span class="k" data-zh="轨道半径 r" data-en="Orbit radius r">轨道半径 r</span><span class="v" id="stR">—</span>
+  <span class="k" data-zh="离子速度" data-en="Ion speed">离子速度</span><span class="v" id="stV">—</span>
+  <span class="k" data-zh="磁场 B" data-en="Field B">磁场 B</span><span class="v warn" id="stB">—</span>
+  <span class="k" data-zh="分辨本领 m/Δm" data-en="Resolution m/Δm">分辨本领 m/Δm</span><span class="v" id="stRes">—</span>
+  <span class="k" data-zh="M+1/M⁺(¹³C)" data-en="M+1/M⁺ (¹³C)">M+1/M⁺(¹³C)</span><span class="v ok" id="stM1">—</span>
+  <span class="k" data-zh="已检测离子" data-en="Ions detected">已检测离子</span><span class="v" id="stDet">0</span>
+  <span class="k" data-zh="已出峰" data-en="Peaks seen">已出峰</span><span class="v ok" id="stPk">0</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="质谱图:相对丰度 %(橙)— m/z 质荷比(竖虚线=当前扫描位)" data-en="Mass spectrum: relative abundance % (orange) — vs m/z (dashed line = scan position)">质谱图:相对丰度 %(橙)— m/z 质荷比(竖虚线=当前扫描位)</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.o" data-zh="70 eV 电子束:轰掉一个电子" data-en="70 eV beam: knocks out one electron">70 eV 电子束:轰掉一个电子</span>
+    <span class="chip.b" data-zh="离子脉冲群:每群一个 m/z" data-en="ion pulses: one m/z per pulse">离子脉冲群:每群一个 m/z</span>
+    <span class="chip.g" data-zh="磁场弯转:轻急弯 / 重外道" data-en="magnetic bend: light turns hard">磁场弯转:轻急弯 / 重外道</span>
+    <span class="chip.r" data-zh="检测缝:只有 r 合适才能穿过" data-en="exit slit: only the right r passes">检测缝:只有 r 合适才能穿过</span>
+  </div>
+  <div id="smpRow">
+    <button class="abtn on" id="smp0" data-zh="甲醇 CH₃OH" data-en="Methanol CH₃OH">甲醇 CH₃OH</button>
+    <button class="abtn" id="smp1" data-zh="丙酮 C₃H₆O" data-en="Acetone C₃H₆O">丙酮 C₃H₆O</button>
+    <button class="abtn" id="smp2" data-zh="CO₂" data-en="CO₂">CO₂</button>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnScan" data-zh="扫描磁场:开" data-en="Field scan: on">扫描磁场:开</button>
+    <button class="abtn" id="btnBurst" data-zh="混合脉冲(全质量齐飞)" data-en="Mixed pulse (all masses)">混合脉冲(全质量齐飞)</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="Reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="加速电压 V" data-en="Accel voltage V">加速电压 V</label><input id="sV" type="range" min="500" max="4000" step="50" value="2000"><span class="val" id="sVVal">2000 V</span></div>
+  <div class="row"><label data-zh="磁场 B(扫描)" data-en="Field B (scan)">磁场 B(扫描)</label><input id="sB" type="range" min="0.02" max="0.45" step="0.005" value="0.45"><span class="val" id="sBVal">450 mT</span></div>
+  <div class="row"><label data-zh="检测缝宽" data-en="Slit width">检测缝宽</label><input id="sSlit" type="range" min="0.04" max="0.30" step="0.01" value="0.08"><span class="val" id="sSlitVal">8 mm</span></div>
+  <div class="row"><label data-zh="模拟速度" data-en="Sim speed">模拟速度</label><input id="sSpd" type="range" min="0.25" max="3" step="0.05" value="1"><span class="val" id="sSpdVal">×1.0</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglField" type="checkbox" checked> <span data-zh="场区" data-en="Field">场区</span></label>
+      <label><input id="tglGuide" type="checkbox" checked> <span data-zh="轨道导引" data-en="Orbit guide">轨道导引</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../chromatography/" data-zh="色谱:按亲和力分离" data-en="chromatography: separating by affinity">色谱:按亲和力分离</a>
+    <a href="../flame-spectra/" data-zh="火焰光谱:原子的指纹" data-en="flame spectra: atomic fingerprints">火焰光谱:原子的指纹</a>
+    <a href="../stokes-centrifuge/" data-zh="离心:按密度分层" data-en="centrifuge: sorting by density">离心:按密度分层</a>
+    <a href="../radiocarbon-dating/" data-zh="AMS:加速器质谱测年" data-en="AMS: accelerator mass spectrometry">AMS:加速器质谱测年</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141b, 30, 95);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  floorMat.color.setHex(dark ? 0x1b202a : 0xc2ccd6);
+  sectorM.color.setHex(dark ? 0x51cf66 : 0x2f9e44);
+  tubeGlass.color.setHex(dark ? 0x8fb8d8 : 0x5c7c99);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('质谱仪 · 按质量称量分子 — 质量是不变量', 'Mass Spectrometer · weighing molecules — mass is the invariant');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+  drawPlot();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(7.6, 5.2, 9.2);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(1.2, 1.1, 1.1);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 32;
+controls.autoRotateSpeed = 0.35;
+
+scene.add(new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.6));
+const key = new THREE.DirectionalLight(0xfff2dd, 1.6);
+key.position.set(8, 13, 7);
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x9ab8ff, 0.55);
+rim.position.set(-7, 6, -8);
+scene.add(rim);
+
+/* ================= 物理常量与状态 =================
+   1 场景单位 = 100 mm。qV=½mv² → v=√(2qV/m);
+   r = mv/(qB) = √(2mV/q)/B;落缝条件 r = r_g。 */
+const E_CH = 1.602176634e-19, U_KG = 1.66053906660e-27;
+const BEAM_Y = 1.2, X_SRC = -2.15, X_ENT = 0.5;
+const R_GEO = 3.0, R_SEC = 4.5, Z_DET = 4.7, X_SLIT = X_ENT + R_GEO;
+const SCAN_RATE = 0.055, VISC = 4.6e-5, MK = 4.0;
+let V = clamp(qsFloat('v', 2000), 500, 4000);
+let B = clamp(qsFloat('b', 0.45), 0.02, 0.45);
+let slitW = clamp(qsFloat('slit', 0.08), 0.04, 0.30);
+let speed = clamp(qsFloat('speed', 1), 0.25, 3);
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let scanOn = qsBool('scan', true), mode = 'scan', tIdle = 0;
+{ const t0 = clamp(qsFloat('t', 0), 0, 30); if (t0 > 0) B = clamp(0.45 - SCAN_RATE * t0, 0.02, 0.45); }
+const SAMPLES = [
+  { nC: 1, peaks: [
+    { mz: 31, a: 100, f: { zh: 'CH₂OH⁺', en: 'CH₂OH⁺' } },
+    { mz: 32, a: 66, f: { zh: 'M⁺·', en: 'M⁺·' } },
+    { mz: 29, a: 45, f: { zh: 'CHO⁺', en: 'CHO⁺' } },
+    { mz: 15, a: 36, f: { zh: 'CH₃⁺', en: 'CH₃⁺' } },
+    { mz: 33, a: 1.1, f: { zh: '¹³C', en: '¹³C' }, iso: true } ] },
+  { nC: 3, peaks: [
+    { mz: 43, a: 100, f: { zh: 'CH₃CO⁺', en: 'CH₃CO⁺' } },
+    { mz: 58, a: 80, f: { zh: 'M⁺·', en: 'M⁺·' } },
+    { mz: 15, a: 30, f: { zh: 'CH₃⁺', en: 'CH₃⁺' } },
+    { mz: 59, a: 3.6, f: { zh: '¹³C₂', en: '¹³C₂' }, iso: true } ] },
+  { nC: 1, peaks: [
+    { mz: 44, a: 100, f: { zh: 'M⁺·', en: 'M⁺·' } },
+    { mz: 28, a: 12, f: { zh: 'CO⁺', en: 'CO⁺' } },
+    { mz: 16, a: 6, f: { zh: 'O⁺', en: 'O⁺' } },
+    { mz: 12, a: 4, f: { zh: 'C⁺', en: 'C⁺' } },
+    { mz: 45, a: 1.2, f: { zh: '¹³C', en: '¹³C' }, iso: true } ] },
+];
+let smpIdx = 0, sample = SAMPLES[0];
+const ionSpeed = mz => Math.sqrt(2 * E_CH * V / (mz * U_KG));
+const ionRadius = mz => ionSpeed(mz) * (mz * U_KG) / (E_CH * B) * 10;
+const mzAxis = () => R_GEO * R_GEO * 0.01 * B * B * E_CH / (2 * V * U_KG);
+
+/* ---------------- 材质 ---------------- */
+const steelM = new THREE.MeshStandardMaterial({ color: 0x8b98a8, metalness: 0.85, roughness: 0.35 });
+const darkM = new THREE.MeshStandardMaterial({ color: 0x39424e, metalness: 0.6, roughness: 0.55 });
+const ironM = new THREE.MeshStandardMaterial({ color: 0x4a4f58, metalness: 0.8, roughness: 0.45 });
+const plateM = new THREE.MeshStandardMaterial({ color: 0x607080, metalness: 0.7, roughness: 0.4 });
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x1b202a, metalness: 0.05, roughness: 0.95 });
+const tubeGlass = new THREE.MeshPhysicalMaterial({ color: 0x8fb8d8, transparent: true, opacity: 0.15, roughness: 0.2, side: THREE.DoubleSide });
+const sectorM = new THREE.MeshPhysicalMaterial({ color: 0x51cf66, transparent: true, opacity: 0.12, roughness: 0.4, side: THREE.DoubleSide, depthWrite: false });
+const slitM = new THREE.MeshStandardMaterial({ color: 0xffd43b, emissive: 0xffc078, emissiveIntensity: 1.4 });
+const multM = new THREE.MeshStandardMaterial({ color: 0x2b8a3e, emissive: 0x37b24d, emissiveIntensity: 0.25 });
+const filM = new THREE.MeshStandardMaterial({ color: 0xffe066, emissive: 0xff922b, emissiveIntensity: 2.2 });
+const ionM = new THREE.MeshStandardMaterial({ color: 0x74c0fc, emissive: 0x4dabf7, emissiveIntensity: 1.7 });
+const eleM = new THREE.MeshBasicMaterial({ color: 0x66d9e8 });
+const sparkM = new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, opacity: 0.95 });
+
+/* ---------------- 环境搭建 ---------------- */
+const floor = new THREE.Mesh(new THREE.CircleGeometry(18, 48), floorMat);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+const grid = new THREE.GridHelper(36, 36, 0x39445a, 0x2b3242);
+grid.material.transparent = true;
+grid.material.opacity = 0.5;
+grid.position.y = 0.005;
+scene.add(grid);
+function box(w, h, d, mat, x, y, z, parent) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  (parent || scene).add(m);
+  return m;
+}
+function cyl(r, h, mat, x, y, z, parent, alongZ) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 20), mat);
+  if (alongZ) m.rotation.x = Math.PI / 2;
+  m.position.set(x, y, z);
+  (parent || scene).add(m);
+  return m;
+}
+/* 进样口 + 电离室 + 加速缝(主机体) */
+box(2.4, 1.5, 1.15, darkM, -3.3, 0.75, 0);
+box(2.4, 0.16, 1.3, steelM, -3.3, 1.56, 0);
+cyl(0.09, 0.9, steelM, -3.85, 2.0, 0);
+cyl(0.16, 0.12, steelM, -3.85, 2.48, 0);
+const fil = cyl(0.025, 0.62, filM, -3.2, BEAM_Y, 0.4, scene, true);
+const filLight = new THREE.PointLight(0xffa94d, 0.8, 4);
+filLight.position.set(-3.2, BEAM_Y, 0.2);
+scene.add(filLight);
+box(0.9, 0.06, 0.7, ironM, -3.2, BEAM_Y, -0.5);
+box(0.06, 0.95, 0.95, plateM, -2.42, BEAM_Y, 0);
+box(0.06, 0.95, 0.95, plateM, -2.22, BEAM_Y, 0);
+box(0.02, 0.5, 0.16, slitM, -2.41, BEAM_Y, 0);
+box(0.02, 0.5, 0.16, slitM, -2.21, BEAM_Y, 0);
+const fieldGeo = new THREE.BufferGeometry();
+{
+  const p = [];
+  for (let k = 0; k < 5; k++) {
+    const z = -0.32 + k * 0.16;
+    p.push(-2.41, BEAM_Y - 0.32 + Math.abs(z) * 0.4, z, -2.23, BEAM_Y + 0.32 - Math.abs(z) * 0.4, z);
+  }
+  fieldGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(p), 3));
+}
+const fieldLines = new THREE.LineSegments(fieldGeo, new THREE.LineBasicMaterial({ color: 0x74c0fc, transparent: true, opacity: 0.75 }));
+scene.add(fieldLines);
+/* 飞行管 */
+const tube = cyl(0.21, X_ENT - (-2.2), tubeGlass, (X_ENT - 2.2) / 2, BEAM_Y, 0);
+tube.rotation.z = Math.PI / 2;
+cyl(0.24, 0.1, steelM, X_ENT - 0.05, BEAM_Y, 0).rotation.z = Math.PI / 2;
+/* 90° 扇形磁场(蹄形磁铁:半透明场区 + 上下磁极 + 轭铁) */
+const sectorGeo = new THREE.CylinderGeometry(R_SEC, R_SEC, 0.8, 30, 1, true, 0, Math.PI / 2);
+const sector = new THREE.Mesh(sectorGeo, sectorM);
+sector.position.set(X_ENT, BEAM_Y, 0);
+scene.add(sector);
+const secDisc = new THREE.Mesh(new THREE.RingGeometry(0.02, R_SEC, 30, 1, 0, Math.PI / 2), sectorM);
+secDisc.rotation.x = Math.PI / 2;
+secDisc.position.set(X_ENT, BEAM_Y + 0.4, 0);
+scene.add(secDisc);
+for (const s of [-1, 1]) {
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(R_SEC, R_SEC, 0.16, 30, 1, false, 0, Math.PI / 2), ironM);
+  pole.position.set(X_ENT, BEAM_Y + s * 0.56, 0);
+  scene.add(pole);
+  const yoke = new THREE.Mesh(new THREE.TorusGeometry(R_SEC + 0.12, 0.16, 8, 26, Math.PI / 2), ironM);
+  yoke.rotation.x = Math.PI / 2;
+  yoke.position.set(X_ENT, BEAM_Y + s * 0.56, 0);
+  scene.add(yoke);
+}
+box(R_SEC, 0.5, R_SEC, darkM, X_ENT + R_SEC / 2, 0.25, R_SEC / 2);
+/* 飞行管支架 */
+box(0.12, BEAM_Y - 0.35, 0.12, darkM, -0.8, (BEAM_Y - 0.35) / 2, 0);
+/* 检测板 + 狭缝 + 电子倍增器 */
+const detGrp = new THREE.Group();
+scene.add(detGrp);
+box(4.1, 0.85, 0.1, plateM, 2.45, BEAM_Y, Z_DET, detGrp);
+box(0.05, 0.55, 0.14, slitM, X_SLIT, BEAM_Y, Z_DET - 0.02, detGrp);
+box(0.4, 0.6, 0.34, darkM, X_SLIT, BEAM_Y, Z_DET + 0.32, detGrp);
+cyl(0.12, 0.18, multM, X_SLIT, BEAM_Y, Z_DET + 0.16, detGrp, true);
+box(0.1, BEAM_Y - 0.42, 0.1, darkM, 0.8, (BEAM_Y - 0.42) / 2, Z_DET);
+box(0.1, BEAM_Y - 0.42, 0.1, darkM, 4.2, (BEAM_Y - 0.42) / 2, Z_DET);
+box(1.2, 0.06, 0.5, darkM, X_SLIT, 0.03, Z_DET + 0.32);
+/* 轨道导引线(当前离子的解析圆弧) */
+const guideGeo = new THREE.BufferGeometry();
+guideGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(41 * 3), 3));
+const guide = new THREE.Line(guideGeo, new THREE.LineDashedMaterial({ color: 0xffa94d, dashSize: 0.14, gapSize: 0.09, transparent: true, opacity: 0.8 }));
+guide.frustumCulled = false;
+scene.add(guide);
+function updateGuide() {
+  const r = clamp(ionRadius(lastMz), 0.05, 5.6);
+  const p = guideGeo.attributes.position;
+  for (let k = 0; k <= 40; k++) {
+    const th = -Math.PI / 2 + k / 40 * (Math.PI / 2);
+    p.setXYZ(k, X_ENT + Math.cos(th) * r, BEAM_Y, r + Math.sin(th) * r);
+  }
+  p.needsUpdate = true;
+  guide.computeLineDistances();
+  lblArc.position.set(X_ENT + r * 0.72, BEAM_Y + 0.28, r * 0.3);
+}
+
+/* ---------------- 粒子:电子束 / 进样液滴 / 离子 / 火花(InstancedMesh) ---------------- */
+const _M4 = new THREE.Matrix4(), _P = new THREE.Vector3(), _Q = new THREE.Quaternion(), _S1 = new THREE.Vector3(1, 1, 1);
+const ionGeo = new THREE.SphereGeometry(0.05, 10, 8);
+const ionsMesh = new THREE.InstancedMesh(ionGeo, ionM, 260);
+ionsMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+ionsMesh.frustumCulled = false;
+scene.add(ionsMesh);
+const ions = [], ionFree = [];
+function spawnIon(mz, rS, vS, aligned) {
+  const ion = ionFree.pop() || {};
+  ion.x = X_SRC - 0.1 - Math.random() * 0.25;
+  ion.y = BEAM_Y + (Math.random() - 0.5) * 0.05;
+  ion.z = (Math.random() - 0.5) * 0.05;
+  ion.mz = mz; ion.r = rS; ion.v = vS; ion.st = 0; ion.ang = 0;
+  ion.aligned = aligned; ion.alive = true;
+  ions.push(ion);
+  if (ions.length > 250) { const dead = ions.shift(); dead.alive = false; ionFree.push(dead); }
+  return ion;
+}
+const eleMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.022, 6, 5), eleM, 26);
+eleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+eleMesh.frustumCulled = false;
+scene.add(eleMesh);
+const eles = [];
+for (let i = 0; i < 26; i++) eles.push({ z: Math.random() * 0.8 - 0.4, v: 1.1 + Math.random() * 0.7 });
+const dropMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.03, 6, 5), eleM, 8);
+dropMesh.frustumCulled = false;
+scene.add(dropMesh);
+const drops = [];
+for (let i = 0; i < 8; i++) drops.push({ y: 1.55 + i * 0.12, v: 0.35 + Math.random() * 0.25 });
+const sparkMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 8, 6), sparkM, 40);
+sparkMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+sparkMesh.frustumCulled = false;
+scene.add(sparkMesh);
+const sparks = [];
+function spark(x, y, z, hex, big) {
+  sparks.push({ x, y, z, t: 0, max: big ? 0.5 : 0.32, hex });
+  if (sparks.length > 38) sparks.shift();
+}
+function updateParticles(dt, dt0) {
+  /* 离子:直线 → 解析圆弧 → 直线(检测板) */
+  for (let i = ions.length - 1; i >= 0; i--) {
+    const n = ions[i];
+    if (n.st === 0) {
+      n.x += n.v * dt;
+      if (n.x >= X_ENT) { n.st = 1; n.ang = 0; }
+    } else if (n.st === 1) {
+      if (n.r > 2.121) {
+        const thC = Math.asin(clamp(R_SEC * R_SEC / (2 * n.r * n.r) - 1, -1, 0));
+        n.ang += n.v / n.r * dt;
+        if (n.ang >= thC + Math.PI / 2) {
+          spark(X_ENT + Math.cos(thC) * n.r, BEAM_Y, n.r + Math.sin(thC) * n.r, 0xff6b6b, false);
+          n.alive = false;
+        }
+      } else {
+        n.ang += n.v / n.r * dt;
+      }
+      if (n.alive && n.ang >= Math.PI / 2) { n.st = 2; n.x = X_ENT + n.r; n.z = n.r; }
+    } else if (n.st === 2) {
+      n.z += n.v * dt;
+      if (n.z >= Z_DET - 0.06) {
+        if (n.aligned) {
+          spectrum[Math.round(n.mz * 2)] += 1;
+          nDet += 1;
+          spark(X_SLIT, BEAM_Y, Z_DET + 0.16, 0x69db7c, false);
+          multGlow = 1;
+        } else {
+          spark(n.x, BEAM_Y, Z_DET - 0.06, 0xffa94d, false);
+        }
+        n.alive = false;
+      }
+    }
+    if (!n.alive) { ions.splice(i, 1); ionFree.push(n); }
+  }
+  let k = 0;
+  for (const n of ions) {
+    let px = n.x, py = n.y, pz = n.z;
+    if (n.st === 1) {
+      const th = -Math.PI / 2 + n.ang;
+      px = X_ENT + Math.cos(th) * n.r;
+      pz = n.r + Math.sin(th) * n.r;
+    }
+    _P.set(px, py, pz);
+    _M4.compose(_P, _Q.identity(), _S1);
+    ionsMesh.setMatrixAt(k, _M4);
+    ionsMesh.setColorAt(k, n.aligned ? COL_G : COL_B);
+    k++;
+  }
+  ionsMesh.count = k;
+  ionsMesh.instanceMatrix.needsUpdate = true;
+  if (ionsMesh.instanceColor) ionsMesh.instanceColor.needsUpdate = true;
+  /* 电子束:灯丝 → 横穿电离室 */
+  for (let i = 0; i < eles.length; i++) {
+    const e = eles[i];
+    if (dt0 > 0 && playing) { e.z -= e.v * dt0 * 2.2; if (e.z < -0.42) e.z = 0.42; }
+    _P.set(-3.2 + Math.sin(i * 2.1) * 0.012, BEAM_Y + Math.cos(i * 1.7) * 0.012, e.z);
+    _M4.compose(_P, _Q.identity(), _S1);
+    eleMesh.setMatrixAt(i, _M4);
+  }
+  eleMesh.instanceMatrix.needsUpdate = true;
+  /* 进样液滴 */
+  for (let i = 0; i < drops.length; i++) {
+    const d = drops[i];
+    if (dt0 > 0 && playing) { d.y -= d.v * dt0; if (d.y < 1.55) d.y = 2.4; }
+    _P.set(-3.85, d.y, 0);
+    _M4.compose(_P, _Q.identity(), _S1);
+    dropMesh.setMatrixAt(i, _M4);
+  }
+  dropMesh.instanceMatrix.needsUpdate = true;
+  /* 火花 */
+  let ks = 0;
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    s.t += dt0;
+    if (s.t >= s.max) { sparks.splice(i, 1); continue; }
+    const f = 1 - s.t / s.max;
+    const sc = (0.4 + (1 - f) * 1.6) * f;
+    _P.set(s.x, s.y, s.z);
+    _M4.compose(_P, _Q.identity(), new THREE.Vector3(sc, sc, sc));
+    sparkMesh.setMatrixAt(ks, _M4);
+    sparkMesh.setColorAt(ks, new THREE.Color(s.hex));
+    ks++;
+  }
+  sparkMesh.count = ks;
+  sparkMesh.instanceMatrix.needsUpdate = true;
+  if (sparkMesh.instanceColor) sparkMesh.instanceColor.needsUpdate = true;
+}
+const COL_B = new THREE.Color(0x74c0fc), COL_G = new THREE.Color(0x69db7c);
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+let labelsOn = true;
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+addLabel(() => L('进样口:样品气化后涌入', 'inlet: vaporised sample flows in'), new THREE.Vector3(-3.85, 2.75, 0), 'b');
+addLabel(() => L('电离室:70 eV 电子束轰掉一个电子', 'ion source: 70 eV beam knocks out one electron'), new THREE.Vector3(-3.2, 1.95, -0.55), 'o');
+addLabel(() => L(`加速缝:qV=½mv² → v=${(ionSpeed(31) / 1000).toFixed(0)} km/s(31 u)`, `accel slit: qV=½mv² → v=${(ionSpeed(31) / 1000).toFixed(0)} km/s (31 u)`), new THREE.Vector3(-2.32, 2.05, 0), 'b');
+addLabel(() => L(`扇形磁场 r=mv/(qB),B=${(B * 1000).toFixed(0)} mT`, `sector field r=mv/(qB), B=${(B * 1000).toFixed(0)} mT`), new THREE.Vector3(X_ENT + 2.4, BEAM_Y + 1.15, 2.6), 'g');
+addLabel(() => L('飞行管:同一赛道', 'flight tube: one racetrack'), new THREE.Vector3(-0.85, BEAM_Y + 0.42, 0), 'b');
+addLabel(() => L('检测缝 + 电子倍增器:过缝=被计数', 'exit slit + SEV: through = counted'), new THREE.Vector3(X_SLIT, BEAM_Y + 0.85, Z_DET), 'r');
+let lastMz = 31, lastF = SAMPLES[0].peaks[0].f;
+const lblArc = addLabel(() => `r = ${(clamp(ionRadius(lastMz), 0, 600)).toFixed(0)} mm`, new THREE.Vector3(2.2, BEAM_Y + 0.3, 1), 'o', () => guide.visible);
+
+/* ================= 发射与扫描 ================= */
+const spectrum = new Float32Array(148);
+let nDet = 0, multGlow = 0, slitGlowT = 0;
+let emitT = 0.4, peakIdx = 0;
+function emitGroup(all) {
+  const list = all ? sample.peaks : [sample.peaks[peakIdx++ % sample.peaks.length]];
+  for (const pk of list) {
+    const rS = ionRadius(pk.mz);
+    const vS = ionSpeed(pk.mz) * VISC;
+    const aligned = Math.abs(rS - R_GEO) <= slitW / 2 && rS <= R_SEC;
+    const n = pk.iso ? 1 : clamp(Math.round(pk.a / 7), 3, 16);
+    for (let i = 0; i < n; i++) spawnIon(pk.mz, rS, vS, aligned);
+    if (!all) { lastMz = pk.mz; lastF = pk.f; }
+  }
+}
+function resetAll() {
+  spectrum.fill(0);
+  nDet = 0;
+  for (const n of ions) ionFree.push(n);
+  ions.length = 0;
+  B = 0.45;
+  scanOn = true;
+  document.getElementById('btnScan').classList.add('on');
+  emitT = 0.3;
+  sparks.length = 0;
+}
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = {
+    p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]),
+    t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0
+  };
+}
+function setSample(i) {
+  smpIdx = i; sample = SAMPLES[i];
+  spectrum.fill(0); nDet = 0;
+  syncSampleBtns(); updateFormula();
+}
+const STEPS = [
+  { b: '电子束轰掉一个电子', be: 'An electron beam knocks out one electron',
+    d: '样品气化进入电离室,70 eV 电子束轰掉分子一个电子→分子离子 M⁺·;多余能量把某些键震断→碎片离子。这一步把「称分子」变成「称离子」。',
+    de: 'Vaporised sample enters the source; a 70 eV beam removes one electron → molecular ion M⁺·; excess energy snaps some bonds → fragments. This turns weighing molecules into weighing ions.',
+    act: () => { mode = 'ionize'; scanOn = false; syncScanBtn(); speed = 0.6; elSpd.value = speed; elSpdVal.textContent = '×' + speed.toFixed(2); flyTo([-2.4, 2.6, 4.2], [-3.0, 1.3, 0]); } },
+  { b: '电场加速:qV 定速', be: 'Electric acceleration: qV sets the speed',
+    d: '同价离子跨过同一电压,得到同样的动能 qV=½mv²——速度只由质量决定,轻者更快。所有离子由此站上同一条起跑线。',
+    de: 'Ions of equal charge cross the same voltage and gain the same kinetic energy qV=½mv² — speed depends only on mass. This is the common starting line.',
+    act: () => { mode = 'accel'; scanOn = false; syncScanBtn(); speed = 1; elSpd.value = 1; elSpdVal.textContent = '×1.00'; flyTo([-1.6, 2.4, 3.4], [-2.2, 1.2, 0]); } },
+  { b: '磁场弯转:轻的急弯', be: 'Magnetic bend: light ions turn hard',
+    d: 'r=mv/(qB)=√(2mV/q)/B:质量越小半径越小。按「混合脉冲」让全部质量同时起飞,看它们在场区内散成一把扇子——质量被摊开成位置。',
+    de: 'r=mv/(qB)=√(2mV/q)/B: smaller mass, smaller radius. Hit "mixed pulse" to launch all masses at once and watch them fan out — mass is spread into position.',
+    act: () => { mode = 'bend'; scanOn = false; syncScanBtn(); B = 0.15; elB.value = 0.15; elBVal.textContent = '150 mT'; emitGroup(true); flyTo([4.6, 4.6, 6.6], [1.8, 1.2, 1.6]); } },
+  { b: '扫描磁场:质量依次过缝', be: 'Scan the field: masses pass in turn',
+    d: '检测缝固定,只有轨道半径恰好的离子能穿过去。让 B 从高往低扫,重离子先对上轨道、轻离子随后——谱峰一根根自己长出来。',
+    de: 'The slit is fixed: only ions with exactly the right orbit radius get through. Sweep B downward — heavy masses align first, light ones follow, and peaks grow one by one.',
+    act: () => { mode = 'scan'; resetAll(); flyTo([7.6, 5.2, 9.2], [1.2, 1.1, 1.1]); } },
+  { b: '谱峰=质量指纹', be: 'Peaks = a mass fingerprint',
+    d: '甲醇的 31/29/15 三根峰的相对强度几乎不随仪器改变,就像指纹。把峰位与丰度拿去检索谱库,即可认定未知物。',
+    de: 'Methanol\u2019s 31/29/15 pattern is nearly instrument-independent — a fingerprint. Matching peak positions and abundances against a library identifies the unknown.',
+    act: () => { mode = 'fingerprint'; setSample(0); resetAll(); flyTo([6.4, 3.4, 8.4], [2.6, 1.2, 2.2]); } },
+  { b: 'M+1 小峰:数峰推碳数', be: 'The M+1 peak: counting carbons',
+    d: '¹³C 天然丰度约 1.1%/碳:M 峰旁总有一个 M+1 小峰,高度≈1.1%×碳数。丙酮 M+1≈3.3%→3 个碳;蛋白质组学读同位素峰簇就是这么数的。',
+    de: '¹³C is ~1.1% abundant per carbon: beside M always sits an M+1 peak of height ≈1.1%×nC. Acetone\u2019s M+1≈3.3% → 3 carbons; proteomics reads isotope envelopes exactly this way.',
+    act: () => { mode = 'isotope'; setSample(1); resetAll(); flyTo([6.4, 3.4, 8.4], [2.6, 1.2, 2.2]); } },
+];
+function stepIndex() { return ['ionize', 'accel', 'bend', 'scan', 'fingerprint', 'isotope'].indexOf(mode); }
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:质谱图 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const padL = 36, padR = 12, padT = 14, padB = 26;
+  const xOf = m => padL + m / 72 * (W - padL - padR);
+  let mx = 10;
+  for (let i = 0; i < 148; i++) if (spectrum[i] > mx) mx = spectrum[i];
+  const yOf = v => (H - padB) - clamp(v, 0, mx) / mx * (H - padT - padB);
+  ctx.font = '11px system-ui';
+  ctx.strokeStyle = 'rgba(128,150,170,.22)';
+  ctx.fillStyle = cTxt;
+  for (let m = 0; m <= 70; m += 10) {
+    ctx.beginPath(); ctx.moveTo(xOf(m), padT); ctx.lineTo(xOf(m), H - padB); ctx.stroke();
+    ctx.fillText(String(m), xOf(m) - 6, H - 8);
+  }
+  ctx.fillText('m/z', W - padR - 30, H - 8);
+  /* 峰位标记(含 ¹³C 绿点) */
+  for (const pk of sample.peaks) {
+    if (pk.a < 8 && !pk.iso) continue;
+    ctx.strokeStyle = 'rgba(159,176,195,.3)';
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath(); ctx.moveTo(xOf(pk.mz), padT); ctx.lineTo(xOf(pk.mz), H - padB); ctx.stroke();
+    ctx.setLineDash([]);
+    if (pk.iso) {
+      ctx.fillStyle = '#69db7c';
+      ctx.fillText('M+1', xOf(pk.mz) - 13, padT + 10);
+    }
+  }
+  /* 谱棒 */
+  for (let i = 0; i < 148; i++) {
+    if (spectrum[i] <= 0.5) continue;
+    const mz = i / 2;
+    const iso = sample.peaks.some(p => p.iso && Math.abs(p.mz - mz) < 0.5);
+    ctx.strokeStyle = iso ? '#69db7c' : '#ffa94d';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(xOf(mz), H - padB); ctx.lineTo(xOf(mz), yOf(spectrum[i])); ctx.stroke();
+    if (spectrum[i] > mx * 0.35) {
+      ctx.fillStyle = cTxt;
+      ctx.fillText(mz.toFixed(0), xOf(mz) - 5, yOf(spectrum[i]) - 5);
+    }
+  }
+  ctx.lineWidth = 1;
+  /* 当前扫描位 */
+  const ax = mzAxis();
+  if (ax > 0.3 && ax < 72) {
+    ctx.strokeStyle = 'rgba(255,169,77,.85)';
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath(); ctx.moveTo(xOf(ax), padT); ctx.lineTo(xOf(ax), H - padB); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffa94d';
+    ctx.fillText(L('扫描', 'scan'), xOf(ax) + 4, padT + 10);
+  }
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elSpd = document.getElementById('sSpd'), elSpdVal = document.getElementById('sSpdVal');
+const elB = document.getElementById('sB'), elBVal = document.getElementById('sBVal');
+const stMz = document.getElementById('stMz'), stR = document.getElementById('stR'),
+  stV = document.getElementById('stV'), stB = document.getElementById('stB'),
+  stRes = document.getElementById('stRes'), stM1 = document.getElementById('stM1'),
+  stDet = document.getElementById('stDet'), stPk = document.getElementById('stPk');
+const formulaEl = document.getElementById('formula');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncScanBtn() {
+  const b = document.getElementById('btnScan');
+  b.textContent = scanOn ? L('扫描磁场:开', 'Field scan: on') : L('扫描磁场:关', 'Field scan: off');
+  b.classList.toggle('on', scanOn);
+}
+function syncSampleBtns() {
+  for (let i = 0; i < 3; i++) document.getElementById('smp' + i).classList.toggle('on', i === smpIdx);
+}
+function syncSliders() {
+  document.getElementById('sV').value = V;
+  document.getElementById('sVVal').textContent = V.toFixed(0) + ' V';
+  elB.value = B; elBVal.textContent = (B * 1000).toFixed(0) + ' mT';
+  document.getElementById('sSlit').value = slitW;
+  document.getElementById('sSlitVal').textContent = (slitW * 100).toFixed(0) + ' mm';
+  elSpd.value = speed; elSpdVal.textContent = '×' + speed.toFixed(2).replace(/0$/, '');
+}
+function fmtN(x) { return x >= 10000 ? (x / 1000).toFixed(1) + ' k' : String(Math.round(x)); }
+function updateStats() {
+  const r = clamp(ionRadius(lastMz), 0, 600);
+  stMz.innerHTML = `${lastMz} <small>${L(lastF.zh, lastF.en)}</small>`;
+  stR.innerHTML = r.toFixed(0) + ' <small>mm</small>';
+  stV.innerHTML = (ionSpeed(lastMz) / 1000).toFixed(1) + ' <small>km/s</small>';
+  stB.textContent = (B * 1000).toFixed(0) + ' mT';
+  stRes.textContent = '≈' + (R_GEO / slitW).toFixed(0);
+  stM1.textContent = `≈${(1.1 * sample.nC).toFixed(1)} %→${sample.nC}C`;
+  stDet.textContent = fmtN(nDet);
+  const seen = sample.peaks.filter(p => spectrum[Math.round(p.mz * 2)] > 1).length;
+  stPk.textContent = seen + ' / ' + sample.peaks.length;
+  stPk.className = 'v ' + (seen >= sample.peaks.length ? 'ok' : seen > 1 ? 'warn' : '');
+}
+function updateFormula() {
+  formulaEl.innerHTML = L(
+    `<b>qV=½mv²</b>:V=${V.toFixed(0)} V → v(31 u)=${(ionSpeed(31) / 1000).toFixed(0)} km/s · 分辨本领 m/Δm≈r_g/Δr=${(R_GEO / slitW).toFixed(0)}<br>` +
+    `<b>r=√(2mV/q)/B</b>:落缝轨道 r_g=300 mm;缝宽 ${(slitW * 100).toFixed(0)} mm——窄缝高分辨但峰变矮,宽缝灵敏但 31/32 分不开<br>` +
+    `<b>峰位 m/z=r_g²B²q/(2V)</b>:改 V 只改 B 的标尺,峰位纹丝不动——质量是不变量 · ¹³C:1.1%×${sample.nC}C≈${(1.1 * sample.nC).toFixed(1)}% → M+1`,
+    `<b>qV=½mv²</b>: V=${V.toFixed(0)} V → v(31 u)=${(ionSpeed(31) / 1000).toFixed(0)} km/s · resolution m/Δm≈r_g/Δr=${(R_GEO / slitW).toFixed(0)}<br>` +
+    `<b>r=√(2mV/q)/B</b>: slit-orbit r_g=300 mm; slit ${(slitW * 100).toFixed(0)} mm — narrow = resolving power but shorter peaks; wide = sensitivity but 31/32 merge<br>` +
+    `<b>peak m/z=r_g²B²q/(2V)</b>: changing V only rescales B — peak positions never move: mass is the invariant · ¹³C: 1.1%×${sample.nC}C≈${(1.1 * sample.nC).toFixed(1)}% → M+1`);
+}
+function syncAll() {
+  syncSliders(); updateFormula(); updateStats(); drawPlot();
+  const si = stepIndex();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+}
+document.getElementById('sV').addEventListener('input', e => { V = +e.target.value; updateFormula(); updateStats(); });
+elB.addEventListener('input', () => {
+  B = +elB.value; scanOn = false; syncScanBtn();
+  elBVal.textContent = (B * 1000).toFixed(0) + ' mT';
+});
+document.getElementById('sSlit').addEventListener('input', e => {
+  slitW = +e.target.value;
+  document.getElementById('sSlitVal').textContent = (slitW * 100).toFixed(0) + ' mm';
+  updateFormula(); updateStats();
+});
+elSpd.addEventListener('input', () => { speed = +elSpd.value; elSpdVal.textContent = '×' + speed.toFixed(2).replace(/0$/, ''); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('btnScan').addEventListener('click', () => { scanOn = !scanOn; syncScanBtn(); });
+document.getElementById('btnBurst').addEventListener('click', () => emitGroup(true));
+document.getElementById('btnReset').addEventListener('click', () => { resetAll(); syncAll(); });
+for (let i = 0; i < 3; i++) document.getElementById('smp' + i).addEventListener('click', () => { setSample(i); syncAll(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglField').addEventListener('change', e => {
+  sector.visible = secDisc.visible = e.target.checked;
+});
+document.getElementById('tglGuide').addEventListener('change', e => { guide.visible = e.target.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, lastStep = -1, statsAcc = 0, plotAcc = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speed * (playing ? 1 : 0);
+  tIdle += dt0;
+  /* —— 扫描:B 从高向低,重离子先过缝 —— */
+  if (scanOn && dt > 0) { B -= SCAN_RATE * dt; if (B < 0.02) B = 0.45; }
+  /* —— 检测积分:谱峰实时生长(检测器积分连续束流) —— */
+  let glow = 0;
+  for (const pk of sample.peaks) {
+    const Bpk = Math.sqrt(2 * pk.mz * U_KG * V / E_CH) / (R_GEO * 0.1);
+    if (Math.abs(B - Bpk) <= Bpk * slitW / 6) {
+      const add = pk.a * MK * dt * 20;
+      spectrum[Math.round(pk.mz * 2)] += add;
+      nDet += add;
+      glow += pk.a;
+      slitGlowT = 0.15;
+    }
+  }
+  if (multGlow > 0) multGlow -= dt0 * 2.5;
+  if (slitGlowT > 0) slitGlowT -= dt0;
+  multM.emissiveIntensity = 0.25 + Math.min(2.4, glow / 50) + Math.max(0, multGlow) * 2;
+  slitM.emissiveIntensity = 1.4 + (slitGlowT > 0 ? 1.6 : 0);
+  filM.emissiveIntensity = 2.0 + Math.sin(tIdle * 9) * 0.35;
+  filLight.intensity = 0.7 + Math.sin(tIdle * 9) * 0.15;
+  fieldLines.material.opacity = 0.55 + Math.sin(tIdle * 5) * 0.25;
+  /* —— 发射脉冲群 —— */
+  if (dt > 0) { emitT -= dt; if (emitT <= 0) { emitGroup(false); emitT = 0.42; } }
+  updateParticles(dt, dt0);
+  updateGuide();
+  /* —— 相机飞行 —— */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const s = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, s);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, s);
+    if (camTween.k >= 1) camTween = null;
+  }
+  statsAcc += dt0;
+  if (statsAcc > 0.12) { statsAcc = 0; updateStats(); }
+  plotAcc += dt0;
+  if (plotAcc > 0.3) { plotAcc = 0; drawPlot(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  const si = stepIndex();
+  if (si !== lastStep) {
+    lastStep = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+syncSampleBtns();
+syncScanBtn();
+syncAll();
+start();
+</script>
+</body>
+</html>
