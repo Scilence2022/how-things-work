@@ -15,13 +15,13 @@ A collection of animated explanations. We use animation to make "invisible princ
 
 | Domain | Sample topics |
 | --- | --- |
-| Mechanisms | Lockstitch sewing, four-stroke valve timing, planetary gears, worm self-locking, universal joints, escapements, Watt's governor, ball screw, derailleur, flywheel KERS, the CVT, the diesel engine |
-| Chemistry | SN1/SN2/E1/E2 quartet, galvanic ⇄ electrolytic cells, electrophilic addition & Markovnikov's rule, radical chain reactions, benzene aromaticity, conjugation & color, enzyme kinetics, ozone depletion, the catalytic converter, the nitrogen cycle |
-| Biology | DNA replication & telomere wear, ATP synthase, glycolysis → TCA → fermentation, cardiac cycle, the ECG, alveolar gas exchange, nephron counter-current, cochlea & eye, kinesin, antibiotic resistance, the reflex arc, phototropism |
-| Physics & space | Motor ⇄ generator, double-slit, laser, EM waves, lens imaging, kinetic theory, entropy & phase change, liquid crystals & LCD, the tropical cyclone, exoplanet transits, the harmonic oscillator, Foucault's pendulum, the inverter, thermoelectrics, piezoelectricity |
+| Mechanisms | Lockstitch sewing, four-stroke valve timing, planetary gears, worm self-locking, universal joints, escapements, Watt's governor, ball screw, derailleur, flywheel KERS, the CVT, the diesel engine, Ackermann steering |
+| Chemistry | SN1/SN2/E1/E2 quartet, galvanic ⇄ electrolytic cells, electrophilic addition & Markovnikov's rule, radical chain reactions, benzene aromaticity, conjugation & color, enzyme kinetics, ozone depletion, the catalytic converter, the nitrogen cycle, supercooling & nucleation |
+| Biology | DNA replication & telomere wear, ATP synthase, glycolysis → TCA → fermentation, cardiac cycle, the ECG, alveolar gas exchange, nephron counter-current, cochlea & eye, kinesin, antibiotic resistance, the reflex arc, phototropism, transpiration |
+| Physics & space | Motor ⇄ generator, double-slit, laser, EM waves, lens imaging, kinetic theory, entropy & phase change, liquid crystals & LCD, the tropical cyclone, exoplanet transits, the harmonic oscillator, Foucault's pendulum, the inverter, thermoelectrics, piezoelectricity, Rayleigh scattering, thin films, glaciers, tidal locking |
 | Math & CS | Galton board & CLT, Fourier series, Monty Hall & Bayes, gradient descent, sorting race, RSA, information entropy, the Game of Life, Monte Carlo |
 | Cross-discipline & engineering | Activation energy & catalysts, titration curve, osmosis & dialysis, heat pump ⇄ fridge, induction cooktop, wireless charging, corrosion ⇄ electroplating |
-| Everyday technology | Microwave oven, capacitive touch, GPS, transistors to adders, fiber optics, camera sensor, ABS, wind turbine, nuclear reactor, MRI, thermostat, hard drive & flash, elevators & counterweights, the quartz watch, hydro & pumped storage, LiDAR |
+| Everyday technology | Microwave oven, capacitive touch, GPS, transistors to adders, fiber optics, camera sensor, ABS, wind turbine, nuclear reactor, MRI, thermostat, hard drive & flash, elevators & counterweights, the quartz watch, hydro & pumped storage, LiDAR, the buck converter |
 | Fluids & flight | Wing lift & stall, turbofan engines, buoyancy & ship stability, terminal velocity, propeller pitch, submarine ballast, hot-air balloons, Reynolds number, helicopter anti-torque, Venturi tube & flow, Pascal's press, sailing upwind, water hammer, the siphon, the Magnus effect, cavitation & supercavitation, tsunami & shallow-water waves, sonic boom & the Mach cone, the Kármán vortex street, Stokes settling & the centrifuge, capillarity & surface tension, Kelvin–Helmholtz billows, Poiseuille flow, the hydrofoil, swell & deep-water waves, the centrifugal pump & cavitation, non-Newtonian fluids, the boundary layer & separation, the de Laval nozzle, Rayleigh–Bénard convection, river meanders, flapping flight |
 
 ## Planned topics
@@ -496,6 +496,28 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **quartz-watch/** — a movement cutaway: the fork flexes visibly only at ×32768 slow-mo, fifteen divider lamps ripple one carry per second, the stepper ticks 180°, low battery drops to two-second jumps, and the temperature parabola peaks at 25 °C. URL: `?temp= ?slow= ?batt= ?pause= ?speed= ?labels= ?spin=`.
 - **hydroelectric/** — 300 water parcels run reservoir → penstock → Francis runner → tailrace at P = ρQghη ≈ 85%; pump mode spins the same runner backwards to fill the mountain lake, and the 24 h demand chart shows hydro covering in seconds what coal ramps in 90 minutes. URL: `?h= ?q= ?mode=gen|pump ?day= ?pause= ?speed= ?labels= ?spin=`.
 - **lidar/** — the street starts as ghost wireframe; the spinning head's 12 beams paint a height-colored point cloud while the A-scope shows first/last returns; fog dissolves it into ghosts, black paint starves 905 nm where 1550 nm still sees, and vegetation splits into layers. URL: `?spd= ?dens= ?fog= ?wl= ?preset= ?pause= ?speed= ?labels= ?spin=`.
+
+### Phase 31 · Cross-family gap-filling, batch 3 (8/8)
+
+- [x] Ackermann steering (cot δo − cot δi = B/L, one instant center, the trapezoid synthesizes both angles; parallel steering scrubs, anti-Ackermann races) ✅ **ackermann-steering/**
+- [x] The buck converter (Vout = D·Vin, the inductor as a current flywheel, LC smooths the chops; linear mode burns 14 W vs 95% efficiency) ✅ **buck-converter/**
+- [x] Rayleigh scattering (σ ∝ 1/λ⁴ gives blue a 4.4× priority; sunset crosses 29 airmasses; Mie clouds stay white) ✅ **rayleigh-sky/**
+- [x] Thin-film interference (2nt·cosθ plus the π flip: the rainbow is a thickness map; drainage black spot, Newton's dark center, λ/4n AR coating) ✅ **thin-film/**
+- [x] Supercooling & nucleation (the ΔG barrier peaks at r* = 2γ/ΔG_v ≈ 5 nm at 10 K; −40 °C flips on its own; latent heat pins the 0 °C plateau) ✅ **supercooling/**
+- [x] Transpiration (leaves pull, roots don't push: −0.5 to −3 MPa tension; capillarity 0.29 m, root pressure 2 m, pull 100 m; cavitation clicks) ✅ **transpiration/**
+- [x] Glacier flow (Glen's τ³ law, accumulation vs ablation tug-of-war, crevasses & moraines, the U-valley, a climate dial over centuries) ✅ **glacier-flow/**
+- [x] Tidal locking (the bulge leads by δ, a sin2δ brake until spin = orbit; the Moon recedes 3.8 cm/yr; Mercury's 3:2, Io's tidal heat) ✅ **tidal-locking/**
+
+### Phase 31 deep dives (condensed)
+
+- **ackermann-steering/** — a translucent-chassis car drives real arcs while its four wheel trails draw concentric circles around the glowing instant center; in Ackermann mode all four axle lines meet exactly on the rear-axle extension (δ=14° → δi=15.0°/δo=13.1°, L=2.6 m, B=1.5 m verified live), parallel steering misses the point and sparks red scrub at the front patches, anti-Ackermann over-steers the outer wheel like a race car. URL: `?st= ?g=ack|par|anti ?v= ?axes= ?pause= ?speed= ?labels= ?spin=`.
+- **buck-converter/** — blue electrons pulse through the MOSFET only on-phase, orange through the freewheel diode only off-phase, while the green flow after the LC runs smooth; the scope stacks the node square wave, the I_L triangle with its ΔI_L band, and a near-flat Vout; linear mode glows red-hot burning 14 W at 42% versus buck's 95%, and a 1→4 A load step shows the inductor ramp and the dip-recover. URL: `?d= ?load= ?mode=lin|buck ?pause= ?speed= ?labels= ?spin=`.
+- **rayleigh-sky/** — a single-scattering sky dome turns fire as the sun drags from 75° to 2° (Kasten–Young airmass 28.5× strips blue: T(450)≈0.05% vs T(650)≈18%); aerosols add wavelength-blind Mie white, the Titan preset bakes an orange day, and the beam diagram scatters photons off ~120 molecules with blue flashing 4.35× more often, growing a live 1/λ⁴ histogram. URL: `?el= ?aer= ?h= ?preset=noon|sunset|titan|fog ?diag= ?pause= ?speed= ?labels= ?spin=`.
+- **thin-film/** — a living soap bubble whose thickness field (drainage + Marangoni swirls) is colored per-fragment by I=½(1−cos(4πnt·cosθ/λ)) for 650/545/450 nm: the rainbow is a thickness map; the top drains past 25 nm into a black spot and pops into 150 droplets, Newton's rings write lens curvature as fringes with a dark-center proof of the π flip, and MgF₂ λ/4n shows two reflections cancelling. URL: `?mode=bubble|newton ?t0= ?pop=1 ?pause= ?speed= ?labels= ?spin=`.
+- **supercooling/** — 400 molecules jiggle uncommitted until "tap it!" fires a glowing crystallization front that snaps them into a hexagonal lattice; the temperature trace dives, snaps vertically to a 0 °C plateau, then resumes; the ΔG(r) barrier flattens as you drag colder (ΔG*/kT: ≈1035 at −10 °C → ≈73 at −40 °C) and dust pre-pays the bill with a ×0.005 heterogeneous barrier. URL: `?tc= ?tap=1 ?seed=1 ?dust=1 ?pause= ?speed= ?labels= ?spin=`.
+- **transpiration/** — bead-chain water creeps up six xylem tubes toward a glowing meniscus while vapor leaks from stomata; the ruler shows capillarity 0.29 m and root pressure 2 m against a 100 m canopy; humidity and light drive flow and top tension (down to −3 MPa) as the trunk measurably shrinks, and "cut a conduit" snaps a chain with a click, embolizing it gray while flow reroutes. URL: `?rh= ?lux= ?stoma=0|1 ?cut=1 ?pause= ?speed= ?labels= ?spin=`.
+- **glacier-flow/** — a 36-column shallow-ice solver (Glen n=3) drives a firn-white, ice-blue tongue whose debris rocks ride the surface velocity; crevasse lines open at the slope break, dragging climate to +2 °C retreats the snout kilometers in seconds and strands a terminal moraine, and the ELA line plus the b(x) / length-vs-year charts track the tug-of-war. URL: `?clim= ?yr= ?pause= ?speed= ?labels= ?spin=`.
+- **tidal-locking/** — a translucent bulge shell leads the planet line by δ while a red torque arc (∝ sin2δ) brakes the spin from ω/n = 2.5 into lock at 1.0 in ~20 s; a dashed ring marks the momentum's new home (3.8 cm/yr of recession, +2.3 ms/century days), and presets stage Mercury's 3:2 capture, Pluto⇄Charon's mutual lock, and Io's perijove heat pulses. URL: `?w= ?e= ?preset=moon|mercury|pluto|io ?pause= ?speed= ?labels= ?spin=`.
 
 ### Phase 11 · Earth system (10/10)
 
@@ -1114,6 +1136,14 @@ monte-carlo/           The Monte Carlo method: π from counting, 1/√N error (T
 quartz-watch/          The quartz watch: 32768 = 2¹⁵, divided to 1 Hz (Three.js, CDN)
 hydroelectric/         Hydro & pumped storage: the grid's biggest battery (Three.js, CDN)
 lidar/                 LiDAR: ToF point clouds paint the street (Three.js, CDN)
+ackermann-steering/    Ackermann steering: the geometry behind two steering angles (Three.js, CDN)
+buck-converter/        Buck converter: Vout = D·Vin at 95% efficiency (Three.js, CDN)
+rayleigh-sky/          Rayleigh scattering: why the sky is blue (Three.js, CDN)
+thin-film/             Thin-film interference: a bubble's rainbow as a thickness map (Three.js, CDN)
+supercooling/          Supercooling & nucleation: the r* barrier and flash freezing (Three.js, CDN)
+transpiration/         Transpiration: cohesion-tension lifts water 100 m (Three.js, CDN)
+glacier-flow/          Glacier flow: Glen's law, advance/retreat, U-valleys (Three.js, CDN)
+tidal-locking/         Tidal locking: a sin2δ brake until spin = orbit (Three.js, CDN)
 ```
 
 ### Phase 2 close-out (3D-first baseline, v2 roadmap first batch)
