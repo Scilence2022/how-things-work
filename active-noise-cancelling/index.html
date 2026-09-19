@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>主动降噪 · 用声音消灭声音</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.v { border-color: rgba(178,130,255,.9); color: #e4d4ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+  :root[data-theme="light"] .lbl.v { color:#6741d9; }
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="主动降噪:用声音消灭声音" data-en="Active Noise Cancelling: Killing Sound with Sound">主动降噪:用声音消灭声音</h1>
+  <div class="sub" data-zh="两列等幅反相的波叠加,质点合力为零——声音不是被「吸掉」,是被重新安排(能量去了别处的波腹);海绵只能挡住波长比材料薄的声,低频轰鸣穿墙而过,所以要「主动」出招:麦克风拾噪→芯片算反相→扬声器放出来;前馈快但只杀可预测的噪声,反馈稳但延迟是死敌——2 kHz 下 0.25 ms 延迟就把反相变成同相 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Two equal, opposite waves superpose to zero net motion — sound is not 'absorbed' but rearranged (the energy moves to antinodes elsewhere); foam only blocks waves shorter than the material, so low-frequency rumble walks right through — hence the ACTIVE approach: a mic hears the noise, a chip computes the inverse, the driver plays it; feedforward is fast but only kills predictable noise; feedback is robust but delay is deadly — at 2 kHz, 0.25 ms of delay turns anti-noise INTO noise · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">主动降噪:用声音消灭声音</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="残余声压级" data-en="Residual SPL">残余声压级</span><span class="v" id="stR">—</span>
+  <span class="k" data-zh="降噪深度" data-en="Attenuation">降噪深度</span><span class="v ok" id="stAtt">—</span>
+  <span class="k" data-zh="相位差 φ" data-en="Phase error φ">相位差 φ</span><span class="v warn" id="stPh">—</span>
+  <span class="k" data-zh="群延迟 Δt" data-en="Group delay Δt">群延迟 Δt</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="耳膜位移" data-en="Eardrum motion">耳膜位移</span><span class="v bad" id="stEd">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="降噪深度 vs 频率:延迟梳出的牙齿" data-en="Attenuation vs frequency: the comb carved by delay">降噪深度 vs 频率:延迟梳出的牙齿</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.r" data-zh="红/蓝=噪声波(压强着色)" data-en="red/blue = noise (pressure-tinted)">红/蓝=噪声波(压强着色)</span>
+    <span class="chip.g" data-zh="绿=反相声波" data-en="green = anti-wave">绿=反相声波</span>
+    <span class="chip.b" data-zh="灰带=叠加结果(贴耳膜)" data-en="grey = the sum (at the eardrum)">灰带=叠加结果(贴耳膜)</span>
+    <span class="chip.o" data-zh="金膜=耳膜,越静越平" data-en="gold = eardrum, flat = quiet">金膜=耳膜,越静越平</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnFF" data-zh="前馈" data-en="feedforward">前馈</button>
+    <button class="abtn" id="btnFB" data-zh="反馈" data-en="feedback">反馈</button>
+    <button class="abtn" id="btnHyb" data-zh="混合" data-en="hybrid">混合</button>
+    <button class="abtn" id="btnFoam" data-zh="海绵对照" data-en="foam comparison">海绵对照</button>
+  </div>
+  <div class="row"><label data-zh="噪声频率 f" data-en="Noise freq f">噪声频率 f</label><input id="f" type="range" min="50" max="3000" step="10" value="300"><span class="val" id="fVal">300 Hz</span></div>
+  <div class="row"><label data-zh="处理延迟 Δt" data-en="Processing delay Δt">处理延迟 Δt</label><input id="dt" type="range" min="0" max="1" step="0.02" value="0.05"><span class="val" id="dtVal">0.05 ms</span></div>
+  <div class="row"><label data-zh="幅度匹配 G" data-en="Amplitude match G">幅度匹配 G</label><input id="g" type="range" min="0.5" max="1.5" step="0.02" value="1"><span class="val" id="gVal">1.00</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="曲线" data-en="Chart">曲线</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../double-slit/" data-zh="相消干涉的同胞:双缝" data-en="the sibling of destructive interference: double slit">相消干涉的同胞:双缝</a>
+    <a href="../speaker-microphone/" data-zh="同一只动圈换角色" data-en="the same voice coil, swapped roles">同一只动圈换角色</a>
+    <a href="../resonance-beats/" data-zh="另一种叠加:拍频" data-en="another superposition: beats">另一种叠加:拍频</a>
+    <a href="../sonar-ultrasound/" data-zh="声波的另一份工作" data-en="another job for sound waves">声波的另一份工作</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x18243a, 20, 48);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x18243a : 0xcfe0ef);
+  scene.fog.color = new THREE.Color(dark ? 0x18243a : 0xcfe0ef);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('主动降噪 · 用声音消灭声音', 'Active Noise Cancelling · Killing Sound with Sound');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0.5, 3.2, 10.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 4;
+controls.maxDistance = 35;
+controls.autoRotateSpeed = 0.35;
+
+scene.add(new THREE.HemisphereLight(0xbdd3ea, 0x3a4048, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 1.6);
+key.position.set(4, 10, 8);
+scene.add(key);
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.15,
+    emissive: color, emissiveIntensity: 0.05, transparent: true, ...opts });
+}
+
+/* ================= 信号模型 ================= */
+let f0 = clamp(qsFloat('f', 300), 50, 3000);
+let dT = clamp(qsFloat('delay', 0.05), 0, 1) * 1e-3;
+let Gm = 1;
+let noiseType = 'sine';
+let mode = 'ff';
+let foam = false;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 4);
+let labelsOn = qsBool('labels', true);
+let spinOn = qsBool('spin', true);
+
+const COMPS = [[1, 1], [1.7, 0.7], [2.9, 0.5], [4.3, 0.35], [6.1, 0.25]];
+const PRED = { sine: 1, fan: 0.95, noise: 0.75 };
+const foamPass = fq => 1 / (1 + Math.pow(fq / 180, 1.8));
+function comps() {
+  if (noiseType === 'sine') return [[f0, 1]];
+  if (noiseType === 'fan') return [[f0, 1], [2 * f0, 0.55]];
+  return COMPS.map(([m, a]) => [m * f0, a]);
+}
+function modeGain() {
+  if (mode === 'ff') return Gm * PRED[noiseType];
+  if (mode === 'fb') return Gm;
+  return Gm * Math.max(PRED[noiseType], 0.9);
+}
+function phaseErr(fq) { return 2 * Math.PI * fq * dT; }
+function residualAmp(fq) {
+  const G = modeGain();
+  if (mode === 'fb' && dT > 0.4e-3) return 2.2;
+  return Math.sqrt(1 + G * G - 2 * G * Math.cos(phaseErr(fq)));
+}
+function attenDB(fq) { return -20 * Math.log10(Math.max(residualAmp(fq), 1e-3)); }
+const SPL_N = 94;
+function residualSPL() {
+  let p = 0;
+  for (const [m, a] of comps()) {
+    const r = residualAmp(m * f0) * a * foamPass(m * f0);
+    p += r * r;
+  }
+  return SPL_N + 10 * Math.log10(Math.max(p, 1e-6));
+}
+function attenTotal() {
+  let pn = 0, pr = 0;
+  for (const [m, a] of comps()) {
+    pn += a * a * foamPass(m * f0);
+    pr += residualAmp(m * f0) * residualAmp(m * f0) * a * a * foamPass(m * f0);
+  }
+  return 10 * Math.log10(Math.max(pn, 1e-6) / Math.max(pr, 1e-6));
+}
+
+/* ================= 场景 ================= */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(30, 0.4, 14), mat(0x39414d, { opacity: 1 }));
+ground.position.y = -2.6;
+scene.add(ground);
+
+const machine = new THREE.Group();
+{
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.5, 1.1), mat(0x5f7186, { opacity: 1, roughness: 0.4 }));
+  const grill = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.1, 20), mat(0x333f52, { opacity: 1 }));
+  grill.rotation.z = Math.PI / 2;
+  grill.position.x = 0.6;
+  body.add(grill);
+  machine.add(body);
+}
+machine.position.set(-6.2, 0.2, 0);
+scene.add(machine);
+const fanBlade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.7, 0.12), mat(0x8a9ab2, { opacity: 1 }));
+fanBlade.position.set(-6.2, 0.2, 0.62);
+scene.add(fanBlade);
+
+const foamMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.2, 2.2), mat(0xb0a488, { opacity: 0.9, roughness: 0.9 }));
+foamMesh.position.set(-4.2, 0.2, 0);
+foamMesh.visible = false;
+scene.add(foamMesh);
+
+const cup = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 1.1, 40, 1, true),
+  mat(0x6a7686, { opacity: 0.22, roughness: 0.3, metalness: 0.5, side: THREE.DoubleSide }));
+cup.rotation.z = Math.PI / 2;
+cup.position.set(0, 0.2, 0);
+scene.add(cup);
+const cushion = new THREE.Mesh(new THREE.TorusGeometry(1.45, 0.3, 12, 40),
+  mat(0x2f3a48, { opacity: 0.85, roughness: 0.8 }));
+cushion.rotation.y = Math.PI / 2;
+cushion.position.set(1.35, 0.2, 0);
+scene.add(cushion);
+const headSlice = new THREE.Mesh(new THREE.BoxGeometry(0.8, 4.4, 2.6),
+  mat(0xe8c8a8, { opacity: 0.35, roughness: 0.7 }));
+headSlice.position.set(2.8, 0.2, 0);
+scene.add(headSlice);
+
+const driver = new THREE.Mesh(new THREE.ConeGeometry(0.85, 0.35, 30),
+  mat(0x4a5568, { opacity: 1, roughness: 0.4, metalness: 0.5 }));
+driver.rotation.z = -Math.PI / 2;
+driver.position.set(-0.5, 0.2, 0);
+scene.add(driver);
+const errMic = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10), mat(0xffa94d, { opacity: 1, emissiveIntensity: 0.8 }));
+errMic.position.set(0.95, 0.9, 0.3);
+scene.add(errMic);
+const ffMic = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10), mat(0xffa94d, { opacity: 1, emissiveIntensity: 0.8 }));
+ffMic.position.set(-1.75, 1.5, 0);
+scene.add(ffMic);
+
+const eardrum = new THREE.Mesh(new THREE.CircleGeometry(0.75, 30),
+  mat(0xffd43b, { opacity: 0.95, side: THREE.DoubleSide, emissiveIntensity: 0.5, roughness: 0.2 }));
+eardrum.rotation.y = Math.PI / 2;
+eardrum.position.set(2.35, 0.2, 0);
+scene.add(eardrum);
+const earLabelAnchor = new THREE.Object3D();
+earLabelAnchor.position.set(2.35, 1.35, 0);
+scene.add(earLabelAnchor);
+
+/* 波带 */
+const X0 = -5.6, X1 = 2.3, XD = -0.45, SEG = 96;
+function makeStrip(color, zOff, hOff, opacity) {
+  const g = new THREE.PlaneGeometry(X1 - X0, 1.15, SEG, 1);
+  g.translate((X0 + X1) / 2, 0, 0);
+  const m = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.set(0, hOff, zOff);
+  scene.add(mesh);
+  return mesh;
+}
+const stripN = makeStrip(0xff6b6b, -1.55, -0.85, 0.92);
+const stripA = makeStrip(0x74dc84, -0.7, -0.1, 0.92);
+const stripS = makeStrip(0xbcc7d4, 0.25, 0.75, 0.98);
+const basePos = [];
+for (const s of [stripN, stripA, stripS]) {
+  basePos.push(s.geometry.attributes.position.array.slice());
+}
+const cN = new THREE.Color(), cP = new THREE.Color(0xff6b6b), cM = new THREE.Color(0x4d7fff), c0 = new THREE.Color(0x8a9ab2), cG = new THREE.Color(0x74dc84);
+
+const SLOW = 0.09;
+const DT_VIS = 24;
+let vt = 0;
+
+/* 标签 */
+const labelReg = [];
+function addLabel(anchor, cls, text) {
+  const el = document.createElement('div');
+  el.className = 'lbl ' + cls;
+  const o = new CSS2DObject(el);
+  anchor.add(o);
+  labelReg.push({ o, text: () => LANG === 'en' ? text[1] : text[0] });
+  o.element.textContent = LANG === 'en' ? text[1] : text[0];
+}
+const labSrc = new THREE.Object3D(); labSrc.position.set(-6.2, 1.6, 0); scene.add(labSrc);
+addLabel(labSrc, 'r', ['噪声源:风扇/机舱轰鸣', 'Noise source: fan / cabin roar']);
+const labFF = new THREE.Object3D(); labFF.position.set(-1.75, 2.1, 0); scene.add(labFF);
+addLabel(labFF, 'o', ['前馈麦:先听到,先出招', 'Feedforward mic: hears first, acts first']);
+const labDrv = new THREE.Object3D(); labDrv.position.set(-0.5, 1.6, 0); scene.add(labDrv);
+addLabel(labDrv, 'g', ['扬声器:放出反相声波', 'Driver: plays the anti-wave']);
+const labErr = new THREE.Object3D(); labErr.position.set(0.95, 1.9, 0.3); scene.add(labErr);
+addLabel(labErr, 'o', ['误差麦:测量「还剩多少」', 'Error mic: measures what remains']);
+const labEd = new THREE.Object3D(); scene.add(labEd);
+addLabel(labEd, 'o', ['耳膜:叠加结果落在这里', 'Eardrum: where the sum lands']);
+const labFoam = new THREE.Object3D(); labFoam.position.set(-4.2, 2.1, 0); scene.add(labFoam);
+addLabel(labFoam, 'b', ['海绵:只挡得住高频', 'Foam: only blocks high frequencies']);
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+
+/* ================= 步骤 ================= */
+const STEPS = [
+  { b: '相消干涉', be: 'Destructive interference',
+    d: '波峰对上波谷,质点合力为零——灰带(叠加结果)被压成一条直线,耳膜不再振动。能量没有消失:它被重新安排到别处的波腹,驱动器还「顺手」把一部分吸收掉。',
+    de: 'Crest meets trough, net motion is zero — the grey sum-strip flattens to a line and the eardrum stops moving. The energy is not destroyed: it is rerouted to antinodes elsewhere, and the driver even absorbs part of it.',
+    act: () => { mode = 'ff'; dT = 0.05e-3; Gm = 1; noiseType = 'sine'; foam = false; syncUI(); } },
+  { b: '为什么必须「主动」', be: 'Why it must be active',
+    d: '吸声材料要有效,厚度得有 λ/4:100 Hz 的波长 3.4 m,耳罩得做成 0.85 m 厚!海绵只挡高频,低频轰鸣如入无人之境——点「海绵对照」亲自看。',
+    de: 'An absorber needs ~λ/4 of thickness: at 100 Hz that is 3.4 m of wavelength — ear pads would have to be 0.85 m thick! Foam stops highs; low-frequency rumble walks straight through. Hit "foam comparison" and watch.',
+    act: () => { foam = true; f0 = 100; syncUI(); } },
+  { b: '前馈环路', be: 'The feedforward loop',
+    d: '耳罩外的麦先听到噪声(快 c≈2 ms 的路程),芯片立刻算出反相波,驱动器在噪声抵达耳膜的同时把它顶掉——只对可预测的噪声有效(风扇/机舱稳态轰鸣),风噪会让外麦失灵。',
+    de: 'The outer mic hears the noise FIRST (a ~2 ms head start at the speed of sound); the chip computes the inverse instantly so the driver cancels it right as it arrives — works only on predictable noise (fans, cabin roar); wind deafens the outer mic.',
+    act: () => { mode = 'ff'; foam = false; f0 = 300; dT = 0.05e-3; syncUI(); } },
+  { b: '反馈环路', be: 'The feedback loop',
+    d: '耳罩内的误差麦只关心「还剩多少」,环路驱动残余→0——不挑噪声、不怕漏气;但环路增益×延迟会啸叫失稳,所以要精心限带。',
+    de: 'The inner error mic only cares "what is LEFT"; the loop drives the residual toward zero — agnostic to noise type, robust to leakage; but loop gain × delay can howl into instability, so the band is carefully limited.',
+    act: () => { mode = 'fb'; dT = 0.1e-3; syncUI(); } },
+  { b: '延迟是死敌', be: 'Delay is the enemy',
+    d: 'φ=2πf·Δt:2 kHz 时 0.25 ms 的延迟=180° 相位差——反相波抵达时变成了同相波,降噪当场变增噪!这就是真机只赢在 50–2000 Hz、高频交给海绵的原因。拖延迟滑块看灰带复活。',
+    de: 'φ = 2πf·Δt: at 2 kHz, 0.25 ms of delay = 180° of phase — the "anti" wave arrives IN phase and cancellation becomes amplification! That is why real products win at 50–2000 Hz and leave the highs to foam. Drag the delay slider and watch the grey strip resurrect.',
+    act: () => { mode = 'ff'; f0 = 2000; dT = 0.25e-3; syncUI(); } },
+  { b: '现实中的降噪', be: 'ANC in the wild',
+    d: '耳机=前馈+反馈混合,LMS 自适应滤波逐帧重调;汽车座舱、风管消声器同款物理。能量账本:叠加把能量赶去波腹,驱动器吸收一部分——世界安静了,物理守恒着。',
+    de: 'Headphones = hybrid FF+FB with LMS adaptive filters re-tuning every frame; car cabins and duct silencers run the same physics. Energy ledger: superposition herds energy into antinodes and the driver absorbs its share — the world goes quiet, physics stays balanced.',
+    act: () => { mode = 'hyb'; f0 = 120; dT = 0.05e-3; noiseType = 'fan'; syncUI(); } },
+];
+function stepIndex() {
+  if (mode === 'hyb') return 5;
+  if (dT > 0.15e-3 && f0 > 1000) return 4;
+  if (mode === 'fb') return 3;
+  if (foam) return 1;
+  if (mode === 'ff') return 2;
+  return 0;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 曲线图 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const pad = 30, padB = 24;
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const fMin = 50, fMax = 4000;
+  const xOf = fq => pad + (Math.log10(fq / fMin) / Math.log10(fMax / fMin)) * (W - pad - 14);
+  const yOf = db => 10 + (1 - clamp(db / 40, -0.2, 1)) * (H - padB - 10);
+  ctx.strokeStyle = 'rgba(255,107,107,.3)';
+  ctx.beginPath();
+  ctx.moveTo(pad, yOf(0));
+  ctx.lineTo(W - 14, yOf(0));
+  ctx.stroke();
+  ctx.strokeStyle = '#74dc84';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  const NPT = 90;
+  for (let i = 0; i <= NPT; i++) {
+    const fq = fMin * Math.pow(fMax / fMin, i / NPT);
+    const db = clamp(attenDB(fq), -12, 38);
+    const x = xOf(fq), y = yOf(db);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = cTxt;
+  ctx.font = '15px sans-serif';
+  ctx.fillText('50 Hz', pad - 20, H - 8);
+  ctx.fillText('4 kHz', W - 60, H - 8);
+  ctx.fillText('dB ↑', 6, 22);
+  const y = yOf(clamp(attenDB(f0), -12, 38));
+  ctx.fillStyle = '#ffa94d';
+  ctx.beginPath();
+  ctx.arc(xOf(f0), y, 7, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elF = document.getElementById('f'), elFVal = document.getElementById('fVal');
+const elDt = document.getElementById('dt'), elDtVal = document.getElementById('dtVal');
+const elG = document.getElementById('g'), elGVal = document.getElementById('gVal');
+const stR = document.getElementById('stR'), stAtt = document.getElementById('stAtt'), stPh = document.getElementById('stPh'),
+  stD = document.getElementById('stD'), stEd = document.getElementById('stEd');
+const formulaEl = document.getElementById('formula');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function syncSliders() {
+  elF.value = f0; elFVal.textContent = f0 + ' Hz';
+  elDt.value = dT * 1e3; elDtVal.textContent = (dT * 1e3).toFixed(2) + ' ms';
+  elG.value = Gm; elGVal.textContent = Gm.toFixed(2);
+}
+function syncUI() {
+  document.getElementById('btnFF').classList.toggle('on', mode === 'ff');
+  document.getElementById('btnFB').classList.toggle('on', mode === 'fb');
+  document.getElementById('btnHyb').classList.toggle('on', mode === 'hyb');
+  document.getElementById('btnFoam').classList.toggle('on', foam);
+  foamMesh.visible = foam;
+  labFoam.visible = foam;
+  refreshLabels();
+}
+function updateFormula() {
+  const ph = phaseErr(f0) * 180 / Math.PI;
+  formulaEl.innerHTML = L(
+    `r(t) = n(t) + a(t), a = −G·n(t−Δt) · 相位差 φ = 2πf·Δt = <b>${ph.toFixed(0)}°</b>${Math.abs(ph % 360 - 180) < 20 ? ' <b style="color:#ff8787">反相变同相!</b>' : ''}<br>` +
+    `衰减 = 20·lg|r| = <b>${attenTotal().toFixed(1)} dB</b> · G=${Gm.toFixed(2)} · Δt=${(dT * 1e3).toFixed(2)} ms`,
+    `r(t) = n(t) + a(t), a = −G·n(t−Δt) · phase error φ = 2πf·Δt = <b>${ph.toFixed(0)}°</b>${Math.abs(ph % 360 - 180) < 20 ? ' <b style="color:#ff8787">anti became pro!</b>' : ''}<br>` +
+    `attenuation = 20·lg|r| = <b>${attenTotal().toFixed(1)} dB</b> · G=${Gm.toFixed(2)} · Δt=${(dT * 1e3).toFixed(2)} ms`);
+}
+document.getElementById('btnFF').addEventListener('click', () => { mode = 'ff'; syncUI(); syncAll(); });
+document.getElementById('btnFB').addEventListener('click', () => { mode = 'fb'; syncUI(); syncAll(); });
+document.getElementById('btnHyb').addEventListener('click', () => { mode = 'hyb'; syncUI(); syncAll(); });
+document.getElementById('btnFoam').addEventListener('click', () => { foam = !foam; syncUI(); syncAll(); });
+elF.addEventListener('input', () => { f0 = +elF.value; syncAll(); });
+elDt.addEventListener('input', () => { dT = +elDt.value * 1e-3; syncAll(); });
+elG.addEventListener('input', () => { Gm = +elG.value; syncAll(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglRotate').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+controls.autoRotate = spinOn;
+if (!qsBool('labels', true)) { document.getElementById('tglLabels').checked = false; labelsOn = false; refreshLabels(); }
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+function syncAll() { syncSliders(); updateFormula(); drawPlot(); }
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, statsAcc = 0;
+const dummy = new THREE.Object3D();
+function pNoise(x, t) {
+  let s = 0;
+  for (const [m, a] of comps()) {
+    const fq = m * f0;
+    s += a * Math.sin(2 * Math.PI * fq * (t - (x - X0)) - fq * 0.13) * foamPass(fq);
+  }
+  return s;
+}
+function pAnti(x, t) {
+  const G = modeGain();
+  let s = 0;
+  for (const [m, a] of comps()) {
+    const fq = m * f0;
+    const dvis = dT * DT_VIS * Math.SQRT1_2;
+    s += a * Math.sin(2 * Math.PI * fq * (t - Math.max(0, x - XD) - dvis) - fq * 0.13 + Math.PI) * (x > XD ? 1 : 0);
+  }
+  return -G * s;
+}
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * (playing ? speed : 0);
+  if (dt > 0) {
+    vt += dt * SLOW;
+    fanBlade.rotation.x += dt * 14;
+    const eN = pNoise(X1, vt), eA = pAnti(X1, vt), eS = eN + eA;
+    /* 波带顶点 */
+    const posN = stripN.geometry.attributes.position;
+    for (let i = 0; i <= SEG; i++) {
+      const x = X0 + i / SEG * (X1 - X0);
+      const p = pNoise(x, vt);
+      const y = basePos[0][(i * 2) * 3 + 1];
+      posN.setXYZ(i, x, y, -p * 0.55);
+      cN.copy(c0).lerp(p > 0 ? cP : cM, Math.min(Math.abs(p), 1) * 0.85);
+      stripN.geometry.attributes.color.setXYZ(i, cN.r, cN.g, cN.b);
+    }
+    posN.needsUpdate = true;
+    stripN.geometry.attributes.color.needsUpdate = true;
+    const posA = stripA.geometry.attributes.position;
+    for (let i = 0; i <= SEG; i++) {
+      const x = X0 + i / SEG * (X1 - X0);
+      const p = x > XD ? pAnti(x, vt) : 0;
+      const y = basePos[1][(i * 2) * 3 + 1];
+      posA.setXYZ(i, x, y, -p * 0.55);
+    }
+    posA.needsUpdate = true;
+    const posS = stripS.geometry.attributes.position;
+    for (let i = 0; i <= SEG; i++) {
+      const x = X0 + i / SEG * (X1 - X0);
+      const p = x > XD ? pNoise(x, vt) + pAnti(x, vt) : pNoise(x, vt);
+      const y = basePos[2][(i * 2) * 3 + 1];
+      posS.setXYZ(i, x, y, -p * 0.55);
+      cN.copy(c0).lerp(Math.abs(p) > 0.12 ? (p > 0 ? cP : cM) : cG, Math.min(Math.abs(p) * 0.7, 0.75));
+      stripS.geometry.attributes.color.setXYZ(i, cN.r, cN.g, cN.b);
+    }
+    posS.needsUpdate = true;
+    stripS.geometry.attributes.color.needsUpdate = true;
+    stripA.visible = stripS.visible = mode !== 'off';
+    driver.position.y = 0.2 + (mode !== 'off' ? -pAnti(XD, vt) * 0.06 : 0);
+    eardrum.position.z = eS * 0.12;
+    eardrum.rotation.y = Math.PI / 2 + eS * 0.06;
+    labEd.position.set(2.35, 1.35 + Math.abs(eS) * 0.1, 0);
+    labSrc.visible = labFF.visible = labDrv.visible = labErr.visible = labEd.visible = true;
+    refreshLabels();
+    statsAcc += dt0;
+    if (statsAcc > 0.15) {
+      statsAcc = 0;
+      const rs = residualSPL();
+      stR.textContent = rs.toFixed(1) + ' dB';
+      const att = attenTotal();
+      stAtt.textContent = att.toFixed(1) + ' dB';
+      stAtt.className = 'v ' + (att > 20 ? 'ok' : att > 5 ? 'warn' : 'bad');
+      const ph = (phaseErr(f0) * 180 / Math.PI) % 360;
+      stPh.textContent = ph.toFixed(0) + '°';
+      stD.textContent = (dT * 1e3).toFixed(2) + ' ms';
+      const ed = Math.abs(eS) * 100;
+      stEd.textContent = ed.toFixed(1) + ' nm';
+      stEd.className = 'v ' + (ed < 8 ? 'ok' : ed < 40 ? 'warn' : 'bad');
+      updateFormula();
+      drawPlot();
+    }
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+const ph0 = Math.round(qsFloat('phase', 0));
+if (ph0 >= 1 && ph0 <= 6) STEPS[ph0 - 1].act();
+else if (qsFloat('t', 0) > 0) { mode = 'ff'; }
+syncUI();
+applyTheme();
+applyLang();
+syncAll();
+start();
+</script>
+</body>
+</html>
