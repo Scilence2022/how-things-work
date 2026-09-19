@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>四旋翼无人机 · 四个转速,六个自由度</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="四旋翼无人机 · 四个转速,六个自由度" data-en="Quadcopter · Four Speeds, Six Degrees of Freedom">四旋翼无人机 · 四个转速,六个自由度</h1>
+  <div class="sub" data-zh="两桨正转两桨反转→反扭矩自动抵消,不需要尾桨→四转速同增=升降,对角差动=俯仰/横滚,顺逆差=偏航→机身一倾斜,推力矢量就有了水平分量,无人机被自己的升力"推"着飞——四个输入驾驭六个自由度 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="Two rotors spin CW, two CCW → reaction torques cancel, no tail rotor needed → all four faster = climb, diagonal pairs = pitch/roll, CW-vs-CCW = yaw → tilt the body and the thrust vector gains a horizontal component that drags the drone forward — four inputs steering six degrees of freedom · 3D interactive demo · drag to orbit · Space = run/pause">两桨正转两桨反转→反扭矩自动抵消,不需要尾桨→四转速同增=升降,对角差动=俯仰/横滚,顺逆差=偏航→机身一倾斜,推力矢量就有了水平分量,无人机被自己的升力"推"着飞——四个输入驾驭六个自由度 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="高度" data-en="Altitude">高度</span><span class="v" id="stAlt">—</span>
+  <span class="k" data-zh="总升力" data-en="Total lift">总升力</span><span class="v" id="stLift">—</span>
+  <span class="k" data-zh="水平速度" data-en="Horiz speed">水平速度</span><span class="v" id="stVh">—</span>
+  <span class="k" data-zh="垂直速度" data-en="Vert speed">垂直速度</span><span class="v" id="stVv">—</span>
+  <span class="k" data-zh="倾角" data-en="Tilt">倾角</span><span class="v warn" id="stTilt">—</span>
+  <span class="k" data-zh="航向" data-en="Heading">航向</span><span class="v" id="stYaw">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="姿态仪:地平线随横滚旋转、随俯仰平移——飞行员看的就是这个" data-en="Attitude indicator: the horizon rolls and pitches exactly as the drone does — what pilots read">姿态仪:地平线随横滚旋转、随俯仰平移——飞行员看的就是这个</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="逆时针桨(CCW)" data-en="CCW rotors">逆时针桨(CCW)</span>
+    <span class="chip.o" data-zh="顺时针桨(CW)" data-en="CW rotors">顺时针桨(CW)</span>
+    <span class="chip.g" data-zh="总推力矢量" data-en="Total thrust vector">总推力矢量</span>
+    <span class="chip.r" data-zh="重力 mg" data-en="Weight mg">重力 mg</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnHover" data-zh="悬停" data-en="Hover">悬停</button>
+    <button class="abtn" id="btnFwd" data-zh="前倾加速" data-en="Pitch & go">前倾加速</button>
+    <button class="abtn" id="btnYaw" data-zh="原地偏航" data-en="Yaw in place">原地偏航</button>
+    <button class="abtn brk" id="btnHome" data-zh="回中重置" data-en="Recenter">回中重置</button>
+  </div>
+  <div class="row"><label data-zh="油门(总升力)" data-en="Throttle (lift)">油门(总升力)</label><input id="sThr" type="range" min="0" max="1.7" step="0.01" value="1"><span class="val" id="sThrVal">×1.00</span></div>
+  <div class="row"><label data-zh="俯仰(+/前倾)" data-en="Pitch (+ = fwd)">俯仰(+/前倾)</label><input id="sPitch" type="range" min="-1" max="1" step="0.01" value="0"><span class="val" id="sPitchVal">0.00</span></div>
+  <div class="row"><label data-zh="横滚(+/右倾)" data-en="Roll (+ = right)">横滚(+/右倾)</label><input id="sRoll" type="range" min="-1" max="1" step="0.01" value="0"><span class="val" id="sRollVal">0.00</span></div>
+  <div class="row"><label data-zh="偏航(+/左转)" data-en="Yaw (+ = left)">偏航(+/左转)</label><input id="sYaw" type="range" min="-1" max="1" step="0.01" value="0"><span class="val" id="sYawVal">0.00</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="姿态仪" data-en="ADI">姿态仪</span></label>
+      <label><input id="tglVec" type="checkbox" checked> <span data-zh="力矢量" data-en="Vectors">力矢量</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../helicopter-tail-rotor/" data-zh="尾桨:单旋翼的补丁" data-en="tail rotor: the single-rotor patch">尾桨:单旋翼的补丁</a>
+    <a href="../reaction-wheel/" data-zh="反作用轮:同款反扭矩" data-en="reaction wheel: same trick">反作用轮:同款反扭矩</a>
+    <a href="../swashplate/" data-zh="斜盘:直升机的总距/周期变距" data-en="swashplate: collective & cyclic">斜盘:直升机的总距/周期变距</a>
+    <a href="../gyroscopic-precession/" data-zh="陀螺进动" data-en="gyroscopic precession">陀螺进动</a>
+    <a href="../angular-momentum/" data-zh="角动量守恒" data-en="angular momentum">角动量守恒</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, f) => a + (b - a) * f;
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141b, 34, 130);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  groundM.color.setHex(dark ? 0x161a20 : 0xc2cfd9);
+  buildGrid();
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('四旋翼无人机 · 四个转速,六个自由度', 'Quadcopter · Four Speeds, Six Degrees of Freedom');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 320);
+camera.position.set(6.4, 4.2, 8.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.8, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 90;
+controls.enablePan = false;
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.55);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 1.0);
+key.position.set(7, 10, 6);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9ab8ff, 0.3);
+fill.position.set(-8, 5, -7);
+scene.add(fill);
+
+/* ================= 状态 ================= */
+const M = 1.4, G = 9.81, MG = M * G;        /* 1.4 kg,mg = 13.7 N */
+const MAX_TILT = 26 * Math.PI / 180;
+let thr = clamp(qsFloat('thr', 1), 0, 1.7);
+let pitchIn = clamp(qsFloat('pitch', 0), -1, 1);
+let rollIn = clamp(qsFloat('roll', 0), -1, 1);
+let yawIn = clamp(qsFloat('yaw', 0), -1, 1);
+const pos = new THREE.Vector3(0, 3, 0), vel = new THREE.Vector3();
+let yawA = 0, pitchA = 0, rollA = 0;        /* ψ 左转+ / θ 抬头+ / φ 右倾+ */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let labelsOn = true, chartOn = true, vecOn = true;
+let notifyT = 0, notifyZ = '', notifyE = '';
+let phaseIdx = 0, lastTilt = 0;
+/* 混控:p 俯仰(前倾+→后桨加速) r 横滚(右倾+→左桨加速) y 偏航(左转+→顺时针桨加速) s 桨转向(+1 逆时针) */
+const ARM = 0.36;
+const MIXG = [
+  { p: -1, r: +1, y: -1, s: +1, x: -ARM, z: +ARM },   /* FL 逆时针 */
+  { p: -1, r: -1, y: +1, s: -1, x: +ARM, z: +ARM },   /* FR 顺时针 */
+  { p: +1, r: +1, y: +1, s: -1, x: -ARM, z: -ARM },   /* RL 顺时针 */
+  { p: +1, r: -1, y: -1, s: +1, x: +ARM, z: -ARM },   /* RR 逆时针 */
+];
+const mixes = [1, 1, 1, 1];
+
+/* ---------------- 材质 ---------------- */
+const groundM = new THREE.MeshStandardMaterial({ color: 0x161a20, roughness: 0.95 });
+const bodyM = new THREE.MeshStandardMaterial({ color: 0x2c313a, metalness: 0.5, roughness: 0.5 });
+const armM = new THREE.MeshStandardMaterial({ color: 0x3a4048, metalness: 0.55, roughness: 0.45 });
+const motorM = new THREE.MeshStandardMaterial({ color: 0x23272e, metalness: 0.6, roughness: 0.4 });
+const bladeM = new THREE.MeshStandardMaterial({ color: 0x191d23, metalness: 0.3, roughness: 0.6 });
+const accM = new THREE.MeshStandardMaterial({ color: 0x4dabf7, metalness: 0.3, roughness: 0.5 });
+const shadowM = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4, depthWrite: false });
+const markM = new THREE.MeshStandardMaterial({ color: 0x3f4753, roughness: 0.9 });
+const padM = new THREE.MeshStandardMaterial({ color: 0x2a3138, roughness: 0.85 });
+const padRingM = new THREE.MeshBasicMaterial({ color: 0x4dabf7, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+
+/* ---------------- 场景:地面 / 标记 / 起降坪 ---------------- */
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), groundM);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+let grid = null;
+function buildGrid() {
+  if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
+  const dark = THEME === 'dark';
+  grid = new THREE.GridHelper(240, 120, dark ? 0x39414d : 0x8fa2b4, dark ? 0x232a33 : 0xb7c4d1);
+  grid.material.transparent = true;
+  grid.material.opacity = dark ? 0.55 : 0.85;
+  grid.position.y = 0.02;
+  scene.add(grid);
+}
+const NM = 48;
+const markers = new THREE.InstancedMesh(new THREE.ConeGeometry(0.28, 1.7, 6), markM, NM);
+markers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+markers.frustumCulled = false;
+scene.add(markers);
+const pad = new THREE.Mesh(new THREE.CircleGeometry(2.1, 40), padM);
+pad.rotation.x = -Math.PI / 2; pad.position.y = 0.03;
+scene.add(pad);
+const padRing = new THREE.Mesh(new THREE.RingGeometry(1.85, 2.1, 40), padRingM);
+padRing.rotation.x = -Math.PI / 2; padRing.position.y = 0.045;
+scene.add(padRing);
+const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.9, 28), shadowM);
+shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.04;
+scene.add(shadow);
+
+/* ---------------- 机身 ---------------- */
+const body = new THREE.Group();
+body.rotation.order = 'YZX';
+body.position.copy(pos);
+scene.add(body);
+const hull = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.3), bodyM);
+body.add(hull);
+const hullTop = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.2), armM);
+hullTop.position.y = 0.11;
+body.add(hullTop);
+const nose = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 10), accM);
+nose.rotation.z = -Math.PI / 2; nose.position.set(0.3, 0.02, 0);
+body.add(nose);
+const props = [];
+for (let i = 0; i < 4; i++) {
+  const g = MIXG[i];
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(ARM + 0.14, 0.05, 0.07), armM);
+  arm.position.set(g.x * 0.5, 0, g.z * 0.5);
+  arm.rotation.y = -Math.atan2(g.z, g.x);
+  body.add(arm);
+  const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.11, 14), motorM);
+  motor.position.set(g.x, 0.09, g.z);
+  body.add(motor);
+  const spin = new THREE.Group();
+  spin.position.set(g.x, 0.17, g.z);
+  body.add(spin);
+  for (let b = 0; b < 2; b++) {
+    const bl = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.014, 0.06), bladeM);
+    bl.rotation.y = b * Math.PI / 2;
+    spin.add(bl);
+  }
+  const discM = new THREE.MeshBasicMaterial({
+    color: g.s > 0 ? 0x4dabf7 : 0xffa94d, transparent: true, opacity: 0.14,
+    side: THREE.DoubleSide, depthWrite: false
+  });
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(0.37, 26), discM);
+  disc.rotation.x = -Math.PI / 2;
+  spin.add(disc);
+  props.push({ grp: spin, mat: discM, s: g.s });
+  /* 起落架 */
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.34, 8), motorM);
+  leg.position.set(g.x * 0.42, -0.24, g.z * 0.42);
+  body.add(leg);
+  const foot = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), motorM);
+  foot.position.set(g.x * 0.42, -0.41, g.z * 0.42);
+  body.add(foot);
+}
+/* 力矢量箭头:电机推力 ×4(机身子坐标系,天然指向机身上方) */
+const arrowM = [];
+for (let i = 0; i < 4; i++) {
+  const a = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(MIXG[i].x, 0.2, MIXG[i].z), 0.2, 0x7bd88f, 0.1, 0.06);
+  body.add(a); arrowM.push(a);
+}
+const arrowT = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0.28, 0), 1.1, 0xffa94d, 0.18, 0.11);
+body.add(arrowT);
+/* 世界坐标系的力:重力 / 水平与竖直分量 */
+const weightA = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(), 0.95, 0xff6b6b, 0.16, 0.1);
+scene.add(weightA);
+const compV = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 1, 0x7bd88f, 0.16, 0.1);
+scene.add(compV);
+const compH = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0x66e0ff, 0.16, 0.1);
+scene.add(compH);
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblCcw = addLabel(() => L('逆时针 CCW', 'CCW'), new THREE.Vector3(MIXG[0].x, 0.55, MIXG[0].z), 'b', () => true, body);
+const lblCw = addLabel(() => L('顺时针 CW', 'CW'), new THREE.Vector3(MIXG[1].x, 0.55, MIXG[1].z), 'o', () => true, body);
+const lblThrust = addLabel(() => L(`推力 T = ${(thr * MG).toFixed(1)} N`, `thrust T = ${(thr * MG).toFixed(1)} N`), new THREE.Vector3(0, 1.55, 0), 'o', () => true, body);
+const lblWeight = addLabel(() => L(`重力 mg = ${MG.toFixed(1)} N`, `weight mg = ${MG.toFixed(1)} N`), new THREE.Vector3(0, -1.0, 0), 'r', () => true, body);
+const notifyHolder = new THREE.Group();
+scene.add(notifyHolder);
+const lblNotify = addLabel(() => notifyT > 0 ? L(notifyZ, notifyE) : '', new THREE.Vector3(0, 0, 0), 'o', () => true, notifyHolder);
+function notify(zh, en) { notifyZ = zh; notifyE = en; notifyT = 3.4; }
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+function setInputs(t, p, r, y) {
+  thr = clamp(t, 0, 1.7); pitchIn = clamp(p, -1, 1); rollIn = clamp(r, -1, 1); yawIn = clamp(y, -1, 1);
+  syncSliders();
+}
+const STEPS = [
+  { b: '两对桨,一正一反', be: 'Two pairs, counter-rotating',
+    d: '四旋翼把直升机最难的问题(尾桨)直接绕开了:相邻两桨转向相反,反扭矩两两抵消——机身上没有任何部件需要为"抗自旋"买单。',
+    de: 'The quadcopter sidesteps the helicopter\'s hardest problem (the tail rotor): adjacent props spin opposite ways, so reaction torques cancel pairwise — nothing on the airframe pays to fight self-rotation.',
+    act: () => { phaseIdx = 0; setInputs(1, 0, 0, 0); flyTo([5.6, 3.2, 7.6], [0, 1.2, 0]); notify('相邻桨反向:反扭矩两两抵消', 'Adjacent props counter-rotate: torques cancel'); } },
+  { b: '四转速同增:升降', be: 'All four faster: climb',
+    d: '升力 F_i ∝ ω²:四个转速一起加,总升力越过 mg,无人机就爬升;减到 mg 以下就下沉。悬停就是 ΣF = mg 这个刀锋平衡。',
+    de: 'Lift goes as ω²: raise all four speeds together and total lift passes mg — the drone climbs; drop below mg and it sinks. Hover is the knife-edge ΣF = mg.',
+    act: () => { phaseIdx = 1; setInputs(1.32, 0, 0, 0); flyTo([6.0, 3.4, 7.0], [0, 2.0, 0]); notify('ΣF > mg:爬升', 'ΣF > mg: climbing'); } },
+  { b: '对角差动:俯仰与横滚', be: 'Diagonal mixing: pitch & roll',
+    d: '前倾 = 后桨加速、前桨减速:俯仰力矩来自对角线上的转速差;横滚同理换另一条对角线。升力总量几乎不变,变的只是"往哪边歪"。',
+    de: 'Nose down = rear props faster, front slower: the pitch torque is a diagonal speed difference; roll is the same on the other diagonal. Total lift barely changes — only "which way it leans" does.',
+    act: () => { phaseIdx = 2; setInputs(1.02, 0.55, 0, 0); flyTo([7.6, 1.8, 4.2], [0, 1.0, 0]); notify('对角差动 → 俯仰力矩', 'Diagonal mixing → pitch torque'); } },
+  { b: '偏航:用反扭矩转向', be: 'Yaw: steering with reaction torque',
+    d: '让一对顺时针桨加速、一对逆时针桨减速:反扭矩失去平衡,机身就地旋转——总升力不变。直升机要靠尾桨,四旋翼只要"偏心"一下转速。',
+    de: 'Speed up the CW pair, slow the CCW pair: the reaction torques fall out of balance and the body yaws in place — total lift unchanged. A helicopter needs a tail rotor; a quad just biases its speeds.',
+    act: () => { phaseIdx = 3; setInputs(1.0, 0, 0, 0.8); flyTo([1.2, 8.5, 5.0], [0, 1.0, 0]); notify('总升力不变:机身自旋', 'Total lift unchanged: the body spins'); } },
+  { b: '招牌:倾斜→水平加速度', be: 'Signature: tilt → horizontal acceleration',
+    d: '前倾后推力矢量斜了:竖直分量托住重力,水平分量 T·sinθ 就是唯一的"油门"——四旋翼不能直接平移,只能像斜着泼水一样把自己泼出去。a ≈ g·tanθ。',
+    de: 'Tilt the nose and the thrust vector leans: the vertical component holds gravity while the horizontal one T·sinθ is the only "throttle" — a quad can\'t slide sideways, it pours itself forward. a ≈ g·tanθ.',
+    act: () => { phaseIdx = 4; setInputs(1.12, 0.78, 0, 0); flyTo([8.2, 2.4, 7.4], [0, 1.4, 0]); notify('推力矢量倾斜 → 水平分量加速前冲', 'Thrust tilts → horizontal component accelerates it'); } },
+  { b: '欠驱动:4 个输入管 6 个自由度', be: 'Underactuated: 4 inputs, 6 DOF',
+    d: '位置 x/y/z + 姿态 ψ/θ/φ 共六个自由度,输入只有四个转速:位置必须"借道"姿态才能控制——这是欠驱动系统的教科书,飞控的本质就是每秒几百次解这个混合矩阵。',
+    de: 'Position x/y/z plus attitude ψ/θ/φ is six DOF, but there are only four rotor speeds: position must be steered through attitude — the textbook underactuated system. A flight controller is just this mixer solved hundreds of times a second.',
+    act: () => { phaseIdx = 5; setInputs(1, 0, 0, 0); pos.set(0, 3, 0); vel.set(0, 0, 0); yawA = 0; flyTo([5.6, 3.2, 7.6], [0, 1.2, 0]); notify('回到悬停:刀锋平衡 ΣF = mg', 'Back to hover: the knife-edge ΣF = mg'); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:姿态仪 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 - 18;
+  ctx.save();
+  ctx.strokeStyle = cTxt; ctx.globalAlpha = 0.5; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, R - 3, 0, Math.PI * 2); ctx.clip();
+  ctx.translate(cx, cy);
+  ctx.rotate(-rollA);
+  const py = clamp(pitchA, -0.75, 0.75) / (30 * Math.PI / 180) * (R * 0.55);
+  ctx.fillStyle = '#39678f';
+  ctx.fillRect(-R * 2.2, -R * 2.2 + py, R * 4.4, R * 2.2);
+  ctx.fillStyle = '#6e5535';
+  ctx.fillRect(-R * 2.2, py, R * 4.4, R * 2.2);
+  ctx.strokeStyle = '#f2f5f9'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(-R * 1.6, py); ctx.lineTo(R * 1.6, py); ctx.stroke();
+  ctx.lineWidth = 2; ctx.font = '15px system-ui'; ctx.fillStyle = '#f2f5f9'; ctx.textAlign = 'center';
+  for (const pd of [-20, -10, 10, 20]) {
+    const y = py - pd / 30 * (R * 0.55);
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.moveTo(-46, y); ctx.lineTo(-18, y);
+    ctx.moveTo(18, y); ctx.lineTo(46, y);
+    ctx.stroke();
+    ctx.fillText(String(Math.abs(pd)), 0, y - 6);
+  }
+  ctx.restore();
+  ctx.strokeStyle = '#ffd43b'; ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(cx - 54, cy); ctx.lineTo(cx - 18, cy); ctx.lineTo(cx - 8, cy + 13);
+  ctx.moveTo(cx + 54, cy); ctx.lineTo(cx + 18, cy); ctx.lineTo(cx + 8, cy + 13);
+  ctx.stroke();
+  ctx.fillStyle = '#ffd43b';
+  ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = cTxt; ctx.font = '16px system-ui'; ctx.textAlign = 'left';
+  const dg = r => (r * 180 / Math.PI).toFixed(0) + '°';
+  ctx.fillText(L('俯仰 θ=', 'pitch θ=') + dg(pitchA), 12, 26);
+  ctx.fillText(L('横滚 φ=', 'roll φ=') + dg(rollA), 12, 50);
+  ctx.fillText(L('航向 ψ=', 'yaw ψ=') + dg(yawA), 12, 74);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elThr = document.getElementById('sThr'), elThrVal = document.getElementById('sThrVal');
+const elPitch = document.getElementById('sPitch'), elPitchVal = document.getElementById('sPitchVal');
+const elRoll = document.getElementById('sRoll'), elRollVal = document.getElementById('sRollVal');
+const elYaw = document.getElementById('sYaw'), elYawVal = document.getElementById('sYawVal');
+const stAlt = document.getElementById('stAlt'), stLift = document.getElementById('stLift'),
+  stVh = document.getElementById('stVh'), stVv = document.getElementById('stVv'),
+  stTilt = document.getElementById('stTilt'), stYaw = document.getElementById('stYaw');
+const formulaEl = document.getElementById('formula');
+const btnHover = document.getElementById('btnHover'), btnFwd = document.getElementById('btnFwd'),
+  btnYaw = document.getElementById('btnYaw'), btnHome = document.getElementById('btnHome');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elThr.value = thr; elThrVal.textContent = '×' + thr.toFixed(2);
+  elPitch.value = pitchIn; elPitchVal.textContent = pitchIn.toFixed(2);
+  elRoll.value = rollIn; elRollVal.textContent = rollIn.toFixed(2);
+  elYaw.value = yawIn; elYawVal.textContent = yawIn.toFixed(2);
+}
+function syncBtns() {
+  const hoverish = Math.abs(thr - 1) < 0.03 && pitchIn === 0 && rollIn === 0 && yawIn === 0;
+  btnHover.classList.toggle('on', hoverish);
+  btnFwd.classList.toggle('on', pitchIn > 0.3);
+  btnYaw.classList.toggle('on', Math.abs(yawIn) > 0.3 && pitchIn === 0 && rollIn === 0);
+}
+function updateStats() {
+  stAlt.innerHTML = Math.max(0, pos.y - 0.5).toFixed(1) + '<small> m</small>';
+  stLift.innerHTML = (thr * MG).toFixed(1) + '<small> N</small>';
+  stLift.className = 'v ' + (Math.abs(thr * MG - MG) < 0.45 ? 'ok' : 'warn');
+  stVh.innerHTML = Math.hypot(vel.x, vel.z).toFixed(1) + '<small> m/s</small>';
+  stVv.innerHTML = vel.y.toFixed(1) + '<small> m/s</small>';
+  stTilt.innerHTML = lastTilt.toFixed(1) + '<small>°</small>';
+  const hd = ((yawA * 180 / Math.PI) % 360 + 360) % 360;
+  stYaw.innerHTML = hd.toFixed(0) + '<small>°</small>';
+}
+function updateFormula() {
+  const th = lastTilt;
+  const a = G * Math.tan(th * Math.PI / 180);
+  formulaEl.innerHTML = L(
+    `<b>单桨升力 F_i = k·ω_i²</b>:全部控制 = 四个转速的线性混合(油门/俯仰/横滚/偏航)<br>` +
+    `<b>悬停 ΣF = mg = 1.4 kg × 9.81 ≈ 13.7 N</b>;偏航反扭矩 τ_z = Σ(±)k′·ω_i²,顺/逆桨成对天然抵消<br>` +
+    `<b>前飞 a ≈ g·tanθ</b>:当前 θ = ${th.toFixed(0)}° → a ≈ ${a.toFixed(1)} m/s²——位置只能"借道"姿态控制(欠驱动)`,
+    `<b>Per-rotor lift F_i = k·ω_i²</b>: all control is one linear mix of four speeds (throttle/pitch/roll/yaw)<br>` +
+    `<b>Hover ΣF = mg = 1.4 kg × 9.81 ≈ 13.7 N</b>; yaw reaction τ_z = Σ(±)k′·ω_i², cancelled pairwise by CW/CCW props<br>` +
+    `<b>Forward a ≈ g·tanθ</b>: now θ = ${th.toFixed(0)}° → a ≈ ${a.toFixed(1)} m/s² — position is steered through attitude (underactuation)`);
+}
+function syncAll() {
+  syncSliders(); syncBtns(); updateFormula(); updateStats(); drawPlot();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+elThr.addEventListener('input', () => { thr = +elThr.value; syncSliders(); syncBtns(); updateStats(); });
+elPitch.addEventListener('input', () => { pitchIn = +elPitch.value; syncSliders(); syncBtns(); });
+elRoll.addEventListener('input', () => { rollIn = +elRoll.value; syncSliders(); syncBtns(); });
+elYaw.addEventListener('input', () => { yawIn = +elYaw.value; syncSliders(); syncBtns(); });
+btnHover.addEventListener('click', () => { setInputs(1, 0, 0, 0); syncAll(); });
+btnFwd.addEventListener('click', () => { setInputs(1.1, 0.65, 0, 0); syncAll(); });
+btnYaw.addEventListener('click', () => { setInputs(1.0, 0, 0, 0.8); syncAll(); });
+btnHome.addEventListener('click', () => { pos.set(0, 3, 0); vel.set(0, 0, 0); yawA = 0; setInputs(1, 0, 0, 0); syncAll(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { chartOn = e.target.checked; document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglVec').addEventListener('change', e => { vecOn = e.target.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => {
+  if (e.code === 'Space' && !/^(INPUT|BUTTON|A|SELECT|TEXTAREA)$/.test(e.target.tagName)) {
+    e.preventDefault(); elPlay.click();
+  }
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+const _M4 = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _V = new THREE.Vector3(), _S = new THREE.Vector3();
+const _up = new THREE.Vector3(), _acc = new THREE.Vector3(), _hd = new THREE.Vector3();
+function physics(dt) {
+  if (dt <= 0) return;
+  pitchA += (clamp(-pitchIn, -1, 1) * MAX_TILT - pitchA) * Math.min(1, dt * 4);
+  rollA += (rollIn * MAX_TILT - rollA) * Math.min(1, dt * 4);
+  yawA += yawIn * 2.4 * dt;
+  body.rotation.set(-rollA, yawA, pitchA);
+  _up.set(0, 1, 0).applyQuaternion(body.quaternion);
+  lastTilt = Math.acos(clamp(_up.y, -1, 1)) * 180 / Math.PI;
+  const T = thr * MG;
+  _acc.copy(_up).multiplyScalar(T / M);
+  _acc.y -= G;
+  _acc.addScaledVector(vel, -0.12);
+  const r = Math.hypot(pos.x, pos.z);
+  if (r > 42) {
+    _acc.x -= pos.x / r * (r - 42) * 2;
+    _acc.z -= pos.z / r * (r - 42) * 2;
+  }
+  if (pos.y > 26) _acc.y -= (pos.y - 26) * 2;
+  vel.addScaledVector(_acc, dt);
+  pos.addScaledVector(vel, dt);
+  if (pos.y < 0.55) { pos.y = 0.55; if (vel.y < 0) vel.y = 0; }
+}
+function visuals(dt) {
+  body.position.copy(pos);
+  for (let i = 0; i < 4; i++) {
+    const g = MIXG[i];
+    const mixi = clamp(thr + g.p * pitchIn + g.r * rollIn + g.y * yawIn, 0, 1.9);
+    mixes[i] = mixi;
+    const F = MG / 4 * mixi;
+    const al = F * 0.05;
+    arrowM[i].setLength(Math.max(0.001, al), Math.min(0.13, al * 0.45), Math.min(0.08, al * 0.3));
+    arrowM[i].visible = vecOn && al > 0.035;
+    props[i].grp.rotation.y += props[i].s * (4 + 46 * Math.sqrt(mixi / 1.9)) * dt;
+    props[i].mat.opacity = 0.07 + 0.27 * (mixi / 1.9) * (mixi / 1.9);
+  }
+  const T = thr * MG;
+  const Lt = T * 0.082;
+  arrowT.setLength(Lt, Math.min(0.2, Lt * 0.32), Math.min(0.12, Lt * 0.2));
+  arrowT.visible = vecOn;
+  const tiltSin = Math.sqrt(Math.max(0, 1 - _up.y * _up.y));
+  weightA.position.copy(pos);
+  weightA.visible = vecOn;
+  compV.visible = compH.visible = vecOn && tiltSin > 0.05;
+  if (compV.visible) {
+    const Lv = T * _up.y * 0.082, Lh = T * tiltSin * 0.082;
+    compV.setLength(Lv, Math.min(0.18, Lv * 0.3), Math.min(0.11, Lv * 0.18));
+    compH.position.set(pos.x, pos.y + Lv, pos.z);
+    _hd.set(_up.x, 0, _up.z);
+    if (_hd.lengthSq() > 1e-8) _hd.normalize(); else _hd.set(1, 0, 0);
+    compH.setDirection(_hd);
+    compH.setLength(Lh, Math.min(0.18, Lh * 0.3), Math.min(0.11, Lh * 0.18));
+  }
+  const h = Math.max(0, pos.y - 0.5);
+  shadow.position.set(pos.x, 0.04, pos.z);
+  const ss = 1 + h * 0.1;
+  shadow.scale.set(ss, ss, 1);
+  shadowM.opacity = 0.42 / (1 + h * 0.45);
+  /* 地面标记按无人机位置平铺回卷 */
+  for (let i = 0; i < NM; i++) {
+    const bx = (i % 8) * 10 + 5, bz = Math.floor(i / 8) * 10 + 5;
+    let dx = bx - ((pos.x % 80) + 80) % 80; if (dx > 40) dx -= 80; if (dx < -40) dx += 80;
+    let dz = bz - ((pos.z % 60) + 60) % 60; if (dz > 30) dz -= 60; if (dz < -30) dz += 60;
+    _M4.compose(_V.set(pos.x + dx, 0.85, pos.z + dz), _Q.identity(), _S.set(1, 1, 1));
+    markers.setMatrixAt(i, _M4);
+  }
+  markers.instanceMatrix.needsUpdate = true;
+  notifyHolder.position.set(pos.x, pos.y + 1.9, pos.z);
+}
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * (playing ? 1 : 0);
+  if (notifyT > 0) notifyT -= dt0;
+  physics(dt);
+  visuals(dt);
+  /* 相机平滑跟随 */
+  _V.copy(pos).sub(controls.target).multiplyScalar(1 - Math.exp(-2.2 * dt0));
+  controls.target.add(_V);
+  camera.position.add(_V);
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.14) { acc = 0; updateStats(); drawPlot(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncAll();
+start();
+</script>
+</body>
+</html>

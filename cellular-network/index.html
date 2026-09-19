@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蜂窝网络 · 频率复用与无缝切换</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="蜂窝网络 · 频率复用与无缝切换" data-en="Cell Network · Frequency Reuse &amp; Seamless Handover">蜂窝网络 · 频率复用与无缝切换</h1>
+  <div class="sub" data-zh="功率与频谱有限→城市切成六边形小区,同频隔开反复复用→信号 ~1/d³·⁵ 衰减,边缘就是危机→两塔电平交叉的瞬间,通话无缝切换→功控:离塔越近喊得越小声→小区越小,容量越高——4G/5G 越建越密,是香农极限下的几何 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="Power and spectrum are finite → the city is cut into hexagonal cells, the same frequencies reused far apart → signal dies as ~1/d³·⁵, the edge is the crisis → where two towers' levels cross, the call switches seamlessly → power control: the closer to the tower, the softer the phone speaks → smaller cells mean more capacity — densification is geometry under the Shannon limit · 3D interactive demo · drag to orbit · Space = run/pause">…</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="服务基站" data-en="Serving cell">服务基站</span><span class="v" id="stS">—</span>
+  <span class="k" data-zh="接收电平" data-en="RSRP">接收电平</span><span class="v" id="stRx">—</span>
+  <span class="k" data-zh="SINR" data-en="SINR">SINR</span><span class="v warn" id="stSINR">—</span>
+  <span class="k" data-zh="单机速率上限" data-en="User rate cap">单机速率上限</span><span class="v ok" id="stRate">—</span>
+  <span class="k" data-zh="手机发射(功控)" data-en="UE TX (PC)">手机发射(功控)</span><span class="v" id="stTx">—</span>
+  <span class="k" data-zh="面积容量" data-en="Area capacity">面积容量</span><span class="v" id="stArea">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="沿街接收电平:每塔一条曲线,两条粗线交叉处=切换边界;竖线=手机当前位置" data-en="Street-side received level: one curve per tower; where the two bold curves cross sits the handover border · vertical line = phone now">沿街接收电平:每塔一条曲线,两条粗线交叉处=切换边界;竖线=手机当前位置</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="颜色 = 频率组(同色=同频)" data-en="colour = channel group (same colour = co-channel)">颜色 = 频率组(同色=同频)</span>
+    <span class="chip.g" data-zh="绿锥 = 当前服务链路" data-en="green cone = the live serving link">绿锥 = 当前服务链路</span>
+    <span class="chip.r" data-zh="脉动小区 = 同频干扰源" data-en="pulsing cells = co-channel interferers">脉动小区 = 同频干扰源</span>
+    <span class="chip.o" data-zh="手机沿街行驶" data-en="phone driving down the street">手机沿街行驶</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnN1" data-zh="复用 N=1(全频)" data-en="Reuse N=1 (all)">复用 N=1(全频)</button>
+    <button class="abtn" id="btnN3" data-zh="复用 N=3" data-en="Reuse N=3">复用 N=3</button>
+    <button class="abtn" id="btnN7" data-zh="复用 N=7" data-en="Reuse N=7">复用 N=7</button>
+  </div>
+  <div class="row"><label data-zh="小区半径" data-en="Cell radius">小区半径</label><input id="sR" type="range" min="300" max="1200" step="25" value="600"><span class="val" id="sRVal">600 m</span></div>
+  <div class="row"><label data-zh="演示速度" data-en="Sim speed">演示速度</label><input id="sV" type="range" min="0" max="8" step="0.5" value="4"><span class="val" id="sVVal">×4.0</span></div>
+  <div class="row"><label data-zh="邻区负载" data-en="Neighbor load">邻区负载</label><input id="sL" type="range" min="0" max="100" step="5" value="70"><span class="val" id="sLVal">70 %</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="电平图" data-en="Levels">电平图</span></label>
+      <label><input id="tglColors" type="checkbox" checked> <span data-zh="频率色块" data-en="Freq. tiles">频率色块</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../em-wave/" data-zh="电磁波" data-en="EM waves">电磁波</a>
+    <a href="../packet-switching/" data-zh="分组交换" data-en="packet switching">分组交换</a>
+    <a href="../gps/" data-zh="GPS 定位" data-en="GPS">GPS 定位</a>
+    <a href="../fiber-optics/" data-zh="光纤" data-en="fiber optics">光纤</a>
+    <a href="../information-entropy/" data-zh="信息熵" data-en="information entropy">信息熵</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, f) => a + (b - a) * f;
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141b, 45, 150);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  groundM.color.setHex(dark ? 0x171b22 : 0xbcc7d3);
+  streetM.color.setHex(dark ? 0x2a3140 : 0x8b98a8);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('蜂窝网络 · 频率复用与无缝切换', 'Cell Network · Frequency Reuse & Seamless Handover');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(46, innerWidth / innerHeight, 0.1, 400);
+camera.position.set(0, 16, 17);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.autoRotateSpeed = 0.35;
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.6);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 1.0);
+key.position.set(10, 16, 8);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9ab8ff, 0.3);
+fill.position.set(-12, 8, -10);
+scene.add(fill);
+
+/* ================= 常量与状态 ================= */
+const B_SYS = 10e6;          /* 系统带宽 10 MHz */
+const NOISE_DBM = -104;      /* 10 MHz 热噪声底 -174+10log10(1e7) */
+const P_TX_DBM = 43;         /* 基站发射 20 W */
+const MPU = 200;             /* 1 世界单位 = 200 m */
+const GROUP_HEX = [0x4dabf7, 0xffd43b, 0x51cf66, 0xff922b, 0xe599f7, 0x66d9e8, 0xff8787];
+const GROUP_CSS = ['#4dabf7', '#ffd43b', '#51cf66', '#ff922b', '#e599f7', '#66d9e8', '#ff8787'];
+const GREEK = ['α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'ο', 'π', 'ρ', 'σ', 'τ'];
+let cellRm = clamp(qsFloat('r', 600), 300, 1200);
+let reuseN = [1, 3, 7].includes(Math.round(qsFloat('n', 7))) ? Math.round(qsFloat('n', 7)) : 7;
+let speedX = clamp(qsFloat('v', 4), 0, 8);
+let load = clamp(qsFloat('load', 70), 0, 100) / 100;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let labelsOn = true, chartOn = true, colorsOn = true;
+let phaseIdx = 0, camTween = null;
+let phoneX = 0, phoneDir = 1, serving = -1;
+let rxServ = -110, sinrNow = 0, rateNow = 0, txNow = 23, sysGbps = 0, areaMbps = 0;
+let hoMsg = '', hoMsgT = 0, pulseT = 0, Xmax = 10;
+
+/* ---------------- 材质 ---------------- */
+const groundM = new THREE.MeshStandardMaterial({ color: 0x171b22, roughness: 0.96 });
+const streetM = new THREE.MeshStandardMaterial({ color: 0x2a3140, roughness: 0.9 });
+const poleM = new THREE.MeshStandardMaterial({ color: 0x8b96a5, metalness: 0.7, roughness: 0.4 });
+const panelM = new THREE.MeshStandardMaterial({ color: 0xdde5ee, metalness: 0.2, roughness: 0.5 });
+const phoneM = new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 0.5 });
+const screenM = new THREE.MeshStandardMaterial({ color: 0x0b1c2c, emissive: 0x4dabf7, emissiveIntensity: 1.0, roughness: 0.3 });
+const beamM = new THREE.MeshBasicMaterial({ color: 0x7bd88f, transparent: true, opacity: 0.15, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+
+/* ---------------- 场景:地面 / 街道 ---------------- */
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), groundM);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.02;
+scene.add(ground);
+const street = new THREE.Mesh(new THREE.BoxGeometry(1, 0.03, 0.22), streetM);
+street.position.y = 0.015;
+scene.add(street);
+
+/* ---------------- 蜂窝:19 塔六边形 ---------------- */
+const hexGeo = new THREE.CircleGeometry(1, 6);
+hexGeo.rotateZ(Math.PI / 6);
+const hexEdge = new THREE.EdgesGeometry(hexGeo);
+function groupOf(q, r, N) {
+  if (N === 1) return 0;
+  if (N === 3) return ((q + 2 * r) % 3 + 3) % 3;
+  return ((q + 3 * r) % 7 + 7) % 7;
+}
+const coords = [[0, 0]];
+for (let ring = 1; ring <= 2; ring++) {
+  for (let q = -ring; q <= ring; q++) for (let r = -ring; r <= ring; r++) {
+    if (Math.max(Math.abs(q), Math.abs(r), Math.abs(-q - r)) === ring) coords.push([q, r]);
+  }
+}
+const towers = [];
+for (let i = 0; i < 19; i++) {
+  const [q, r] = coords[i];
+  const g = new THREE.Group();
+  const mast = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, 1.5, 10), poleM);
+  pole.position.y = 0.75;
+  mast.add(pole);
+  const tipM = new THREE.MeshStandardMaterial({ color: 0x333a44, emissive: GROUP_HEX[0], emissiveIntensity: 0.3 });
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), tipM);
+  tip.position.y = 1.58;
+  mast.add(tip);
+  for (let k = 0; k < 3; k++) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.36, 0.17), panelM);
+    const a = k * Math.PI * 2 / 3;
+    p.position.set(Math.cos(a) * 0.18, 1.3, Math.sin(a) * 0.18);
+    p.rotation.y = -a;
+    mast.add(p);
+  }
+  g.add(mast);
+  const tileMat = new THREE.MeshStandardMaterial({ color: GROUP_HEX[0], emissive: GROUP_HEX[0], transparent: true, opacity: 0.14, emissiveIntensity: 0.02, side: THREE.DoubleSide });
+  const tile = new THREE.Mesh(hexGeo, tileMat);
+  tile.rotation.x = -Math.PI / 2;
+  tile.position.y = 0.01;
+  g.add(tile);
+  const lineM = new THREE.LineBasicMaterial({ color: GROUP_HEX[0], transparent: true, opacity: 0.5 });
+  const line = new THREE.LineLoop(hexEdge, lineM);
+  line.rotation.x = -Math.PI / 2;
+  line.position.y = 0.014;
+  g.add(line);
+  scene.add(g);
+  towers.push({ g, mast, tipM, tileMat, lineM, q, r, x: 0, z: 0, grp: 0, curve: null });
+}
+/* 手机 */
+const phone = new THREE.Group();
+const pbody = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.3, 0.045), phoneM);
+pbody.position.y = 0.17;
+phone.add(pbody);
+const pscreen = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.24, 0.05), screenM);
+pscreen.position.y = 0.17;
+phone.add(pscreen);
+scene.add(phone);
+/* 服务链路光锥(塔尖→手机) */
+const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.3, 1, 10, 1, true), beamM);
+beam.visible = false;
+scene.add(beam);
+/* 切换脉冲环 */
+const pulse = new THREE.Mesh(new THREE.TorusGeometry(1, 0.05, 8, 40),
+  new THREE.MeshBasicMaterial({ color: 0x7bd88f, transparent: true, opacity: 0 }));
+pulse.rotation.x = -Math.PI / 2;
+pulse.visible = false;
+scene.add(pulse);
+/* 服务链路上的数据包粒子(上下行) */
+const NPK = 26;
+const pkM = new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.9 });
+const packets = new THREE.InstancedMesh(new THREE.SphereGeometry(0.045, 6, 5), pkM, NPK);
+packets.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+packets.frustumCulled = false;
+scene.add(packets);
+const pkU = [];
+for (let i = 0; i < NPK; i++) pkU.push({ u: Math.random(), d: i % 2 === 0 ? 1 : -1, o: (Math.random() - 0.5) * 0.34 });
+
+function updateLayout() {
+  const R = cellRm / MPU;
+  for (const t of towers) {
+    t.x = Math.sqrt(3) * R * (t.q + t.r / 2);
+    t.z = 1.5 * R * t.r;
+    t.g.position.set(t.x, 0, t.z);
+    t.mast.scale.setScalar(clamp(R / 3, 0.55, 1.5));
+    const tile = t.g.children[1], line = t.g.children[2];
+    tile.scale.set(R, R, 1);
+    line.scale.set(R, R, 1);
+  }
+  Xmax = 2.7 * Math.sqrt(3) * R;
+  street.scale.x = Xmax * 2 + 3;
+}
+function applyReuse() {
+  for (const t of towers) {
+    t.grp = groupOf(t.q, t.r, reuseN);
+    t.tipM.emissive.setHex(GROUP_HEX[t.grp]);
+    t.tileMat.color.setHex(GROUP_HEX[t.grp]);
+    t.tileMat.emissive.setHex(GROUP_HEX[t.grp]);
+    t.lineM.color.setHex(GROUP_HEX[t.grp]);
+  }
+}
+/* 3GPP 城区宏站路损:PL = 128.1 + 37.6·log10(d/km) */
+function rxDb(i, x, z) {
+  const t = towers[i];
+  const d = Math.max(Math.hypot(x - t.x, z - t.z) * MPU, 25);
+  return P_TX_DBM - (128.1 + 37.6 * Math.log10(d / 1000));
+}
+function sampleCurves() {
+  const NS = 161;
+  for (const t of towers) {
+    t.curve = new Float32Array(NS);
+    for (let k = 0; k < NS; k++) {
+      const x = -Xmax + 2 * Xmax * k / (NS - 1);
+      t.curve[k] = rxDb(towers.indexOf(t), x, 0);
+    }
+  }
+}
+
+/* ---------------- 面积容量(每小区 @0.75R 朝最近同频塔) ---------------- */
+function computeSys() {
+  let total = 0;
+  for (let i = 0; i < 19; i++) {
+    const t = towers[i];
+    let best = null, bd = 1e18;
+    for (let j = 0; j < 19; j++) {
+      if (j === i || towers[j].grp !== t.grp) continue;
+      const d = Math.hypot(towers[j].x - t.x, towers[j].z - t.z);
+      if (d < bd) { bd = d; best = towers[j]; }
+    }
+    let ex = t.x, ez = t.z;
+    if (best) {
+      const R = cellRm / MPU;
+      const dx = best.x - t.x, dz = best.z - t.z, L2 = Math.hypot(dx, dz) || 1;
+      const f = R * 0.75 / L2;
+      ex = t.x + dx * f; ez = t.z + dz * f;
+    }
+    const sig = rxDb(i, ex, ez);
+    let Iw = Math.pow(10, NOISE_DBM / 10);
+    for (let j = 0; j < 19; j++) {
+      if (j === i || towers[j].grp !== t.grp) continue;
+      Iw += Math.pow(10, rxDb(j, ex, ez) / 10) * load;
+    }
+    const sinr = sig - 10 * Math.log10(Iw);
+    t.cap = (B_SYS / reuseN) * Math.log2(1 + Math.pow(10, clamp(sinr, -15, 40) / 10));
+    total += t.cap;
+  }
+  sysGbps = total / 1e9;
+  const areaKm2 = 19 * 2.598 * Math.pow(cellRm / 1000, 2);
+  areaMbps = total / areaKm2 / 1e6;
+}
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblPhone = addLabel(() => serving >= 0 ? `${GREEK[serving]} · ${rxServ.toFixed(0)} dBm` : '',
+  new THREE.Vector3(0, 0.75, 0), 'b');
+const lblServe = addLabel(() => serving >= 0 ? L('当前服务', 'serving') + ' ' + GREEK[serving] : '',
+  new THREE.Vector3(0, 2.6, 0), 'g');
+const lblHo = addLabel(() => hoMsgT > 0 ? hoMsg : '', new THREE.Vector3(0, 1.7, 0), 'o');
+const lblCo = addLabel(() => L('同频小区:同一频率在别处复用', 'co-channel cell: the same frequency reused elsewhere'),
+  new THREE.Vector3(0, 3, 0), 'r', () => reuseN > 1);
+const lblSys = addLabel(() => L(`19 小区合计 ${sysGbps.toFixed(2)} Gbps · 面积 ${areaMbps.toFixed(0)} Mbps/km²`,
+  `19 cells total ${sysGbps.toFixed(2)} Gbps · ${areaMbps.toFixed(0)} Mbps/km²`),
+  new THREE.Vector3(0, 0.4, 13.5), '');
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+const STEPS = [
+  { b: '功率有限,一个塔喂不饱所有人', be: "One tower can't feed everyone",
+    d: '发射功率和频谱都有上限:把城市切成一个个六边形小区,每塔低功率只管自己一块,同一批频率在整个城市里反复用——这就是蜂窝。',
+    de: 'TX power and spectrum are capped: carve the city into hexagonal cells, each tower covering its own tile at low power while the same channels repeat across town — that is the cellular idea.',
+    act: () => { phaseIdx = 0; flyTo([0, 16, 17], [0, 0, 0]); } },
+  { b: '同频小区隔开,频率才能反复用', be: 'Keep co-channel cells apart, reuse the spectrum',
+    d: '相邻小区若同频会互相淹没。N=7 图案给小区上色:同色隔得最远。N 越小频谱用得越狠(每小区 B/N 越宽),代价是干扰越重。',
+    de: 'Adjacent cells on one frequency would drown each other. The N=7 pattern colours cells so same-colour ones sit far apart. Smaller N spends bandwidth faster (B/N per cell) and pays in interference.',
+    act: () => { phaseIdx = 1; reuseN = 7; syncAll(); flyTo([9, 9, 11], [0, 0, 0]); } },
+  { b: '信号 ~1/d³·⁵ 衰减:边缘就是危机', be: 'Signal dies as ~1/d³·⁵: the edge is the crisis',
+    d: '路径损耗 PL=128.1+37.6·log₁₀d(km):离塔一远,接收电平直线下坠。手机时刻测量周围所有塔的电平——右下曲线就是它眼里看到的世界。',
+    de: 'Path loss PL = 128.1 + 37.6·log₁₀ d(km): level falls off a cliff with distance. The phone measures every nearby tower continuously — the curves lower-right are exactly what it sees.',
+    act: () => { phaseIdx = 2; speedX = 3; phoneX = Xmax * 0.6; phoneDir = 1; syncSliders(); flyTo([0, 2.2, 9], [0, 0.5, 0]); } },
+  { b: '跨越边界:切换不掐线', be: 'Crossing the border: handover without dropping',
+    d: '两塔电平曲线交叉的瞬间,网络把通话从 α 换到 β;滞后 2–3 dB 防止边界来回乒乓。LTE 切换中断 <50 ms——你毫无感觉。',
+    de: 'Where the two level curves cross, the network hands the call from α to β, with 2–3 dB of hysteresis against ping-pong. An LTE handover interrupts for under 50 ms — you never feel it.',
+    act: () => { phaseIdx = 3; speedX = 4; syncSliders(); flyTo([2, 0.8, 4.5], [0, 0.3, 0]); } },
+  { b: '功率控制:离塔越近,喊得越小声', be: 'Power control: whisper near the tower',
+    d: '手机上行功率随接收电平自动反向调整(目标:基站听到 −75 dBm):既省电,又不让自己的信号淹没人家的信道——干扰是大家共享的预算。',
+    de: 'Uplink power tracks the downlink level in reverse (target: the tower hears −75 dBm): it saves battery and keeps one phone from drowning the shared interference budget for everyone else.',
+    act: () => { phaseIdx = 4; speedX = 2; syncSliders(); flyTo([-4, 1.2, 3.2], [-3, 0.3, 0]); } },
+  { b: '小区缩小:切换更勤,容量翻涨', be: 'Shrink the cell: handovers multiply, capacity soars',
+    d: '半径减半 → 单位面积小区数 ×4 → 面积容量 ×4;代价是切换频繁 4 倍、同频干扰管理更难。容量不是新频谱换来的,是拿几何换的。',
+    de: 'Halve the radius → 4× the cells per km² → 4× the capacity per km², paid for with 4× the handovers and much harder interference management. Capacity comes from geometry, not new spectrum.',
+    act: () => { phaseIdx = 5; cellRm = 350; syncAll(); flyTo([0, 9, 10], [0, 0, 0]); } },
+  { b: '香农极限下的几何:4G/5G 越建越密', be: 'Geometry under the Shannon limit: why networks densify',
+    d: 'C=B·log₂(1+S/N):频谱 B 封顶后单链路速率有极限;需求再涨只能把小区做小、把同一段频谱在空间上反复卖——这就是 4G/5G 基站越建越密的本质。',
+    de: 'C = B·log₂(1+S/N): once spectrum B is capped, a single link hits a speed ceiling; more demand can only be met by shrinking cells and reselling the same spectrum across space — the essence of densification.',
+    act: () => { phaseIdx = 6; cellRm = 500; reuseN = 1; syncAll(); flyTo([0, 15, 16], [0, 0, 0]); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:沿街电平曲线 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const cMain = css.getPropertyValue('--text3').trim() || '#c7d2de';
+  const padL = 40, padR = 12, padT = 12, padB = 22;
+  const yMin = -130, yMax = -35;
+  const xOf = x => padL + (x + Xmax) / (2 * Xmax) * (W - padL - padR);
+  const yOf = p => (H - padB) - (clamp(p, yMin, yMax) - yMin) / (yMax - yMin) * (H - padB - padT);
+  ctx.font = '15px system-ui';
+  ctx.strokeStyle = 'rgba(128,150,170,.18)';
+  ctx.fillStyle = cTxt;
+  for (const p of [-50, -70, -90, -110]) {
+    ctx.beginPath(); ctx.moveTo(padL, yOf(p)); ctx.lineTo(W - padR, yOf(p)); ctx.stroke();
+    ctx.fillText(String(p), 6, yOf(p) + 5);
+  }
+  ctx.fillText('dBm', 6, padT + 12);
+  for (let km = -3; km <= 3; km++) {
+    const x = km * 5;
+    if (Math.abs(x) > Xmax) continue;
+    ctx.fillText((km > 0 ? '+' : '') + km + ' km', xOf(x) - 14, H - 6);
+  }
+  /* 噪声底 */
+  ctx.strokeStyle = 'rgba(255,107,107,.5)';
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(padL, yOf(NOISE_DBM)); ctx.lineTo(W - padR, yOf(NOISE_DBM)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,107,107,.75)';
+  ctx.fillText(L('噪声底 −104', 'noise −104'), padL + 6, yOf(NOISE_DBM) - 6);
+  if (!towers[0].curve) return;
+  /* 各塔曲线 */
+  let second = -1, secondV = -1e9;
+  for (let i = 0; i < 19; i++) {
+    if (i === serving) continue;
+    const v = rxDb(i, phoneX, 0);
+    if (v > secondV) { secondV = v; second = i; }
+  }
+  for (let i = 0; i < 19; i++) {
+    if (i === serving || i === second) continue;
+    ctx.strokeStyle = GROUP_CSS[towers[i].grp];
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = 1.4;
+    drawCurve(ctx, i, xOf, yOf);
+  }
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = '#8a939e';
+  ctx.lineWidth = 2.2;
+  if (second >= 0) drawCurve(ctx, second, xOf, yOf);
+  ctx.globalAlpha = 1;
+  if (serving >= 0) {
+    ctx.strokeStyle = cMain;
+    ctx.lineWidth = 3;
+    drawCurve(ctx, serving, xOf, yOf);
+  }
+  ctx.globalAlpha = 1;
+  /* 手机位置竖线 */
+  ctx.strokeStyle = 'rgba(123,216,143,.85)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(xOf(phoneX), padT); ctx.lineTo(xOf(phoneX), H - padB); ctx.stroke();
+  ctx.fillStyle = '#7bd88f';
+  const px = serving >= 0 ? GREEK[serving] : '';
+  ctx.fillText(px, xOf(phoneX) + 5, padT + 14);
+}
+function drawCurve(ctx, i, xOf, yOf) {
+  const c = towers[i].curve;
+  ctx.beginPath();
+  for (let k = 0; k < c.length; k++) {
+    const x = -Xmax + 2 * Xmax * k / (c.length - 1);
+    const X = xOf(x), Y = yOf(c[k]);
+    k === 0 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y);
+  }
+  ctx.stroke();
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elR = document.getElementById('sR'), elRVal = document.getElementById('sRVal');
+const elV = document.getElementById('sV'), elVVal = document.getElementById('sVVal');
+const elL = document.getElementById('sL'), elLVal = document.getElementById('sLVal');
+const stS = document.getElementById('stS'), stRx = document.getElementById('stRx'), stSINR = document.getElementById('stSINR'),
+  stRate = document.getElementById('stRate'), stTx = document.getElementById('stTx'), stArea = document.getElementById('stArea');
+const formulaEl = document.getElementById('formula');
+const btnN1 = document.getElementById('btnN1'), btnN3 = document.getElementById('btnN3'), btnN7 = document.getElementById('btnN7');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elR.value = cellRm; elRVal.textContent = cellRm + ' m';
+  elV.value = speedX; elVVal.textContent = '×' + speedX.toFixed(1);
+  elL.value = Math.round(load * 100); elLVal.textContent = Math.round(load * 100) + ' %';
+}
+function syncBtns() {
+  btnN1.classList.toggle('on', reuseN === 1);
+  btnN3.classList.toggle('on', reuseN === 3);
+  btnN7.classList.toggle('on', reuseN === 7);
+}
+function updateStats() {
+  stS.textContent = serving >= 0 ? GREEK[serving] : '—';
+  stS.className = 'v ' + (serving >= 0 ? 'ok' : '');
+  stRx.textContent = rxServ.toFixed(0) + ' dBm';
+  stRx.className = 'v ' + (rxServ > -85 ? 'ok' : rxServ > -95 ? 'warn' : 'bad');
+  stSINR.textContent = (sinrNow >= 0 ? '+' : '') + sinrNow.toFixed(1) + ' dB';
+  stSINR.className = 'v ' + (sinrNow > 10 ? 'ok' : sinrNow > 0 ? 'warn' : 'bad');
+  stRate.textContent = rateNow.toFixed(1) + ' Mbps';
+  stTx.textContent = txNow.toFixed(0) + ' dBm';
+  stArea.textContent = areaMbps >= 1000 ? (areaMbps / 1000).toFixed(1) + ' Gbps/km²' : areaMbps.toFixed(0) + ' Mbps/km²';
+}
+function updateFormula() {
+  formulaEl.innerHTML = L(
+    `<b>C = B·log₂(1+S/N)</b>(香农极限):B=10 MHz,每小区 B/N;SINR 每 +3 dB,速率上限约 +½<br>` +
+    `<b>路径损耗 PL = 128.1+37.6·log₁₀d(km)</b>(3GPP 城区)≈ ∝1/d³·⁸:电平随距离直线下坠<br>` +
+    `<b>切换滞后 2–3 dB</b>:两塔电平相等处即边界(d≈√3R/2),防乒乓;中断 &lt;50 ms<br>` +
+    `<b>面积容量 = Σ每小区 (B/N)·log₂(1+SINR) ÷ km²</b>:半径减半 → ×4,当前 <b>${areaMbps.toFixed(0)} Mbps/km²</b>`,
+    `<b>C = B·log₂(1+S/N)</b> (Shannon): B = 10 MHz, B/N per cell; every +3 dB of SINR buys roughly +½ again<br>` +
+    `<b>Path loss PL = 128.1 + 37.6·log₁₀ d(km)</b> (3GPP urban) ≈ ∝1/d³·⁸: level falls off a cliff<br>` +
+    `<b>Handover hysteresis 2–3 dB</b>: the border sits where two levels tie (d≈√3R/2); interruption &lt;50 ms<br>` +
+    `<b>Area capacity = Σ per-cell (B/N)·log₂(1+SINR) ÷ km²</b>: halve the radius → ×4 — now <b>${areaMbps.toFixed(0)} Mbps/km²</b>`);
+}
+function syncAll() {
+  syncSliders(); syncBtns(); updateFormula(); updateStats(); drawPlot();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+elR.addEventListener('input', () => {
+  cellRm = +elR.value;
+  updateLayout(); sampleCurves(); computeSys(); drawPlot(); syncSliders(); updateFormula();
+});
+elV.addEventListener('input', () => { speedX = +elV.value; syncSliders(); });
+elL.addEventListener('input', () => { load = +elL.value / 100; computeSys(); syncSliders(); updateFormula(); });
+function setReuse(n) { reuseN = n; applyReuse(); computeSys(); syncBtns(); updateFormula(); drawPlot(); }
+btnN1.addEventListener('click', () => setReuse(1));
+btnN3.addEventListener('click', () => setReuse(3));
+btnN7.addEventListener('click', () => setReuse(7));
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { chartOn = e.target.checked; document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglColors').addEventListener('change', e => { colorsOn = e.target.checked; for (const t of towers) t.g.children[1].visible = colorsOn; });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0;
+controls.addEventListener('start', () => { camTween = null; });
+const _M4 = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _V = new THREE.Vector3(), _S = new THREE.Vector3(), _UP = new THREE.Vector3(0, 1, 0), _D = new THREE.Vector3(), _P = new THREE.Vector3(), _P2 = new THREE.Vector3();
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * (playing ? 1 : 0);
+  /* 手机运动(往返) */
+  if (speedX > 0) {
+    phoneX += phoneDir * speedX * 0.07 * dt;
+    if (phoneX > Xmax * 0.97) { phoneX = Xmax * 0.97; phoneDir = -1; }
+    if (phoneX < -Xmax * 0.97) { phoneX = -Xmax * 0.97; phoneDir = 1; }
+  }
+  phone.position.set(phoneX, 0, 0);
+  /* 接收电平 / 切换(滞后 2.5 dB) */
+  let best = 0, bestV = -1e9;
+  for (let i = 0; i < 19; i++) {
+    const v = rxDb(i, phoneX, 0);
+    if (v > bestV) { bestV = v; best = i; }
+  }
+  if (serving < 0) serving = best;
+  else if (best !== serving && bestV > rxDb(serving, phoneX, 0) + 2.5) {
+    hoMsg = L(`切换 ${GREEK[serving]} → ${GREEK[best]}`, `handover ${GREEK[serving]} → ${GREEK[best]}`);
+    hoMsgT = 2.4; pulseT = 0.9;
+    serving = best;
+  }
+  rxServ = rxDb(serving, phoneX, 0);
+  /* SINR:同频干扰 + 噪声 */
+  let Iw = Math.pow(10, NOISE_DBM / 10);
+  for (let j = 0; j < 19; j++) {
+    if (j === serving || towers[j].grp !== towers[serving].grp) continue;
+    Iw += Math.pow(10, rxDb(j, phoneX, 0) / 10) * load;
+  }
+  sinrNow = rxServ - 10 * Math.log10(Iw);
+  const sinrLin = Math.pow(10, clamp(sinrNow, -12, 40) / 10);
+  rateNow = (B_SYS / reuseN) * Math.log2(1 + sinrLin) / 1e6;
+  txNow = clamp(-75 - rxServ, -10, 23);
+  /* 服务链路光锥 */
+  const st = towers[serving];
+  const tipH = 1.62 * st.mast.scale.x;
+  _D.set(phoneX, 0.3, 0).sub(_V.set(st.x, tipH, st.z));
+  const len = _D.length();
+  beam.visible = true;
+  beam.position.copy(_V).addScaledVector(_D, 0.5);
+  beam.scale.set(1, len, 1);
+  beam.quaternion.setFromUnitVectors(_UP, _D.normalize());
+  beamM.color.setHex(GROUP_HEX[st.grp]);
+  beamM.opacity = 0.10 + 0.05 * Math.sin(performance.now() * 0.006);
+  /* 数据包沿链路流动:速率随香农速率 */
+  pkM.color.setHex(GROUP_HEX[st.grp]);
+  const pkTip = _P.set(st.x, tipH, st.z), pkPh = _P2.set(phoneX, 0.32, 0);
+  const pkRate = 0.8 + clamp(rateNow / 30, 0, 2.5);
+  for (let i = 0; i < NPK; i++) {
+    const p = pkU[i];
+    p.u += dt * pkRate * (p.d > 0 ? 0.75 : 1);
+    if (p.u > 1) p.u -= 1;
+    const f = p.d > 0 ? p.u : 1 - p.u;
+    _V.lerpVectors(pkTip, pkPh, f);
+    _V.y += p.o * (1 - Math.abs(f - 0.5) * 1.2);
+    _M4.compose(_V, _Q.identity(), _S.set(1, 1, 1).multiplyScalar(0.7 + 0.5 * Math.sin(f * Math.PI)));
+    packets.setMatrixAt(i, _M4);
+  }
+  packets.instanceMatrix.needsUpdate = true;
+  /* 塔尖辉光:服务塔亮 */
+  for (let i = 0; i < 19; i++) towers[i].tipM.emissiveIntensity = i === serving ? 1.6 : 0.3;
+  /* 同频脉动 */
+  const pulsePhase = performance.now() * 0.004;
+  for (let i = 0; i < 19; i++) {
+    const t = towers[i];
+    if (reuseN > 1 && t.grp === st.grp && i !== serving) t.tileMat.emissiveIntensity = 0.16 + 0.13 * Math.sin(pulsePhase + i);
+    else if (i === serving) t.tileMat.emissiveIntensity = 0.16;
+    else t.tileMat.emissiveIntensity = 0.02;
+  }
+  /* 切换脉冲环 */
+  if (pulseT > 0) {
+    pulseT -= dt0;
+    const k = 1 - pulseT / 0.9;
+    pulse.visible = true;
+    pulse.position.set(phoneX, 0.06, 0);
+    pulse.scale.setScalar(0.3 + k * 2.2);
+    pulse.material.opacity = 0.85 * (1 - k);
+  } else pulse.visible = false;
+  if (hoMsgT > 0) hoMsgT -= dt0;
+  /* 屏幕亮度随信号 */
+  screenM.emissiveIntensity = 0.5 + clamp((rxServ + 110) / 60, 0, 1) * 0.9;
+  /* 标签 */
+  lblPhone.o.position.set(phoneX, 0.8, 0);
+  lblServe.o.position.set(st.x, tipH + 0.5, st.z);
+  lblCo.o.position.set((towers.find(t => t.grp === st.grp && towers.indexOf(t) !== serving) || st).x, 2.6 + Math.sin(pulsePhase) * 0.1, (towers.find(t => t.grp === st.grp && towers.indexOf(t) !== serving) || st).z);
+  lblSys.o.position.set(0, 0.4, Xmax + 1.5);
+  /* 相机飞行 */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.14) { acc = 0; updateStats(); if (chartOn) drawPlot(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis() && r.text() !== '';
+    r.o.visible = on;
+    if (on) r.o.element.textContent = r.text();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+updateLayout();
+applyReuse();
+sampleCurves();
+computeSys();
+buildSteps();
+applyLang();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncAll();
+start();
+</script>
+</body>
+</html>

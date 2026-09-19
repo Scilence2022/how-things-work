@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CT 断层成像 · 从投影重建切片</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #recPanel { position: fixed; right: 18px; top: 64px; z-index: 4; width: 316px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px; }
+  #recPanel h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 5px; line-height: 1.45; }
+  #recCv { width: 100%; aspect-ratio: 1 / 1; display: block; border-radius: 6px; background: #000; }
+  #xrWrap { margin-top: 7px; display: flex; gap: 9px; align-items: center; }
+  #xrCv { width: 88px; height: 88px; border-radius: 6px; background: #000; flex: 0 0 88px; }
+  #xrWrap p { font-size: 11px; color: var(--text2); line-height: 1.5; margin: 0; }
+  @media (max-height: 800px) { #xrWrap { display: none; } }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } #recPanel { width: 260px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="CT 断层成像 · 从投影重建切片" data-en="CT · Rebuilding a Slice from Projections">CT 断层成像 · 从投影重建切片</h1>
+  <div class="sub" data-zh="X 光把人体压成一层影子,骨头后面全糊→CT 让球管绕人转 180°,每个角度记一组线积分 p=∫μ dl(正弦图)→滤波反投影把投影逐条“抹”回平面,晕影叠成解剖→HU 标尺:骨 +1000 / 水 0 / 空气 −1000,窗宽窗位决定看什么→角度数与剂量,各自换来图像质量 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="An X-ray flattens the body into one shadow — everything behind bone is lost → CT spins the tube through 180°, recording line integrals p = ∫μ dl at every angle (the sinogram) → filtered back-projection smears each projection home, halos stacking into anatomy → the Hounsfield scale: bone +1000, water 0, air −1000, and the window picks what you see → more angles and more dose each buy image quality · 3D interactive demo · drag to orbit · Space = run/pause">…</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="recPanel">
+  <h3 data-zh="滤波反投影:每个角度的投影被“抹”回切片,晕影逐步锐化成解剖" data-en="Filtered back-projection: each angle's projection is smeared home — halos sharpen into anatomy">滤波反投影:每个角度的投影被“抹”回切片,晕影逐步锐化成解剖</h3>
+  <canvas id="recCv"></canvas>
+  <div id="xrWrap">
+    <canvas id="xrCv"></canvas>
+    <p data-zh="对照·普通X光:把这一层沿深度全加起来——颅骨一亮,脑组织和出血灶全被压平看不见。CT 的价值=把深度拆回切片。" data-en="Plain X-ray, for contrast: this same layer summed through depth — the skull flares white and the brain, hemorrhage included, is crushed invisible. CT's trick is unbinding depth into slices.">…</p>
+  </div>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="机架角度" data-en="Gantry angle">机架角度</span><span class="v" id="stAng">—</span>
+  <span class="k" data-zh="已采投影" data-en="Projections">已采投影</span><span class="v" id="stProj">—</span>
+  <span class="k" data-zh="重建误差" data-en="Recon error">重建误差</span><span class="v warn" id="stErr">—</span>
+  <span class="k" data-zh="剂量 CTDI" data-en="Dose CTDI">剂量 CTDI</span><span class="v" id="stDose">—</span>
+  <span class="k" data-zh="窗宽/窗位" data-en="WW / WL">窗宽/窗位</span><span class="v" id="stWin">—</span>
+  <span class="k" data-zh="病灶读数" data-en="Lesion HU">病灶读数</span><span class="v ok" id="stHU">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="正弦图:横轴=角度 0–180°,纵轴=探测器通道——切片的全部信息都编码在这条带里" data-en="Sinogram: x = angle 0–180°, y = detector bin — the entire slice is encoded in this band">正弦图:横轴=角度 0–180°,纵轴=探测器通道——切片的全部信息都编码在这条带里</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.r" data-zh="球管:X 射线源,绕人旋转" data-en="tube: the X-ray source, spinning round">球管:X 射线源,绕人旋转</span>
+    <span class="chip.b" data-zh="探测器:每角度一族线积分" data-en="detector: a family of line integrals per angle">探测器:每角度一族线积分</span>
+    <span class="chip.g" data-zh="重建:反投影逐角叠加" data-en="recon: back-projections stacked angle by angle">重建:反投影逐角叠加</span>
+    <span class="chip.o" data-zh="对照:普通 X 光=单角度压扁" data-en="contrast: plain X-ray = one flattened angle">对照:普通 X 光=单角度压扁</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnWBrain" data-zh="脑窗 W80/L40" data-en="Brain W80/L40">脑窗 W80/L40</button>
+    <button class="abtn" id="btnWBone" data-zh="骨窗 W2000/L500" data-en="Bone W2000/L500">骨窗 W2000/L500</button>
+    <button class="abtn" id="btnWSoft" data-zh="软组织 W350/L50" data-en="Soft W350/L50">软组织 W350/L50</button>
+    <button class="abtn" id="btnRescan" data-zh="重新扫描" data-en="Rescan">重新扫描</button>
+  </div>
+  <div class="row"><label data-zh="采集角度数" data-en="View angles">采集角度数</label><input id="sAng" type="range" min="12" max="180" step="2" value="180"><span class="val" id="sAngVal">180 个</span></div>
+  <div class="row"><label data-zh="管电流剂量" data-en="Tube current">管电流剂量</label><input id="sDose" type="range" min="20" max="400" step="10" value="120"><span class="val" id="sDoseVal">120 mAs</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="正弦图" data-en="Sinogram">正弦图</span></label>
+      <label><input id="tglXr" type="checkbox" checked> <span data-zh="X光对照" data-en="X-ray">X光对照</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../pet-scan/" data-zh="PET:功能成像" data-en="PET: metabolic imaging">PET:功能成像</a>
+    <a href="../mri/" data-zh="MRI:磁共振" data-en="MRI">MRI:磁共振</a>
+    <a href="../camera-sensor/" data-zh="相机传感器" data-en="camera sensors">相机传感器</a>
+    <a href="../photoelectric-effect/" data-zh="光电效应" data-en="photoelectric effect">光电效应</a>
+    <a href="../lens-imaging/" data-zh="透镜成像" data-en="lens imaging">透镜成像</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, f) => a + (b - a) * f;
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141b, 14, 46);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  floorM.color.setHex(dark ? 0x191d24 : 0xbec9d4);
+  bedM.color.setHex(dark ? 0x2a3140 : 0x93a1b1);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('CT 断层成像 · 从投影重建切片', 'CT · Rebuilding a Slice from Projections');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 120);
+camera.position.set(3.4, 2.3, 4.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.6;
+controls.maxDistance = 30;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.35;
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.6);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 1.0);
+key.position.set(5, 7, 6);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9ab8ff, 0.35);
+fill.position.set(-6, 4, -5);
+scene.add(fill);
+
+/* ================= 状态 ================= */
+let targetN = clamp(Math.round(qsFloat('ang', 180)), 12, 180);
+let mAs = clamp(qsFloat('mAs', 120), 20, 400);
+let WW = 80, WL = 40;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let labelsOn = true, chartOn = true, xrOn = true;
+let phaseIdx = 0, camTween = null;
+let sweepPos = 0, nDone = 0, holdT = 0, scanDone = false, rmsHU = 0;
+
+/* ================= 体模 / 正弦 / 重建(纯 CPU) ================= */
+const NP = 128, NB = 128, NANG = 180;
+const phHU = new Float32Array(NP * NP);        /* 真值 HU */
+const muPh = new Float32Array(NP * NP);        /* 线衰减(水=1) */
+const sino = new Float32Array(NANG * NB);      /* 无噪正弦图 */
+const sinoN = new Float32Array(NANG * NB);     /* 含噪正弦图 */
+const angDone = new Array(NANG).fill(false);
+const accum = new Float64Array(NP * NP);       /* 反投影累加 */
+const calAcc = new Float64Array(NP * NP);      /* 标定用 */
+let calG = 1, calO = 0;
+function buildPhantom() {
+  for (let py = 0; py < NP; py++) {
+    const v = (py + 0.5) / NP * 2 - 1;
+    for (let px = 0; px < NP; px++) {
+      const u = (px + 0.5) / NP * 2 - 1;
+      const headO = (u / 0.90) ** 2 + (v / 0.94) ** 2;
+      const skO = (u / 0.80) ** 2 + (v / 0.845) ** 2;
+      const skI = (u / 0.68) ** 2 + (v / 0.72) ** 2;
+      let hu = -1000;                                     /* 空气 */
+      if (skI < 1) hu = 38;                               /* 脑组织 */
+      else if (skO < 1) hu = 900;                         /* 颅骨 */
+      else if (headO < 1) hu = 20;                        /* 头皮 */
+      if (skI < 1) {
+        const vv = ((Math.abs(u) - 0.15) / 0.055) ** 2 + ((v - 0.02) / 0.17) ** 2;
+        if (vv < 1) hu = 8;                               /* 侧脑室(约 CSF) */
+        if (Math.abs(u) < 0.013 && Math.abs(v) < 0.45) hu = 60;   /* 大脑镰 */
+        const he = ((u - 0.34) / 0.085) ** 2 + ((v + 0.22) / 0.07) ** 2;
+        if (he < 1) hu = 66;                              /* 出血灶 */
+      }
+      phHU[py * NP + px] = hu;
+      muPh[py * NP + px] = (hu + 1000) / 2000;
+    }
+  }
+}
+function bilinear(x, y) {
+  let fx = clamp((x * 0.5 + 0.5) * NP - 0.5, 0, NP - 1.001);
+  let fy = clamp((y * 0.5 + 0.5) * NP - 0.5, 0, NP - 1.001);
+  const x0 = fx | 0, y0 = fy | 0, dx = fx - x0, dy = fy - y0;
+  const i = y0 * NP + x0;
+  return muPh[i] * (1 - dx) * (1 - dy) + muPh[i + 1] * dx * (1 - dy) +
+         muPh[i + NP] * (1 - dx) * dy + muPh[i + NP + 1] * dx * dy;
+}
+function radonAll() {
+  for (let a = 0; a < NANG; a++) {
+    const th = a * Math.PI / NANG, cs = Math.cos(th), sn = Math.sin(th);
+    for (let si = 0; si < NB; si++) {
+      const s = -1 + 2 * (si + 0.5) / NB;
+      let sum = 0;
+      for (let ti = 0; ti < NP; ti++) {
+        const t = -1 + 2 * (ti + 0.5) / NP;
+        sum += bilinear(s * cs - t * sn, s * sn + t * cs);
+      }
+      sino[a * NB + si] = sum * 2 / NP;                   /* p = ∫μ dl */
+    }
+  }
+}
+/* Ram-Lak 离散核:h[0]=1/4,h[奇]=−1/(πk)²,h[偶≠0]=0;零填充 4N 防卷绕,中心与探测器几何对齐 */
+const KL = NP, LP = 4 * NP, PAD0 = LP / 2 - NB / 2;
+const kern = new Float64Array(2 * KL);
+kern[KL] = 0.25;
+for (let k = 1; k < KL; k += 2) { const h = -1 / (Math.PI * Math.PI * k * k); kern[KL + k] = h; kern[KL - k] = h; }
+const pPad = new Float64Array(LP), qBuf = new Float64Array(LP);
+function filterRow(src, a) {
+  pPad.fill(0);
+  for (let si = 0; si < NB; si++) pPad[PAD0 + si] = src[a * NB + si];
+  for (let n = 0; n < LP; n++) {
+    let s = kern[KL] * pPad[n];
+    for (let k = -KL + 1; k < KL; k += 2) {
+      const m = n - k;
+      if (m >= 0 && m < LP) s += kern[k + KL] * pPad[m];
+    }
+    qBuf[n] = s;
+  }
+}
+function backProject(arr, a) {
+  const th = a * Math.PI / NANG, cs = Math.cos(th), sn = Math.sin(th), off = NP / 2, c0 = LP / 2 - 0.5;
+  for (let py = 0; py < NP; py++) {
+    const yn = (py + 0.5) / NP * 2 - 1;
+    const row = py * NP;
+    for (let px = 0; px < NP; px++) {
+      const xn = (px + 0.5) / NP * 2 - 1;
+      const f = (xn * cs + yn * sn) * off + c0;
+      const i0 = f | 0;
+      if (i0 >= 0 && i0 < LP - 1) {
+        const fr = f - i0;
+        arr[row + px] += qBuf[i0] * (1 - fr) + qBuf[i0 + 1] * fr;
+      }
+    }
+  }
+}
+function calibrate() {
+  for (let a = 0; a < NANG; a++) { filterRow(sino, a); backProject(calAcc, a); }
+  /* 最小二乘 HU ≈ calG·m + calO(带截距,自动吸收 Ram-Lak 核的 1/δ 尺度) */
+  let stm = 0, smm = 0, st = 0, sm = 0, npts = 0;
+  for (let py = 6; py < NP - 6; py += 4) for (let px = 6; px < NP - 6; px += 4) {
+    const i = py * NP + px, m = Math.PI / NANG * calAcc[i], t = phHU[i];
+    stm += t * m; smm += m * m; st += t; sm += m; npts++;
+  }
+  const den = npts * smm - sm * sm;
+  calG = Math.abs(den) > 1e-9 ? (npts * stm - st * sm) / den : 1;
+  calO = (st - calG * sm) / npts;
+}
+function mulberry32(seed) {
+  let a = seed | 0;
+  return function () {
+    a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function rebuildSino() {
+  const sd = 0.042 * Math.sqrt(100 / mAs);              /* σ ∝ 1/√mAs */
+  const rnd = mulberry32(20240915);
+  const g1 = () => {
+    const u = Math.max(rnd(), 1e-9), v = rnd();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+  for (let k = 0; k < NANG * NB; k++) sinoN[k] = sino[k] + sd * g1();
+}
+const angleOf = i => targetN > 1 ? Math.round(i * (NANG - 1) / (targetN - 1)) : 0;
+function restartScan() {
+  rebuildSino();
+  accum.fill(0);
+  angDone.fill(false);
+  nDone = 0; sweepPos = 0; holdT = 0; scanDone = false;
+  drawPlot();
+}
+
+/* ================= 3D:机架 / 病人 / 球管 ================= */
+const floorM = new THREE.MeshStandardMaterial({ color: 0x191d24, roughness: 0.95 });
+const bedM = new THREE.MeshStandardMaterial({ color: 0x2a3140, roughness: 0.8 });
+const gantryM = new THREE.MeshStandardMaterial({ color: 0xb9c2cc, metalness: 0.75, roughness: 0.35 });
+const gantryDarkM = new THREE.MeshStandardMaterial({ color: 0x3a4149, metalness: 0.5, roughness: 0.6 });
+const tubeM = new THREE.MeshStandardMaterial({ color: 0x7d8896, metalness: 0.8, roughness: 0.35 });
+const targetM = new THREE.MeshStandardMaterial({ color: 0x442222, emissive: 0xff3300, emissiveIntensity: 0.2 });
+const detM = new THREE.MeshStandardMaterial({ color: 0x2f3a4a, metalness: 0.4, roughness: 0.5, emissive: 0x1144aa, emissiveIntensity: 0.15 });
+const skinM = new THREE.MeshStandardMaterial({ color: 0xd9a684, roughness: 0.7 });
+const beamM = new THREE.MeshBasicMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+const rayM = new THREE.MeshBasicMaterial({ color: 0xbfe4ff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
+
+const floor = new THREE.Mesh(new THREE.CircleGeometry(9, 48), floorM);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -1.62;
+scene.add(floor);
+
+const gantry = new THREE.Group();
+scene.add(gantry);
+const bore = new THREE.Mesh(new THREE.TorusGeometry(1.78, 0.2, 16, 60), gantryM);
+gantry.add(bore);
+const coverF = new THREE.Mesh(new THREE.RingGeometry(1.12, 1.82, 48), gantryDarkM);
+coverF.position.z = 0.62;
+gantry.add(coverF);
+const coverB = coverF.clone();
+coverB.position.z = -0.62;
+gantry.add(coverB);
+const tubeGrp = new THREE.Group();
+tubeGrp.position.set(1.42, 0, 0);
+const tubeBody = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.4, 0.5), tubeM);
+tubeGrp.add(tubeBody);
+const tubeTarget = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), targetM);
+tubeTarget.position.x = -0.2;
+tubeGrp.add(tubeTarget);
+gantry.add(tubeGrp);
+const detArc = new THREE.Mesh(new THREE.TorusGeometry(1.56, 0.11, 8, 40, 1.15), detM);
+detArc.rotation.z = Math.PI - 0.575;
+gantry.add(detArc);
+const beamGeo = new THREE.ConeGeometry(0.88, 2.9, 24, 1, true);
+beamGeo.rotateZ(-Math.PI / 2);
+const beam = new THREE.Mesh(beamGeo, beamM);
+beam.position.x = -0.03;
+gantry.add(beam);
+const ray = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 2.98, 6), rayM);
+ray.rotation.z = -Math.PI / 2;
+gantry.add(ray);
+/* X 射线光子流(球管→探测器,扇形束内) */
+const NPH = 36;
+const phM = new THREE.MeshBasicMaterial({ color: 0xcfe8ff, transparent: true, opacity: 0.8 });
+const photons = new THREE.InstancedMesh(new THREE.SphereGeometry(0.028, 6, 5), phM, NPH);
+photons.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+photons.frustumCulled = false;
+gantry.add(photons);
+const phU = [];
+for (let i = 0; i < NPH; i++) phU.push({ u: Math.random(), y: (Math.random() - 0.5) * 1.4, z: (Math.random() - 0.5) * 1.4 });
+
+/* 病人与检查床 */
+const patient = new THREE.Group();
+scene.add(patient);
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.52, 24, 18), skinM);
+patient.add(head);
+const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.4, 4, 14), skinM);
+body.rotation.x = Math.PI / 2;
+body.position.set(0, -0.28, 1.5);
+patient.add(body);
+const sliceRing = new THREE.Mesh(new THREE.TorusGeometry(0.545, 0.02, 8, 48),
+  new THREE.MeshBasicMaterial({ color: 0x7bd88f, transparent: true, opacity: 0.75 }));
+sliceRing.position.z = 0.02;
+patient.add(sliceRing);
+const fov = new THREE.Mesh(new THREE.RingGeometry(0.72, 0.735, 64),
+  new THREE.MeshBasicMaterial({ color: 0x4dabf7, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
+patient.add(fov);
+const bed = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 4.4), bedM);
+bed.position.set(0, -0.8, 1.7);
+scene.add(bed);
+const bedPillar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 1.4), bedM);
+bedPillar.position.set(0, -1.25, 2.6);
+scene.add(bedPillar);
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, parent, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  parent.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblTube = addLabel(() => L('球管:发出 X 射线', 'X-ray tube'), gantry, new THREE.Vector3(1.5, 0.5, 0), 'r');
+const lblDet = addLabel(() => L('探测器:记录一族线积分', 'detector: records line integrals'), gantry, new THREE.Vector3(-1.62, 0.5, 0), 'b');
+const lblSlice = addLabel(() => L('扫描平面:要重建的就是这一层', 'scan plane: the slice being rebuilt'), patient, new THREE.Vector3(0, 1.0, 0.15), 'g');
+const lblBed = addLabel(() => L('检查床:沿 z 步进扫下一层', 'table: steps along z for the next slice'), scene, new THREE.Vector3(0.95, -0.45, 1.9), '');
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+const STEPS = [
+  { b: '普通 X 光:三层影子叠成一张', be: 'Plain X-ray: three depths squashed into one',
+    d: 'X 光片 = 沿一条线的全部衰减:颅骨最亮,脑组织全被它压平,出血灶完全看不见。3D 被压成 2D,深度信息丢了——右上小图就是这种“平”。',
+    de: 'A radiograph is all attenuation along one line: the skull is brightest, the brain is crushed flat beneath it, the hemorrhage invisible. 3D collapses to 2D and depth is thrown away — see the inset, upper right.',
+    act: () => { phaseIdx = 0; flyTo([3.4, 2.3, 4.8], [0, 0, 0]); } },
+  { b: 'CT 的答案:每个角度记一组线积分', be: "CT's answer: a family of line integrals per angle",
+    d: '投影 p(s,θ)=∫μ dl(拉东变换):X 光穿过人体,强度按沿途衰减率累乘;探测器记下一整行,存进正弦图。切片的全部信息都在这条带里——只是被“编码”了。',
+    de: 'A projection p(s,θ) = ∫μ dl (the Radon transform): the beam crosses the body and the detector stores one full row of line integrals into the sinogram. The whole slice is in that band — merely encoded.',
+    act: () => { phaseIdx = 1; targetN = 180; syncSliders(); flyTo([-3.9, 1.5, 2.9], [0, 0, 0]); } },
+  { b: '球管绕人转,0→180°', be: 'The tube spins around the patient, 0→180°',
+    d: '球管与探测器同步旋转 180°:π 弧度已含全部信息(θ+π 的投影与 θ 互为镜像)。角度越密,反投影的“涂抹方向”越多,重建越锐。',
+    de: 'Tube and detector rotate together through 180°: π already contains everything (the θ+π projection mirrors θ). More angles mean more smear directions — and a sharper rebuild.',
+    act: () => { phaseIdx = 2; targetN = 180; syncSliders(); flyTo([1.0, 4.4, 3.4], [0, 0, 0]); } },
+  { b: '滤波反投影:晕影叠成解剖', be: 'Filtered back-projection: halos stack into anatomy',
+    d: '把每条投影先做高通滤波,再沿原路均匀“抹”回平面叠加:一两个角度全是模糊晕影;叠到几十个,颅骨、脑室、出血灶逐步锐化浮现——重建过程本身可见。',
+    de: 'High-pass filter each projection, then smear it uniformly back along its path and stack: one or two angles give only blurry halos; after a few dozen, skull, ventricles and the hemorrhage sharpen into view — you watch reconstruction happen.',
+    act: () => { phaseIdx = 3; targetN = 180; mAs = 200; playing = true; setPlayLabel(); restartScan(); syncSliders(); flyTo([0.8, 3.0, 4.2], [0, 0, 0]); } },
+  { b: '角度太少:星芒伪影', be: 'Too few angles: star streaking',
+    d: '只采 18 个角度:反投影在采样方向留下放射状条纹,出血灶周围炸开“星星”。重建不是魔法,是采样——采样不足,它把条纹还给你。',
+    de: 'With only 18 angles, back-projection leaves radial streaks along the sampled directions and the hemorrhage bursts into a star. Reconstruction is sampling, not magic — starve it and it hands the streaks back.',
+    act: () => { phaseIdx = 4; targetN = 18; restartScan(); syncSliders(); flyTo([2.0, 1.7, 3.2], [0, 0, 0]); } },
+  { b: 'HU 标尺与窗宽窗位', be: 'The Hounsfield scale and windowing',
+    d: 'HU = 1000·(μ−μ水)/μ水:空气 −1000、水 0、脑 ~40、出血 ~65、骨 +1000。显示器只有 8-bit 灰度,一次只开一段“窗”:脑窗 W80/L40 看出血,骨窗 W2000/L500 看颅骨。',
+    de: 'HU = 1000·(μ−μw)/μw: air −1000, water 0, brain ≈40, blood ≈65, bone +1000. An 8-bit display opens one narrow window at a time: brain W80/L40 to catch the hemorrhage, bone W2000/L500 for the skull.',
+    act: () => { phaseIdx = 5; setWindow(80, 40); flyTo([2.6, 1.0, 3.4], [0, 0, 0]); } },
+  { b: '剂量换质量:σ ∝ 1/√dose', be: 'Dose buys quality: σ ∝ 1/√dose',
+    d: '把管电流砍到 1/4,光子数少了 4 倍,噪声(泊松统计)翻倍——噪声每减半,剂量要乘 4。CT 的日常权衡:看得清 vs 吃得少。',
+    de: 'Cut tube current to a quarter and photon counts drop 4×, so Poisson noise doubles — every halving of noise costs 4× the dose. The daily CT trade-off: see clearly vs dose sparingly.',
+    act: () => { phaseIdx = 6; mAs = 30; playing = true; setPlayLabel(); restartScan(); syncSliders(); flyTo([3.2, 2.2, 4.4], [0, 0, 0]); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:正弦图 ================= */
+const plotCv = document.getElementById('plotCv');
+const sinoOff = document.createElement('canvas');
+sinoOff.width = NANG; sinoOff.height = NB;
+const sinoCtx = sinoOff.getContext('2d');
+const sinoImg = sinoCtx.createImageData(NANG, NB);
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const padL = 34, padR = 10, padT = 8, padB = 20;
+  for (let a = 0; a < NANG; a++) {
+    const got = angDone[a];
+    for (let bi = 0; bi < NB; bi++) {
+      const k = (a * NB + bi) * 4;
+      const v = got ? clamp(sinoN[a * NB + bi] / 1.35, 0, 1) * 255 : 0;
+      sinoImg.data[k] = sinoImg.data[k + 1] = sinoImg.data[k + 2] = v | 0;
+      sinoImg.data[k + 3] = 255;
+    }
+  }
+  sinoCtx.putImageData(sinoImg, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(sinoOff, padL, padT, W - padL - padR, H - padT - padB);
+  ctx.font = '15px system-ui';
+  ctx.fillStyle = cTxt;
+  ctx.fillText('0°', padL, H - 5);
+  ctx.fillText('180°', W - padR - 40, H - 5);
+  ctx.save();
+  ctx.translate(10, padT + 40); ctx.rotate(-Math.PI / 2);
+  ctx.fillText(L('探测器', 'detector'), 0, 0);
+  ctx.restore();
+  const mx = padL + sweepPos / 180 * (W - padL - padR);
+  ctx.strokeStyle = 'rgba(123,216,143,.9)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(mx, padT); ctx.lineTo(mx, H - padB); ctx.stroke();
+}
+
+/* ================= 绘图:重建切片 / X光对照 ================= */
+const recCv = document.getElementById('recCv');
+recCv.width = 384; recCv.height = 384;
+const recOff = document.createElement('canvas');
+recOff.width = NP; recOff.height = NP;
+const recOffCtx = recOff.getContext('2d');
+const recImg = recOffCtx.createImageData(NP, NP);
+const HU_PX = 49 * NP + 85;                                /* 出血灶中心 */
+function drawRec() {
+  if (nDone < 1) return;
+  const scale = Math.PI / nDone;
+  let sum = 0, cnt = 0;
+  for (let i = 0; i < NP * NP; i++) {
+    const hu = calG * scale * accum[i] + calO;
+    const val = clamp((hu - (WL - WW / 2)) / WW, 0, 1);
+    const v = (val * 255) | 0;
+    recImg.data[i * 4] = recImg.data[i * 4 + 1] = recImg.data[i * 4 + 2] = v;
+    recImg.data[i * 4 + 3] = 255;
+    if ((i % 5) === 0) { const d = hu - phHU[i]; sum += d * d; cnt++; }
+  }
+  rmsHU = Math.sqrt(sum / cnt);
+  recOffCtx.putImageData(recImg, 0, 0);
+  const ctx = recCv.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(recOff, 0, 0, recCv.width, recCv.height);
+}
+const xrCv = document.getElementById('xrCv');
+xrCv.width = NP; xrCv.height = NP;
+function drawXr() {
+  let muMax = 0.001;
+  for (let i = 0; i < NP * NP; i++) if (muPh[i] > muMax) muMax = muPh[i];
+  const off = document.createElement('canvas');
+  off.width = NP; off.height = NP;
+  const octx = off.getContext('2d');
+  const img = octx.createImageData(NP, NP);
+  for (let i = 0; i < NP * NP; i++) {
+    const v = clamp(muPh[i] / muMax, 0, 1) * 255 | 0;
+    img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
+    img.data[i * 4 + 3] = 255;
+  }
+  octx.putImageData(img, 0, 0);
+  xrCv.getContext('2d').drawImage(off, 0, 0);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elAng = document.getElementById('sAng'), elAngVal = document.getElementById('sAngVal');
+const elDose = document.getElementById('sDose'), elDoseVal = document.getElementById('sDoseVal');
+const stAng = document.getElementById('stAng'), stProj = document.getElementById('stProj'), stErr = document.getElementById('stErr'),
+  stDose = document.getElementById('stDose'), stWin = document.getElementById('stWin'), stHU = document.getElementById('stHU');
+const formulaEl = document.getElementById('formula');
+const btnWBrain = document.getElementById('btnWBrain'), btnWBone = document.getElementById('btnWBone'),
+  btnWSoft = document.getElementById('btnWSoft'), btnRescan = document.getElementById('btnRescan');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elAng.value = targetN; elAngVal.textContent = targetN + ' ' + L('个', 'views');
+  elDose.value = mAs; elDoseVal.textContent = mAs + ' mAs';
+}
+function syncWinBtns() {
+  btnWBrain.classList.toggle('on', WW === 80 && WL === 40);
+  btnWBone.classList.toggle('on', WW === 2000 && WL === 500);
+  btnWSoft.classList.toggle('on', WW === 350 && WL === 50);
+}
+function setWindow(w, l) { WW = w; WL = l; syncWinBtns(); drawRec(); updateStats(); updateFormula(); }
+function updateStats() {
+  stAng.textContent = sweepPos.toFixed(0) + ' °';
+  stProj.textContent = nDone + ' / ' + targetN;
+  stErr.textContent = rmsHU > 0 ? (rmsHU / 2000 * 100).toFixed(1) + ' %' : '—';
+  stErr.className = 'v ' + (rmsHU / 2000 < 0.05 ? 'ok' : rmsHU / 2000 < 0.13 ? 'warn' : 'bad');
+  stDose.textContent = (mAs * 0.18).toFixed(0) + ' mGy';
+  stDose.className = 'v ' + (mAs <= 150 ? 'ok' : mAs <= 280 ? 'warn' : 'bad');
+  stWin.textContent = 'W' + WW + ' / L' + WL;
+  stHU.textContent = nDone > 3 ? (calG * Math.PI / nDone * accum[HU_PX] + calO).toFixed(0) + ' HU' : '—';
+}
+function updateFormula() {
+  formulaEl.innerHTML = L(
+    `<b>投影 p(s,θ) = ∫μ dl</b>(拉东变换):一条线上的衰减总和——X 光测到的正是它<br>` +
+    `<b>滤波反投影 f(x,y) = ∫₀^π q(ŝ,θ)dθ</b>:先高通滤波再沿原路“抹”回,晕影叠成解剖<br>` +
+    `<b>HU = 1000·(μ−μ水)/μ水</b>:空气 −1000 / 水 0 / 脑 ~40 / 骨 +1000;窗宽 W 决定开多宽的灰度段<br>` +
+    `<b>σ噪声 ∝ 1/√mAs</b>:噪声减半,剂量 ×4;当前 ${targetN} 角 × ${mAs} mAs ≈ ${(mAs * 0.18).toFixed(0)} mGy`,
+    `<b>Projection p(s,θ) = ∫μ dl</b> (Radon): total attenuation along one line — exactly what X-rays measure<br>` +
+    `<b>Filtered back-projection f(x,y) = ∫₀^π q(ŝ,θ)dθ</b>: high-pass first, smear home, halos stack into anatomy<br>` +
+    `<b>HU = 1000·(μ−μw)/μw</b>: air −1000, water 0, brain ≈40, bone +1000; window width W picks the greyscale span<br>` +
+    `<b>σ ∝ 1/√mAs</b>: halve noise, pay 4× dose; now ${targetN} views × ${mAs} mAs ≈ ${(mAs * 0.18).toFixed(0)} mGy`);
+}
+function syncAll() {
+  syncSliders(); syncWinBtns(); updateFormula(); updateStats();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+elAng.addEventListener('input', () => { targetN = +elAng.value; restartScan(); syncSliders(); updateFormula(); });
+elDose.addEventListener('input', () => { mAs = +elDose.value; restartScan(); syncSliders(); updateFormula(); updateStats(); });
+btnWBrain.addEventListener('click', () => setWindow(80, 40));
+btnWBone.addEventListener('click', () => setWindow(2000, 500));
+btnWSoft.addEventListener('click', () => setWindow(350, 50));
+btnRescan.addEventListener('click', () => restartScan());
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { chartOn = e.target.checked; document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglXr').addEventListener('change', e => { xrOn = e.target.checked; document.getElementById('xrWrap').style.display = e.target.checked ? '' : 'none'; });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0;
+controls.addEventListener('start', () => { camTween = null; });
+const ROT = 42;                                            /* 采集角速度 °/s(慢放) */
+const _M4 = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _V = new THREE.Vector3(), _S = new THREE.Vector3();
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  if (playing) {
+    if (scanDone) {
+      holdT -= dt0;
+      if (holdT <= 0) restartScan();
+    } else {
+      sweepPos = Math.min(180, sweepPos + ROT * dt0);
+      while (nDone < targetN) {
+        const a = angleOf(nDone);
+        if (sweepPos >= a * 180 / NANG) { filterRow(sinoN, a); backProject(accum, a); angDone[a] = true; nDone++; }
+        else break;
+      }
+      if (nDone >= targetN) { scanDone = true; holdT = 1.3; }
+    }
+  }
+  gantry.rotation.z = sweepPos * Math.PI / 180;
+  targetM.emissiveIntensity = (playing && !scanDone) ? 1.3 + 0.5 * Math.random() : 0.2;
+  beamM.opacity = (playing && !scanDone) ? 0.09 : 0.035;
+  rayM.opacity = (playing && !scanDone) ? 0.45 : 0.15;
+  phM.opacity = (playing && !scanDone) ? 0.8 : 0.25;
+  /* 光子从球管飞向探测器 */
+  const beamOn = playing && !scanDone;
+  for (let i = 0; i < NPH; i++) {
+    const p = phU[i];
+    p.u += dt0 * (beamOn ? 1.6 : 0.25);
+    if (p.u > 1) { p.u -= 1; p.y = (Math.random() - 0.5) * 1.4; p.z = (Math.random() - 0.5) * 1.4; }
+    const spread = 0.1 + 0.62 * p.u;
+    _V.set(lerp(1.32, -1.5, p.u), p.y * spread, p.z * spread);
+    const s = 1 - 0.4 * p.u;
+    _M4.compose(_V, _Q.identity(), _S.set(s, s, s));
+    photons.setMatrixAt(i, _M4);
+  }
+  photons.instanceMatrix.needsUpdate = true;
+  sliceRing.material.opacity = 0.4 + 0.3 * Math.sin(performance.now() * 0.004);
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.14) {
+    acc = 0;
+    drawRec();
+    updateStats();
+    if (chartOn) drawPlot();
+  }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis() && r.text() !== '';
+    r.o.visible = on;
+    if (on) r.o.element.textContent = r.text();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildPhantom();
+radonAll();
+calibrate();
+rebuildSino();
+drawXr();
+recCv.getContext('2d').fillStyle = '#000';
+recCv.getContext('2d').fillRect(0, 0, recCv.width, recCv.height);
+buildSteps();
+applyLang();
+restartScan();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncAll();
+start();
+</script>
+</body>
+</html>
