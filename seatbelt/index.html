@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>安全带 · 惯性锁、预紧器与限力器</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="安全带 · 惯性锁、预紧器与限力器" data-en="Seatbelt · Inertia Lock, Pretensioner & Load Limiter">安全带 · 惯性锁、预紧器与限力器</h1>
+  <div class="sub" data-zh="平时卷轴自由收放→急刹摆锤前倾卡死卷轴→碰撞毫秒级时序:8 ms 火药预紧器先把人"焊"回座椅→车体以 20 g 崩塌吸能,人只是相对车厢慢慢前移→限力器把胸带力钳在 6 kN 让带子可控放带→30 ms 气囊在峰值前接住头——不系带的对照:56 km/h 惯性把头送进方向盘 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="The reel pays freely → hard braking swings the pendulum and locks it → crash timeline: at 8 ms the pyro pretensioner cinches you to the seat → the body crumples at 20 g so you barely move inside the cabin → the load limiter clamps chest force at 6 kN, paying out webbing on purpose → at 30 ms the airbag catches the head before the peak — unbelted comparison: 56 km/h of inertia delivers your head to the wheel · 3D interactive demo · drag to orbit · Space = run/pause">平时卷轴自由收放→急刹摆锤前倾卡死卷轴→碰撞毫秒级时序:8 ms 火药预紧器先把人"焊"回座椅→车体以 20 g 崩塌吸能,人只是相对车厢慢慢前移→限力器把胸带力钳在 6 kN 让带子可控放带→30 ms 气囊在峰值前接住头——不系带的对照:56 km/h 惯性把头送进方向盘 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="碰撞计时" data-en="Crash clock">碰撞计时</span><span class="v" id="stT">—</span>
+  <span class="k" data-zh="头部前移" data-en="Head excursion">头部前移</span><span class="v" id="stX">—</span>
+  <span class="k" data-zh="胸带载荷" data-en="Belt load">胸带载荷</span><span class="v ok" id="stF">—</span>
+  <span class="k" data-zh="峰值加速度" data-en="Peak accel">峰值加速度</span><span class="v warn" id="stA">—</span>
+  <span class="k" data-zh="预紧器" data-en="Pretensioner">预紧器</span><span class="v" id="stPre">—</span>
+  <span class="k" data-zh="限力器" data-en="Limiter">限力器</span><span class="v" id="stLim">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="头部减速度时程:绿=系带(限力),红=不系带对照——面积同样,峰值天差地别" data-en="Head deceleration: green = belted (limited), red = unbelted — same stopping area, wildly different peaks">头部减速度时程:绿=系带(限力),红=不系带对照——面积同样,峰值天差地别</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.g" data-zh="卷轴+摆锤:惯性锁芯" data-en="reel + pendulum: the inertia lock">卷轴+摆锤:惯性锁芯</span>
+    <span class="chip.o" data-zh="火药预紧器:8 ms 收紧 4 cm" data-en="pyro pretensioner: 4 cm in 8 ms">火药预紧器:8 ms 收紧 4 cm</span>
+    <span class="chip.r" data-zh="限力器:6 kN 后故意放带" data-en="load limiter: pays out past 6 kN on purpose">限力器:6 kN 后故意放带</span>
+    <span class="chip.b" data-zh="车体崩塌区:20 g 吸能" data-en="crumple zone: the 20 g energy absorber">车体崩塌区:20 g 吸能</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnCruise" data-zh="平时巡航" data-en="Cruising">平时巡航</button>
+    <button class="abtn" id="btnBrake" data-zh="急刹锁止" data-en="Hard brake lock">急刹锁止</button>
+    <button class="abtn" id="btnCrash" data-zh="56 km/h 正碰·系带" data-en="56 km/h crash · belted">56 km/h 正碰·系带</button>
+    <button class="abtn brk" id="btnNoBelt" data-zh="正碰对照·不系带" data-en="Crash · unbelted">正碰对照·不系带</button>
+    <button class="abtn" id="btnSlow" data-zh="慢动作 ×0.03" data-en="Slow-mo ×0.03">慢动作 ×0.03</button>
+  </div>
+  <div class="row"><label data-zh="时间轴回放" data-en="Timeline">时间轴回放</label><input id="sTime" type="range" min="-400" max="300" step="1" value="-400"><span class="val" id="sTimeVal">-400 ms</span></div>
+  <div class="row"><label data-zh="播放速度" data-en="Play speed">播放速度</label><input id="sSpd" type="range" min="0.03" max="1" step="0.01" value="0.25"><span class="val" id="sSpdVal">×0.25</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="曲线" data-en="Chart">曲线</span></label>
+      <label><input id="tglBag" type="checkbox" checked> <span data-zh="气囊" data-en="Airbag">气囊</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../airbag/" data-zh="安全气囊:10 ms 立方体的搭档" data-en="airbag: the 30 ms partner">安全气囊:10 ms 立方体的搭档</a>
+    <a href="../ratchet-pawl/" data-zh="棘轮:锁芯的表亲" data-en="ratchet: the lock's cousin">棘轮:锁芯的表亲</a>
+    <a href="../centrifugal-governor/" data-zh="离心触发器" data-en="centrifugal triggering">离心触发器</a>
+    <a href="../abs-brakes/" data-zh="ABS:刹车端的安全" data-en="ABS: safety on the braking side">ABS:刹车端的安全</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, f) => a + (b - a) * f;
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const G = 9.81;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141b, 30, 120);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  floorM.color.setHex(dark ? 0x1b1e24 : 0xaab6c2);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('安全带 · 惯性锁、预紧器与限力器', 'Seatbelt · Inertia Lock, Pretensioner & Load Limiter');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 300);
+camera.position.set(3.4, 2.2, 7.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.5;
+controls.maxDistance = 40;
+controls.autoRotateSpeed = 0.35;
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.55);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 1.0);
+key.position.set(6, 10, 8);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9ab8ff, 0.3);
+fill.position.set(-8, 5, -7);
+scene.add(fill);
+
+/* ================= 模型参数(国际单位) =================
+   车体撞墙后 a_car = −20g·(1−t/80ms);乘员胸 effective m=32 kg
+   预紧 8 ms 内 slack 0.06→0.02 m;织带 k=1.2e5 N/m;限力 6 kN
+   不系带:0.32 m 处方向盘,F=4e4·(x−0.32) 硬墙 */
+const V0 = 56 / 3.6, M_CH = 32, K_BELT = 1.2e5, F_CAP = 6000, A_CAR = 20 * G;
+const SLACK0 = 0.06, SLACK_PRE = 0.02, WHEEL_X = 0.32;
+
+/* ---------------- 状态 ---------------- */
+let scenario = 'crash';          /* cruise | brake | crash | nobelt */
+let tMs = -400;                  /* 碰撞计时 */
+let speed = clamp(qsFloat('speed', 0.25), 0.03, 1);
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let xRel = 0, vRel = 0;          /* 乘员相对车厢前移 */
+let beltF = 0, slack = SLACK0, aHead = 0, peakA = 0;
+let cruiseV = 8, locked = false;
+let crush = 0, pendAng = 0, spoolAng = 0, bagScale = 0;
+let slow = false, prevSpeed = 1;
+let labelsOn = true, bagOn = true, chartOn = true;
+let traceBelt = [], traceNone = [];
+let notifyT = 0, notifyZ = '', notifyE = '';
+let phase = 0;
+let camFocus = 'cabin';          /* cabin | reel */
+
+/* ---------------- 材质 ---------------- */
+const floorM = new THREE.MeshStandardMaterial({ color: 0x1b1e24, metalness: 0.02, roughness: 0.95 });
+const bodyM = new THREE.MeshStandardMaterial({ color: 0x3d6ea8, metalness: 0.6, roughness: 0.4 });
+const bodyDarkM = new THREE.MeshStandardMaterial({ color: 0x2a4d78, metalness: 0.5, roughness: 0.5 });
+const glassM = new THREE.MeshStandardMaterial({ color: 0xbfe0f5, transparent: true, opacity: 0.22, roughness: 0.1, metalness: 0.2 });
+const seatM = new THREE.MeshStandardMaterial({ color: 0x54423a, roughness: 0.9 });
+const skinM = new THREE.MeshStandardMaterial({ color: 0xe0b08c, roughness: 0.8 });
+const shirtM = new THREE.MeshStandardMaterial({ color: 0x8a9b55, roughness: 0.85 });
+const jeanM = new THREE.MeshStandardMaterial({ color: 0x3e5570, roughness: 0.9 });
+const beltM = new THREE.MeshStandardMaterial({ color: 0x22262c, roughness: 0.7 });
+const steelM = new THREE.MeshStandardMaterial({ color: 0x9aa3ae, metalness: 0.85, roughness: 0.3 });
+const brassM = new THREE.MeshStandardMaterial({ color: 0xb08d3e, metalness: 0.85, roughness: 0.35 });
+const bagM = new THREE.MeshStandardMaterial({ color: 0xf2f5f8, transparent: true, opacity: 0.85, roughness: 0.9 });
+const pyroM = new THREE.MeshStandardMaterial({ color: 0xffa028, emissive: 0xff7a1a, emissiveIntensity: 2.5, transparent: true, opacity: 0 });
+const wallM = new THREE.MeshStandardMaterial({ color: 0x8c8f96, metalness: 0.1, roughness: 0.95 });
+const stripeM = new THREE.MeshStandardMaterial({ color: 0xff4d3d, roughness: 0.8 });
+
+/* ---------------- 场景搭建:侧视车厢剖面(车头朝 +x) ---------------- */
+const floor = new THREE.Mesh(new THREE.CylinderGeometry(24, 24, 0.3, 40), floorM);
+floor.position.y = -0.15;
+scene.add(floor);
+const grid = new THREE.GridHelper(40, 40, 0x2a3140, 0x232a36);
+grid.position.y = 0.01;
+scene.add(grid);
+
+const carGrp = new THREE.Group();
+scene.add(carGrp);
+function box(w, h, d, mat, x, y, z, parent) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  (parent || scene).add(m);
+  return m;
+}
+box(4.4, 0.14, 1.7, bodyDarkM, 0, 0.52, 0, carGrp);              /* 车厢地板 */
+box(1.1, 0.5, 1.7, bodyM, -2.1, 0.85, 0, carGrp);                /* 后段 */
+box(0.9, 1.05, 1.7, bodyM, 1.95, 1.15, 0, carGrp);               /* 车头引擎盖区 */
+box(0.12, 0.9, 1.7, bodyM, -2.68, 1.35, 0, carGrp);              /* 后壁 */
+const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.75, 1.6), glassM);
+windshield.position.set(1.45, 1.85, 0);
+windshield.rotation.z = -0.42;
+carGrp.add(windshield);
+box(0.1, 0.34, 1.66, bodyM, 2.28, 0.86, 0, carGrp);              /* 前保险杠区 */
+box(0.18, 0.16, 1.7, stripeM, 2.3, 0.72, 0, carGrp);
+/* 方向盘与柱 */
+const colM = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.55, 10), bodyDarkM);
+colM.rotation.z = 1.15;
+colM.position.set(1.42, 1.18, 0);
+carGrp.add(colM);
+const wheelRing = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.035, 8, 22), bodyDarkM);
+wheelRing.rotation.y = Math.PI / 2;
+wheelRing.rotation.z = 0.3;
+wheelRing.position.set(1.14, 1.32, 0);
+carGrp.add(wheelRing);
+/* 座椅 */
+box(0.5, 0.14, 1.1, seatM, -1.0, 0.72, 0, carGrp);
+const seatBack = box(0.16, 0.95, 1.1, seatM, -1.28, 1.2, 0, carGrp);
+seatBack.rotation.z = 0.12;
+/* B 柱锚点 + 卷收器 */
+const pillar = box(0.1, 1.5, 0.12, bodyDarkM, -1.55, 1.55, 0.62, carGrp);
+const reel = new THREE.Group();
+reel.position.set(-1.42, 2.05, 0.62);
+carGrp.add(reel);
+const spool = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.16, 14), blackPlastic());
+reel.add(spool);
+function blackPlastic() { return new THREE.MeshStandardMaterial({ color: 0x2c3036, roughness: 0.8 }); }
+const spoolMat = spool.material;
+/* 惯性锁:摆锤 + 棘爪 */
+const pendulum = new THREE.Group();
+pendulum.position.set(-1.42, 2.05, 0.5);
+carGrp.add(pendulum);
+const pendArm = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.05), brassM);
+pendArm.geometry.translate(0, -0.13, 0);
+pendulum.add(pendArm);
+const pawl = box(0.1, 0.05, 0.04, steelM, -1.28, 1.98, 0.56, carGrp);
+/* 预紧器 */
+const pyro = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.22, 12), pyroM);
+pyro.rotation.x = Math.PI / 2;
+pyro.position.set(-1.18, 1.86, 0.62);
+carGrp.add(pyro);
+/* 乘员(铰接简化) */
+const occ = new THREE.Group();
+occ.position.set(-0.95, 0, 0);
+carGrp.add(occ);
+const torso = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.62, 0.42), shirtM);
+torso.position.set(0, 1.28, 0);
+occ.add(torso);
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 12), skinM);
+head.position.set(0.04, 1.78, 0);
+occ.add(head);
+const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 0.4), jeanM);
+thigh.position.set(0.24, 0.82, 0);
+occ.add(thigh);
+const shin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.4, 0.16), jeanM);
+shin.position.set(0.42, 0.52, 0.1);
+occ.add(shin);
+/* 安全带(两段圆柱,按锚点动态摆) */
+const shoulderBelt = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 1, 8), beltM.clone());
+scene.add(shoulderBelt);
+const lapBelt = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 1, 8), beltM.clone());
+scene.add(lapBelt);
+/* 气囊 */
+const bag = new THREE.Mesh(new THREE.SphereGeometry(0.34, 18, 14), bagM.clone());
+bag.position.set(1.0, 1.42, 0);
+bag.visible = false;
+carGrp.add(bag);
+/* 撞墙 */
+box(0.5, 2.6, 4, wallM, 4.1, 1.3, 0);
+box(0.52, 0.3, 4, stripeM, 4.1, 0.55, 0);
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblReel = addLabel(() => locked ? L('卷轴已锁:织带不再放出', 'reel LOCKED: no more webbing out') : L('卷收器:平时自由收放', 'reel: free feed in normal driving'), new THREE.Vector3(-1.42, 2.5, 0.62), locked ? 'r' : 'g');
+const lblPend = addLabel(() => L(`摆锤 ${(pendAng * 57.3).toFixed(0)}°:${locked ? '已触发棘爪' : '减速超过阈值就前倾'}`, `pendulum ${(pendAng * 57.3).toFixed(0)}°: ${locked ? 'pawl engaged' : 'tips past threshold under decel'}`), new THREE.Vector3(-1.42, 1.7, 0.5), 'o');
+const lblPyro = addLabel(() => tMs > 2 && tMs < 26 ? L('预紧器点火!', 'pretensioner FIRED!') : L('火药预紧器:8 ms 收 4 cm', 'pyro pretensioner: 4 cm in 8 ms'), new THREE.Vector3(-1.18, 1.5, 0.62), tMs > 2 && tMs < 26 ? 'r' : 'b');
+const lblBelt = addLabel(() => beltF > 100 ? L(`织带 ${(beltF / 1000).toFixed(1)} kN${beltF >= F_CAP - 1 ? '(限力器放带中)' : ''}`, `webbing ${(beltF / 1000).toFixed(1)} kN${beltF >= F_CAP - 1 ? ' (limiter paying out)' : ''}`) : L('织带松弛', 'webbing slack'), new THREE.Vector3(-0.6, 1.9, 0.3), beltF >= F_CAP - 1 ? 'r' : 'g');
+const lblCrush = addLabel(() => tMs >= 0 ? L(`车体崩塌吸能:${(crush * 100).toFixed(0)} cm @ ~20 g`, `crumple zone absorbing: ${(crush * 100).toFixed(0)} cm at ~20 g`) : L('崩塌区:碰撞吸能的第一道', 'crumple zone: the first absorber'), new THREE.Vector3(2.1, 0.45, 0), 'b');
+const lblNotify = addLabel(() => {
+  if (notifyT > 0) return L(notifyZ, notifyE);
+  if (scenario === 'nobelt' && tMs > 40 && tMs < 300) return L('头已经进方向盘了——这就是不系带', 'the head is in the wheel — that is "unbelted"');
+  return '';
+}, new THREE.Vector3(0, 2.9, 0), 'r');
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+const STEPS = [
+  { b: '平时:卷轴自由随动', be: 'Normal driving: the reel follows freely',
+    d: '卷收器里的卷轴靠发条随时收带,身体前倾它就放带——摆锤安静垂着,棘爪离棘轮远远的:安全带不该绑架日常的每一次俯身。',
+    de: 'A spring-loaded spool constantly takes up slack and pays out when you lean — the pendulum hangs quiet, the pawl far from the ratchet: a belt must not fight everyday motion.',
+    act: () => { phase = 0; setScenario('cruise'); flyTo([3.0, 2.0, 6.6], [-0.6, 1.3, 0]); } },
+  { b: '急刹:摆锤前倾锁轴', be: 'Hard braking: the pendulum tips and locks',
+    d: '减速度一旦超阈值(急刹/侧倾/颠簸),钢制摆锤前倾,棘爪顶进卷轴的棘齿——织带瞬间锁死;松开后又随动如常。',
+    de: 'Past a deceleration threshold (brake, tilt, bump), the steel pendulum tips forward and the pawl jumps into the spool\'s ratchet teeth — the webbing locks instantly, then frees again.',
+    act: () => { phase = 1; setScenario('brake'); flyTo([-2.6, 2.3, 2.4], [-1.4, 2.0, 0.5]); } },
+  { b: '碰撞 0–10 ms:预紧器点火', be: 'Crash 0–10 ms: pretensioner fires',
+    d: '传感器 10 ms 内判定"真撞了":火药推动钢索,卷轴倒转收紧 4 cm 织带,把骨盆和胸先"焊"回座椅——慢动作里看这一下白光。',
+    de: 'Within 10 ms the sensor rules "this is real": a pyro charge yanks a cable, the spool reverses and cinches 4 cm of webbing, welding pelvis and torso to the seat — watch the flash in slow-mo.',
+    act: () => { phase = 2; setScenario('crash'); tMs = 0; slow = true; btnSlow.classList.add('on'); prevSpeed = speed; speed = 0.03; syncSliders(); flyTo([-2.2, 2.2, 3.0], [-1.0, 1.6, 0.3]); } },
+  { b: '10–80 ms:车体崩塌 20 g', be: '10–80 ms: the body crumples at 20 g',
+    d: '车头崩塌区把 56 km/h 在 0.6 m 里吃掉,车厢本身减 20 g;因为人被预紧在座椅上,相对车厢反而只慢慢前移几厘米——吸能买来了时间。',
+    de: 'The crumple zone eats 56 km/h within 0.6 m at 20 g; cinched to the seat, you barely drift inside the cabin — crush distance buys time, and time buys survival.',
+    act: () => { phase = 3; tMs = 30; flyTo([1.4, 1.8, 5.4], [1.4, 1.3, 0]); } },
+  { b: '20–120 ms:限力器可控放带', be: '20–120 ms: the load limiter pays out',
+    d: '胸部载荷冲到 6 kN,限力器的扭杆开始让卷轴一点点倒放:带子"松手"把峰值加速度钳住——用多 5 cm 的前移换掉一排断肋骨。',
+    de: 'As chest load hits 6 kN, the limiter\'s torsion bar lets the spool creep out: the belt "gives" on purpose, capping the peak — trading 5 cm of excursion for a row of broken ribs.',
+    act: () => { phase = 4; flyTo([-1.4, 2.0, 2.6], [-0.9, 1.5, 0.3]); } },
+  { b: '30 ms:气囊在峰值前接住', be: '30 ms: the airbag catches before the peak',
+    d: '气囊 30 ms 充满 60 L,恰好赶在头部前移的峰值前铺好气垫——SRS 的 S 是 Supplemental:气囊是"补充",安全带才是主角。',
+    de: 'The bag fills 60 L in 30 ms, laying the cushion just before the head\'s peak excursion — the S in SRS means supplemental: the bag assists, the belt does the work.',
+    act: () => { phase = 5; flyTo([0.4, 1.8, 4.4], [0.8, 1.4, 0]); } },
+  { b: '对照:不系带的同一场碰撞', be: 'The comparison: same crash, no belt',
+    d: '红曲线是不系带的头部减速度:惯性把头原速送进方向盘,再几十厘米内硬停——同样的动量,峰值差出五倍;系带是把一次撞击摊薄成一秒温柔。',
+    de: 'The red curve is the unbelted head: inertia delivers it into the wheel at full speed to stop in centimeters — same momentum, five times the peak. The belt spreads one impact into a long, gentle second.',
+    act: () => { phase = 6; setScenario('nobelt'); flyTo([1.2, 1.9, 4.8], [1.0, 1.4, 0]); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phase = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 物理(每帧按 dt 推进 tMs) ================= */
+function carDecel(t) {   /* 车体减速度绝对值 m/s²(t 秒) */
+  if (scenario === 'crash' || scenario === 'nobelt') {
+    if (t < 0) return 0;
+    if (t > 0.08) return 0;
+    return A_CAR * (1 - t / 0.08);
+  }
+  if (scenario === 'brake') return t < 0 ? 0 : (t < 1.2 ? 0.65 * G : 0);
+  return 0;
+}
+function step(dtMs) {
+  const dt = dtMs / 1000;
+  const t = tMs / 1000;
+  const aCar = carDecel(t);
+  /* 预紧器:8 ms 内 slack 收紧 */
+  if (scenario === 'crash' && t >= 0.005) slack = lerp(SLACK_PRE, SLACK0, clamp((0.013 - t) / 0.008, 0, 1));
+  else slack = SLACK0;
+  /* 摆锤:减速度角度 */
+  pendAng = lerp(pendAng, clamp(aCar / G * 0.16, 0, 0.5), Math.min(1, dt * 30));
+  locked = pendAng > 0.09;
+  /* 乘员相对运动 */
+  let F = 0;
+  if (scenario !== 'nobelt' && locked) {
+    const stretch = xRel - slack;
+    if (stretch > 0) F = Math.min(F_CAP, K_BELT * stretch);
+  }
+  if (scenario === 'nobelt' && xRel > WHEEL_X) F = 4e4 * (xRel - WHEEL_X) + 800;
+  const aRel = aCar - F / M_CH;   /* 车厢系:车减速→人相对前冲 */
+  if (scenario === 'cruise' && !locked) {
+    vRel = 0; xRel = lerp(xRel, 0, Math.min(1, dt * 6));
+  } else {
+    vRel += aRel * dt;
+    xRel += vRel * dt;
+    if (xRel < 0) { xRel = 0; vRel = 0; }
+  }
+  beltF = F;
+  aHead = Math.abs(aCar - F / M_CH * (scenario === 'nobelt' ? 0.3 : 1)) ;
+  if (t > 0.01 && t < 0.35) peakA = Math.max(peakA, aHead / G);
+  /* 车体崩塌位移 */
+  crush = (scenario === 'crash' || scenario === 'nobelt') ? clamp(V0 * V0 / (2 * A_CAR) * (1 - Math.pow(Math.max(0, 1 - Math.max(0, t) / 0.08), 2)), 0, 0.62) : 0;
+  /* 气囊 */
+  const bagT = scenario === 'crash' ? t : -1;
+  bagScale = bagT < 0.022 ? 0 : bagT < 0.05 ? (bagT - 0.022) / 0.028 : bagT < 0.14 ? 1 : Math.max(0.25, 1 - (t - 0.14) * 2);
+  /* 记录曲线 */
+  if (t >= 0 && t <= 0.3) {
+    const aG = aHead / G;
+    if (scenario === 'crash') {
+      if (!traceBelt.length || t > traceBelt[traceBelt.length - 1].t) traceBelt.push({ t, a: aG });
+    } else if (scenario === 'nobelt') {
+      if (!traceNone.length || t > traceNone[traceNone.length - 1].t) traceNone.push({ t, a: Math.max(aG, (F ? F / M_CH : aCar) / G) });
+    }
+  }
+  spoolAng += (beltF > 0 ? -vRel : vRel * 2) * dt * 14;
+}
+
+/* ================= 绘图:头部减速度曲线 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const padL = 40, padR = 12, padT = 12, padB = 28;
+  const T0 = 0, T1 = 0.3;
+  const xOf = t => padL + (t - T0) / (T1 - T0) * (W - padL - padR);
+  const yOf = a => (H - padB) - clamp(a, 0, 130) / 130 * (H - padB - padT);
+  ctx.font = '16px system-ui';
+  ctx.strokeStyle = 'rgba(128,150,170,.22)';
+  ctx.fillStyle = cTxt;
+  for (const a of [30, 60, 90, 120]) {
+    ctx.beginPath(); ctx.moveTo(padL, yOf(a)); ctx.lineTo(W - padR, yOf(a)); ctx.stroke();
+    ctx.fillText(String(a), padL - 30, yOf(a) + 6);
+  }
+  ctx.fillText('g', 10, padT + 14);
+  for (const t of [0, 0.08, 0.16, 0.24]) {
+    ctx.beginPath(); ctx.moveTo(xOf(t), padT); ctx.lineTo(xOf(t), H - padB); ctx.stroke();
+    ctx.fillText((t * 1000).toFixed(0), xOf(t) - 8, H - 8);
+  }
+  ctx.fillText(L('ms', 'ms'), W - padR - 40, H - 8);
+  /* 参考线 60 g */
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = 'rgba(255,107,107,.5)';
+  ctx.beginPath(); ctx.moveTo(padL, yOf(60)); ctx.lineTo(W - padR, yOf(60)); ctx.stroke();
+  ctx.setLineDash([]);
+  const draw = (buf, col) => {
+    if (buf.length < 2) return;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    buf.forEach((p, i) => i ? ctx.lineTo(xOf(p.t), yOf(p.a)) : ctx.moveTo(xOf(p.t), yOf(p.a)));
+    ctx.stroke();
+  };
+  draw(traceBelt, '#7bd88f');
+  draw(traceNone, '#ff6b6b');
+  /* 当前时刻 */
+  if (tMs >= 0 && tMs <= 300) {
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(xOf(tMs / 1000), padT); ctx.lineTo(xOf(tMs / 1000), H - padB); ctx.stroke();
+  }
+  ctx.fillStyle = '#7bd88f';
+  ctx.fillText(L('系带', 'belted'), padL + 8, padT + 16);
+  ctx.fillStyle = '#ff6b6b';
+  ctx.fillText(L('不系带', 'unbelted'), padL + 70, padT + 16);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elTime = document.getElementById('sTime'), elTimeVal = document.getElementById('sTimeVal');
+const elSpd = document.getElementById('sSpd'), elSpdVal = document.getElementById('sSpdVal');
+const stT = document.getElementById('stT'), stX = document.getElementById('stX'), stF = document.getElementById('stF'),
+  stA = document.getElementById('stA'), stPre = document.getElementById('stPre'), stLim = document.getElementById('stLim');
+const formulaEl = document.getElementById('formula');
+const btnSlow = document.getElementById('btnSlow');
+const btns = { cruise: document.getElementById('btnCruise'), brake: document.getElementById('btnBrake'), crash: document.getElementById('btnCrash'), nobelt: document.getElementById('btnNoBelt') };
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elTime.value = clamp(tMs, -400, 300); elTimeVal.textContent = tMs.toFixed(0) + ' ms';
+  elSpd.value = speed; elSpdVal.textContent = '×' + speed.toFixed(2);
+}
+function updateStats() {
+  stT.textContent = (tMs >= 0 ? 'T+' : '') + tMs.toFixed(0) + ' ms';
+  stX.textContent = (xRel * 100).toFixed(1) + ' cm';
+  stF.textContent = (beltF / 1000).toFixed(1) + ' kN';
+  stF.className = 'v ' + (beltF >= F_CAP - 1 ? 'warn' : beltF > 100 ? 'ok' : '');
+  stA.textContent = peakA.toFixed(0) + ' g';
+  stA.className = 'v ' + (peakA > 60 ? 'bad' : peakA > 35 ? 'warn' : 'ok');
+  stPre.textContent = scenario === 'crash' && tMs > 5 ? (tMs < 13 ? L('点火!', 'FIRED!') : L('已收紧', 'cinched')) : L('待命', 'standby');
+  stPre.className = 'v ' + (scenario === 'crash' && tMs > 5 ? 'warn' : '');
+  stLim.textContent = beltF >= F_CAP - 1 ? L('放带中', 'paying out') : L('守着', 'holding');
+  stLim.className = 'v ' + (beltF >= F_CAP - 1 ? 'warn' : '');
+}
+function updateFormula() {
+  formulaEl.innerHTML = L(
+    `<b>车体先崩塌:a = v²/2s = 56²/(2×0.62) ≈ 20 g</b>——0.6 m 的吸能区把 80 ms 的时间买给乘员<br>` +
+    `<b>限力器:F = min(6 kN, k·x)</b>:胸载荷到顶就故意放带,峰值被钳住;冲量不变、峰值减半<br>` +
+    `<b>不系带:0.32 m 撞方向盘,再 5 cm 硬停 ≈ 100 g</b>——同样的动量,快 5 倍的停下来`,
+    `<b>Crush first: a = v²/2s = 56²/(2×0.62) ≈ 20 g</b> — 0.6 m of crumple buys the occupant 80 ms<br>` +
+    `<b>Limiter: F = min(6 kN, k·x)</b>: at the cap the belt pays out on purpose — same impulse, half the peak<br>` +
+    `<b>Unbelted: 0.32 m to the wheel, then 5 cm of stop ≈ 100 g</b> — same momentum, five times the violence`);
+}
+function syncAll() {
+  syncSliders(); updateFormula(); updateStats(); drawPlot();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phase));
+  for (const k in btns) btns[k].classList.toggle('on', scenario === k);
+}
+function setScenario(sc) {
+  scenario = sc;
+  tMs = -400; xRel = 0; vRel = 0; peakA = 0; locked = false; crush = 0;
+  if (sc === 'crash') traceBelt = [];
+  if (sc === 'nobelt') traceNone = [];
+  syncAll();
+}
+for (const k in btns) btns[k].addEventListener('click', () => setScenario(k));
+elTime.addEventListener('input', () => {
+  tMs = +elTime.value;
+  playing = false; setPlayLabel();
+  /* 重放一致性:简单做法是重置后快进到该时刻 */
+  const target = tMs;
+  setScenarioSilent(scenario);
+  const n = Math.max(1, Math.round((target + 400) / 4));
+  for (let i = 0; i < n; i++) { tMs += 4; step(4); }
+  tMs = target;
+  syncSliders(); updateStats(); drawPlot();
+});
+elSpd.addEventListener('input', () => { speed = +elSpd.value; slow = false; btnSlow.classList.remove('on'); syncSliders(); });
+elPlay.addEventListener('click', () => {
+  if (!playing && tMs >= 300) { setScenario(scenario); }
+  playing = !playing; setPlayLabel();
+});
+btnSlow.addEventListener('click', () => {
+  slow = !slow;
+  if (slow) { prevSpeed = speed; speed = 0.03; } else { speed = prevSpeed || 0.25; }
+  btnSlow.classList.toggle('on', slow);
+  syncSliders();
+});
+function setScenarioSilent(sc) {
+  scenario = sc;
+  tMs = -400; xRel = 0; vRel = 0; peakA = 0; locked = false; crush = 0;
+  pendAng = 0;
+}
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { chartOn = e.target.checked; document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglBag').addEventListener('change', e => { bagOn = e.target.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+const _Y = new THREE.Vector3(0, 1, 0), _dir = new THREE.Vector3(), _mid = new THREE.Vector3(), _q = new THREE.Quaternion();
+function setStrut(mesh, a, b) {
+  _dir.subVectors(b, a);
+  const len = _dir.length();
+  mesh.position.copy(_mid.addVectors(a, b).multiplyScalar(0.5));
+  _q.setFromUnitVectors(_Y, _dir.normalize());
+  mesh.quaternion.copy(_q);
+  mesh.scale.set(1, len, 1);
+}
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  if (playing) {
+    acc += dt0 * 1000 * speed;
+    while (acc > 2) {
+      acc -= 2;
+      tMs += 2;
+      step(2);
+      if (tMs >= 300) { tMs = 300; playing = false; setPlayLabel(); break; }
+    }
+    syncSliders();
+  }
+  /* 巡航时车厢缓动前进感 */
+  if (scenario === 'cruise' || scenario === 'brake') {
+    carGrp.position.x = ((tMs * 0.001) * (scenario === 'brake' ? 2 : 4)) % 6 - 3;
+  } else {
+    carGrp.position.x = 0;
+  }
+  /* 崩塌:车头部分后缩 */
+  carGrp.children.forEach(m => {
+    if (m.geometry && m.position.x > 1.1 && m !== windshield) {
+      m.position.x = (m.userData.x0 ??= m.position.x) - crush * 0.55;
+    }
+  });
+  /* 乘员前倾 */
+  occ.position.x = -0.95 + xRel * 0.9;
+  occ.rotation.z = -clamp(xRel * 0.7, 0, 0.7);
+  head.rotation.z = -clamp(xRel * 0.5, 0, 0.5);
+  /* 摆锤与棘爪 */
+  pendulum.rotation.z = -pendAng;
+  pawl.position.y = 1.98 + (locked ? 0.05 : 0);
+  spool.rotation.x = spoolAng;
+  /* 预紧闪光 */
+  const flash = (scenario === 'crash' && tMs > 5 && tMs < 16) ? 1 - (tMs - 5) / 11 : 0;
+  pyroM.emissiveIntensity = flash * 5;
+  pyroM.opacity = flash;
+  /* 安全带几何 */
+  const anchorA = new THREE.Vector3(-1.5, 2.0, 0.62).add(carGrp.position);
+  const chestC = new THREE.Vector3(occ.position.x + 0.1, 1.52, 0.18).add(carGrp.position);
+  const buckleB = new THREE.Vector3(occ.position.x + 0.28, 0.72, -0.05).add(carGrp.position);
+  const anchorB = new THREE.Vector3(0.1, 0.58, -0.55).add(carGrp.position);
+  const sag = locked || beltF > 0 ? 0 : 0.06;
+  chestC.y -= sag;
+  setStrut(shoulderBelt, anchorA, chestC);
+  setStrut(lapBelt, buckleB, anchorB);
+  beltM.color.setHex(beltF >= F_CAP - 1 ? 0xb03a30 : beltF > 100 ? 0x8a6d3b : 0x22262c);
+  /* 气囊 */
+  bag.visible = bagOn && bagScale > 0.02;
+  bag.scale.setScalar(Math.max(0.02, bagScale));
+  bag.material.opacity = 0.85 * Math.min(1, bagScale * 2);
+  /* 绘图 */
+  acc2 += dt0;
+  if (acc2 > 0.1) { acc2 = 0; updateStats(); drawPlot(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+let acc2 = 0;
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+const t0p = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0p >= 0 && t0p < STEPS.length) { phase = t0p; STEPS[t0p].act(); }
+else setScenario('crash');
+syncAll();
+start();
+</script>
+</body>
+</html>
