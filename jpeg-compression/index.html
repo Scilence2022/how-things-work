@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JPEG 与 DCT · 丢掉眼睛看不见的</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="JPEG 与 DCT · 丢掉眼睛看不见的" data-en="JPEG &amp; the DCT · Discard What the Eye Can't See">JPEG 与 DCT · 丢掉眼睛看不见的</h1>
+  <div class="sub" data-zh="像素很笨:相邻像素几乎一样,逐个存太浪费;切成 8×8 小块做 DCT:64 个像素翻译成 64 个频率成分;自然图像能量扎堆在低频(左上角);量化让高频除以大数:多数系数直接归零——有损的分水岭;zigzag 把零排成长串,游程+哈夫曼无损收尾;质量调低,8×8 方块边界与振铃现身:被扔掉的高频在喊冤 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="Pixels are dumb: neighbours are almost identical, so storing each one is waste; cut the image into 8×8 blocks and run the DCT: 64 pixels become 64 frequency components; natural images pile almost all energy at low frequencies (top-left); quantization divides highs by big numbers: most coefficients zero out — the lossy point of no return; zigzag lines the zeros up into runs, RLE plus Huffman finish losslessly; drop the quality and 8×8 block boundaries plus ringing appear: the discarded highs cry injustice · 3D interactive demo · drag to orbit · Space = run/pause">JPEG 与 DCT · 丢掉眼睛看不见的</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="压缩比(估算)" data-en="Compression (est.)">压缩比(估算)</span><span class="v ok" id="stCR">—</span>
+  <span class="k" data-zh="保留系数" data-en="Kept coefs">保留系数</span><span class="v" id="stKeep">—</span>
+  <span class="k" data-zh="PSNR" data-en="PSNR">PSNR</span><span class="v" id="stPSNR">—</span>
+  <span class="k" data-zh="质量" data-en="Quality">质量</span><span class="v" id="stQ">—</span>
+  <span class="k" data-zh="伪影" data-en="Artifacts">伪影</span><span class="v ok" id="stArt">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="左:8×8 平均系数量化后热图(灰=已归零,白框=选中)· 右:PSNR–质量曲线与当前动点" data-en="Left: averaged 8×8 coefficient heatmap after quantization (gray = zeroed, white = selected) · Right: PSNR vs quality with the live point">左:8×8 平均系数量化后热图(灰=已归零,白框=选中)· 右:PSNR–质量曲线与当前动点</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="64 个 DCT 基曲面:低频亮、高频蓝" data-en="64 DCT basis surfaces: bright at low freq, blue at high">64 个 DCT 基曲面:低频亮、高频蓝</span>
+    <span class="chip.r" data-zh="熄灭=被量化扔掉的基" data-en="dark = basis killed by quantization">熄灭=被量化扔掉的基</span>
+    <span class="chip.g" data-zh="重建图:只用活着的系数重建" data-en="reconstruction: rebuilt from surviving coefs only">重建图:只用活着的系数重建</span>
+    <span class="chip.o" data-zh="点击基曲面→热图高亮对应系数" data-en="click a basis surface to highlight its coef">点击基曲面→热图高亮对应系数</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnP0" data-zh="渐变" data-en="Gradient">渐变</button>
+    <button class="abtn" id="btnP1" data-zh="圆" data-en="Disc">圆</button>
+    <button class="abtn" id="btnP2" data-zh="锐边" data-en="Hard edge">锐边</button>
+    <button class="abtn" id="btnP3" data-zh="混合" data-en="Mixed">混合</button>
+  </div>
+  <div class="row"><label data-zh="质量 q" data-en="Quality q">质量 q</label><input id="sQ" type="range" min="1" max="100" step="1" value="95"><span class="val" id="sQVal">95</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglHeat" type="checkbox" checked> <span data-zh="系数热图" data-en="Coef heatmap">系数热图</span></label>
+      <label><input id="tglErr" type="checkbox"> <span data-zh="误差图" data-en="Error map">误差图</span></label>
+      <label><input id="tglSweep" type="checkbox"> <span data-zh="重建 sweep" data-en="Recon sweep">重建 sweep</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../huffman-coding/" data-zh="哈夫曼编码:熵编码的收尾一步" data-en="Huffman coding: the entropy-coding finish">哈夫曼编码:熵编码的收尾一步</a>
+    <a href="../information-entropy/" data-zh="信息熵:压缩极限的出处" data-en="information entropy: where compression limits come from">信息熵:压缩极限的出处</a>
+    <a href="../fourier-series/" data-zh="傅里叶级数:DCT 的连续版亲戚" data-en="Fourier series: the continuous cousin of the DCT">傅里叶级数:DCT 的连续版亲戚</a>
+    <a href="../error-correction/" data-zh="纠错编码:有损 vs 无损的另一半" data-en="error correction: the other half of lossy vs lossless">纠错编码:有损 vs 无损的另一半</a>
+    <a href="../camera-sensor/" data-zh="相机传感器:像素从哪里来" data-en="camera sensor: where pixels come from">相机传感器:像素从哪里来</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, f) => a + (b - a) * f;
+const ease = u => u * u * (3 - 2 * u);
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141b, 16, 46);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  baseM.color.setHex(dark ? 0x1c2027 : 0xb0bcc8);
+  baseM.emissive.setHex(dark ? 0x000000 : 0x000000);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('JPEG 与 DCT · 丢掉眼睛看不见的', "JPEG & the DCT · Discard What the Eye Can't See");
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+  syncBtns();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+function fatal(msg) {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;z-index:99;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--text);font:15px/1.7 system-ui;padding:30px;text-align:center';
+  d.textContent = msg;
+  document.body.appendChild(d);
+}
+let renderer = null;
+try { renderer = new THREE.WebGLRenderer({ antialias: true }); } catch (e) { renderer = null; }
+if (!renderer) {
+  fatal(L('本页需要 WebGL 显示 3D 场景,但当前浏览器无法创建 WebGL 上下文。请更换浏览器或开启硬件加速后重试。', 'This page needs WebGL for its 3D scene, but the browser could not create a WebGL context. Try another browser or enable hardware acceleration.'));
+  throw new Error('WebGL unavailable');
+}
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 120);
+camera.position.set(8.6, 5.6, 11.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.5;
+controls.maxDistance = 45;
+controls.autoRotateSpeed = 0.3;
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.55);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 1.0);
+key.position.set(6, 8, 7);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9ab8ff, 0.3);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ================= 状态 ================= */
+let quality = clamp(Math.round(qsFloat('q', 95)), 1, 100);
+let patIdx = clamp(Math.round(qsFloat('pat', 3)), 0, 3);
+let errOn = qsBool('em', false), heatOn = qsBool('hm', true), sweepOn = qsBool('sw', false);
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+const SPEED = clamp(qsFloat('speed', 1), 0.25, 3);
+let labelsOn = true;
+let phaseIdx = 0, selIdx = -1, hovIdx = -1;
+let notifyT = 0, notifyZ = '', notifyE = '';
+let mse = 0, psnr = 0, ratio = 1, keepAvg = 64;
+let showZZ = false;
+let curve = null;
+
+/* ================= 测试图生成 ================= */
+const NW = 128, NB = NW / 8;
+const img = new Float32Array(NW * NW);
+function genImage(p) {
+  for (let y = 0; y < NW; y++) for (let x = 0; x < NW; x++) {
+    let v;
+    if (p === 0) v = (x + y) * 255 / (2 * (NW - 1));                    /* 渐变 */
+    else if (p === 1) {                                                  /* 圆:柔和圆盘 */
+      const r = Math.hypot(x - 64, y - 64) / 52;
+      v = r < 1 ? 232 - 150 * r : 48 + 14 * Math.sin(x * 0.2) * Math.sin(y * 0.2);
+    } else if (p === 2) {                                                /* 锐边 */
+      v = x < NW / 2 ? 28 : 226;
+      if (Math.abs(y - 34) < 4) v = 250 - v;
+      if (Math.abs(y - 96) < 2) v = 128;
+    } else {                                                             /* 混合:渐变+圆+锐边+细纹理 */
+      v = (x + y) * 255 / (2 * (NW - 1)) * 0.55 + 40;
+      const dx = x - 88, dy = y - 84, r = Math.hypot(dx, dy);
+      if (r < 34) v = 225 - 140 * (r / 34);
+      if (x > 20 && x < 24 && y > 60) v = 15;
+      if (x >= 24 && x < 28 && y > 60) v = 240;
+      v += 10 * Math.sin(x * 1.9) * Math.sin(y * 2.3);
+    }
+    img[y * NW + x] = clamp(v, 0, 255);
+  }
+}
+
+/* ================= DCT-II(8×8,正交归一) ================= */
+const COS = new Float32Array(64), AL = new Float32Array(8);
+for (let x = 0; x < 8; x++) for (let u = 0; u < 8; u++) COS[x * 8 + u] = Math.cos((2 * x + 1) * u * Math.PI / 16);
+AL[0] = Math.sqrt(0.5); for (let u = 1; u < 8; u++) AL[u] = 1;
+const T1 = new Float32Array(64), T2 = new Float32Array(64);
+function fwdDCT(f, F) {
+  for (let y = 0; y < 8; y++) for (let u = 0; u < 8; u++) {
+    let s = 0; for (let x = 0; x < 8; x++) s += f[y * 8 + x] * COS[x * 8 + u];
+    T1[y * 8 + u] = 0.5 * AL[u] * s;
+  }
+  for (let u = 0; u < 8; u++) for (let v = 0; v < 8; v++) {
+    let s = 0; for (let y = 0; y < 8; y++) s += T1[y * 8 + u] * COS[y * 8 + v];
+    F[u * 8 + v] = 0.5 * AL[v] * s;
+  }
+}
+function invDCT(F, f) {
+  for (let x = 0; x < 8; x++) for (let v = 0; v < 8; v++) {
+    let s = 0; for (let u = 0; u < 8; u++) s += AL[u] * F[u * 8 + v] * COS[x * 8 + u];
+    T2[v * 8 + x] = 0.5 * s;
+  }
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    let s = 0; for (let v = 0; v < 8; v++) s += AL[v] * T2[v * 8 + x] * COS[y * 8 + v];
+    f[y * 8 + x] = 0.5 * s;
+  }
+}
+/* zigzag 扫描序 */
+const ZZ = (() => { const o = []; let i = 0, j = 0, d = 0;
+  for (let p = 0; p < 64; p++) { o.push([i, j]);
+    if (d === 0) { if (j === 7) { i++; d = 1; } else if (i === 0) { j++; d = 1; } else { i--; j++; } }
+    else { if (i === 7) { j++; d = 0; } else if (j === 0) { i++; d = 0; } else { i++; j--; } }
+  } return o; })();
+
+/* ================= 全管线:正向 DCT → 量化 → 反 DCT → MSE ================= */
+const QT = new Float32Array(64), heat = new Float32Array(64), onFrac = new Float32Array(64);
+const rec = new Float32Array(NW * NW);
+const _f = new Float32Array(64), _F = new Float32Array(64), _G = new Float32Array(64), _fq = new Int16Array(64);
+function measure(q) {
+  const scale = q < 50 ? 5000 / q : 200 - 2 * q, k = Math.max(0.02, scale / 100);
+  for (let u = 0; u < 8; u++) for (let v = 0; v < 8; v++) QT[u * 8 + v] = Math.max(1, 1 + (u + v) * k);
+  let sse = 0, keep = 0, bits = 0;
+  const ht = new Float32Array(64), ct = new Float32Array(64);
+  for (let by = 0; by < NB; by++) for (let bx = 0; bx < NB; bx++) {
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) _f[y * 8 + x] = img[(by * 8 + y) * NW + bx * 8 + x] - 128;
+    fwdDCT(_f, _F);
+    for (let i = 0; i < 64; i++) { _fq[i] = Math.round(_F[i] / QT[i]); if (_fq[i] !== 0) { keep++; ct[i]++; ht[i] += Math.abs(_fq[i]); } }
+    for (let i = 0; i < 64; i++) _G[i] = _fq[i] * QT[i];
+    invDCT(_G, _f);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      const p = clamp(_f[y * 8 + x] + 128, 0, 255), q0 = (by * 8 + y) * NW + bx * 8 + x;
+      rec[q0] = p; const d = p - img[q0]; sse += d * d;
+    }
+    let last = -1;
+    for (let p2 = 63; p2 >= 1; p2--) if (_fq[ZZ[p2][0] * 8 + ZZ[p2][1]] !== 0) { last = p2; break; }
+    let bb = Math.ceil(Math.log2(Math.abs(_fq[0]) + 1)) + 1;
+    if (last >= 0) { let run = 0;
+      for (let p2 = 1; p2 <= last; p2++) { const c = _fq[ZZ[p2][0] * 8 + ZZ[p2][1]];
+        if (c === 0) run++;
+        else { bb += (run > 0 ? Math.ceil(Math.log2(run + 1)) + 2 : 0) + Math.ceil(Math.log2(Math.abs(c) + 1)) + 1; run = 0; } } }
+    bits += bb + 2;
+  }
+  const nB = NB * NB;
+  heat.set(ht); for (let i = 0; i < 64; i++) onFrac[i] = ct[i] / nB;
+  mse = sse / (NW * NW);
+  psnr = mse > 1e-9 ? 10 * Math.log10(255 * 255 / mse) : 99;
+  keepAvg = keep / nB;
+  ratio = 512 / (bits / nB);
+}
+function recompute() { measure(quality); paintRec(); updateStats(); updateFormula(); drawPlot(); }
+function buildCurve() {
+  curve = [];
+  const QS = [1, 3, 6, 10, 15, 22, 30, 40, 50, 65, 80, 100];
+  for (const q of QS) { measure(q); curve.push([q, psnr]); }
+}
+
+/* ================= 画布纹理 ================= */
+function mkCv() { const c = document.createElement('canvas'); c.width = NW; c.height = NW; return c; }
+const origCv = mkCv(), recCv = mkCv(), errCv = mkCv();
+const origCx = origCv.getContext('2d'), recCx = recCv.getContext('2d'), errCx = errCv.getContext('2d');
+const origID = origCx.createImageData(NW, NW), recID = recCx.createImageData(NW, NW), errID = errCx.createImageData(NW, NW);
+function paintOrig() {
+  for (let i = 0; i < NW * NW; i++) { const g = Math.round(img[i]), o = i * 4;
+    origID.data[o] = origID.data[o + 1] = origID.data[o + 2] = g; origID.data[o + 3] = 255; }
+  origCx.putImageData(origID, 0, 0); origTex.needsUpdate = true;
+}
+function paintRec() {
+  for (let i = 0; i < NW * NW; i++) { const g = Math.round(rec[i]), o = i * 4;
+    recID.data[o] = recID.data[o + 1] = recID.data[o + 2] = g; recID.data[o + 3] = 255; }
+  recCx.putImageData(recID, 0, 0);
+  let em = 0; for (let i = 0; i < NW * NW; i++) em = Math.max(em, Math.abs(rec[i] - img[i]));
+  for (let i = 0; i < NW * NW; i++) { const e = Math.abs(rec[i] - img[i]) / Math.max(8, em), o = i * 4;
+    errID.data[o] = Math.round(255 * clamp(e * 2.2, 0, 1));
+    errID.data[o + 1] = Math.round(235 * Math.pow(e, 0.7));
+    errID.data[o + 2] = Math.round(60 * clamp(1 - e * 3, 0, 1) + 40 * clamp(e * 2 - 1, 0, 1));
+    errID.data[o + 3] = 255; }
+  errCx.putImageData(errID, 0, 0);
+  recTex.needsUpdate = true; errTex.needsUpdate = true;
+}
+function texOf(cv) {
+  const t = new THREE.CanvasTexture(cv);
+  t.magFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const origTex = texOf(origCv), recTex = texOf(recCv), errTex = texOf(errCv);
+
+/* ================= 场景搭建 ================= */
+const baseM = new THREE.MeshStandardMaterial({ color: 0x1c2027, roughness: 0.95 });
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 0.3, 48), baseM);
+ground.position.y = -0.6;
+scene.add(ground);
+
+function imgPlane(tex) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(3.1, 3.1), new THREE.MeshBasicMaterial({ map: tex }));
+  m.position.y = 1.5;
+  scene.add(m);
+  return m;
+}
+const planeL = imgPlane(origTex); planeL.position.x = -4.5; planeL.rotation.y = 0.38;
+const planeR = imgPlane(recTex);  planeR.position.x = 4.5;  planeR.rotation.y = -0.38;
+
+/* 64 个 DCT 基函数曲面 */
+const basB = [];
+for (let u = 0; u < 8; u++) { basB.push([]);
+  for (let v = 0; v < 8; v++) { const arr = new Float32Array(64);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++)
+      arr[y * 8 + x] = AL[u] * AL[v] * COS[x * 8 + u] * COS[y * 8 + v];
+    basB[u].push(arr); } }
+const basGroup = new THREE.Group();
+basGroup.position.set(0, 1.35, 0);
+scene.add(basGroup);
+const basMeshes = [], lampCur = new Float32Array(64).fill(1), lampTgt = new Float32Array(64).fill(1), lampDelay = new Float32Array(64);
+for (let u = 0; u < 8; u++) for (let v = 0; v < 8; v++) {
+  const g = new THREE.PlaneGeometry(0.58, 0.58, 7, 7);
+  g.rotateX(-Math.PI / 2);
+  const pos = g.attributes.position;
+  const arr = basB[u][v];
+  for (let kk = 0; kk < pos.count; kk++) {
+    const px = pos.getX(kk), pz = pos.getZ(kk);
+    const sx = clamp(Math.round((px / 0.58 + 0.5) * 7), 0, 7), sz = clamp(Math.round((pz / 0.58 + 0.5) * 7), 0, 7);
+    pos.setY(kk, arr[sz * 8 + sx] * 0.14);
+  }
+  g.computeVertexNormals();
+  const f = u + v;
+  const col = new THREE.Color().setHSL(lerp(0.14, 0.62, f / 14), 0.72, lerp(0.68, 0.5, f / 14));
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+    color: col, emissive: col, emissiveIntensity: 0.9, roughness: 0.55, metalness: 0.05,
+    transparent: true, opacity: 1, side: THREE.DoubleSide }));
+  m.position.set((u - 3.5) * 0.66, 0, (v - 3.5) * 0.66);
+  m.userData.idx = u * 8 + v;
+  basGroup.add(m); basMeshes.push(m);
+}
+function refreshLamps(instant) {
+  for (let u = 0; u < 8; u++) for (let v = 0; v < 8; v++) {
+    const i = u * 8 + v, on = onFrac[i] > 0.02 ? 1 : 0;
+    if (lampTgt[i] !== on) { lampTgt[i] = on; lampDelay[i] = instant ? 0 : 0.055 * (14 - u - v); }
+    if (instant) { lampCur[i] = on; lampDelay[i] = 0; }
+  }
+}
+function applyLamps() {
+  for (const m of basMeshes) {
+    const i = m.userData.idx, c = lampCur[i];
+    m.material.emissiveIntensity = 0.06 + 0.95 * c;
+    m.material.opacity = 0.3 + 0.7 * c;
+  }
+}
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true, parent = null) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() { for (const r of labelReg) r.o.visible = labelsOn && r.vis(); }
+const lblOrig = addLabel(() => L('原图 128×128:像素笨,但相邻高度相关', 'original 128×128: dumb pixels, yet highly correlated'), new THREE.Vector3(-4.5, 3.4, 0), 'r');
+const lblBasis = addLabel(() => L('64 个 DCT 基曲面:8×8 换底,像素→频率', '64 DCT basis surfaces: 8×8 change of basis, pixels → frequencies'), new THREE.Vector3(0, 4.6, 0), 'b');
+const lblRec = addLabel(() => L(errOn ? '误差热图:伪影集中在锐边与块边界' : '重建图:只用幸存系数,误差即伪影', errOn ? 'error map: artifacts pile at edges and block borders' : 'reconstruction: only surviving coefs, error = artifacts'), new THREE.Vector3(4.5, 3.4, 0), 'g');
+const lblSel = addLabel(() => {
+  const i = hovIdx >= 0 ? hovIdx : selIdx;
+  if (i < 0) return '';
+  const u = Math.floor(i / 8), v = i % 8;
+  return L(`基 (${u},${v}) u+v=${u + v}:平均系数 ${heat[i].toFixed(1)}${onFrac[i] > 0.02 ? '' : ' · 已被量化扔掉'}`,
+    `basis (${u},${v}) u+v=${u + v}: avg coef ${heat[i].toFixed(1)}${onFrac[i] > 0.02 ? '' : ' · killed by quantization'}`);
+}, new THREE.Vector3(0, 4.1, 0), 'o');
+const lblNotify = addLabel(() => notifyT > 0 ? L(notifyZ, notifyE) : '', new THREE.Vector3(0, 5.6, 0), 'r');
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+const STEPS = [
+  { b: '像素很笨:相邻高度相关', be: 'Pixels are dumb: highly correlated',
+    d: '相邻像素几乎一样,直接逐个存极浪费。JPEG 的第一步不是压缩,而是换一种更聪明的表示,把「无聊」暴露出来。点开下方原图:大部分信息是重复的。',
+    de: 'Neighbouring pixels are almost identical, so storing each one is wasteful. The first JPEG step is not compression but a smarter representation that exposes the redundancy. Look below: most of the image is repetition.',
+    act: () => { phaseIdx = 0; patIdx = 3; errOn = false; setErr(); genImage(patIdx); paintOrig(); buildCurve(); recompute(); syncAll(); flyTo([8.6, 5.6, 11.4], [0, 1.2, 0]); notify('原始数据:128×128 像素 × 8 bit = 131072 bit', 'raw: 128×128 pixels × 8 bit = 131072 bits'); } },
+  { b: '分块 8×8,换底:DCT', be: '8×8 blocks, change of basis: the DCT',
+    d: '每块 64 个像素被翻译成 64 个基函数的叠加系数:1 个 DC 平均项 + 63 个从慢到快的波纹。信息一字不丢,只是换坐标——中央阵列就是这 64 个基曲面。',
+    de: 'Each block of 64 pixels is rewritten as mixing weights of 64 basis functions: 1 DC average plus 63 ripples from slow to fast. Nothing is lost — only the coordinates change. The central array shows all 64 basis surfaces.',
+    act: () => { phaseIdx = 1; quality = 100; syncSliders(); recompute(); refreshLamps(false); flyTo([2.2, 5.2, 5.4], [0, 1.3, 0]); notify('DCT 本身无损:64 个像素 ↔ 64 个系数', 'the DCT itself is lossless: 64 pixels ↔ 64 coefs'); } },
+  { b: '能量扎堆:低频是主角', be: 'Energy piles up at low frequencies',
+    d: '自然图像里,左上角的低频系数巨大,右下角的高频系数接近零——能量高度集中在少数系数上。看热图:亮度几乎都在左上角。',
+    de: 'In natural images the low-frequency coefficients (top-left) are huge while the high-frequency ones (bottom-right) hover near zero — energy concentrates in a few coefficients. The heatmap glows almost entirely in its top-left corner.',
+    act: () => { phaseIdx = 2; patIdx = 3; genImage(patIdx); paintOrig(); buildCurve(); recompute(); flyTo([0.6, 8.8, 3.2], [0, 1.3, 0]); notify('能量集中=可压缩性:大系数少,小系数多', 'energy compaction = compressibility: few large, many tiny coefs'); } },
+  { b: '量化:有损的分水岭', be: 'Quantization: the lossy watershed',
+    d: '每个系数除以量化步长再四舍五入:高频除以大数,大多数直接归零。这一步丢掉的信息回不来——压缩比与伪影都从这里开始。拖质量滑块,看基曲面熄灯。',
+    de: 'Every coefficient is divided by a step size and rounded: highs divide by big numbers and most snap to zero. What is lost here never comes back — both the compression ratio and the artifacts start at this line. Drag the quality slider and watch the basis lamps die.',
+    act: () => { phaseIdx = 3; quality = 28; syncSliders(); recompute(); refreshLamps(false); flyTo([3.4, 4.6, 6.2], [0, 1.3, 0]); notify('高频 ÷ 大数 → 归零:有损从这一步开始', 'highs ÷ big steps → zero: loss begins here'); } },
+  { b: '零的长跑:zigzag+游程', be: 'The long run of zeros: zigzag + RLE',
+    d: 'zigzag 从左上到右下之字形扫描,让零连成长串;游程编码把「连续 15 个零」记成一个符号;哈夫曼再对符号做无损收尾(见哈夫曼编码一页)。热图上的白线就是扫描路径。',
+    de: 'The zigzag scan walks top-left to bottom-right in diagonal strokes, lining the zeros up into long runs; run-length coding records 「15 zeros in a row」 as one symbol; Huffman coding finishes losslessly (see the Huffman page). The white line on the heatmap is the scan path.',
+    act: () => { phaseIdx = 4; quality = 45; syncSliders(); recompute(); showZZ = true; drawPlot(); flyTo([8.6, 5.6, 11.4], [0, 1.2, 0]); notify('之字形=让零连成串,游程+哈夫曼收尾', 'zigzag lines up the zeros; RLE + Huffman finish the job'); } },
+  { b: '伪影从哪来:方块与振铃', be: 'Where artifacts come from: blocks & ringing',
+    d: '质量调低,被扔掉的高频无法重建锐边:块与块接不上,8×8 方块边界浮现;截断的高频在边缘周围留下波纹状振铃。切到误差热图,伪影一目了然——被扔掉的高频在喊冤。',
+    de: 'Drop the quality and the discarded highs can no longer rebuild sharp edges: blocks stop matching, 8×8 borders appear, and truncated highs leave ripple-like ringing around edges. Switch to the error map and the artifacts are unmistakable — the discarded frequencies crying injustice.',
+    act: () => { phaseIdx = 5; quality = 8; syncSliders(); recompute(); errOn = true; setErr(); flyTo([7.2, 2.6, 6.6], [4.5, 1.5, 0]); notify('低质量=方块边界+振铃:MSE 飙升', 'low quality = block borders + ringing: MSE explodes'); } },
+];
+function notify(z, e) { notifyT = 3.2; notifyZ = z; notifyE = e; }
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:热图 + PSNR 曲线 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  ctx.font = '13px system-ui';
+  let hmax = 1; for (let i = 0; i < 64; i++) hmax = Math.max(hmax, heat[i]);
+  const S = heatOn ? Math.min(W * 0.42, H - 26) : 0;
+  if (heatOn) {
+    const ox = 8, oy = 4, cell = S / 8;
+    for (let u = 0; u < 8; u++) for (let v = 0; v < 8; v++) {
+      const i = u * 8 + v, h = heat[i];
+      if (h <= 0) ctx.fillStyle = 'rgba(128,150,170,.14)';
+      else { const t = Math.log1p(h) / Math.log1p(hmax);
+        ctx.fillStyle = `hsl(${Math.round(lerp(215, 0, t))},80%,${Math.round(lerp(28, 62, t))}%)`; }
+      ctx.fillRect(ox + v * cell, oy + u * cell, cell - 1, cell - 1);
+    }
+    if (showZZ) {
+      ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.6; ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ZZ.forEach((p, i2) => { const x = ox + p[1] * cell + cell / 2, y = oy + p[0] * cell + cell / 2;
+        i2 === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (selIdx >= 0) {
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
+      ctx.strokeRect(ox + (selIdx % 8) * cell - 1, oy + Math.floor(selIdx / 8) * cell - 1, cell + 1, cell + 1);
+    }
+    ctx.fillStyle = cTxt;
+    ctx.fillText(L('u\\v 系数热图', 'u\\v coefs'), ox + 2, S + 20);
+  }
+  /* PSNR–质量曲线 */
+  {
+    const padL = 34, padR = 10, padT = 8, padB = 20;
+    const x0 = heatOn ? S + 26 : padL, cw = W - x0 - padR, ch = H - padT - padB;
+    const xOf = q => x0 + (q - 1) / 99 * cw;
+    const yOf = p => (H - padB) - (clamp(p, 15, 60) - 15) / 45 * ch;
+    ctx.strokeStyle = 'rgba(128,150,170,.25)';
+    ctx.fillStyle = cTxt;
+    for (const p of [20, 35, 50]) {
+      ctx.beginPath(); ctx.moveTo(x0, yOf(p)); ctx.lineTo(W - padR, yOf(p)); ctx.stroke();
+      ctx.fillText(String(p), x0 - 30, yOf(p) + 4);
+    }
+    ctx.fillText('dB', x0 - 30, padT + 10);
+    ctx.fillText(L('质量 q', 'quality q'), x0 + cw / 2 - 20, H - 5);
+    if (curve) {
+      ctx.strokeStyle = '#4dabf7'; ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      curve.forEach((pt, i2) => { const x = xOf(pt[0]), y = yOf(pt[1]); i2 === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+      ctx.stroke();
+      ctx.fillStyle = '#ffa94d';
+      ctx.beginPath(); ctx.arc(xOf(quality), yOf(psnr), 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = cTxt;
+      ctx.fillText(psnr.toFixed(1), Math.min(xOf(quality) + 8, W - 46), yOf(psnr) - 8);
+    }
+  }
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elQ = document.getElementById('sQ'), elQVal = document.getElementById('sQVal');
+const stCR = document.getElementById('stCR'), stKeep = document.getElementById('stKeep'),
+  stPSNR = document.getElementById('stPSNR'), stQ = document.getElementById('stQ'), stArt = document.getElementById('stArt');
+const formulaEl = document.getElementById('formula');
+const patBtns = [0, 1, 2, 3].map(i => document.getElementById('btnP' + i));
+const PAT_ZH = ['渐变', '圆', '锐边', '混合'], PAT_EN = ['gradient', 'disc', 'hard edge', 'mixed'];
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function setErr() {
+  planeR.material.map = errOn ? errTex : recTex;
+  document.getElementById('tglErr').checked = errOn;
+}
+function syncSliders() { elQ.value = quality; elQVal.textContent = quality; }
+function syncBtns() {
+  patBtns.forEach((b, i) => { b.classList.toggle('on', i === patIdx); b.textContent = L(PAT_ZH[i], PAT_EN[i]); });
+}
+function updateStats() {
+  stCR.textContent = '×' + ratio.toFixed(1);
+  stCR.className = 'v ' + (ratio > 10 ? 'ok' : ratio > 3 ? 'warn' : '');
+  stKeep.textContent = keepAvg.toFixed(1) + '/64';
+  stKeep.className = 'v ' + (keepAvg < 10 ? 'bad' : keepAvg < 30 ? 'warn' : 'ok');
+  stPSNR.textContent = psnr > 98 ? '>99 dB' : psnr.toFixed(1) + ' dB';
+  stPSNR.className = 'v ' + (psnr >= 42 ? 'ok' : psnr >= 30 ? 'warn' : 'bad');
+  stQ.textContent = quality;
+  const art = psnr >= 42 ? 0 : psnr >= 30 ? 1 : 2;
+  stArt.textContent = L(['无', '轻微振铃', '方块+振铃'][art], ['none', 'mild ringing', 'blocks+ringing'][art]);
+  stArt.className = 'v ' + ['ok', 'warn', 'bad'][art];
+}
+function updateFormula() {
+  formulaEl.innerHTML = L(
+    `<b>DCT-II:b(u,v)=α(u)α(v)·ΣΣ f·cos((2x+1)uπ/16)cos((2y+1)vπ/16)</b>,64 个基函数构成 8×8 换底<br>` +
+    `<b>量化:Q(u,v)=1+(u+v)·k</b>,k=scale/100,scale=q&lt;50?5000/q:200−2q;系数 ÷Q 后四舍五入<br>` +
+    `<b>PSNR=10·log10(255²/MSE)</b>;压缩比≈512 bit ÷ 每块平均比特(非零 ⌈log₂(|Q|+1)⌉+1,零游程 ⌈log₂(r+1)⌉+2)<br>` +
+    `<b>当前:q=${quality},保留 ${keepAvg.toFixed(1)}/64,PSNR=${psnr > 98 ? '>99' : psnr.toFixed(1)} dB,×${ratio.toFixed(1)}</b>`,
+    `<b>DCT-II:b(u,v)=α(u)α(v)·ΣΣ f·cos((2x+1)uπ/16)cos((2y+1)vπ/16)</b> — 64 basis functions, an 8×8 change of basis<br>` +
+    `<b>Quantize:Q(u,v)=1+(u+v)·k</b>, k=scale/100, scale=q&lt;50?5000/q:200−2q; divide, then round<br>` +
+    `<b>PSNR=10·log10(255²/MSE)</b>; ratio≈512 bit ÷ avg bits/block (nonzero ⌈log₂(|Q|+1)⌉+1, zero-run ⌈log₂(r+1)⌉+2)<br>` +
+    `<b>Now: q=${quality}, kept ${keepAvg.toFixed(1)}/64, PSNR=${psnr > 98 ? '>99' : psnr.toFixed(1)} dB, ×${ratio.toFixed(1)}</b>`);
+}
+function syncAll() {
+  syncSliders(); syncBtns(); setErr(); updateFormula(); updateStats(); drawPlot(); refreshLabels();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+elQ.addEventListener('input', () => { quality = +elQ.value; recompute(); refreshLamps(false); });
+patBtns.forEach((b, i) => b.addEventListener('click', () => {
+  patIdx = i; genImage(patIdx); paintOrig(); buildCurve(); recompute(); syncBtns();
+  notify(L('换测试图案:观察能量分布如何变化', 'pattern changed: watch how the energy layout shifts'), '');
+}));
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglHeat').addEventListener('change', e => { heatOn = e.target.checked; drawPlot(); });
+document.getElementById('tglErr').addEventListener('change', e => { errOn = e.target.checked; setErr(); });
+document.getElementById('tglSweep').addEventListener('change', e => { sweepOn = e.target.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* 拾取:悬停/点击基曲面 */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+let ptrDown = false;
+renderer.domElement.addEventListener('pointerdown', () => { ptrDown = true; });
+renderer.domElement.addEventListener('pointerup', () => { ptrDown = false; });
+renderer.domElement.addEventListener('pointermove', e => {
+  ptr.x = (e.clientX / innerWidth) * 2 - 1;
+  ptr.y = -(e.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(ptr, camera);
+  const hit = ray.intersectObjects(basMeshes, false)[0];
+  hovIdx = hit ? hit.object.userData.idx : -1;
+  if (hovIdx >= 0 && ptrDown) { selIdx = hovIdx; drawPlot(); }
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, accPlot = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * (playing ? SPEED : 0);
+  if (notifyT > 0) notifyT -= dt0;
+  /* 熄灯波:从高频角(u+v=14)扫向 DC */
+  for (let i = 0; i < 64; i++) {
+    if (lampDelay[i] > 0) lampDelay[i] -= dt0;
+    else lampCur[i] += (lampTgt[i] - lampCur[i]) * Math.min(1, dt0 * 4.5);
+  }
+  applyLamps();
+  /* sweep 对比:重建图上原图左右交替遮挡 */
+  if (sweepOn) {
+    const s = Math.round((Math.sin(performance.now() / 1400) * 0.5 + 0.5) * NW);
+    recCx.putImageData(recID, 0, 0);
+    recCx.putImageData(origID, 0, 0, 0, 0, s, NW);
+    recTex.needsUpdate = true;
+  }
+  /* 相机飞行 */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e2 = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e2);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e2);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.14) { acc = 0; updateStats(); }
+  accPlot += dt0;
+  if (accPlot > 0.066) { accPlot = 0; drawPlot(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis() && r.text() !== '';
+    r.o.visible = on;
+    if (on) r.o.element.textContent = r.text();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+genImage(patIdx);
+paintOrig();
+buildCurve();
+measure(quality);
+paintRec();
+refreshLamps(true);
+{
+  const t0 = Math.round(qsFloat('t', 0));
+  if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+}
+syncAll();
+start();
+</script>
+</body>
+</html>
