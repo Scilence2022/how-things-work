@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>调幅与调频 · 把声音写上载波</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  #err { display: none; position: fixed; inset: 0; z-index: 99; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--text); font-size: 15px; text-align: center; padding: 30px; }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="调幅与调频 · 把声音写上载波" data-en="AM & FM · Writing Audio onto a Carrier">调幅与调频 · 把声音写上载波</h1>
+  <div class="sub" data-zh="声音是 20 Hz–20 kHz 的压力波,波长几十米到十几公里,直接发射要 km 级天线→把它写上高频载波:AM 让幅度跟着音频走,y=(1+m·s)·sin(2πf_c t),m>1 包络过零翻转、炸出破音;FM 让频率跟着音频走,f(t)=f_c+Δf·s(t),信息不在幅度里→限幅器削光幅度噪声,雷暴天 AM 咔啦炸响而 FM 照样清晰;代价是带宽:AM 仅占 ≈2f_m≈10 kHz 窄而挤,FM 按卡森规则 BW≈2(Δf+f_m) 占 ≈200 kHz 宽而净 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="Sound is a 20 Hz–20 kHz pressure wave with wavelengths from tens of metres to kilometres; radiating it directly needs kilometre antennas → write it onto a high-frequency carrier: AM lets amplitude follow the audio, y=(1+m·s)·sin(2πf_c t), and m>1 folds the envelope at zero into a distorted buzz; FM lets frequency follow it, f(t)=f_c+Δf·s(t), so the information is not in the amplitude → a limiter shaves off all amplitude noise: in a thunderstorm AM crackles while FM stays clean; the price is bandwidth — AM takes ≈2f_m≈10 kHz, narrow and crowded, FM takes BW≈2(Δf+f_m)≈200 kHz, wide and clean · 3D interactive demo · drag to orbit · Space = run/pause">调幅与调频 · 把声音写上载波</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="载波频率(可视)" data-en="Carrier (visual)">载波频率(可视)</span><span class="v" id="stFc">—</span>
+  <span class="k" id="stMk">调制度 m</span><span class="v" id="stM">—</span>
+  <span class="k" data-zh="占用带宽(卡森)" data-en="Bandwidth (Carson)">占用带宽(卡森)</span><span class="v" id="stBW">—</span>
+  <span class="k" data-zh="解调信噪比 AM · FM" data-en="Demod SNR AM · FM">解调信噪比 AM · FM</span><span class="v" id="stSNR">—</span>
+  <span class="k" data-zh="过调制(包络翻转)" data-en="Over-modulation">过调制(包络翻转)</span><span class="v ok" id="stOM">无</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="三行示波器(右端=现在):橙=音频 s(t),蓝=已调波,绿=解调输出——闪电噪声在 AM 输出行炸出毛刺,FM 行几乎纹丝不动" data-en="Three-lane scope (right edge = now): orange = audio s(t), blue = modulated wave, green = demodulated output — lightning spikes trash the AM output lane while the FM lane barely twitches">三行示波器(右端=现在):橙=音频 s(t),蓝=已调波,绿=解调输出——闪电噪声在 AM 输出行炸出毛刺,FM 行几乎纹丝不动</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.o" data-zh="音频信号 s(t)(2–6 Hz 可视正弦;真实音频 0.02–20 kHz)" data-en="audio s(t) (2–6 Hz visual sine; real audio 0.02–20 kHz)">音频信号 s(t)(2–6 Hz 可视正弦;真实音频 0.02–20 kHz)</span>
+    <span class="chip.b" data-zh="已调波:AM 幅度起伏 / FM 疏密起伏" data-en="modulated wave: AM wobbles in amplitude / FM in density">已调波:AM 幅度起伏 / FM 疏密起伏</span>
+    <span class="chip.g" data-zh="解调输出:喇叭最终听到的" data-en="demodulated output: what the speaker finally plays">解调输出:喇叭最终听到的</span>
+    <span class="chip.r" data-zh="噪声:闪电脉冲 + 宽带抖动(时间轴已放慢,教学压缩)" data-en="noise: lightning pulses + broadband jitter (timeline slowed, teaching compression)">噪声:闪电脉冲 + 宽带抖动(时间轴已放慢,教学压缩)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnAM" data-zh="调制:AM" data-en="Mode: AM">调制:AM</button>
+    <button class="abtn" id="btnFM" data-zh="调制:FM" data-en="Mode: FM">调制:FM</button>
+    <button class="abtn brk" id="btnNoise" data-zh="闪电噪声:关" data-en="Lightning noise: OFF">闪电噪声:关</button>
+    <button class="abtn" id="btnSlow" data-zh="慢放:关" data-en="Slow-mo: OFF">慢放:关</button>
+  </div>
+  <div class="row" id="rowM"><label data-zh="调制度 m" data-en="Depth m">调制度 m</label><input id="sM" type="range" min="0" max="1.5" step="0.05" value="0.5"><span class="val" id="sMVal">0.50</span></div>
+  <div class="row" id="rowDf" style="display:none"><label data-zh="频偏 Δf" data-en="Deviation Δf">频偏 Δf</label><input id="sDf" type="range" min="2" max="40" step="1" value="18"><span class="val" id="sDfVal">18 Hz</span></div>
+  <div class="row"><label data-zh="音频频率 f_m" data-en="Audio f_m">音频频率 f_m</label><input id="sFa" type="range" min="2" max="6" step="0.5" value="3"><span class="val" id="sFaVal">3.0 Hz</span></div>
+  <div class="row"><label data-zh="载波频率 f_c" data-en="Carrier f_c">载波频率 f_c</label><input id="sFc" type="range" min="30" max="120" step="5" value="60"><span class="val" id="sFcVal">60 Hz</span></div>
+  <div class="row"><label data-zh="噪声强度" data-en="Noise level">噪声强度</label><input id="sNs" type="range" min="0" max="100" step="5" value="0"><span class="val" id="sNsVal">0 %</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="示波器" data-en="Scope">示波器</span></label>
+      <label><input id="tglNoise" type="checkbox"> <span data-zh="噪声" data-en="Noise">噪声</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../em-wave/" data-zh="电磁波:载波本身是什么" data-en="EM waves: what a carrier really is">电磁波:载波本身是什么</a>
+    <a href="../fourier-series/" data-zh="傅里叶级数:边带藏在频谱哪里" data-en="Fourier series: where the sidebands live">傅里叶级数:边带藏在频谱哪里</a>
+    <a href="../speaker-microphone/" data-zh="扬声器与麦克风:声音 ↔ 电信号" data-en="speaker & microphone: sound ↔ signal">扬声器与麦克风:声音 ↔ 电信号</a>
+    <a href="../cellular-network/" data-zh="蜂窝网络:现代手机怎么调制的" data-en="cellular network: how phones modulate today">蜂窝网络:现代手机怎么调制的</a>
+    <a href="../resonance-beats/" data-zh="共振与拍:频率里藏的信息" data-en="resonance & beats: information hidden in frequency">共振与拍:频率里藏的信息</a>
+  </div>
+</div>
+<div id="err">WebGL 初始化失败:你的浏览器或环境不支持硬件加速 3D 渲染。<br>WebGL failed to start: this browser or environment has no hardware 3D acceleration.</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const speed = clamp(qsFloat('speed', 1), 0.25, 3);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141b, 20, 55);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  groundM.color.setHex(dark ? 0x1a1e25 : 0xaeb9c6);
+  boxM.color.setHex(dark ? 0x3a4250 : 0xc4cdd8);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('调幅与调频 · 把声音写上载波', 'AM & FM · Writing Audio onto a Carrier');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+  syncBtns();
+  updateFormula();
+  updateStats();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
+catch (e) { document.getElementById('err').style.display = 'flex'; throw e; }
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 7.5, 16);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 60;
+controls.autoRotateSpeed = 0.3;
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.55);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 1.0);
+key.position.set(6, 8, 7);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9ab8ff, 0.3);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ================= 状态 ================= */
+let mode = qs.get('mode') === 'fm' ? 'fm' : 'am';
+let m = clamp(qsFloat('m', 0.5), 0, 1.5);
+let dev = clamp(Math.round(qsFloat('df', 18)), 2, 40);
+let fA = clamp(qsFloat('fa', 3), 2, 6);
+let fC = clamp(Math.round(qsFloat('fc', 60)), 30, 120);
+let nz = qsBool('nz', false);
+let nStr = clamp(qsFloat('ns', 0), 0, 1);
+let slow = qsBool('slow', false);
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let labelsOn = true, chartOn = true;
+let phaseIdx = 0, notifyT = 0, notifyZ = '', notifyE = '';
+let T = 0, phiC = 0.8, phiM = 0.4, Twin = 16 / fC;
+let snrA = 0, snrF = 0, omFrac = 0;
+const LIMX = 2.6, LX = 12;
+
+/* ---------------- 材质 ---------------- */
+const groundM = new THREE.MeshStandardMaterial({ color: 0x1a1e25, roughness: 0.95 });
+const boxM = new THREE.MeshStandardMaterial({ color: 0x3a4250, roughness: 0.6, metalness: 0.25 });
+const bandAM = new THREE.MeshBasicMaterial({ color: 0xffa94d, side: THREE.DoubleSide, toneMapped: false });
+const bandMD = new THREE.MeshBasicMaterial({ color: 0x4dabf7, side: THREE.DoubleSide, toneMapped: false });
+const bandOUT = new THREE.MeshBasicMaterial({ color: 0x69db7c, side: THREE.DoubleSide, toneMapped: false });
+const ringM = new THREE.MeshBasicMaterial({ color: 0x74c0fc, transparent: true, opacity: 0.6, toneMapped: false });
+const coneM = new THREE.MeshStandardMaterial({ color: 0xe9ecef, roughness: 0.5, side: THREE.DoubleSide });
+const cloudM = new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0.9, toneMapped: false });
+
+/* ---------------- 场景搭建 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(14, 14, 0.3, 48), groundM);
+ground.position.y = -3.6;
+scene.add(ground);
+
+function makeBand(mat, y) {
+  const g = new THREE.PlaneGeometry(LX, 0.72, 240, 3);
+  g.rotateX(-Math.PI / 2);
+  const mesh = new THREE.Mesh(g, mat);
+  mesh.position.y = y;
+  scene.add(mesh);
+  const bx = [];
+  const arr = g.attributes.position.array;
+  for (let i = 0; i < g.attributes.position.count; i++) bx.push(arr[i * 3]);
+  return { mesh, bx, y };
+}
+const bAudio = makeBand(bandAM, 2.3);
+const bMid = makeBand(bandMD, 0);
+const bOut = makeBand(bandOUT, -2.3);
+
+/* 喇叭(左) */
+const spk = new THREE.Group();
+const cab = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.5, 1.4), boxM);
+cab.position.y = 2.3;
+spk.add(cab);
+const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.14, 0.4, 24, 1, true), coneM);
+cone.rotation.z = -Math.PI / 2;
+cone.position.set(-0.68, 2.3, 0);
+spk.add(cone);
+const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 2.2, 10), boxM);
+stand.position.y = -2.45;
+spk.add(stand);
+spk.position.x = -7.8;
+scene.add(spk);
+
+/* 天线(右) */
+const ant = new THREE.Group();
+const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, 5.4, 10), boxM);
+mast.position.y = -0.9;
+ant.add(mast);
+const tip = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 10),
+  new THREE.MeshStandardMaterial({ color: 0xffd43b, emissive: 0xffa200, emissiveIntensity: 1.6 }));
+tip.position.y = 1.9;
+ant.add(tip);
+const rings = [];
+for (let i = 0; i < 3; i++) {
+  const r = new THREE.Mesh(new THREE.TorusGeometry(1, 0.03, 8, 40), ringM.clone());
+  r.rotation.x = Math.PI / 2;
+  r.position.y = 1.9;
+  ant.add(r);
+  rings.push(r);
+}
+ant.position.x = 7.8;
+scene.add(ant);
+
+/* 限幅器钳口 + 解调盒 */
+const jawT = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.16, 1.0), boxM);
+jawT.position.set(LIMX, 1.32, 0);
+const jawB = jawT.clone(); jawB.position.y = -1.32;
+scene.add(jawT, jawB);
+const demodBox = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), boxM);
+demodBox.position.set(5.9, -1.15, 0);
+scene.add(demodBox);
+
+/* 噪声粒子云(实例化) */
+const NCLOUD = 48;
+const cloud = new THREE.InstancedMesh(new THREE.SphereGeometry(0.05, 6, 5), cloudM, NCLOUD);
+cloud.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+cloud.frustumCulled = false;
+cloud.visible = false;
+scene.add(cloud);
+const cloudSeed = [];
+for (let i = 0; i < NCLOUD; i++) cloudSeed.push({ x: -2.5 + Math.random() * 5, y: -1.1 + Math.random() * 2.2, z: 0.9 + Math.random() * 0.8, p: Math.random() * 9 });
+
+/* ---------------- 噪声模型 ---------------- */
+const hash = n => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
+const pulses = [];
+function scanPulses() {
+  pulses.length = 0;
+  const k0 = Math.floor((T - Twin - 0.6) / 1.4), k1 = Math.ceil(T / 1.4) + 1;
+  for (let k = k0; k <= k1; k++) {
+    const t0 = k * 1.4 + (hash(k) - 0.5) * 0.9;
+    if (t0 > T + 0.05 || t0 < T - Twin - 0.5) continue;
+    pulses.push({ t: t0, a: 0.7 + hash(k + 31) * 0.9 });
+  }
+}
+function noiseAt(dl) {
+  if (!nz || nStr <= 0) return 0;
+  const tau = T - dl;
+  let v = 0;
+  for (const p of pulses) { const s = tau - p.t; v += p.a * Math.cos(34 * s) * Math.exp(-(20 * s) * (20 * s)); }
+  return nStr * (v + 0.35 * (Math.sin(tau * 23 + 1.3) + 0.7 * Math.sin(tau * 41 + 4.1) + 0.5 * Math.sin(tau * 67 + 2.8)));
+}
+const sAt = dl => Math.sin(phiM - 2 * Math.PI * fA * dl);
+/* FM 相位闭式:ψ(Δ)=phiC−2πf_cΔ−(Δf/f_m)[cos(phiM−2πf_mΔ)−cos(phiM)] */
+const fmPsi = dl => phiC - 2 * Math.PI * fC * dl - (dev / fA) * (Math.cos(phiM - 2 * Math.PI * fA * dl) - Math.cos(phiM));
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true, parent = null) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() { for (const r of labelReg) r.o.visible = labelsOn && r.vis(); }
+const lblSpk = addLabel(() => L('喇叭:锥盆跟着 s(t) 推动空气——要直推天线,得建 km 级的它', 'speaker: the cone pushes air with s(t) — drive an antenna directly and it must be kilometres tall'), new THREE.Vector3(-7.8, 3.6, 0), 'o');
+const lblMid = addLabel(() => mode === 'am'
+  ? L('已调波(AM):y=(1+m·s)·sin(2πf_c t)——包络的形状就是声音', 'modulated (AM): y=(1+m·s)·sin(2πf_c t) — the envelope is the sound')
+  : L('已调波(FM):f(t)=f_c+Δf·s(t)——疏密就是声音,幅度恒定', 'modulated (FM): f(t)=f_c+Δf·s(t) — density is the sound, amplitude constant'), new THREE.Vector3(-3.4, 1.35, 0), 'b');
+const lblLim = addLabel(() => L('限幅器:把一切幅度起伏削成等幅,再交鉴频——幅度噪声天生免疫', 'limiter: shaves every amplitude wiggle flat before the discriminator — amplitude noise is immune by design'), new THREE.Vector3(LIMX, 2.0, 0), 'r', () => mode === 'fm');
+const lblDem = addLabel(() => mode === 'am'
+  ? L('包络检波:二极管跟包络', 'envelope detector: diode rides the envelope')
+  : L('鉴频器:只看过零疏密', 'discriminator: reads zero-crossing density'), new THREE.Vector3(5.9, -0.35, 0), 'g');
+const lblOut = addLabel(() => L('解调输出:AM 被噪声直接灌入;FM 输出几乎干净', 'demod output: AM swallows the noise raw; FM output stays almost clean'), new THREE.Vector3(-3.4, -3.15, 0), 'g');
+const lblAnt = addLabel(() => L('天线:几米长的导体即可高效辐射 MHz 载波', 'antenna: a few metres of metal radiates an MHz carrier efficiently'), new THREE.Vector3(7.8, 3.1, 0), 'b');
+const lblNotify = addLabel(() => {
+  if (notifyT > 0) return L(notifyZ, notifyE);
+  if (mode === 'am' && m > 1) return L('过调制:包络在过零处翻转,检波输出方波样破音', 'over-modulation: the envelope flips at zero — the detector outputs a square-ish buzz');
+  return '';
+}, new THREE.Vector3(0, 4.6, 0), 'r');
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+const STEPS = [
+  { b: '声音上不了天线', be: 'Audio cannot ride an antenna',
+    d: '人耳听的声音是 20 Hz–20 kHz 的压力波,波长从十几米到十几公里;天线要高效辐射,尺寸得与波长相当——直推 1 kHz 得盖几公里高的塔。出路只有一条:把音频「驮」到高频载波上,几米长的天线就够。',
+    de: 'Audible sound is a 20 Hz–20 kHz pressure wave with wavelengths from metres to kilometres; an efficient antenna must be sized like its wavelength — driving 1 kHz directly means a tower kilometres tall. The only way out: piggyback the audio on a high-frequency carrier a few metres can radiate.',
+    act: () => { phaseIdx = 0; mode = 'am'; m = 0.5; nz = false; nStr = 0; fA = 3; fC = 60; Twin = 16 / fC; notifyT = 3.2; notifyZ = '20 kHz 声波波长 ≈ 17 km;60 kHz 可视载波只需几米天线'; notifyE = 'a 20 kHz tone has a ≈17 km wavelength; the carrier needs only a few metres'; syncAll(); flyTo([0, 7.5, 16], [0, 0.2, 0]); } },
+  { b: '载波是一张白纸', be: 'The carrier is blank paper',
+    d: '载波就是高频正弦 sin(2πf_c t),它有两个可以「写字」的字段:幅度与频率。把调制度拉到 0,中带就是一条干净的等幅正弦——什么都没写。接下来分别往这两个字段里写同一个 s(t),看两种笔迹。',
+    de: 'A carrier is just a high-frequency sine, sin(2πf_c t), with two writable fields: amplitude and frequency. Pull the depth to zero and the middle band becomes a clean constant sine — nothing written yet. Now write the same s(t) into each field and compare the two handwritings.',
+    act: () => { phaseIdx = 1; mode = 'am'; m = 0; syncAll(); flyTo([0, 2.6, 8.2], [0, 0.4, 0]); } },
+  { b: 'AM:把声音写进幅度', be: 'AM: audio written into amplitude',
+    d: 'y=(1+m·s(t))·sin(2πf_c t):包络的形状=音频。m≤1 时包络始终≥0,一只二极管+电容就能跟包络还原声音;m>1 包络在过零处翻转,检波输出出现方波样的破音——过调制失真,右上角红色警告当场亮起。拖动 m 越过 1.0 试试。',
+    de: 'y=(1+m·s(t))·sin(2πf_c t): the envelope is the audio. For m≤1 the envelope never crosses zero, so one diode plus a capacitor recovers the sound; for m>1 the envelope flips at zero and the detector emits a square-ish buzz — over-modulation distortion, flagged red on the spot. Drag m past 1.0 and watch it fold.',
+    act: () => { phaseIdx = 2; mode = 'am'; m = 1.25; syncAll(); flyTo([1.5, 3.0, 7.0], [1.0, 0.6, 0]); } },
+  { b: 'FM:把声音写进频率', be: 'FM: audio written into frequency',
+    d: '瞬时频率 f(t)=f_c+Δf·s(t),输出 sin(2π∫f dt):波形疏密跟着音频走,幅度恒定。信息根本不在幅度里→接收端先用限幅器把中带压成严格等幅再鉴频——噪声改写幅度的所有努力都被钳口吞掉,幅度噪声天生免疫。',
+    de: 'Instantaneous frequency f(t)=f_c+Δf·s(t), output sin(2π∫f dt): the wave crowds and stretches with the audio at constant amplitude. The information is not in the amplitude at all → the receiver first clamps the wave dead-flat with a limiter, then discriminates: every noise attempt to rewrite amplitude is swallowed by the jaws. Amplitude noise is immune by design.',
+    act: () => { phaseIdx = 3; mode = 'fm'; dev = 22; syncAll(); flyTo([3.8, 2.4, 6.4], [3.4, 0.5, 0]); } },
+  { b: '噪声攻击:雷雨天', be: 'Noise attack: thunderstorm',
+    d: '闪电脉冲+宽带抖动灌进中带:AM 的包络被直接改写,解调输出炸出毛刺——幅度噪声=声音噪声,信噪比应声暴跌;切到 FM:限幅器把起伏全部削平,输出几乎纹丝不动,只剩微弱相位噪声。打开下面的闪电开关,再按 AM/FM 对比。',
+    de: 'Lightning pulses plus broadband jitter flood the middle band: AM has its envelope rewritten directly and the output erupts in glitches — amplitude noise is audio noise, and SNR craters; switch to FM: the limiter flattens every wiggle and the output barely twitches, only a whisper of phase noise remains. Flip the lightning switch below, then compare AM vs FM.',
+    act: () => { phaseIdx = 4; mode = 'am'; nz = true; nStr = 0.85; syncAll(); flyTo([0, -1.2, 8.6], [0, -2.2, 0]); } },
+  { b: '带宽换音质', be: 'Bandwidth buys fidelity',
+    d: '卡森规则 BW≈2(Δf+f_m):AM 只占 2f_m,真实电台 ≈10 kHz,频道挤、音质窄、噪声直接进包络;FM 取大频偏——真实广播 Δf=75 kHz,占 ≈200 kHz——用宽信道换鉴频后的信噪比增益,这就是 FM 电台比 AM 清晰的根源。把 Δf 拉大,看疏密对比多鲜明。',
+    de: 'Carson: BW≈2(Δf+f_m). AM takes just 2f_m — ≈10 kHz on real radio: crowded channels, narrow sound, noise poured straight into the envelope. FM takes a big deviation — Δf=75 kHz, ≈200 kHz on air — trading a wide channel for post-discriminator SNR gain; that is why FM stations sound cleaner. Push Δf up and watch the density contrast sharpen.',
+    act: () => { phaseIdx = 5; mode = 'fm'; dev = 38; nz = false; nStr = 0; syncAll(); flyTo([0, 7.5, 16], [0, 0.2, 0]); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:三行示波器 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  ctx.font = '13px system-ui';
+  const lanes = 3, lh = H / lanes;
+  const names = [L('音频 s(t)', 'audio s(t)'), L('已调波', 'modulated'), L('解调输出', 'demod')];
+  const cols = ['#ffa94d', '#4dabf7', '#69db7c'];
+  for (let ln = 0; ln < lanes; ln++) {
+    const mid = ln * lh + lh / 2;
+    ctx.strokeStyle = 'rgba(128,150,170,.22)';
+    ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+    ctx.fillStyle = cols[ln];
+    ctx.fillText(names[ln], 8, ln * lh + 18);
+  }
+  scanPulses();
+  const midOf = ln => ln * lh + lh / 2;
+  for (let ln = 0; ln < lanes; ln++) {
+    ctx.beginPath();
+    for (let px = 0; px <= W; px += 2) {
+      const dl = (1 - px / W) * Twin;
+      const s = sAt(dl), n = noiseAt(dl);
+      let v;
+      if (ln === 0) v = s / 1.3;
+      else if (ln === 1) v = mode === 'am'
+        ? (1 + m * s + n) * Math.sin(phiC - 2 * Math.PI * fC * dl) / 2.6
+        : 1.05 * (1 + 0.8 * n) * Math.sin(fmPsi(dl)) / 2.6;
+      else v = mode === 'am' ? (Math.abs(1 + m * s + n) - 1) / 1.6 : (s + 0.06 * n) * 1.5 / 1.6;
+      const y = midOf(ln) - clamp(v, -1, 1) * (lh / 2 - 6);
+      px === 0 ? ctx.moveTo(px, y) : ctx.lineTo(px, y);
+    }
+    ctx.strokeStyle = cols[ln];
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+  }
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elM = document.getElementById('sM'), elMVal = document.getElementById('sMVal');
+const elDf = document.getElementById('sDf'), elDfVal = document.getElementById('sDfVal');
+const elFa = document.getElementById('sFa'), elFaVal = document.getElementById('sFaVal');
+const elFc = document.getElementById('sFc'), elFcVal = document.getElementById('sFcVal');
+const elNs = document.getElementById('sNs'), elNsVal = document.getElementById('sNsVal');
+const stFc = document.getElementById('stFc'), stM = document.getElementById('stM'), stMk = document.getElementById('stMk'),
+  stBW = document.getElementById('stBW'), stSNR = document.getElementById('stSNR'), stOM = document.getElementById('stOM');
+const formulaEl = document.getElementById('formula');
+const btnAM = document.getElementById('btnAM'), btnFM = document.getElementById('btnFM'),
+  btnNoise = document.getElementById('btnNoise'), btnSlow = document.getElementById('btnSlow');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  document.getElementById('rowM').style.display = mode === 'am' ? '' : 'none';
+  document.getElementById('rowDf').style.display = mode === 'fm' ? '' : 'none';
+  elM.value = m; elMVal.textContent = m.toFixed(2);
+  elDf.value = dev; elDfVal.textContent = dev + ' Hz';
+  elFa.value = fA; elFaVal.textContent = fA.toFixed(1) + ' Hz';
+  elFc.value = fC; elFcVal.textContent = fC + ' Hz';
+  elNs.value = Math.round(nStr * 100); elNsVal.textContent = Math.round(nStr * 100) + ' %';
+  stMk.textContent = mode === 'am' ? L('调制度 m', 'Depth m') : L('频偏 Δf', 'Deviation Δf');
+}
+function syncBtns() {
+  btnAM.classList.toggle('on', mode === 'am');
+  btnFM.classList.toggle('on', mode === 'fm');
+  btnNoise.classList.toggle('on', nz);
+  btnNoise.textContent = nz ? L('闪电噪声:开', 'Lightning noise: ON') : L('闪电噪声:关', 'Lightning noise: OFF');
+  btnNoise.classList.toggle('brk', !nz);
+  btnSlow.classList.toggle('on', slow);
+  btnSlow.textContent = slow ? L('慢放:开', 'Slow-mo: ON') : L('慢放:关', 'Slow-mo: OFF');
+  document.getElementById('tglNoise').checked = nz;
+}
+function computeSNR() {
+  const K = 96; let eA = 0, eF = 0, om = 0;
+  scanPulses();
+  for (let i = 0; i < K; i++) {
+    const dl = i / (K * fA);
+    const s = sAt(dl), n = noiseAt(dl);
+    const oA = Math.abs(1 + m * s + n) - 1;
+    eA += (oA - s) * (oA - s);
+    eF += (0.06 * n) * (0.06 * n);
+    if (1 + m * s + n < 0) om++;
+  }
+  snrA = 10 * Math.log10(0.5 / Math.max(1e-6, eA / K));
+  snrF = 10 * Math.log10(0.5 / Math.max(1e-9, eF / K));
+  omFrac = om / K;
+}
+function updateStats() {
+  computeSNR();
+  stFc.textContent = fC + ' Hz';
+  stM.textContent = mode === 'am' ? m.toFixed(2) : dev + ' Hz';
+  stBW.textContent = mode === 'am' ? '≈ ' + (2 * fA).toFixed(0) + ' Hz' : '≈ ' + (2 * (dev + fA)).toFixed(0) + ' Hz';
+  stSNR.textContent = `AM ${snrA.toFixed(0)} dB · FM ${snrF.toFixed(0)} dB`;
+  stSNR.className = 'v ' + (mode === 'am' ? (snrA > 20 ? 'ok' : snrA > 6 ? 'warn' : 'bad') : 'ok');
+  if (mode === 'am' && omFrac > 0.002) { stOM.textContent = (omFrac * 100).toFixed(0) + ' % 翻转'; stOM.className = 'v bad'; }
+  else { stOM.textContent = L('无', 'none'); stOM.className = 'v ok'; }
+}
+function updateFormula() {
+  formulaEl.innerHTML = L(
+    `<b>AM:y = (1 + m·s(t))·sin(2πf_c t)</b>:包络=音频;m>1 过调制→包络过零翻转,破音<br>` +
+    `<b>FM:f(t) = f_c + Δf·s(t)</b>,输出 sin(2π∫f dt):信息在疏密里,幅度恒定→限幅器可白拿<br>` +
+    `<b>卡森带宽:BW ≈ 2(Δf + f_m)</b>:AM ≈ 2f_m ≈ 10 kHz;真实 FM Δf=75 kHz → BW≈180–200 kHz<br>` +
+    `<b>真实世界</b>:音频 0.02–20 kHz;AM 530–1700 kHz;FM 88–108 MHz。本页时间轴放慢(教学压缩):s(t) 用 ${fA.toFixed(1)} Hz 可视正弦、f_c 用 ${fC} Hz`,
+    `<b>AM:y = (1 + m·s(t))·sin(2πf_c t)</b>: envelope = audio; m>1 over-modulates → envelope folds at zero, buzz<br>` +
+    `<b>FM:f(t) = f_c + Δf·s(t)</b>, output sin(2π∫f dt): information in the density, amplitude constant → limiter comes free<br>` +
+    `<b>Carson: BW ≈ 2(Δf + f_m)</b>: AM ≈ 2f_m ≈ 10 kHz; real FM Δf=75 kHz → BW≈180–200 kHz<br>` +
+    `<b>Real world</b>: audio 0.02–20 kHz; AM 530–1700 kHz; FM 88–108 MHz. Timeline slowed here (teaching compression): s(t) at ${fA.toFixed(1)} Hz, f_c at ${fC} Hz`);
+}
+function syncAll() {
+  syncSliders(); syncBtns(); updateFormula(); updateStats(); drawPlot();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+elM.addEventListener('input', () => { m = +elM.value; syncSliders(); updateStats(); updateFormula(); });
+elDf.addEventListener('input', () => { dev = +elDf.value; syncSliders(); updateStats(); updateFormula(); });
+elFa.addEventListener('input', () => { fA = +elFa.value; syncSliders(); updateStats(); updateFormula(); drawPlot(); });
+elFc.addEventListener('input', () => { fC = +elFc.value; Twin = 16 / fC; syncSliders(); updateStats(); updateFormula(); drawPlot(); });
+elNs.addEventListener('input', () => { nStr = +elNs.value / 100; nz = nStr > 0; syncSliders(); syncBtns(); });
+function setMode(v) { mode = v; syncAll(); }
+btnAM.addEventListener('click', () => setMode('am'));
+btnFM.addEventListener('click', () => setMode('fm'));
+function toggleNoise() { nz = !nz; if (nz && nStr === 0) nStr = 0.6; if (!nz) nStr = 0; syncSliders(); syncBtns(); }
+btnNoise.addEventListener('click', toggleNoise);
+btnSlow.addEventListener('click', () => { slow = !slow; syncBtns(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { chartOn = e.target.checked; document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglNoise').addEventListener('change', toggleNoise);
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, accPlot = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+const _M4 = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _S = new THREE.Vector3(), _V = new THREE.Vector3();
+
+function updBand(b, f) {
+  const pos = b.mesh.geometry.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = b.bx[i];
+    pos.setY(i, f(x, (1 - (x + LX / 2) / LX) * Twin));
+  }
+  pos.needsUpdate = true;
+}
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * (playing ? speed : 0);
+  if (notifyT > 0) notifyT -= dt0;
+  const ts = slow ? 0.25 : 1;
+  if (dt > 0) {
+    T += dt * ts;
+    phiC += 2 * Math.PI * fC * dt * ts;
+    phiM += 2 * Math.PI * fA * dt * ts;
+    if (phiM > 1e6) { phiM -= Math.floor(phiM / (2 * Math.PI)) * 2 * Math.PI; phiC -= Math.floor(phiC / (2 * Math.PI)) * 2 * Math.PI; }
+  }
+  scanPulses();
+  /* 三条波形带 */
+  updBand(bAudio, (x, dl) => 0.9 * sAt(dl));
+  updBand(bMid, (x, dl) => {
+    const s = sAt(dl), n = noiseAt(dl);
+    if (mode === 'am') return 0.55 * clamp((1 + m * s + n) * Math.sin(phiC - 2 * Math.PI * fC * dl), -2.4, 2.4);
+    const lim = x > LIMX;
+    const nE = lim ? 0 : n;
+    return 1.05 * (1 + 0.8 * nE) * Math.sin(fmPsi(dl));
+  });
+  updBand(bOut, (x, dl) => {
+    const s = sAt(dl), n = noiseAt(dl);
+    if (mode === 'am') return 0.62 * clamp(Math.abs(1 + m * s + n) - 1, -2.2, 2.2);
+    return 0.9 * clamp(s + 0.06 * n, -1.4, 1.4);
+  });
+  /* 喇叭脉动 */
+  const sNow = Math.sin(phiM);
+  cone.position.x = -0.68 + 0.17 * sNow;
+  cone.scale.set(1, 1 + 0.18 * sNow, 1 + 0.18 * sNow);
+  /* 天线圆环 */
+  for (let i = 0; i < 3; i++) {
+    const ph = ((T * fC / 16) + i / 3) % 1;
+    rings[i].scale.setScalar(0.3 + 2.3 * ph);
+    rings[i].material.opacity = 0.65 * (1 - ph);
+  }
+  /* 限幅器 / 解调盒可见性 */
+  jawT.visible = jawB.visible = mode === 'fm';
+  /* 噪声云抖动 */
+  cloud.visible = nz && nStr > 0;
+  if (cloud.visible) {
+    cloudM.opacity = 0.35 + 0.55 * nStr;
+    for (let i = 0; i < NCLOUD; i++) {
+      const sd = cloudSeed[i];
+      _M4.compose(_V.set(sd.x + 0.14 * Math.sin(T * 3.1 + sd.p), sd.y + 0.12 * Math.sin(T * 2.3 + sd.p * 2), sd.z), _Q.identity(), _S.setScalar(0.7 + 0.6 * hash(i)));
+      cloud.setMatrixAt(i, _M4);
+    }
+    cloud.instanceMatrix.needsUpdate = true;
+  }
+  /* 相机飞行 */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.14) { acc = 0; updateStats(); }
+  accPlot += dt0;
+  if (accPlot > 0.066) { accPlot = 0; if (chartOn) drawPlot(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncAll();
+start();
+</script>
+</body>
+</html>
