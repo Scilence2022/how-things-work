@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>神经肌肉接头 · 电信号变收缩</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#f783ac;
+    --bg:#121014; --panel:rgba(18,14,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(18,14,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(18,14,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#c2255c;
+    --bg:#f2eef2; --panel:rgba(255,255,255,.88); --panel-border:rgba(45,15,30,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(45,15,30,.05); --shadow:0 8px 26px rgba(70,30,50,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(45,15,30,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.p { border-color: rgba(247,131,172,.9); color: #ffdeeb; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+  :root[data-theme="light"] .lbl.p { color:#c2255c; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(247,131,172,.6); background: rgba(247,131,172,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  .abtn.brk.on { border-color: rgba(255,107,107,.8); background: rgba(255,107,107,.12); color: #ffc2c2; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(194,37,92,.55); background: rgba(194,37,92,.10); }
+  :root[data-theme="light"] .abtn.brk { color:#c92a2a; }
+  :root[data-theme="light"] .abtn.brk.on { border-color: rgba(201,42,42,.6); background: rgba(201,42,42,.08); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(247,131,172,.10); border-color: rgba(247,131,172,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(194,37,92,.08); border-color: rgba(194,37,92,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(45,15,30,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #ffdeeb; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="神经肌肉接头 · 电信号变收缩" data-en="Neuromuscular Junction · From Spike to Twitch">神经肌肉接头 · 电信号变收缩</h1>
+  <div class="sub" data-zh="运动神经想动一块肌肉,必须跨过 50 nm 的河:动作电位开门放 Ca²⁺,SNARE 把囊泡按在前膜上,一次倾倒几十个量子、每个量子五千个 ACh;ACh 几微秒划过间隙,终板 nAChR 开门,Na⁺ 涌入把终板抬升 ~40 mV——远超阈值,肌膜必点火,T 管把火传进纤维深处,肌质网倾泻 Ca²⁺,肌动-肌球蛋白开划;AChE 0.2 ms 内水解清场,好接下一拍 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="To move a muscle, a motor neuron must cross a 50 nm river: the action potential opens Ca²⁺ gates, SNARE docks the vesicles, one pulse dumps dozens of quanta of ~5,000 ACh each; ACh crosses in microseconds, endplate nAChR gates open, Na⁺ lifts the endplate ~40 mV — far past threshold, the sarcolemma fires, T-tubules carry the spike deep inside, the sarcoplasmic reticulum dumps Ca²⁺, actin-myosin start rowing; AChE clears the cleft in 0.2 ms, ready for the next beat · 3D interactive demo · drag to orbit · Space = run/pause">运动神经想动一块肌肉,必须跨过 50 nm 的河:动作电位开门放 Ca²⁺,SNARE 把囊泡按在前膜上,一次倾倒几十个量子、每个量子五千个 ACh;ACh 几微秒划过间隙,终板 nAChR 开门,Na⁺ 涌入把终板抬升 ~40 mV——远超阈值,肌膜必点火,T 管把火传进纤维深处,肌质网倾泻 Ca²⁺,肌动-肌球蛋白开划;AChE 0.2 ms 内水解清场,好接下一拍 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="量子释放(囊泡/脉冲)" data-en="Quanta (vesicles/pulse)">量子释放(囊泡/脉冲)</span><span class="v" id="stQ">—</span>
+  <span class="k" data-zh="终板电位 EPP" data-en="Endplate potential">终板电位 EPP</span><span class="v ok" id="stEpp">—</span>
+  <span class="k" data-zh="肌膜动作电位" data-en="Muscle AP">肌膜动作电位</span><span class="v warn" id="stAP">—</span>
+  <span class="k" data-zh="间隙 ACh" data-en="Cleft ACh">间隙 ACh</span><span class="v" id="stACh">—</span>
+  <span class="k" data-zh="肌质 Ca²⁺" data-en="Myoplasmic Ca²⁺">肌质 Ca²⁺</span><span class="v" id="stCa">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="终板电位示波器:正常 EPP ~40 mV,远超 −55 mV 阈值(安全系数大,一次过河必点火);箭毒把它压到阈下,肉毒让它归零——两条毒素路都卡死同一座桥" data-en="Endplate oscilloscope: a normal EPP of ~40 mV towers over the −55 mV threshold (high safety factor); curare pushes it below threshold and botulinum zeroes it — two toxins, one bridge, same blockade">终板电位示波器:正常 EPP ~40 mV,远超 −55 mV 阈值(安全系数大,一次过河必点火);箭毒把它压到阈下,肉毒让它归零——两条毒素路都卡死同一座桥</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="ACh:量子包裹的递质" data-en="ACh: transmitter in quanta">ACh:量子包裹的递质</span>
+    <span class="chip.o" data-zh="Ca²⁺:释放的点火钥匙" data-en="Ca²⁺: the release trigger">Ca²⁺:释放的点火钥匙</span>
+    <span class="chip.g" data-zh="nAChR:终板上的门" data-en="nAChR: gates on the endplate">nAChR:终板上的门</span>
+    <span class="chip.r" data-zh="毒素:箭毒占门 · 肉毒剪锁" data-en="toxins: curare jams gates, BoTX cuts SNARE">毒素:箭毒占门 · 肉毒剪锁</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnFire" data-zh="手动触发一次脉冲" data-en="Fire one pulse">手动触发一次脉冲</button>
+    <button class="abtn brk" id="btnCurare" data-zh="箭毒(占受体)" data-en="Curare (blocks receptors)">箭毒(占受体)</button>
+    <button class="abtn brk" id="btnBotu" data-zh="肉毒毒素(剪 SNARE)" data-en="Botulinum (cuts SNARE)">肉毒毒素(剪 SNARE)</button>
+    <button class="abtn" id="btnReset" data-zh="解除毒素" data-en="Clear toxins">解除毒素</button>
+    <button class="abtn" id="btnClose" data-zh="间隙特写" data-en="Cleft close-up">间隙特写</button>
+    <button class="abtn" id="btnWide" data-zh="全景" data-en="Wide view">全景</button>
+  </div>
+  <div class="row"><label data-zh="刺激频率" data-en="Stimulus rate">刺激频率</label><input id="sFreq" type="range" min="0.5" max="3" step="0.1" value="1"><span class="val" id="sFreqVal">1.0 Hz</span></div>
+  <div class="row"><label data-zh="细胞外 Ca²⁺" data-en="Extracellular Ca²⁺">细胞外 Ca²⁺</label><input id="sCa" type="range" min="0.2" max="2" step="0.05" value="1"><span class="val" id="sCaVal">1.0 mM</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglScope" type="checkbox" checked> <span data-zh="示波器" data-en="Scope">示波器</span></label>
+      <label><input id="tglFlow" type="checkbox" checked> <span data-zh="分子流" data-en="Molecules">分子流</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../synaptic-transmission/" data-zh="突触传递:神经元之间的同一套桥" data-en="synaptic transmission: the same bridge between neurons">突触传递:神经元之间的同一套桥</a>
+    <a href="../action-potential/" data-zh="动作电位:河这边的电脉冲" data-en="action potential: the spike on this side of the river">动作电位:河这边的电脉冲</a>
+    <a href="../cross-bridge-cycle/" data-zh="横桥循环:Ca²⁺ 到货之后怎么划" data-en="cross-bridge cycle: what Ca²⁺ sets rowing">横桥循环:Ca²⁺ 到货之后怎么划</a>
+    <a href="../myelin/" data-zh="髓鞘:让脉冲跳着跑的绝缘层" data-en="myelin: the insulation that makes spikes jump">髓鞘:让脉冲跳着跑的绝缘层</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, f) => a + (b - a) * f;
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const speedMul = clamp(qsFloat('speed', 1), 0.25, 3);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x130f16, 24, 85);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x130f16 : 0xe7dfe6);
+  scene.fog.color = new THREE.Color(dark ? 0x130f16 : 0xe7dfe6);
+  groundM.color.setHex(dark ? 0x1b1620 : 0xc9bdca);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('神经肌肉接头 · 电信号变收缩', 'Neuromuscular Junction · From Spike to Twitch');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+  syncBtns();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+let renderer = null, webglOK = true;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  document.getElementById('app').appendChild(renderer.domElement);
+} catch (err) {
+  webglOK = false;
+  const errDiv = document.createElement('div');
+  errDiv.style.cssText = 'position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:99;background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;padding:18px 26px;color:var(--text);font-size:14px;max-width:420px;text-align:center';
+  errDiv.textContent = L('WebGL 初始化失败:3D 画面不可用,但左侧控制面板仍可浏览。', 'WebGL failed to start: the 3D view is unavailable, but the control panel still works.');
+  document.body.appendChild(errDiv);
+}
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+if (webglOK) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+}
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 160);
+camera.position.set(10, 4, 14);
+const controls = new OrbitControls(camera, webglOK ? renderer.domElement : document.body);
+controls.target.set(0, -0.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 60;
+controls.autoRotateSpeed = 0.3;
+
+const hemi = new THREE.HemisphereLight(0xe8dff0, 0x191420, 0.5);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff0e4, 1.0);
+key.position.set(6, 9, 7);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9ab8ff, 0.3);
+fill.position.set(-7, 4, -6);
+scene.add(fill);
+
+/* ================= 状态 ================= */
+let freq = 1, caExt = 1, curare = false, botu = false;
+let curareF = 0, ph = 0.9, prevPh = 0.9, q = 0;
+let aCh = 0, eppEnv = 0, eppPeak = 0, spikeT = 9, sparkT = 9, contraT = 9, fired = false;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let labelsOn = true, scopeOn = true, flowOn = true;
+let phaseIdx = 0, notifyT = 0, notifyZ = '', notifyE = '';
+const qTh = [2, 25, 45];
+const releaseProb = ca => { const r = Math.pow(ca / 0.5, 4); return r / (1 + r); };
+
+/* ---------------- 材质 ---------------- */
+const groundM = new THREE.MeshStandardMaterial({ color: 0x1b1620, roughness: 0.95 });
+const termM = new THREE.MeshStandardMaterial({ color: 0x9c6bb5, transparent: true, opacity: 0.34, roughness: 0.35, emissive: 0x5a2e75, emissiveIntensity: 0.15, side: THREE.DoubleSide });
+const axonM = new THREE.MeshStandardMaterial({ color: 0xd6c6ea, roughness: 0.5 });
+const myelinM = new THREE.MeshStandardMaterial({ color: 0xf3d9a4, roughness: 0.55 });
+const vesM = new THREE.MeshStandardMaterial({ color: 0xe5dbf7, roughness: 0.4, emissive: 0x6b4fa0, emissiveIntensity: 0.25 });
+const chanM = new THREE.MeshStandardMaterial({ color: 0xffa94d, roughness: 0.4, emissive: 0xffa94d, emissiveIntensity: 0.1 });
+const foldM = new THREE.MeshStandardMaterial({ color: 0xe8a0b4, roughness: 0.6 });
+const recM = new THREE.MeshStandardMaterial({ color: 0x63e6be, roughness: 0.4, emissive: 0x0ca678, emissiveIntensity: 0.25 });
+const achM0 = { color: 0x74c0fc };
+const caM = new THREE.MeshBasicMaterial({ color: 0xffd43b });
+const naM = new THREE.MeshBasicMaterial({ color: 0xffa94d });
+const sparkM = new THREE.MeshBasicMaterial({ color: 0xff6b6b });
+const srM = new THREE.MeshStandardMaterial({ color: 0xb197fc, roughness: 0.45, emissive: 0x6741d9, emissiveIntensity: 0.2 });
+const ttM = new THREE.MeshStandardMaterial({ color: 0xa5d8ff, transparent: true, opacity: 0.5, roughness: 0.4 });
+const ringM = new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0.85 });
+const eppM = new THREE.MeshBasicMaterial({ color: 0xffa8c0, transparent: true, opacity: 0, side: THREE.DoubleSide });
+
+/* ---------------- 场景搭建 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 0.3, 48), groundM);
+ground.position.y = -7.2;
+scene.add(ground);
+
+/* 肌纤维:半透明膜 + 肌原纤维条纹芯 */
+const muscleGrp = new THREE.Group();
+scene.add(muscleGrp);
+const memGeo = new THREE.CylinderGeometry(1.7, 1.7, 18, 28, 1, true);
+memGeo.rotateZ(Math.PI / 2);
+const membrane = new THREE.Mesh(memGeo, new THREE.MeshStandardMaterial({ color: 0xf1a3b8, transparent: true, opacity: 0.26, roughness: 0.5, side: THREE.DoubleSide }));
+membrane.position.y = -2.6;
+muscleGrp.add(membrane);
+const bandCv = document.createElement('canvas');
+bandCv.width = 256; bandCv.height = 32;
+const bctx = bandCv.getContext('2d');
+for (let i = 0; i < 8; i++) {
+  const x = i * 32;
+  bctx.fillStyle = '#e0aab8'; bctx.fillRect(x, 0, 32, 32);
+  bctx.fillStyle = '#a14a63'; bctx.fillRect(x + 7, 0, 18, 32);
+  bctx.fillStyle = '#5a2434'; bctx.fillRect(x + 15, 0, 3, 32);
+}
+const bandTex = new THREE.CanvasTexture(bandCv);
+bandTex.wrapS = THREE.RepeatWrapping;
+bandTex.repeat.set(6, 1);
+const fibrilGeo = new THREE.CylinderGeometry(1.42, 1.42, 17.8, 28, 1, true);
+fibrilGeo.rotateZ(Math.PI / 2);
+const fibril = new THREE.Mesh(fibrilGeo, new THREE.MeshStandardMaterial({ map: bandTex, roughness: 0.7, emissive: 0x5a2434, emissiveIntensity: 0.12 }));
+fibril.position.y = -2.6;
+muscleGrp.add(fibril);
+/* 终板褶皱 */
+const foldGeo = new THREE.BoxGeometry(0.55, 0.34, 1.7);
+for (let i = 0; i < 5; i++) {
+  const f = new THREE.Mesh(foldGeo, foldM);
+  f.position.set(-1.6 + i * 0.8, -0.76, 0);
+  muscleGrp.add(f);
+}
+/* EPP 发光片 */
+const eppGlow = new THREE.Mesh(new THREE.CircleGeometry(1.6, 24), eppM);
+eppGlow.rotation.x = -Math.PI / 2;
+eppGlow.position.set(0, -0.575, 0);
+scene.add(eppGlow);
+
+/* 轴突 + 髓鞘 */
+const axonGeo = new THREE.CylinderGeometry(0.55, 0.55, 8.6, 16);
+axonGeo.rotateZ(Math.PI / 2);
+const axon = new THREE.Mesh(axonGeo, axonM);
+axon.position.set(-6.0, 0.85, 0);
+scene.add(axon);
+for (let i = 0; i < 3; i++) {
+  const my = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.78, 2.1, 16), myelinM);
+  my.geometry.rotateZ(Math.PI / 2);
+  my.position.set(-3.3 - i * 2.6, 0.85, 0);
+  scene.add(my);
+}
+/* 轴突末梢 */
+const terminal = new THREE.Mesh(new THREE.SphereGeometry(1.5, 28, 20), termM);
+terminal.scale.set(1.18, 0.86, 1.0);
+terminal.position.set(0, 0.85, 0);
+scene.add(terminal);
+/* 电压门控 Ca²⁺ 通道 */
+const chanGeo = new THREE.BoxGeometry(0.16, 0.1, 0.3);
+const chans = [];
+for (let i = 0; i < 4; i++) {
+  const c = new THREE.Mesh(chanGeo, chanM);
+  c.position.set(-1.05 + i * 0.7, -0.32 + (i % 2) * 0.06, i < 2 ? 0.75 : -0.75);
+  scene.add(c);
+  chans.push(c);
+}
+/* 突触囊泡:3 个停靠位 + 游离泡 */
+const sitesX = [-0.55, 0, 0.55];
+const vesGeo = new THREE.SphereGeometry(0.19, 16, 12);
+const docked = sitesX.map(x => {
+  const m = new THREE.Mesh(vesGeo, vesM);
+  m.position.set(x, -0.05, 0);
+  scene.add(m);
+  return { m, home: new THREE.Vector3(x, -0.05, 0), fuseT: -1 };
+});
+const freeVes = [];
+for (let i = 0; i < 12; i++) {
+  const m = new THREE.Mesh(vesGeo, vesM);
+  m.position.set((Math.random() - 0.5) * 2.0, 0.7 + Math.random() * 0.75, (Math.random() - 0.5) * 1.4);
+  m.userData.anchor = m.position.clone();
+  m.userData.seed = Math.random() * 9;
+  scene.add(m);
+  freeVes.push(m);
+}
+/* nAChR 受体门(终板褶皱顶) */
+const recGeo = new THREE.BoxGeometry(0.09, 0.2, 0.09);
+const gates = [];
+for (let i = 0; i < 3; i++) {
+  const x = sitesX[i];
+  const gL = new THREE.Mesh(recGeo, recM), gR = new THREE.Mesh(recGeo, recM);
+  gL.position.set(x - 0.06, -0.56, 0.35);
+  gR.position.set(x + 0.06, -0.56, 0.35);
+  const back = new THREE.Mesh(recGeo, recM);
+  back.position.set(x, -0.56, 0.35);
+  back.scale.set(2.6, 0.8, 0.8);
+  scene.add(gL, gR, back);
+  gates.push({ gL, gR, x, open: 0 });
+}
+/* T 管 + 肌质网 */
+const ttGeo = new THREE.CylinderGeometry(0.12, 0.12, 2.5, 12);
+const ttube = new THREE.Mesh(ttGeo, ttM);
+ttube.position.set(3.2, -2.1, 0);
+scene.add(ttube);
+const srs = [];
+for (const dx of [-0.28, 0.28]) {
+  const s = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 1.7, 6, 12), srM);
+  s.position.set(3.2 + dx, -2.1, 0);
+  scene.add(s);
+  srs.push(s);
+}
+/* 肌膜 AP 传导环 */
+const ringGeo = new THREE.TorusGeometry(1.78, 0.06, 8, 40);
+ringGeo.rotateY(Math.PI / 2);
+const ringL = new THREE.Mesh(ringGeo, ringM), ringR = new THREE.Mesh(ringGeo, ringM);
+ringL.visible = ringR.visible = false;
+scene.add(ringL, ringR);
+/* AP 行波光点 */
+const apGlow = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), new THREE.MeshBasicMaterial({ color: 0xff8fab }));
+apGlow.visible = false;
+scene.add(apGlow);
+
+/* ---------------- 分子粒子 ---------------- */
+const dotGeo = new THREE.SphereGeometry(0.06, 8, 8);
+function makePool(n, mat, size) {
+  const arr = [];
+  for (let i = 0; i < n; i++) {
+    const mm = mat.color ? mat.clone() : mat;
+    const m = new THREE.Mesh(dotGeo, mm);
+    m.scale.setScalar(size);
+    m.visible = false;
+    scene.add(m);
+    arr.push({ m, p: 0, hold: 0, from: new THREE.Vector3(), mid: new THREE.Vector3(), to: new THREE.Vector3(), sp: 1 });
+  }
+  return arr;
+}
+const achs = makePool(18, new THREE.MeshBasicMaterial(achM0), 1.15);
+const cas = makePool(12, caM, 1.0);
+const nas = makePool(12, naM, 1.05);
+const sparks = makePool(14, sparkM, 1.2);
+function initPath(o, from, to, lift) {
+  o.from.copy(from); o.to.copy(to);
+  o.mid.copy(from).add(to).multiplyScalar(0.5);
+  o.mid.y += lift;
+  o.p = 0; o.hold = 0;
+  o.m.visible = true;
+}
+function setBezier(o, t3) {
+  const a = 1 - t3;
+  o.m.position.set(
+    a * a * o.from.x + 2 * a * t3 * o.mid.x + t3 * t3 * o.to.x,
+    a * a * o.from.y + 2 * a * t3 * o.mid.y + t3 * t3 * o.to.y,
+    a * a * o.from.z + 2 * a * t3 * o.mid.z + t3 * t3 * o.to.z);
+}
+function stepPool(arr, dt, rate, respawn, flight, linger) {
+  for (const o of arr) {
+    if (!o.m.visible) {
+      if (Math.random() < rate * dt) respawn(o);
+      continue;
+    }
+    if (o.hold > 0) {
+      o.hold -= dt;
+      o.m.material.transparent = true;
+      o.m.material.opacity = clamp(o.hold / linger, 0, 1);
+      if (o.hold <= 0) { o.m.visible = false; o.m.material.opacity = 1; }
+      continue;
+    }
+    o.p += dt * o.sp / flight;
+    if (o.p >= 1) {
+      if (linger > 0) { o.hold = linger; o.p = 1; setBezier(o, 1); }
+      else { o.m.visible = false; if (Math.random() < rate * dt) respawn(o); }
+    } else setBezier(o, o.p);
+  }
+}
+function respawnCa(o) {
+  const side = Math.random() < 0.5 ? 1 : -1;
+  initPath(o,
+    new THREE.Vector3(side * (0.6 + Math.random() * 0.9), -0.15 + Math.random() * 0.1, (Math.random() - 0.5) * 1.4),
+    new THREE.Vector3(side * (0.5 + Math.random() * 0.7), 0.4 + Math.random() * 0.4, (Math.random() - 0.5) * 1.0), 0.1);
+  o.sp = 0.9 + Math.random() * 0.5;
+}
+function respawnNa(o) {
+  const g = gates[Math.floor(Math.random() * gates.length)];
+  initPath(o,
+    new THREE.Vector3(g.x + (Math.random() - 0.5) * 0.2, -0.45, 0.35 + (Math.random() - 0.5) * 0.2),
+    new THREE.Vector3(g.x + (Math.random() - 0.5) * 0.6, -1.5 - Math.random() * 0.6, (Math.random() - 0.5) * 0.5), -0.15);
+  o.sp = 1.1 + Math.random() * 0.5;
+}
+function burstACh(x) {
+  let n = clamp(Math.round(q / 6), 2, 14);
+  for (const o of achs) {
+    if (n <= 0) break;
+    if (o.m.visible) continue;
+    initPath(o,
+      new THREE.Vector3(x, -0.36, 0),
+      new THREE.Vector3(clamp(x + (Math.random() - 0.5) * 1.8, -1.3, 1.3), -0.52, (Math.random() - 0.5) * 0.9), 0.18);
+    o.sp = 0.85 + Math.random() * 0.5;
+    o.m.material.color.setHex(0x74c0fc);
+    n--;
+  }
+}
+function burstSpark() {
+  for (const o of sparks) {
+    initPath(o,
+      new THREE.Vector3(3.2 + (Math.random() - 0.5) * 0.5, -2.0 + (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 0.4),
+      new THREE.Vector3(2.2 + Math.random() * 2.2, -2.6 + (Math.random() - 0.5) * 1.6, (Math.random() - 0.5) * 1.2), -0.3);
+    o.sp = 1.0 + Math.random() * 0.6;
+  }
+}
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true, parent = null) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblMy = addLabel(() => L('髓鞘:绝缘,让脉冲跳过结间区', 'myelin: insulation — spikes jump the internode'), new THREE.Vector3(-5.9, 2.3, 0), 'o', () => phaseIdx === 0);
+const lblTerm = addLabel(() => L('轴突末梢(放大 ~10⁵×)', 'axon terminal (zoom ~10⁵×)'), new THREE.Vector3(0, 2.5, 0), 'p');
+const lblCa = addLabel(() => L('电压门控 Ca²⁺ 通道:去极化才开门', 'voltage-gated Ca²⁺ channels: open on depolarization'), new THREE.Vector3(-2.6, -0.85, 1.3), 'o', () => phaseIdx <= 2);
+const lblVes = addLabel(() => L(`突触囊泡 40 nm:每只 ≈ 7 000 ACh`, 'synaptic vesicle 40 nm: ≈ 7,000 ACh each'), new THREE.Vector3(0.9, 1.4, -0.9), 'b', () => phaseIdx <= 3);
+const lblFuse = addLabel(() => L('SNARE 拉链合拢 → 胞吐:量子式释放', 'SNARE zippers → exocytosis: quantal release'), new THREE.Vector3(-1.5, -1.15, 0), 'r', () => phaseIdx === 2 || phaseIdx === 6);
+const lblCleft = addLabel(() => L(`突触间隙 50 nm · ACh ${Math.round(aCh)} µM`, `cleft 50 nm · ACh ${Math.round(aCh)} µM`), new THREE.Vector3(0, -0.1, -1.6), 'b');
+const lblRec = addLabel(() => L('nAChR:两个 α 亚基都挂上 ACh 才开门', 'nAChR: opens only when both α sites bind ACh'), new THREE.Vector3(0, 0.35, 1.7), 'g', () => phaseIdx >= 3 && phaseIdx <= 5);
+const lblEpp = addLabel(() => L(`终板 ${(-90 + eppEnv * 42).toFixed(0)} mV,阈 −55 mV——过线即点火`, `endplate ${(-90 + eppEnv * 42).toFixed(0)} mV, threshold −55 mV`), new THREE.Vector3(-2.6, -2.0, 0), 'p', () => phaseIdx >= 4);
+const lblT = addLabel(() => L('T 管:把 AP 送进纤维深处', 'T-tubule: carries the AP inside'), new THREE.Vector3(3.3, -0.4, 0), 'b', () => phaseIdx >= 5);
+const lblSR = addLabel(() => L(`肌质网:倾泻 Ca²⁺(肌质 ${ (0.12 + 9.8 * sparkEnv()).toFixed(1) } µM)`, `SR: dumps Ca²⁺ (myoplasm ${(0.12 + 9.8 * sparkEnv()).toFixed(1)} µM)`), new THREE.Vector3(4.4, -2.9, 0), 'r', () => phaseIdx >= 5);
+const lblAchE = addLabel(() => L('AChE:0.2 ms 水解清场', 'AChE: hydrolyzes ACh in 0.2 ms'), new THREE.Vector3(1.9, -0.9, -0.9), 'g', () => phaseIdx === 6);
+const lblNotify = addLabel(() => {
+  if (notifyT > 0) return L(notifyZ, notifyE);
+  return '';
+}, new THREE.Vector3(0, 4.0, 0), 'r');
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+const STEPS = [
+  { b: '脉冲抵达', be: 'The pulse arrives',
+    d: '运动神经的动作电位沿有髓轴突在郎飞结间跳跃前进,几毫秒内抵达末梢,末梢膜去极化——电信号的到站铃声。',
+    de: 'The motor AP jumps node to node along the myelinated axon and reaches the terminal within milliseconds — the doorbell of the electrical signal.',
+    act: () => { phaseIdx = 0; curare = false; botu = false; caExt = 1; freq = 1; syncAll(); flyTo([10, 4, 14], [0, -0.2, 0]); } },
+  { b: 'Ca²⁺ 点火', be: 'Ca²⁺ lights the fuse',
+    d: '去极化打开电压门控 Ca²⁺ 通道,Ca 顺浓度梯度涌入:释放概率随 [Ca²⁺]外 的 4 次方增长——四个 Ca 结合一个融合机器,细胞用四次方协作把「电位」翻译成「分泌」。试试把 Ca 滑杆拉到 0.3 mM:几乎静默。',
+    de: 'Depolarization opens voltage-gated Ca²⁺ channels and Ca floods in: release probability scales with the 4th power of extracellular [Ca²⁺] — four ions per fusion machine, a cooperative translator from voltage to secretion. Drag Ca to 0.3 mM: near silence.',
+    act: () => { phaseIdx = 1; syncAll(); flyTo([3.6, 2.8, 6.4], [0, 0.5, 0]); } },
+  { b: '囊泡融合', be: 'Vesicle fusion',
+    d: '突触蛋白解离,SNARE 复合体(zipper)把 40 nm 的囊泡拉向前膜并融合,以胞吐一次倒出全部递质——这就是量子:一次脉冲 ~50–80 囊泡,每个 ≈ 7 000 ACh。',
+    de: 'Synapsins release, the SNARE complex zippers each 40 nm vesicle into the presynaptic membrane, and exocytosis dumps the whole cargo at once — that is a quantum: 50–80 vesicles per pulse, ≈7,000 ACh each.',
+    act: () => { phaseIdx = 2; syncAll(); flyTo([2.6, 1.2, 5.2], [-0.2, -0.2, 0]); } },
+  { b: 'ACh 过河', be: 'ACh crosses the river',
+    d: 'ACh 在 50 nm 间隙里靠扩散横渡,几微秒到岸;要同时挂上受体两个 α 亚基,门才开——分子层面的一票双确认。',
+    de: 'ACh diffuses across the 50 nm cleft in microseconds; the gate opens only when both α subunits of a receptor bind — a two-key confirmation at molecular scale.',
+    act: () => { phaseIdx = 3; syncAll(); flyTo([0.4, 0.8, 4.6], [0, -0.5, 0]); } },
+  { b: '终板电位', be: 'Endplate potential',
+    d: 'nAChR 是 Na⁺/K⁺ 非选择性阳离子通道:Na⁺ 内流略胜 K⁺ 外流,终板从 −90 mV 升到约 −50 mV,越过 −55 mV 阈值;真正的安全系数在量子冗余——到货 60 个囊泡,几个就够点火,接头不许失手。',
+    de: 'nAChR is a nonselective cation channel: Na⁺ in slightly outweighs K⁺ out, lifting the endplate from −90 to about −50 mV, past the −55 mV threshold; the real safety factor is quantal redundancy — sixty vesicles arrive when a handful would fire the fiber.',
+    act: () => { phaseIdx = 4; syncAll(); flyTo([-3.2, -0.6, 6.2], [-0.6, -1.6, 0]); } },
+  { b: '肌膜点火,Ca 火花', be: 'The fiber fires, Ca spark',
+    d: '肌膜 AP 沿表面与 T 管传入纤维内部,T 管膜上的电压感受器扳动肌质网兰尼碱受体,Ca²⁺ 从 0.1 µM 冲到 ~10 µM——肌钙蛋白让开,肌动-肌球蛋白开划(收缩 see 横桥循环)。',
+    de: 'The sarcolemmal AP dives inward along T-tubules; their voltage sensors tug open ryanodine receptors on the SR and Ca²⁺ leaps from 0.1 to ~10 µM — troponin steps aside, actin and myosin start rowing (see the cross-bridge cycle).',
+    act: () => { phaseIdx = 5; syncAll(); flyTo([5.4, -1.2, 6.8], [3.2, -2.0, 0]); } },
+  { b: '清理与毒素', be: 'Cleanup and toxins',
+    d: 'AChE 在 0.2 ms 内把 ACh 水解成乙酸+胆碱(被重摄取再装囊),闸门复位。箭毒占住受体 → EPP 压到阈下、软瘫;肉毒毒素剪断 SNARE → 量子归零。本页已开箭毒,可再点肉毒对照。',
+    de: 'AChE hydrolyzes ACh into acetate + choline (re-taken up and repackaged) within 0.2 ms, resetting the gates. Curare occupies receptors → subthreshold EPP, flaccid paralysis; botulinum snips SNARE → zero quanta. Curare is on here — add botulinum to compare.',
+    act: () => { phaseIdx = 6; curare = true; syncAll(); flyTo([0.4, 0.8, 4.6], [0, -0.5, 0]); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:终板电位示波器 ================= */
+const plotCv = document.getElementById('plotCv');
+const trace = [];
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const padL = 44, padR = 12, padT = 12, padB = 22;
+  const yOf = mv => (H - padB) - (clamp(mv, -100, 45) + 100) / 145 * (H - padT - padB);
+  ctx.font = '13px system-ui';
+  ctx.strokeStyle = 'rgba(128,150,170,.22)';
+  ctx.fillStyle = cTxt;
+  for (const mv of [-90, -55, 0, +40]) {
+    ctx.beginPath(); ctx.moveTo(padL, yOf(mv)); ctx.lineTo(W - padR, yOf(mv)); ctx.stroke();
+    ctx.fillText(String(mv), 8, yOf(mv) + 4);
+  }
+  ctx.setLineDash([5, 4]);
+  ctx.strokeStyle = 'rgba(255,209,102,.75)';
+  ctx.beginPath(); ctx.moveTo(padL, yOf(-55)); ctx.lineTo(W - padR, yOf(-55)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ffd166';
+  ctx.fillText(L('阈 −55 mV', 'thr −55 mV'), W - padR - 92, yOf(-55) - 6);
+  if (trace.length > 1) {
+    ctx.strokeStyle = '#f783ac';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    const n = trace.length, step = (W - padL - padR) / 480;
+    for (let i = 0; i < n; i++) {
+      const x = W - padR - (n - 1 - i) * step;
+      i === 0 ? ctx.moveTo(x, yOf(trace[i])) : ctx.lineTo(x, yOf(trace[i]));
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = cTxt;
+  ctx.fillText(L('终板/肌膜电位 8 s 窗口', 'endplate/sarcolemmal Vm, 8 s window'), padL + 6, padT + 14);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elFreq = document.getElementById('sFreq'), elFreqVal = document.getElementById('sFreqVal');
+const elCa = document.getElementById('sCa'), elCaVal = document.getElementById('sCaVal');
+const stQ = document.getElementById('stQ'), stEpp = document.getElementById('stEpp'), stAP = document.getElementById('stAP'),
+  stACh = document.getElementById('stACh'), stCa = document.getElementById('stCa');
+const formulaEl = document.getElementById('formula');
+const btnFire = document.getElementById('btnFire'), btnCurare = document.getElementById('btnCurare'),
+  btnBotu = document.getElementById('btnBotu'), btnReset = document.getElementById('btnReset'),
+  btnClose = document.getElementById('btnClose'), btnWide = document.getElementById('btnWide');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elFreq.value = freq; elFreqVal.textContent = freq.toFixed(1) + ' Hz';
+  elCa.value = caExt; elCaVal.textContent = caExt.toFixed(2) + ' mM';
+}
+function syncBtns() {
+  btnCurare.classList.toggle('on', curare);
+  btnBotu.classList.toggle('on', botu);
+}
+function updateStats() {
+  stQ.textContent = q > 0 ? q : '0';
+  stEpp.textContent = '+' + eppPeak.toFixed(0) + ' mV';
+  stEpp.className = 'v ' + (eppPeak >= 35 ? 'ok' : eppPeak >= 8 ? 'warn' : 'bad');
+  const sp = sparkEnv();
+  stAP.textContent = spikeT < 0.6 ? L('✓ 触发', '✓ fired') : (eppPeak >= 35 ? L('待脉冲', 'waiting') : L('未达阈', 'subthreshold'));
+  stAP.className = 'v ' + (spikeT < 0.6 ? 'ok' : eppPeak >= 35 ? 'warn' : 'bad');
+  stACh.textContent = Math.round(aCh) + ' µM';
+  stCa.textContent = (0.12 + 9.8 * sp).toFixed(1) + ' µM';
+  stCa.className = 'v ' + (sp > 0.5 ? 'bad' : 'ok');
+}
+function updateFormula() {
+  formulaEl.innerHTML = L(
+    `<b>量子式释放</b>:囊泡 ≈ 40 nm / 每只 ~7 000 ACh;一次脉冲 ~50–80 囊泡,间隙 ACh 瞬时逼近 1 mM<br>` +
+    `<b>Ca 是钥匙</b>:释放概率 ∝ [Ca²⁺]外⁴(四次方协作);无胞外 Ca²⁺ → 电位照常,释放为零<br>` +
+    `<b>终板电位</b>:nAChR 非选择性阳离子通道,终板 −90→−50 mV,越过 −55 mV 阈;量子冗余(到货 60,够用几个)即安全系数<br>` +
+    `<b>清理与毒素</b>:AChE 0.2 ms 水解;箭毒占受体 → 阈下软瘫,肉毒剪 SNARE → 量子归零`,
+    `<b>Quantal release</b>: vesicle ≈ 40 nm / ~7,000 ACh each; 50–80 vesicles per pulse push cleft ACh toward 1 mM<br>` +
+    `<b>Ca is the key</b>: release probability ∝ [Ca²⁺]₀⁴ (4th-order cooperativity); zero extracellular Ca → voltage normal, release nil<br>` +
+    `<b>EPP</b>: nAChR nonselective cation channels lift the endplate −90→−50 mV, past −55; the safety factor is quantal redundancy (60 arrive, a handful suffice)<br>` +
+    `<b>Cleanup &amp; toxins</b>: AChE clears in 0.2 ms; curare jams receptors → flaccid paralysis, botulinum cuts SNARE → zero quanta`);
+}
+function syncAll() {
+  syncSliders(); syncBtns(); updateFormula(); updateStats(); drawPlot();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+elFreq.addEventListener('input', () => { freq = +elFreq.value; syncSliders(); });
+elCa.addEventListener('input', () => { caExt = +elCa.value; syncSliders(); });
+btnFire.addEventListener('click', () => { ph = 0.995; });
+btnCurare.addEventListener('click', () => {
+  curare = !curare; if (curare) botu = false;
+  notifyT = 2.6;
+  notifyZ = curare ? '箭毒占领受体:nAChR 打不开,EPP 被压到阈下——呼吸肌也会瘫' : '箭毒洗去:受体门重新能开';
+  notifyE = curare ? 'Curare occupies the receptors: gates stay shut, EPP subthreshold — breathing included' : 'Curare washed out: the gates can open again';
+  syncBtns();
+});
+btnBotu.addEventListener('click', () => {
+  botu = !botu; if (botu) curare = false;
+  notifyT = 2.6;
+  notifyZ = botu ? '肉毒毒素剪断 SNARE:囊泡钉死在膜上,量子释放归零' : '毒素清除:SNARE 机器恢复';
+  notifyE = botu ? 'Botulinum snips SNARE: vesicles frozen on the dock, zero quanta' : 'Toxin cleared: the SNARE machine is back';
+  syncBtns();
+});
+btnReset.addEventListener('click', () => {
+  curare = false; botu = false;
+  notifyT = 1.6; notifyZ = '毒素解除:接头恢复满额量子释放'; notifyE = 'Toxins cleared: full quantal release restored';
+  syncBtns();
+});
+btnClose.addEventListener('click', () => flyTo([0.4, 0.8, 4.6], [0, -0.5, 0]));
+btnWide.addEventListener('click', () => flyTo([10, 4, 14], [0, -0.2, 0]));
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglScope').addEventListener('change', e => { scopeOn = e.target.checked; document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglFlow').addEventListener('change', e => {
+  flowOn = e.target.checked;
+  for (const pool of [achs, cas, nas, sparks]) for (const o of pool) o.m.visible = false;
+});
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  if (renderer) renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 生理仿真 ================= */
+function sparkEnv() {
+  if (sparkT > 1.4) return 0;
+  const t3 = sparkT;
+  return t3 < 0.08 ? 0 : t3 < 0.2 ? (t3 - 0.08) / 0.12 : Math.exp(-(t3 - 0.2) / 0.4);
+}
+function stepSim(dt0) {
+  curareF += ((curare ? 1 : 0) - curareF) * Math.min(1, dt0 / 0.5);
+  prevPh = ph;
+  ph += dt0 * freq;
+  if (ph >= 1) {
+    ph -= 1;
+    q = Math.round(70 * releaseProb(caExt) * (botu ? 0.02 : 1));
+  }
+  /* 三个停靠位按量子数先后融合 */
+  for (let i = 0; i < 3; i++) {
+    const te = 0.14 + i * 0.05;
+    if (prevPh < te && ph >= te && q >= qTh[i] && docked[i].fuseT < 0) {
+      docked[i].fuseT = 0;
+      aCh += q * 11 / 3;
+    }
+    const d = docked[i];
+    if (d.fuseT >= 0) {
+      d.fuseT += dt0;
+      const f = d.fuseT;
+      if (f < 0.25) {
+        d.m.position.y = lerp(d.home.y, -0.34, f / 0.25);
+        d.m.scale.setScalar(1 + 0.3 * (f / 0.25));
+      } else if (f < 0.45) {
+        d.m.visible = false;
+        if (flowOn && f < 0.3) burstACh(d.home.x);
+      } else if (f > 1.4) {
+        d.m.visible = true;
+        d.fuseT = -1;
+        d.m.scale.setScalar(0.01);
+        d.m.position.copy(d.home);
+      } else if (!d.m.visible && f > 1.0) {
+        d.m.visible = true;
+        d.m.scale.setScalar(Math.min(1, (f - 1.0) / 0.4));
+        d.m.position.copy(d.home);
+      }
+    } else d.m.scale.setScalar(lerp(d.m.scale.x, 1, Math.min(1, dt0 * 4)));
+  }
+  /* ACh 扩散 + 水解 */
+  aCh += (0 - aCh) * Math.min(1, dt0 / 0.3);
+  const aChN = clamp(Math.pow(aCh / 660, 0.7), 0, 1);
+  const openN = clamp(aChN * 1.6, 0, 1) * (1 - 0.86 * curareF);
+  for (const g of gates) g.open += (openN - g.open) * Math.min(1, dt0 * 8);
+  eppEnv += (aChN * (1 - 0.86 * curareF) - eppEnv) * Math.min(1, dt0 / 0.1);
+  eppPeak = Math.max(eppPeak * (1 - dt0 / 1.2), eppEnv * 42);
+  /* 肌膜点火 */
+  if (eppEnv * 42 >= 35 && spikeT > 0.8) { spikeT = 0; sparkT = -0.02; contraT = -0.05; }
+  spikeT += dt0; sparkT += dt0; contraT += dt0;
+  const spikeEnv = spikeT < 0.06 ? spikeT / 0.06 : Math.exp(-(spikeT - 0.06) / 0.25);
+  /* 粒子流 */
+  const caWin = ph > 0.08 && ph < 0.32;
+  if (flowOn) {
+    stepPool(cas, dt0, caWin ? 3 * caExt : 0, respawnCa, 0.5, 0);
+    stepPool(nas, dt0, openN > 0.25 ? 2.2 * openN : 0, respawnNa, 0.4, 0);
+    if (sparkT > 0.05 && sparkT < 0.3 && sparks.every(o => !o.m.visible)) burstSpark();
+    stepPool(sparks, dt0, 0, () => {}, 0.45, 0);
+    stepPool(achs, dt0, 0, () => {}, 0.35, 0.5);
+    for (const o of achs) if (o.p >= 1) o.m.material.color.lerp(new THREE.Color(0x9ba3ab), Math.min(1, dt0 * 3));
+  }
+  /* 肌膜 AP 传导环 + 收缩 */
+  const pr = spikeT < 0.9 ? spikeT / 0.9 : 9;
+  ringL.visible = ringR.visible = pr < 1;
+  ringL.position.set(-0.2 - pr * 9.8, -2.6, 0);
+  ringR.position.set(0.2 + pr * 9.8, -2.6, 0);
+  const contra = contraT > 0 ? Math.exp(-contraT / 0.35) : 0;
+  muscleGrp.scale.y = 1 - 0.06 * contra;
+  fibril.material.emissiveIntensity = 0.12 + 0.5 * contra;
+  eppM.opacity = 0.45 * eppEnv;
+  /* 游离囊泡布朗漂浮 */
+  const tw = performance.now() * 0.001;
+  for (const m of freeVes) {
+    m.position.x = m.userData.anchor.x + Math.sin(tw * 0.9 + m.userData.seed) * 0.12;
+    m.position.y = m.userData.anchor.y + Math.sin(tw * 1.3 + m.userData.seed * 2) * 0.1;
+    m.position.z = m.userData.anchor.z + Math.cos(tw * 0.7 + m.userData.seed) * 0.12;
+  }
+  /* 轴突 AP 行波 + 末梢闪光 */
+  if (ph < 0.12) {
+    apGlow.visible = true;
+    apGlow.position.set(lerp(-9.8, -1.6, ph / 0.12), 1.55, 0);
+  } else apGlow.visible = false;
+  termM.emissiveIntensity = 0.15 + 0.9 * Math.max(0, 1 - Math.abs(ph - 0.18) / 0.12);
+  chanM.emissiveIntensity = 0.1 + 1.6 * (caWin ? 1 : 0.15);
+  return spikeEnv;
+}
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, accPlot = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speedMul * (playing ? 1 : 0);
+  if (notifyT > 0) notifyT -= dt0;
+  let spikeEnv = 0;
+  if (dt > 0) {
+    spikeEnv = stepSim(dt);
+    /* 示波器轨迹 */
+    trace.push(-90 + eppEnv * 42 + 125 * spikeEnv);
+    if (trace.length > 480) trace.shift();
+  }
+  /* 相机飞行 */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  for (const g of gates) {
+    const a = 0.16 + 0.9 * g.open;
+    g.gL.rotation.y = -a * 0.5;
+    g.gR.rotation.y = a * 0.5;
+    recM.emissiveIntensity = 0.25 + 1.2 * g.open;
+  }
+  acc += dt0;
+  if (acc > 0.14) { acc = 0; updateStats(); }
+  accPlot += dt0;
+  if (accPlot > 0.05) { accPlot = 0; if (scopeOn) drawPlot(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  controls.update();
+  if (webglOK) renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncAll();
+start();
+</script>
+</body>
+</html>
