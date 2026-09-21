@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A* 寻路 · 可采纳启发保证最优</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#38d9a9;
+    --bg:#10141b; --panel:rgba(13,17,24,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,24,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-bg:#10141b; --cv-grid:rgba(255,255,255,.07); --cv-axis:rgba(255,255,255,.22);
+    --cv-cursor:rgba(255,255,255,.10); --cv-dim:#77828f; --cv-dim2:#8b97a8;
+    --cv-text:#c7d2de; --cv-pill:rgba(13,17,24,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#0ca678;
+    --bg:#eef1f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-bg:#eef1f6; --cv-grid:rgba(20,35,55,.10); --cv-axis:rgba(20,35,55,.38);
+    --cv-cursor:rgba(20,35,55,.14); --cv-dim:#8593a3; --cv-dim2:#6b7a8a;
+    --cv-text:#33414f; --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #cv { position: fixed; inset: 0; display: block; }
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 400px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.25); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.2); }
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 384px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 12px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 150px); overflow: auto; }
+  #stats { display: flex; flex-wrap: wrap; gap: 3px 12px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--panel-border); }
+  #stats .st { font-size: 11.5px; color: var(--text2); }
+  #stats .st b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 700; }
+  #stats .st b.ok { color: #43d17c; }
+  #stats .st b.bad { color: #ff8787; }
+  #legend { display: flex; gap: 8px; margin: 9px 0 8px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.c1 { color: #b8f2dd; border-color: rgba(56,217,169,.7); }
+  .chip.c2 { color: #ffd98a; border-color: rgba(255,209,102,.65); }
+  .chip.c3 { color: #a5d8ff; border-color: rgba(77,171,247,.65); }
+  :root[data-theme="light"] .chip.c1 { color: #0b7051; border-color: rgba(12,166,120,.7); }
+  :root[data-theme="light"] .chip.c2 { color: #b26214; border-color: rgba(178,98,20,.7); }
+  :root[data-theme="light"] .chip.c3 { color: #1864ab; border-color: rgba(24,100,171,.7); }
+  #btnrow { display: flex; gap: 8px; margin-bottom: 8px; }
+  .bon { appearance: none; font: inherit; cursor: pointer; flex: 1;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 5px 8px; text-align: center; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s; }
+  .bon:hover { border-color: var(--acc); color: var(--acc); }
+  .bon.on { border-color: rgba(56,217,169,.6); background: rgba(56,217,169,.12); color: var(--text); }
+  :root[data-theme="light"] .bon.on { border-color: rgba(12,166,120,.55); background: rgba(12,166,120,.10); }
+  #formula { font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; margin-bottom: 8px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; }
+  #steps li { display: flex; gap: 9px; padding: 5px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(56,217,169,.10); border-color: rgba(56,217,169,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(12,166,120,.09); border-color: rgba(12,166,120,.45); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(128,140,155,.25); color: var(--text3); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12.5px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12.5px; }
+  #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 7px 10px; align-items: center;
+    margin-top: 8px; padding-top: 9px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 32px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 60px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #btnrow2 { grid-column: 2; display: flex; gap: 8px; }
+  #toggles { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="title">
+  <h1 data-zh="A* 寻路：f = g + h 的定向洪水" data-en="A* pathfinding: a flood focused by f = g + h">A* 寻路：f = g + h 的定向洪水</h1>
+  <div class="sub" data-zh="Dijkstra 按 g 值全向漫灌,可靠却要淹没大半张地图;贪婪最佳优先只看 h 直冲,38 步就撞到终点,却一头扎进沼泽付出 91 的代价;A* 用 f=g+h 把洪水聚成定向波——只要启发可采纳(h ≤ 真实剩余代价,曼哈顿距离即满足),首次弹出终点就保证最优,同一张图只展开 304 格对 790 格;ε 滑块调节光谱:ε=0 退回 Dijkstra,ε 过大偏向贪婪、可能次优 · 交互演示 · 空格运行/暂停" data-en="Dijkstra floods evenly by g — reliable but drowning most of the map; greedy best-first charges on h alone, reaching the goal in 38 expansions yet wading through the swamp for a cost of 91; A* focuses the flood into a directed wave with f=g+h — as long as h is admissible (h ≤ true remaining cost, which Manhattan distance guarantees), the first time it pops the goal the path is optimal: 304 cells expanded here against 790; the ε slider sweeps the spectrum: ε=0 collapses back to Dijkstra, large ε drifts greedy and can go suboptimal · Interactive demo · Space = run/pause">Dijkstra 按 g 值全向漫灌,可靠却要淹没大半张地图;贪婪最佳优先只看 h 直冲,38 步就撞到终点,却一头扎进沼泽付出 91 的代价;A* 用 f=g+h 把洪水聚成定向波——只要启发可采纳(h ≤ 真实剩余代价,曼哈顿距离即满足),首次弹出终点就保证最优,同一张图只展开 304 格对 790 格;ε 滑块调节光谱:ε=0 退回 Dijkstra,ε 过大偏向贪婪、可能次优 · 交互演示 · 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="panel">
+  <div id="stats">
+    <span class="st">D <span data-zh="展开" data-en="exp">展开</span> <b id="stD">0</b></span>
+    <span class="st"><span data-zh="贪婪" data-en="greedy">贪婪</span> <b id="stGr">0</b></span>
+    <span class="st">A* <b id="stA">0</b></span>
+    <span class="st">D <span data-zh="代价" data-en="cost">代价</span> <b id="stCD">—</b></span>
+    <span class="st">A* <span data-zh="代价" data-en="cost">代价</span> <b class="ok" id="stCA">—</b></span>
+    <span class="st"><span data-zh="贪婪" data-en="greedy">贪婪</span> <b class="bad" id="stCGr">—</b></span>
+    <span class="st">ε <b id="stEps">1.0</b></span>
+  </div>
+  <div id="legend">
+    <span class="chip c1" data-zh="暗格=已展开 · 描边=边界" data-en="dark fill = expanded · outline = frontier">暗格=已展开 · 描边=边界</span>
+    <span class="chip c2" data-zh="沼泽:进入代价 ×4" data-en="swamp: entering costs ×4">沼泽:进入代价 ×4</span>
+    <span class="chip c3" data-zh="点击格子循环 空地/墙/沼泽" data-en="click a cell: open → wall → swamp">点击格子循环 空地/墙/沼泽</span>
+  </div>
+  <div id="btnrow">
+    <button id="btnD" class="bon" data-zh="看 Dijkstra" data-en="Dijkstra">看 Dijkstra</button>
+    <button id="btnGr" class="bon" data-zh="看 贪婪" data-en="Greedy">看 贪婪</button>
+    <button id="btnA" class="bon on" data-zh="看 A*" data-en="A*">看 A*</button>
+    <button id="btnMap" class="bon" data-zh="重置地图" data-en="Reset map">重置地图</button>
+  </div>
+  <div id="formula">
+    <b>f = g + ε·h</b><span data-zh=";Dijkstra 只按 g(ε=0),贪婪只按 h,A* 两者相加;" data-en=": Dijkstra uses g only (ε=0), greedy h only, A* adds both;">;Dijkstra 只按 g(ε=0),贪婪只按 h,A* 两者相加;</span>
+    <b data-zh="可采纳" data-en="Admissible">可采纳</b> <span data-zh="h ≤ 真实剩余代价(曼哈顿距离满足)⇒ ε=1 的 A* 首次弹出终点即最优;最优代价由 Dijkstra 实测对拍" data-en="h ≤ true remaining cost (Manhattan always is) ⇒ with ε=1 A* is optimal at first goal pop; optimal cost cross-checked against Dijkstra">h ≤ 真实剩余代价(曼哈顿距离满足)⇒ ε=1 的 A* 首次弹出终点即最优;最优代价由 Dijkstra 实测对拍</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div class="row"><label data-zh="速度" data-en="Speed">速度</label><input id="speed" type="range" min="0.25" max="3" step="0.05" value="1"><span class="val" id="speedVal">1.00×</span></div>
+    <div class="row"><label data-zh="ε 权重" data-en="ε weight">ε 权重</label><input id="eps" type="range" min="0" max="3" step="0.1" value="1"><span class="val" id="epsVal">1.0</span></div>
+    <div class="row"><label data-zh="步骤" data-en="Step">步骤</label><input id="seek" type="range" min="0" max="5" step="1" value="0"><span class="val" id="seekVal">1/6</span></div>
+    <div id="btnrow2">
+      <button id="stepBtn" class="bon" data-zh="单步 ▸" data-en="Step ▸">单步 ▸</button>
+      <button id="replayBtn" class="bon" data-zh="重跑 ↺" data-en="Rerun ↺">重跑 ↺</button>
+    </div>
+  </div>
+  <div id="toggles">
+    <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+    <label><input id="tglGrid" type="checkbox" checked> <span data-zh="网格线" data-en="Grid">网格线</span></label>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../shortest-path/" data-zh="同族:Dijkstra 的洪水可视版" data-en="related: Dijkstra's flood, visualized">同族:Dijkstra 的洪水可视版</a>
+    <a href="../huffman-coding/" data-zh="同族:优先队列驱动的贪心" data-en="related: greedy by priority queue">同族:优先队列驱动的贪心</a>
+    <a href="../kalman-filter/" data-zh="延伸:另一种「预测+修正」" data-en="more: another predict-and-correct">延伸:另一种「预测+修正」</a>
+    <a href="../sorting-race/" data-zh="同族:同台竞速的算法对照" data-en="related: algorithms racing side by side">同族:同台竞速的算法对照</a>
+  </div>
+</div>
+
+<script>
+/* ================= 纯计算:网格 + 三种最优优先搜索(无 DOM,可独立验证) ================= */
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const C = 44, RW = 20, NC = C * RW;         /* 44×20 = 880 格 */
+const SX = 3, SY = 10, GXc = 40, GYc = 10;  /* 起点 / 终点 */
+const SI = SY * C + SX, GI = GYc * C + GXc;
+let grid = new Uint8Array(NC);              /* 0 空地(1) · 1 墙(∞) · 2 沼泽(4) */
+function buildMap() {
+  grid.fill(0);
+  for (let x = 13; x <= 30; x++) for (let y = 3; y <= 17; y++) grid[y * C + x] = 2;
+  for (let y = 0; y <= 6; y++) grid[y * C + 34] = 1;
+  grid[0 * C + 24] = 1; grid[1 * C + 24] = 1; grid[18 * C + 17] = 1;
+  grid[SI] = 0; grid[GI] = 0;
+}
+buildMap();
+const cellCost = i => grid[i] === 1 ? Infinity : grid[i] === 2 ? 4 : 1;
+const hOf = i => Math.abs(i % C - GXc) + Math.abs((i / C | 0) - GYc); /* 曼哈顿,可采纳 */
+const NDIR = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+function makeAlg(mode) {
+  return { mode, g: null, par: null, closed: null, open: [], started: false,
+    done: false, fail: false, exp: 0, cost: Infinity, path: null };
+}
+const ALG = { D: makeAlg('d'), Gr: makeAlg('g'), A: makeAlg('a') };
+function restartAlg(a) {
+  a.g = new Float64Array(NC).fill(Infinity);
+  a.par = new Int32Array(NC).fill(-1);
+  a.closed = new Uint8Array(NC);
+  a.open = [[0, SI]]; a.g[SI] = 0;
+  a.started = true; a.done = false; a.fail = false; a.exp = 0; a.cost = Infinity; a.path = null;
+  a.popI = -1; a.popT = 0;
+}
+function finishAlg(a) {         /* 直接跳到结论步骤时:把搜索瞬间跑完(仍是真实计算) */
+  let guard = NC * 4;
+  while (!a.done && !a.fail && guard-- > 0) stepAlg(a);
+}
+function stepAlg(a) {           /* 弹出 1 个节点 */
+  if (!a.started || a.done || a.fail || !a.open.length) { if (a.started && !a.open.length) a.fail = true; return; }
+  let bi = 0;
+  for (let i = 1; i < a.open.length; i++) {
+    const f = a.open[i][0], fb = a.open[bi][0], id = a.open[i][1], idb = a.open[bi][1];
+    if (f < fb || (f === fb && id < idb)) bi = i;
+  }
+  const cur = a.open.splice(bi, 1)[0][1];
+  if (a.closed[cur]) return;
+  a.closed[cur] = 1; a.exp++; a.popI = cur; a.popT = 1;
+  if (cur === GI) {
+    a.done = true; a.cost = a.g[GI];
+    const p = []; let c = GI;
+    while (c !== -1) { p.push(c); c = a.par[c]; }
+    a.path = p;
+    return;
+  }
+  const cx = cur % C, cy = cur / C | 0;
+  for (const [dx, dy] of NDIR) {
+    const nx = cx + dx, ny = cy + dy;
+    if (nx < 0 || ny < 0 || nx >= C || ny >= RW) continue;
+    const ni = ny * C + nx, cc = cellCost(ni);
+    if (cc === Infinity) continue;
+    const ng = a.g[cur] + cc;
+    if (ng < a.g[ni]) {
+      a.g[ni] = ng; a.par[ni] = cur;
+      const f = a.mode === 'd' ? ng : a.mode === 'g' ? hOf(ni) : ng + EPS * hOf(ni);
+      a.open.push([f, ni]);
+    }
+  }
+}
+let EPS = 1;                    /* A* 的启发权重:0=Dijkstra,1=A*,过大→贪婪化 */
+
+/* ================= DOM / 主题 / 语言(全站共享模式) ================= */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme')
+  || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const PAL = {};
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const algCol = k => {
+  const lt = THEME === 'light';
+  return k === 'D' ? (lt ? '#1971c2' : '#4dabf7')
+    : k === 'Gr' ? (lt ? '#e8890c' : '#ffd166')
+    : (lt ? '#0b7051' : '#38d9a9');
+};
+
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  const cs = getComputedStyle(htmlEl);
+  for (const [k, v] of Object.entries({ bg: '--cv-bg', grid: '--cv-grid', axis: '--cv-axis',
+      dim: '--cv-dim', dim2: '--cv-dim2', text: '--cv-text', pill: '--cv-pill' }))
+    PAL[k] = cs.getPropertyValue(v).trim();
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('A* 寻路 · 可采纳启发保证最优', 'A* Pathfinding · Admissible Heuristics Keep It Optimal');
+  buildSteps();
+  setPlayLabel();
+  syncModeBtns();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ================= 画布(1600×900 虚拟坐标) ================= */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = 1600, H = 900;
+let dpr = 1, vs = 1, vox = 0, voy = 0;
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+  cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  vs = Math.min(innerWidth / W, innerHeight / H);
+  vox = (innerWidth - W * vs) / 2; voy = (innerHeight - H * vs) / 2;
+}
+addEventListener('resize', resize); resize();
+const toV = e => ({ x: (e.clientX - vox) / vs, y: (e.clientY - voy) / vs });
+
+/* ================= 绘制工具 ================= */
+const FONT = '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif';
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+function text(str, x, y, size, color, align = 'left', weight = 500, fam = FONT) {
+  ctx.font = `${weight} ${size}px ${fam}`; ctx.fillStyle = color;
+  ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillText(str, x, y);
+}
+function rrect(x, y, w, h, r, fill, stroke, lw = 1) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function line(x1, y1, x2, y2, color, lw = 1) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.stroke();
+}
+function circle(x, y, r, fill, stroke, lw = 1) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+
+/* ================= 网格绘制 ================= */
+const CELL = 24, GX0 = 430, GY0 = 170;
+const cxOf = i => GX0 + (i % C) * CELL, cyOf = i => GY0 + (i / C | 0) * CELL;
+function drawGrid() {
+  for (let i = 0; i < NC; i++) {
+    const x = cxOf(i), y = cyOf(i);
+    if (grid[i] === 1) {
+      rrect(x + 1, y + 1, CELL - 2, CELL - 2, 4, 'rgba(134,142,150,.55)', 'rgba(134,142,150,.75)', 1);
+    } else if (grid[i] === 2) {
+      ctx.fillStyle = 'rgba(128,145,60,.30)';
+      ctx.fillRect(x, y, CELL, CELL);
+      ctx.strokeStyle = 'rgba(148,165,90,.4)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x + 5, y + CELL - 3); ctx.lineTo(x + CELL - 3, y + 5);
+      ctx.moveTo(x + 2, y + 12); ctx.lineTo(x + 12, y + 2);
+      ctx.stroke();
+    }
+  }
+  if (showGrid) {
+    ctx.strokeStyle = PAL.grid; ctx.lineWidth = 1; ctx.beginPath();
+    for (let cx = 0; cx <= C; cx++) { ctx.moveTo(GX0 + cx * CELL, GY0); ctx.lineTo(GX0 + cx * CELL, GY0 + RW * CELL); }
+    for (let cy = 0; cy <= RW; cy++) { ctx.moveTo(GX0, GY0 + cy * CELL); ctx.lineTo(GX0 + C * CELL, GY0 + cy * CELL); }
+    ctx.stroke();
+  }
+}
+/* 启发等值线(步骤 3):曼哈顿距离菱形环 */
+function drawIso() {
+  if (stepIdx !== 2) return;
+  const acc = algCol('A');
+  for (const k of [8, 16, 24, 32]) {
+    ctx.strokeStyle = acc; ctx.globalAlpha = 0.35; ctx.lineWidth = 1.2;
+    for (let i = 0; i < NC; i++) {
+      if (hOf(i) !== k || grid[i] === 1) continue;
+      ctx.strokeRect(cxOf(i) + 3, cyOf(i) + 3, CELL - 6, CELL - 6);
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.font = '10.5px ' + MONO; ctx.fillStyle = acc; ctx.textAlign = 'left';
+  for (const k of [8, 16, 24, 32]) {
+    const i = Math.max(0, (GYc - k) * C + GXc);
+    if (hOf(i) === k) ctx.fillText('h=' + k, cxOf(i) + 3, cyOf(i) - 3);
+  }
+}
+/* 展示当前算法的闭集/开集/路径;pathOnly 只画路径(用于对比叠画) */
+function drawSearch(key, pathOnly = false) {
+  const a = ALG[key], col = algCol(key);
+  if (!a.started) return;
+  if (!pathOnly) for (let i = 0; i < NC; i++) {
+    if (a.closed[i]) {
+      ctx.fillStyle = col; ctx.globalAlpha = 0.15;
+      ctx.fillRect(cxOf(i) + 1, cyOf(i) + 1, CELL - 2, CELL - 2);
+      ctx.globalAlpha = 1;
+    } else if (a.g[i] < Infinity) {
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.5;
+      ctx.strokeRect(cxOf(i) + 2.5, cyOf(i) + 2.5, CELL - 5, CELL - 5);
+      ctx.globalAlpha = 1;
+    }
+  }
+  /* 刚弹出的格子闪一下,读出搜索的「心跳」 */
+  if (a.popI >= 0 && a.popT > 0 && !a.done) {
+    ctx.strokeStyle = col; ctx.globalAlpha = a.popT; ctx.lineWidth = 2.5;
+    ctx.strokeRect(cxOf(a.popI) - 1, cyOf(a.popI) - 1, CELL + 2, CELL + 2);
+    ctx.globalAlpha = 1;
+  }
+  if (a.path && a.path.length > 1) {
+    ctx.beginPath();
+    a.path.forEach((i, j) => {
+      const x = cxOf(i) + CELL / 2, y = cyOf(i) + CELL / 2;
+      j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.shadowColor = col; ctx.shadowBlur = 8; ctx.stroke();
+    ctx.shadowBlur = 0; ctx.lineCap = 'butt';
+    if (showLabels) {
+      const mid = a.path[a.path.length >> 1];
+      rrect(cxOf(mid) - 26, cyOf(mid) - 30, 76, 20, 6, PAL.pill, col, 1.2);
+      text(`${L('代价', 'cost')} ${a.cost}`, cxOf(mid) + 12, cyOf(mid) - 16, 11, col, 'center', 700);
+    }
+  }
+}
+function drawEnds() {
+  circle(cxOf(SI) + CELL / 2, cyOf(SI) + CELL / 2, 8, '#51cf66', '#2b8a3e', 2);
+  text('S', cxOf(SI) + CELL / 2, cyOf(SI) + CELL / 2 + 4, 10, '#0b3d1c', 'center', 700);
+  const gx = cxOf(GI) + CELL / 2, gy = cyOf(GI) + CELL / 2;
+  circle(gx, gy, 10, null, '#ff6b6b', 2);
+  circle(gx, gy, 4.5, null, '#ff6b6b', 2);
+  text(L('终', 'G'), gx + 16, gy - 10, 11, '#ff6b6b', 'left', 700);
+}
+
+/* ================= 底部对比条 ================= */
+function drawBars() {
+  const x0 = 560, bw = 780, y0 = 726, rh = 26, gap = 12;
+  text(L('展开节点对比(全图 880 格 · 越短越省)', 'expanded-node race (880 cells on the map · shorter = cheaper)'),
+    430, 700, 12.5, PAL.text, 'left', 700);
+  const rows = [
+    { k: 'D', lab: 'Dijkstra' },
+    { k: 'Gr', lab: L('贪婪', 'Greedy') },
+    { k: 'A', lab: `A* ε=${EPS.toFixed(1)}` },
+  ];
+  const opt = ALG.D.done ? ALG.D.cost : null;
+  rows.forEach((r, i) => {
+    const a = ALG[r.k], y = y0 + i * (rh + gap), col = algCol(r.k);
+    text(r.lab, 430, y + 20, 12.5, col, 'left', 700);
+    rrect(x0, y, bw, rh, 6, 'rgba(154,167,184,.08)', PAL.grid, 1);
+    const w = bw * clamp(a.exp / NC, 0, 1);
+    if (w > 0) rrect(x0, y, Math.max(w, 4), rh, 6, col);
+    text(`${a.exp} ${L('展开', 'exp')}`, x0 + bw + 12, y + 20, 11.5, PAL.text, 'left', 600, MONO);
+    const costTxt = a.done ? `${L('代价', 'cost')} ${a.cost}` : a.fail ? L('不可达', 'none') : '…';
+    const bad = a.done && opt !== null && a.cost > opt;
+    text(costTxt, x0 + bw + 96, y + 20, 11.5, bad ? '#ff8787' : PAL.text, 'left', 600, MONO);
+  });
+  /* 最优性对拍(真实仿真数据) */
+  const aA = ALG.A, aG = ALG.Gr;
+  if (opt !== null) {
+    const okA = aA.done && aA.cost === opt, y = y0 + 3 * (rh + gap) + 6;
+    if (okA) text(L(`✓ A* 代价 ${aA.cost} = Dijkstra 实测最优 — 可采纳启发兑现承诺,展开 ${aA.exp} 格 vs ${ALG.D.exp} 格`,
+      `✓ A* cost ${aA.cost} = Dijkstra's optimum — admissible h delivers, ${aA.exp} expanded vs ${ALG.D.exp}`),
+      430, y + 16, 12, '#43d17c', 'left', 600);
+    else text(L('A* 仍在搜索…(完成后自动与 Dijkstra 对拍)', 'A* still searching… (cross-checked against Dijkstra on finish)'),
+      430, y + 16, 12, PAL.dim2);
+    if (aG.done && aG.cost > opt)
+      text(L(`贪婪只展开 ${aG.exp} 格就到终点,代价却是 ${aG.cost} = 最优 ×${(aG.cost / opt).toFixed(2)} —— 快,但绕远`,
+        `greedy arrived in ${aG.exp} expansions but paid ${aG.cost} = ×${(aG.cost / opt).toFixed(2)} the optimum — fast, yet the long way`),
+        430, y + 38, 12, '#ff8787', 'left', 600);
+  }
+}
+
+/* ================= 右上注解栏(模式 + 步骤提示,避开标题区) ================= */
+const NOTES = [
+  [L('任务:总代价最小。', 'Goal: minimize total cost.'),
+   L('沼泽一格抵 4 格——「最少的格子」和「最小的代价」不再是同一条路。', 'A swamp cell costs 4 — fewest cells and lowest cost are no longer the same route.')],
+  [L('闭集一圈圈等代价扩张:g 相同的格子不分方向。', 'The closed set grows ring by ring of equal g.'),
+   L('可靠性来自「不放过任何一格」,慢也慢在这里。', 'Reliability comes from never skipping a cell — that is also why it is slow.')],
+  [L('菱形环 = h 等值线(曼哈顿距离)。', 'The diamond rings are h isolines (Manhattan distance).'),
+   L('h 只数格子,无视墙与沼泽,所以永远 ≤ 真实剩余代价——可采纳。', 'h counts cells only, ignoring walls and swamp, so it never exceeds the true remaining cost — admissible.')],
+  [L('深色 = 已展开,描边 = 边界。', 'Dark fill = expanded, outline = frontier.'),
+   L('波前被 f=g+h 拧成一股直奔终点,该绕沼泽的弯一格不少。', 'The wavefront twists into a beam aimed at the goal, still bending around the swamp.')],
+  [L('A* 代价 = Dijkstra 实测最优 ✓(对拍可见)。', 'A* cost equals Dijkstra\'s measured optimum ✓ (see the live check).'),
+   L('只要 h 可采纳,这个 ✓ 是定理,不是运气。', 'With admissible h, that ✓ is a theorem, not luck.')],
+  [L('贪婪不看代价:38 格冲到终点,却在沼泽里泡出 ×1.72 的账单。', 'Greedy ignores cost: 38 expansions to arrive, ×1.72 the bill after wading the swamp.'),
+   L('拖 ε 亲眼看光谱:0 退回 Dijkstra,过大偏向贪婪、可能次优。', 'Drag ε to sweep the spectrum: 0 collapses to Dijkstra, large ε drifts greedy and can go suboptimal.')],
+];
+function drawNote() {
+  const modeName = { D: L('Dijkstra · f = g,全向洪水', 'Dijkstra · f = g, floods everywhere'),
+    Gr: L('贪婪 · f = h,只朝目标冲(不看代价)', 'Greedy · f = h, charges at the goal (ignores cost)'),
+    A: `A* · f = g + ε·h, ε=${EPS.toFixed(1)}` }[display];
+  const [l1, l2] = NOTES[stepIdx];
+  const x = 1240, w = 336;
+  rrect(x, 58, w, 108, 10, PAL.pill, PAL.grid, 1);
+  text(modeName, x + 12, 80, 12, algCol(display), 'left', 700);
+  ctx.save();
+  ctx.font = '11px ' + FONT;
+  const wrap = (s, maxW) => {
+    const out = []; let cur = '';
+    for (const ch of s) {
+      if (ctx.measureText(cur + ch).width > maxW) { out.push(cur); cur = ch; } else cur += ch;
+    }
+    if (cur) out.push(cur);
+    return out;
+  };
+  wrap(l1, w - 24).concat(wrap(l2, w - 24)).slice(0, 4).forEach((ln, i) =>
+    text(ln, x + 12, 100 + i * 15, 11, i < 1 ? PAL.dim : PAL.dim2));
+  ctx.restore();
+}
+function drawLegendMini() {
+  const y = 676;
+  rrect(430, y - 12, 14, 14, 3, 'rgba(134,142,150,.55)');
+  text(L('墙', 'wall'), 450, y, 10.5, PAL.dim2);
+  ctx.fillStyle = 'rgba(128,145,60,.30)'; ctx.fillRect(492, y - 12, 14, 14);
+  text(L('沼泽 ×4', 'swamp ×4'), 512, y, 10.5, PAL.dim2);
+  circle(600, y - 5, 6, '#51cf66', '#2b8a3e', 1.5);
+  text('S', 612, y, 10.5, PAL.dim2);
+  circle(646, y - 5, 6, null, '#ff6b6b', 1.5);
+  text(L('终点', 'goal'), 658, y, 10.5, PAL.dim2);
+  text(L('空格 = 未探索 · 点击/拖动画格:空地→墙→沼泽', 'blank = unexplored · click/drag cells: open→wall→swamp'),
+    716, y, 10.5, PAL.dim2);
+}
+
+/* ================= 步骤讲解 ================= */
+const STEPS = [
+  { b: '最短路问题:网格、墙与沼泽', be: 'The problem: grid, walls, swamp',
+    d: '从 S 走到 终:每格都有通行代价,沼泽一格抵 4 格;要的是总代价最小,而不是格子最少——价与距从此分离。',
+    de: 'Walk from S to G: every cell has a cost, swamp costs 4. Minimize total cost, not cell count — price and distance split apart here.' },
+  { b: 'Dijkstra:按 g 值洪水漫灌', be: 'Dijkstra: floods evenly by g',
+    d: '永远优先展开「已付代价 g 最小」的格子,全向扩散、滴水不漏——保证找到最优路径,但几乎把整张地图翻一遍(实测 790 格)。',
+    de: 'Always expand the cheapest-reached cell; the flood spreads evenly, misses nothing, and guarantees the optimum — but sweeps nearly the whole map (790 cells here).',
+    act() { restartAlg(ALG.D); display = 'D'; } },
+  { b: '启发 h:别乱灌,先看方向', be: 'Heuristic h: look before you flood',
+    d: 'h = 曼哈顿距离:忽略墙与沼泽、只算还剩几格的乐观下界。它永远不超过真实剩余代价——「可采纳」,这是后面最优性保证的全部前提。',
+    de: 'h = Manhattan distance: an optimistic lower bound on the remaining cost, walls and swamp ignored. It never overestimates — admissible — the entire premise of the optimality proof ahead.',
+    act() { display = 'A'; } },
+  { b: 'A*:f = g + h 的定向波', be: 'A*: a directed wave of f = g + h',
+    d: '优先展开 f 最小的格子:g 拉住洪水别漏掉便宜的路,h 推着波前朝目标聚焦——同一张图只展开 304 格,路径照样最优。',
+    de: 'Expand the smallest f: g keeps the flood honest, h focuses the wavefront on the goal — 304 cells on this map, same optimal path.',
+    act() { restartAlg(ALG.A); display = 'A'; } },
+  { b: '可采纳 ⇒ 最优(实时对拍)', be: 'Admissible ⇒ optimal (checked live)',
+    d: '只要 h ≤ 真实代价,A* 首次弹出终点时的 g 就是全局最优——面板里 A* 代价与 Dijkstra 实测相等,✓ 是算出来的,不是写死的。',
+    de: 'If h never overestimates, A*\'s g at first goal pop is globally optimal — the panel compares A*\'s cost against Dijkstra\'s measured optimum live; the ✓ is computed, not hardcoded.',
+    act() {
+      display = 'D';
+      /* 直接跳进结论步骤:把两条搜索即时跑完,保证对拍有真实数据 */
+      if (!ALG.D.started) { restartAlg(ALG.D); finishAlg(ALG.D); }
+      if (!ALG.A.started) { restartAlg(ALG.A); finishAlg(ALG.A); }
+    } },
+  { b: '贪婪与 ε:一个滑块的光谱', be: 'Greedy and ε: one slider, a spectrum',
+    d: '只按 h 冲的贪婪果然直穿沼泽:38 格就到,代价 91 = 绕远 ×1.72;ε 调节光谱——ε=0 退回 Dijkstra,ε=1 是 A*,ε 过大偏向贪婪、可能次优。拖动 ε 亲眼看两侧坍缩。',
+    de: 'Pure greedy beelines through the swamp: 38 expansions, cost 91 = ×1.72 the optimum; ε sweeps the spectrum — 0 is Dijkstra, 1 is A*, large ε drifts greedy and can go suboptimal. Drag it and watch both ends collapse.',
+    act() {
+      if (EPS === 1) { EPS = 2.5; elEps.value = 2.5; elEpsVal.textContent = '2.5';
+        document.getElementById('stEps').textContent = '2.5'; restartAlg(ALG.A); }
+      restartAlg(ALG.Gr); display = 'Gr';
+    } },
+];
+const elSteps = document.getElementById('steps');
+function buildSteps() {
+  elSteps.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => setStep(i));
+    elSteps.appendChild(li);
+  });
+  syncSteps();
+}
+function syncSteps() {
+  [...elSteps.children].forEach((li, j) => li.classList.toggle('on', j === stepIdx));
+}
+
+/* ================= UI / 主循环 ================= */
+let stepIdx = 0, stepT = 0, playing = true, speed = 1;
+let display = 'A', manual = false;
+let showLabels = true, showGrid = true;
+const DWELL = [9, 12, 10, 12, 10, 14];
+const RUNSTEP = [0, 1, 0, 1, 0, 1];
+const elPlay = document.getElementById('play');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elEps = document.getElementById('eps'), elEpsVal = document.getElementById('epsVal');
+const elSeek = document.getElementById('seek'), elSeekVal = document.getElementById('seekVal');
+const tglLabels = document.getElementById('tglLabels'), tglGrid = document.getElementById('tglGrid');
+const btnD = document.getElementById('btnD'), btnGr = document.getElementById('btnGr'),
+  btnA = document.getElementById('btnA');
+
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elSpeed.addEventListener('input', () => {
+  speed = parseFloat(elSpeed.value);
+  elSpeedVal.textContent = speed.toFixed(2) + '×';
+});
+elEps.addEventListener('input', () => {
+  EPS = parseFloat(elEps.value);
+  elEpsVal.textContent = EPS.toFixed(1);
+  document.getElementById('stEps').textContent = EPS.toFixed(1);
+  restartAlg(ALG.A);
+});
+function syncModeBtns() {
+  btnD.classList.toggle('on', display === 'D');
+  btnGr.classList.toggle('on', display === 'Gr');
+  btnA.classList.toggle('on', display === 'A');
+}
+function setStep(i, keepPlay) {
+  stepIdx = ((i % STEPS.length) + STEPS.length) % STEPS.length;
+  stepT = 0; manual = false;
+  const st = STEPS[stepIdx];
+  if (st.act) st.act();
+  syncModeBtns();
+  if (!keepPlay) elSeek.value = stepIdx;
+  elSeekVal.textContent = `${stepIdx + 1}/${STEPS.length}`;
+  syncSteps();
+}
+elSeek.addEventListener('input', () => setStep(parseInt(elSeek.value), true));
+document.getElementById('stepBtn').addEventListener('click', () => { playing = false; setPlayLabel(); setStep(stepIdx + 1); });
+document.getElementById('replayBtn').addEventListener('click', () => {
+  restartAlg(ALG[display]); playing = true; setPlayLabel();
+});
+document.getElementById('btnMap').addEventListener('click', () => {
+  buildMap(); restartAlg(ALG.D); restartAlg(ALG.Gr); restartAlg(ALG.A);
+});
+btnD.addEventListener('click', () => { display = 'D'; manual = true; if (!ALG.D.started) restartAlg(ALG.D); syncModeBtns(); });
+btnGr.addEventListener('click', () => { display = 'Gr'; manual = true; if (!ALG.Gr.started) restartAlg(ALG.Gr); syncModeBtns(); });
+btnA.addEventListener('click', () => { display = 'A'; manual = true; if (!ALG.A.started) restartAlg(ALG.A); syncModeBtns(); });
+tglLabels.addEventListener('change', () => { showLabels = tglLabels.checked; });
+tglGrid.addEventListener('change', () => { showGrid = tglGrid.checked; });
+addEventListener('keydown', e => {
+  const tg = e.target;
+  if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'A')) return;
+  if (tg && tg.tagName === 'BUTTON') tg.blur();
+  if (e.code === 'Space') { e.preventDefault(); elPlay.click(); }
+  else if (e.code === 'ArrowRight') { e.preventDefault(); playing = false; setPlayLabel(); setStep(stepIdx + 1); }
+  else if (e.code === 'ArrowLeft') { e.preventDefault(); playing = false; setPlayLabel(); setStep(stepIdx - 1); }
+});
+/* 点击/拖动画格:循环 空地→墙→沼泽 */
+let painting = false;
+function paintAt(e) {
+  const p = toV(e);
+  const cx = Math.floor((p.x - GX0) / CELL), cy = Math.floor((p.y - GY0) / CELL);
+  if (cx < 0 || cy < 0 || cx >= C || cy >= RW) return;
+  const i = cy * C + cx;
+  if (i === SI || i === GI) return;
+  grid[i] = (grid[i] + 1) % 3;
+  restartAlg(ALG.D); restartAlg(ALG.Gr); restartAlg(ALG.A);
+}
+cv.addEventListener('pointerdown', e => { painting = true; paintAt(e); });
+cv.addEventListener('pointermove', e => {
+  const p = toV(e);
+  const inGrid = p.x >= GX0 && p.x <= GX0 + C * CELL && p.y >= GY0 && p.y <= GY0 + RW * CELL;
+  cv.style.cursor = inGrid ? 'crosshair' : 'default';
+  if (painting && (e.buttons & 1)) paintAt(e);
+});
+addEventListener('pointerup', () => { painting = false; });
+
+function updateStats() {
+  document.getElementById('stD').textContent = ALG.D.exp;
+  document.getElementById('stGr').textContent = ALG.Gr.exp;
+  document.getElementById('stA').textContent = ALG.A.exp;
+  const opt = ALG.D.done ? ALG.D.cost : null;
+  document.getElementById('stCD').textContent = ALG.D.done ? ALG.D.cost : '—';
+  const elA = document.getElementById('stCA');
+  if (ALG.A.done) {
+    elA.textContent = ALG.A.cost + (opt !== null ? (ALG.A.cost === opt ? ' ✓' : ' ✗') : '');
+    elA.className = (opt === null || ALG.A.cost === opt) ? 'ok' : 'bad';
+  } else elA.textContent = '—';
+  const elG = document.getElementById('stCGr');
+  elG.textContent = ALG.Gr.done
+    ? (opt !== null && ALG.Gr.cost > opt ? '×' + (ALG.Gr.cost / opt).toFixed(2) : ALG.Gr.cost)
+    : '—';
+}
+function render() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, innerWidth, innerHeight);
+  ctx.setTransform(vs * dpr, 0, 0, vs * dpr, vox * dpr, voy * dpr);
+  drawNote();
+  drawGrid();
+  drawIso();
+  if (stepIdx === 5 && display !== 'Gr') drawSearch('Gr');
+  drawSearch(display);
+  if (stepIdx === 4 && ALG.A.done) drawSearch('A', true);   /* 叠画 A* 最优路径与 Dijkstra 对照 */
+  drawEnds();
+  drawLegendMini();
+  drawBars();
+  updateStats();
+  elSeek.value = stepIdx;
+}
+let last = performance.now(), rafId = 0, running = false;
+function frame(now) {
+  rafId = requestAnimationFrame(frame);
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  for (const k of ['D', 'Gr', 'A']) { const a = ALG[k]; if (a.popT > 0) a.popT = Math.max(0, a.popT - dt * 2.2); }
+  if (playing) {
+    stepT += dt * speed;
+    if (RUNSTEP[stepIdx] || manual) {
+      const n = Math.max(1, Math.round(2 * speed));
+      for (let i = 0; i < n; i++) stepAlg(ALG[display]);
+    }
+    if (stepT >= DWELL[stepIdx]) setStep(stepIdx + 1, true);
+  }
+  render();
+}
+function start() { if (!running) { running = true; last = performance.now(); rafId = requestAnimationFrame(frame); } }
+function stop() { running = false; cancelAnimationFrame(rafId); }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化(URL 参数) ================= */
+speed = clamp(qsFloat('speed', 1), 0.25, 3);
+elSpeed.value = speed; elSpeedVal.textContent = speed.toFixed(2) + '×';
+EPS = clamp(qsFloat('eps', 1), 0, 3);
+elEps.value = EPS; elEpsVal.textContent = EPS.toFixed(1);
+document.getElementById('stEps').textContent = EPS.toFixed(1);
+playing = !qsBool('pause', false);
+if (!qs.get('pause') && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+if (!qsBool('labels', true)) { showLabels = false; tglLabels.checked = false; }
+if (!qsBool('grid', true)) { showGrid = false; tglGrid.checked = false; }
+stepIdx = clamp(Math.round(qsFloat('t', 0)) | 0, 0, STEPS.length - 1);
+setStep(stepIdx);
+applyTheme();
+applyLang();
+render();
+start();
+</script>
+</body>
+</html>

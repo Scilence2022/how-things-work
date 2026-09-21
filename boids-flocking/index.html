@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>鸟群与 Boids · 局部规则涌现秩序</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#845ef7;
+    --bg:#10141b; --panel:rgba(13,17,24,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,24,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-bg:#10141b; --cv-grid:rgba(255,255,255,.07); --cv-axis:rgba(255,255,255,.22);
+    --cv-cursor:rgba(255,255,255,.10); --cv-dim:#77828f; --cv-dim2:#8b97a8;
+    --cv-text:#c7d2de; --cv-pill:rgba(13,17,24,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#5f3dc4;
+    --bg:#eef1f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-bg:#eef1f6; --cv-grid:rgba(20,35,55,.10); --cv-axis:rgba(20,35,55,.38);
+    --cv-cursor:rgba(20,35,55,.14); --cv-dim:#8593a3; --cv-dim2:#6b7a8a;
+    --cv-text:#33414f; --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #cv { position: fixed; inset: 0; display: block; }
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 400px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.25); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.2); }
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 384px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 12px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 150px); overflow: auto; }
+  #stats { display: flex; flex-wrap: wrap; gap: 3px 12px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--panel-border); }
+  #stats .st { font-size: 11.5px; color: var(--text2); }
+  #stats .st b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 700; }
+  #stats .st b.ok { color: #43d17c; }
+  #stats .st b.bad { color: #ff8787; }
+  #legend { display: flex; gap: 8px; margin: 9px 0 8px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.c1 { color: #d0bfff; border-color: rgba(132,94,247,.7); }
+  .chip.c2 { color: #ffd98a; border-color: rgba(255,209,102,.65); }
+  .chip.c3 { color: #ffc2c2; border-color: rgba(255,107,107,.65); }
+  :root[data-theme="light"] .chip.c1 { color: #5f3dc4; border-color: rgba(95,61,196,.7); }
+  :root[data-theme="light"] .chip.c2 { color: #b26214; border-color: rgba(178,98,20,.7); }
+  :root[data-theme="light"] .chip.c3 { color: #c92a2a; border-color: rgba(201,42,42,.7); }
+  #btnrow { display: flex; gap: 8px; margin-bottom: 8px; }
+  .bon { appearance: none; font: inherit; cursor: pointer; flex: 1;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 5px 8px; text-align: center; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s; }
+  .bon:hover { border-color: var(--acc); color: var(--acc); }
+  #formula { font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; margin-bottom: 8px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; }
+  #steps li { display: flex; gap: 9px; padding: 5px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(132,94,247,.10); border-color: rgba(132,94,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(95,61,196,.09); border-color: rgba(95,61,196,.45); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(128,140,155,.25); color: var(--text3); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12.5px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12.5px; }
+  #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 7px 10px; align-items: center;
+    margin-top: 8px; padding-top: 9px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 32px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 60px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #btnrow2 { grid-column: 2; display: flex; gap: 8px; }
+  #toggles { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="title">
+  <h1 data-zh="鸟群与 Boids：三条规则涌现群体" data-en="Flocking & Boids: order from three local rules">鸟群与 Boids：三条规则涌现群体</h1>
+  <div class="sub" data-zh="没有领袖,没有队形图纸,每只鸟只看得见半径内的邻居,执行三条局部规则:分离=近了就推开,对齐=朝邻居平均航向靠,凝聚=朝邻居质心慢靠拢;260 个几像素的「谈判」叠加出群体尺度的集体转向、避障分流与捕食者闪避波,拖动三个权重滑块,同一群个体还会连续变形:鸟群絮团→鱼群致密球→蝗虫带行军纵队——秩序不是被设计的,是从局部交互里长出来的 · 交互演示 · 空格运行/暂停" data-en="No leader, no formation blueprint: each bird sees only its neighbors and follows three local rules — separate (too close, push apart), align (drift toward the neighbors' average heading), cohere (ease toward their centroid); 260 tiny negotiations scale up into flock-wide turns, obstacle-splitting waves and predator-panic waves, and three weight sliders morph the same crowd continuously: fluffy flock → dense fish ball → marching locust band — order is not designed, it grows out of local interaction · Interactive demo · Space = run/pause">没有领袖,没有队形图纸,每只鸟只看得见半径内的邻居,执行三条局部规则:分离=近了就推开,对齐=朝邻居平均航向靠,凝聚=朝邻居质心慢靠拢;260 个几像素的「谈判」叠加出群体尺度的集体转向、避障分流与捕食者闪避波,拖动三个权重滑块,同一群个体还会连续变形:鸟群絮团→鱼群致密球→蝗虫带行军纵队——秩序不是被设计的,是从局部交互里长出来的 · 交互演示 · 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="panel">
+  <div id="stats">
+    <span class="st"><span data-zh="个体" data-en="boids">个体</span> <b id="stN">260</b></span>
+    <span class="st"><span data-zh="平均邻居" data-en="avg nbrs">平均邻居</span> <b id="stNbr">—</b></span>
+    <span class="st">φ <span data-zh="序参量" data-en="order">序参量</span> <b class="ok" id="stPhi">—</b></span>
+    <span class="st"><span data-zh="活跃规则" data-en="rules on">活跃规则</span> <b id="stRules">3/3</b></span>
+    <span class="st"><span data-zh="障碍" data-en="obstacles">障碍</span> <b id="stObs">0</b></span>
+    <span class="st"><span data-zh="捕食者" data-en="predator">捕食者</span> <b class="bad" id="stPred">—</b></span>
+  </div>
+  <div id="legend">
+    <span class="chip c1" data-zh="三股力:红分离 / 蓝对齐 / 绿凝聚" data-en="three forces: red sep / blue ali / green coh">三股力:红分离 / 蓝对齐 / 绿凝聚</span>
+    <span class="chip c2" data-zh="点击空处放障碍 · 点障碍移除" data-en="click to add an obstacle, click it to remove">点击空处放障碍 · 点障碍移除</span>
+    <span class="chip c3" data-zh="红色三角 = 捕食者" data-en="red hunter = predator">红色三角 = 捕食者</span>
+  </div>
+  <div id="btnrow">
+    <button id="btnHerd" class="bon" data-zh="鸟群" data-en="Flock">鸟群</button>
+    <button id="btnFish" class="bon" data-zh="鱼群" data-en="School">鱼群</button>
+    <button id="btnLocust" class="bon" data-zh="蝗虫带" data-en="Locust band">蝗虫带</button>
+    <button id="btnReset" class="bon" data-zh="重置" data-en="Reset">重置</button>
+  </div>
+  <div id="formula">
+    <b>v̇ᵢ = wₛ·分离 + wₐ·对齐 + w_c·凝聚</b><span data-zh=";分离:推开过近邻居,对齐:趋向邻居平均航向,凝聚:趋向邻居质心;无领导、无全局协议 ⇒ 队形是涌现的;序参量 φ = |Σv|/(N·v_max) ∈ [0,1] 实时测量的有序度" data-en=": separation pushes apart crowding neighbors, alignment steers to their mean heading, cohesion eases to their centroid; no leader, no global protocol ⇒ the formation is emergent; order parameter φ = |Σv|/(N·v_max) ∈ [0,1], measured live">;分离:推开过近邻居,对齐:趋向邻居平均航向,凝聚:趋向邻居质心;无领导、无全局协议 ⇒ 队形是涌现的;序参量 φ = |Σv|/(N·v_max) ∈ [0,1] 实时测量的有序度</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div class="row"><label data-zh="速度" data-en="Speed">速度</label><input id="speed" type="range" min="0.25" max="3" step="0.05" value="1"><span class="val" id="speedVal">1.00×</span></div>
+    <div class="row"><label data-zh="步骤" data-en="Step">步骤</label><input id="seek" type="range" min="0" max="5" step="1" value="0"><span class="val" id="seekVal">1/6</span></div>
+    <div id="btnrow2">
+      <button id="stepBtn" class="bon" data-zh="单步 ▸" data-en="Step ▸">单步 ▸</button>
+      <button id="replayBtn" class="bon" data-zh="重播 ↺" data-en="Replay ↺">重播 ↺</button>
+    </div>
+  </div>
+  <div class="row"><label data-zh="分离" data-en="Sep">分离</label><input id="wSep" type="range" min="0" max="2" step="0.05" value="1.6"><span class="val" id="wSepVal">1.60</span></div>
+  <div class="row"><label data-zh="对齐" data-en="Ali">对齐</label><input id="wAli" type="range" min="0" max="2" step="0.05" value="1.00"><span class="val" id="wAliVal">1.00</span></div>
+  <div class="row"><label data-zh="凝聚" data-en="Coh">凝聚</label><input id="wCoh" type="range" min="0" max="2" step="0.05" value="0.90"><span class="val" id="wCohVal">0.90</span></div>
+  <div id="toggles">
+    <label><input id="tglSep" type="checkbox" checked> <span data-zh="分离" data-en="Sep">分离</span></label>
+    <label><input id="tglAli" type="checkbox" checked> <span data-zh="对齐" data-en="Ali">对齐</span></label>
+    <label><input id="tglCoh" type="checkbox" checked> <span data-zh="凝聚" data-en="Coh">凝聚</span></label>
+    <label><input id="tglFocus" type="checkbox"> <span data-zh="聚焦一只" data-en="Focus one">聚焦一只</span></label>
+    <label><input id="tglTrail" type="checkbox"> <span data-zh="拖尾" data-en="Trails">拖尾</span></label>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../game-of-life/" data-zh="同族:局部规则→全局涌现" data-en="related: local rules, global emergence">同族:局部规则→全局涌现</a>
+    <a href="../monte-carlo/" data-zh="同族:大量随机个体求确定答案" data-en="related: many random individuals, one answer">同族:大量随机个体求确定答案</a>
+    <a href="../random-walk/" data-zh="同族:个体轨迹的随机脚步" data-en="related: the random walk of one path">同族:个体轨迹的随机脚步</a>
+    <a href="../chaos-lorenz/" data-zh="延伸:简单规则·复杂行为" data-en="more: simple rules, complex behavior">延伸:简单规则·复杂行为</a>
+  </div>
+</div>
+
+<script>
+/* ================= 纯仿真:Boids 三规则 + 障碍 + 捕食者(无 DOM 核心) ================= */
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const W = 1600, H = 900;
+const N = 260;
+const R_ALI = 66, R_SEP = 24, R_ALI2 = R_ALI * R_ALI, R_SEP2 = R_SEP * R_SEP;
+const MAXV = 140, MINV = 55, MAXF = 300, PANICV = 215;
+let wSep = 1.6, wAli = 1.0, wCoh = 0.9;
+let sOn = true, aOn = true, cOn = true;
+const boids = [];
+function spawnBoids() {
+  boids.length = 0;
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2;
+    boids.push({ x: 500 + Math.random() * 600, y: 250 + Math.random() * 350,
+      vx: Math.cos(a) * MAXV * 0.8, vy: Math.sin(a) * MAXV * 0.8, panic: 0 });
+  }
+}
+spawnBoids();
+const obstacles = [];              /* {x,y,r} */
+let predator = null;               /* {x,y,vx,vy} */
+let avgNbr = 0, phi = 0;           /* 每帧实测:平均邻居数 / 序参量 */
+function steer(b, dx, dy, mult) {  /* 期望方向 → 限幅转向加速度 */
+  const m = Math.hypot(dx, dy) || 1;
+  let sx = dx / m * MAXV - b.vx, sy = dy / m * MAXV - b.vy;
+  const sm = Math.hypot(sx, sy), cap = MAXF * (mult || 1);
+  if (sm > cap) { sx *= cap / sm; sy *= cap / sm; }
+  return [sx, sy];
+}
+function physics(dt) {
+  let nbrSum = 0, svx = 0, svy = 0;
+  for (let i = 0; i < N; i++) {
+    const b = boids[i];
+    let ax = 0, ay = 0, cnt = 0, scnt = 0, avx = 0, avy = 0, cvx = 0, cvy = 0, sx2 = 0, sy2 = 0;
+    for (let j = 0; j < N; j++) {
+      if (j === i) continue;
+      const o = boids[j];
+      const dx = o.x - b.x, dy = o.y - b.y, d2 = dx * dx + dy * dy;
+      if (d2 > R_ALI2) continue;
+      cnt++; avx += o.vx; avy += o.vy; cvx += o.x; cvy += o.y;
+      if (d2 < R_SEP2) {
+        const d = Math.sqrt(d2) || 1, wgt = 1 - d / R_SEP;
+        sx2 -= dx / d * wgt; sy2 -= dy / d * wgt; scnt++;
+      }
+    }
+    nbrSum += cnt;
+    if (scnt && sOn) { const s = steer(b, sx2, sy2, 1.15); ax += s[0] * wSep; ay += s[1] * wSep; }
+    if (cnt && aOn) { const s = steer(b, avx, avy); ax += s[0] * wAli; ay += s[1] * wAli; }
+    if (cnt && cOn) { const s = steer(b, cvx / cnt - b.x, cvy / cnt - b.y); ax += s[0] * wCoh; ay += s[1] * wCoh; }
+    /* 边界软约束 */
+    const M = 60;
+    if (b.x < M) ax += (M - b.x) * 8;
+    if (b.x > W - M) ax -= (b.x - (W - M)) * 8;
+    if (b.y < M) ay += (M - b.y) * 8;
+    if (b.y > H - M) ay -= (b.y - (H - M)) * 8;
+    /* 障碍回避 */
+    for (const o of obstacles) {
+      const dx = b.x - o.x, dy = b.y - o.y, d = Math.hypot(dx, dy);
+      if (d < o.r + 52) {
+        const str = (o.r + 52 - d) * 9, dd = d || 1;
+        ax += dx / dd * str; ay += dy / dd * str;
+      }
+    }
+    /* 捕食者闪避 + 恐慌加速 */
+    if (predator) {
+      const dx = b.x - predator.x, dy = b.y - predator.y, d = Math.hypot(dx, dy);
+      if (d < 130) {
+        const str = (130 - d) * 24, dd = d || 1;
+        ax += dx / dd * Math.min(str, 2600); ay += dy / dd * Math.min(str, 2600);
+        b.panic = 1.2;
+      }
+    }
+    if (b.panic > 0) b.panic -= dt;
+    b.vx += ax * dt; b.vy += ay * dt;
+    const sp = Math.hypot(b.vx, b.vy) || 1;
+    const hi = b.panic > 0 ? PANICV : MAXV;
+    const k2 = clamp(sp, MINV, hi) / sp;
+    b.vx *= k2; b.vy *= k2;
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    if (b.x < 6) { b.x = 6; b.vx = Math.abs(b.vx) * 0.5; }
+    if (b.x > W - 6) { b.x = W - 6; b.vx = -Math.abs(b.vx) * 0.5; }
+    if (b.y < 6) { b.y = 6; b.vy = Math.abs(b.vy) * 0.5; }
+    if (b.y > H - 6) { b.y = H - 6; b.vy = -Math.abs(b.vy) * 0.5; }
+    svx += b.vx; svy += b.vy;
+  }
+  avgNbr = nbrSum / N;
+  phi = Math.min(1, Math.hypot(svx, svy) / (N * MAXV));
+  /* 捕食者:追最近的一只 */
+  if (predator) {
+    let best = null, bd = Infinity;
+    for (const b of boids) {
+      const d = (b.x - predator.x) ** 2 + (b.y - predator.y) ** 2;
+      if (d < bd) { bd = d; best = b; }
+    }
+    if (best) {
+      const dx = best.x - predator.x, dy = best.y - predator.y, d = Math.hypot(dx, dy) || 1;
+      predator.vx = lerp(predator.vx, dx / d * 168, 0.06);
+      predator.vy = lerp(predator.vy, dy / d * 168, 0.06);
+      predator.x = clamp(predator.x + predator.vx * dt, 20, W - 20);
+      predator.y = clamp(predator.y + predator.vy * dt, 20, H - 20);
+    }
+  }
+}
+
+/* ================= DOM / 主题 / 语言(全站共享模式) ================= */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme')
+  || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const PAL = {};
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const PALETTE_D = ['#c3b3ff', '#b197fc', '#9775fa', '#845ef7', '#d0bfff'];
+const PALETTE_L = ['#7048e8', '#6741d9', '#5f3dc4', '#7950f2', '#4c6ef5'];
+const boidCol = i => (THEME === 'light' ? PALETTE_L : PALETTE_D)[i % 5];
+const SEP_C = '#ff6b6b', PRED_C = '#ff6b6b';
+let ALI_C, COH_C, OBS_C;
+
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  const cs = getComputedStyle(htmlEl);
+  for (const [k, v] of Object.entries({ bg: '--cv-bg', grid: '--cv-grid', axis: '--cv-axis',
+      dim: '--cv-dim', dim2: '--cv-dim2', text: '--cv-text', pill: '--cv-pill' }))
+    PAL[k] = cs.getPropertyValue(v).trim();
+  ALI_C = THEME === 'light' ? '#1971c2' : '#4dabf7';
+  COH_C = THEME === 'light' ? '#2b8a3e' : '#69db7c';
+  OBS_C = THEME === 'light' ? '#e8890c' : '#ffd166';
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('鸟群与 Boids · 局部规则涌现秩序', 'Boids · Local Rules, Emergent Order');
+  buildSteps();
+  setPlayLabel();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ================= 画布(全屏,1:1 虚拟坐标) ================= */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let dpr = 1, vs = 1, vox = 0, voy = 0;
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+  cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  vs = Math.min(innerWidth / W, innerHeight / H);
+  vox = (innerWidth - W * vs) / 2; voy = (innerHeight - H * vs) / 2;
+}
+addEventListener('resize', resize); resize();
+const toV = e => ({ x: (e.clientX - vox) / vs, y: (e.clientY - voy) / vs });
+
+/* ================= 绘制工具 ================= */
+const FONT = '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif';
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+function text(str, x, y, size, color, align = 'left', weight = 500, fam = FONT) {
+  ctx.font = `${weight} ${size}px ${fam}`; ctx.fillStyle = color;
+  ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillText(str, x, y);
+}
+function rrect(x, y, w, h, r, fill, stroke, lw = 1) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function circle(x, y, r, fill, stroke, lw = 1) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function line(x1, y1, x2, y2, color, lw = 1) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.stroke();
+}
+function arrow(x0, y0, x1, y1, color, lw) {
+  const ang = Math.atan2(y1 - y0, x1 - x0);
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x1 + Math.cos(ang) * 9, y1 + Math.sin(ang) * 9);
+  ctx.lineTo(x1 + Math.cos(ang + 2.5) * 9, y1 + Math.sin(ang + 2.5) * 9);
+  ctx.lineTo(x1 + Math.cos(ang - 2.5) * 9, y1 + Math.sin(ang - 2.5) * 9);
+  ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+}
+function boidShape(x, y, ang, s, fill) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  ctx.beginPath();
+  ctx.moveTo(s, 0); ctx.lineTo(-s * 0.72, s * 0.55); ctx.lineTo(-s * 0.38, 0); ctx.lineTo(-s * 0.72, -s * 0.55);
+  ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+  ctx.restore();
+}
+
+/* ================= 聚焦可视化:邻居圈 + 三股力 ================= */
+let focusOn = false, focusIdx = -1;
+function pickFocus() {
+  let best = -1, bd = Infinity;
+  for (let i = 0; i < N; i++) {
+    const d = (boids[i].x - W / 2) ** 2 + (boids[i].y - H / 2) ** 2;
+    if (d < bd) { bd = d; best = i; }
+  }
+  focusIdx = best;
+}
+function drawFocus() {
+  if (!focusOn || focusIdx < 0) return;
+  const b = boids[focusIdx];
+  ctx.setLineDash([6, 5]);
+  circle(b.x, b.y, R_ALI, `rgba(132,94,247,.05)`, THEME === 'light' ? '#5f3dc4' : '#b197fc', 1.6);
+  ctx.setLineDash([]);
+  circle(b.x, b.y, R_SEP, 'rgba(255,107,107,.06)', 'rgba(255,107,107,.5)', 1.2);
+  /* 高亮邻居 */
+  for (let j = 0; j < N; j++) {
+    if (j === focusIdx) continue;
+    const o = boids[j];
+    if ((o.x - b.x) ** 2 + (o.y - b.y) ** 2 < R_ALI2)
+      circle(o.x, o.y, 7, null, 'rgba(255,209,102,.9)', 1.4);
+  }
+  /* 重算三股力方向(仅供可视化) */
+  let cnt = 0, scnt = 0, avx = 0, avy = 0, cvx = 0, cvy = 0, sx = 0, sy = 0;
+  for (let j = 0; j < N; j++) {
+    if (j === focusIdx) continue;
+    const o = boids[j];
+    const dx = o.x - b.x, dy = o.y - b.y, d2 = dx * dx + dy * dy;
+    if (d2 > R_ALI2) continue;
+    cnt++; avx += o.vx; avy += o.vy; cvx += o.x; cvy += o.y;
+    if (d2 < R_SEP2) {
+      const d = Math.sqrt(d2) || 1, wgt = 1 - d / R_SEP;
+      sx -= dx / d * wgt; sy -= dy / d * wgt; scnt++;
+    }
+  }
+  const drawForce = (dx, dy, color, label, k) => {
+    const m = Math.hypot(dx, dy);
+    if (m < 1e-3 || !k) return;
+    const len = 34 + 26 * Math.min(1, wOf(label) * m * 2);
+    const ex = b.x + dx / m * len, ey = b.y + dy / m * len;
+    arrow(b.x + dx / m * 12, b.y + dy / m * 12, ex, ey, color, 3);
+    text(L(label, { '分离': 'separation', '对齐': 'alignment', '凝聚': 'cohesion' }[label]),
+      ex + dx / m * 16, ey + dy / m * 16 + 4, 11.5, color, 'center', 700);
+  };
+  const wOf = lab => lab === '分离' ? wSep : lab === '对齐' ? wAli : wCoh;
+  if (scnt) drawForce(sx, sy, SEP_C, '分离', sOn);
+  if (cnt) {
+    drawForce(avx, avy, ALI_C, '对齐', aOn);
+    drawForce(cvx / cnt - b.x, cvy / cnt - b.y, COH_C, '凝聚', cOn);
+  }
+  text(L(`邻居 ${cnt} 只 · 这就是它的全部世界`, `${cnt} neighbors · this circle is its whole world`),
+    b.x, b.y + R_ALI + 18, 11, PAL.dim2, 'center');
+}
+
+/* ================= 三规则卡片(步骤 1)/ 质心轨迹(步骤 3) ================= */
+function drawRuleCards() {
+  if (stepIdx !== 0) return;
+  const cards = [
+    { t: L('分离 · 别撞上', 'Separation · don\'t collide'), c: SEP_C,
+      d: L('邻居太近就反向推开,越近推得越狠', 'push away from crowding neighbors, harder the closer') },
+    { t: L('对齐 · 随大流', 'Alignment · go with the flow'), c: ALI_C,
+      d: L('把航向转向可见邻居的平均航向', 'turn the heading toward the neighbors\' average') },
+    { t: L('凝聚 · 别掉队', 'Cohesion · don\'t straggle'), c: COH_C,
+      d: L('朝可见邻居的质心轻轻靠拢', 'ease gently toward the neighbors\' centroid') },
+  ];
+  cards.forEach((cd, i) => {
+    const x = 1236, y = 64 + i * 78;
+    rrect(x, y, 344, 66, 12, PAL.pill, PAL.grid, 1);
+    circle(x + 22, y + 24, 6, cd.c);
+    text(cd.t, x + 38, y + 28, 13.5, cd.c, 'left', 700);
+    text(cd.d, x + 16, y + 52, 11, PAL.dim2);
+  });
+  text(L('群体里没有任何一只鸟知道整体形状', 'not one bird in the flock knows the flock\'s shape'),
+    1236, 318, 12, PAL.dim2, 'left', 600);
+}
+let centTrail = [];
+function drawCentTrail() {
+  if (stepIdx !== 2 || centTrail.length < 2) return;
+  ctx.beginPath();
+  centTrail.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+  ctx.strokeStyle = 'rgba(132,94,247,.55)'; ctx.lineWidth = 2.5; ctx.stroke();
+  const c = centTrail[centTrail.length - 1];
+  circle(c[0], c[1], 5, '#b197fc');
+  text(L('质心:没有一只鸟在跟随它', 'centroid: no bird is following it'), c[0], c[1] - 12, 11,
+    THEME === 'light' ? '#5f3dc4' : '#d0bfff', 'center', 600);
+}
+
+/* ================= 障碍与捕食者绘制 ================= */
+function drawObstacles() {
+  for (const o of obstacles) {
+    ctx.setLineDash([7, 6]);
+    circle(o.x, o.y, o.r, 'rgba(255,209,102,.10)', OBS_C, 2);
+    ctx.setLineDash([]);
+    circle(o.x, o.y, o.r + 52, null, 'rgba(255,209,102,.16)', 1);
+    text(L('绕行', 'detour'), o.x, o.y + 4, 11, OBS_C, 'center', 700);
+  }
+}
+function drawPredator() {
+  if (!predator) return;
+  circle(predator.x, predator.y, 130, 'rgba(255,107,107,.05)', 'rgba(255,107,107,.3)', 1.2);
+  const ang = Math.atan2(predator.vy, predator.vx);
+  ctx.save(); ctx.translate(predator.x, predator.y); ctx.rotate(ang);
+  ctx.beginPath();
+  ctx.moveTo(16, 0); ctx.lineTo(-12, 9); ctx.lineTo(-6, 0); ctx.lineTo(-12, -9);
+  ctx.closePath(); ctx.fillStyle = PRED_C; ctx.fill();
+  ctx.restore();
+  text(L('捕食者:只追最近的一只', 'predator: chases only the nearest'), predator.x, predator.y - 22, 11,
+    PRED_C, 'center', 600);
+}
+
+/* ================= φ 序参量小图(实测数据) ================= */
+let phiHist = [];
+function drawPhi() {
+  const x = 1246, y = 812, w = 330, h = 50;
+  rrect(x - 12, y - 26, w + 24, h + 40, 10, PAL.pill, PAL.grid, 1);
+  text(L('序参量 φ = |Σv|/(N·v_max):0 乱 → 1 齐', 'order parameter φ = |Σv|/(N·v_max): 0 chaos → 1 order'),
+    x, y - 8, 10.5, PAL.dim2);
+  line(x, y + h, x + w, y + h, PAL.grid, 1);
+  line(x, y + 2, x + w, y + 2, PAL.grid, 1);
+  if (phiHist.length > 1) {
+    ctx.beginPath();
+    phiHist.forEach((v, i) => {
+      const px = x + i / 159 * w, py = y + (1 - clamp(v, 0, 1)) * (h - 6) + 1;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    });
+    ctx.strokeStyle = THEME === 'light' ? '#5f3dc4' : '#b197fc';
+    ctx.lineWidth = 2; ctx.stroke();
+  }
+  text(phi.toFixed(2), x + w + 6, y + 14, 13, THEME === 'light' ? '#5f3dc4' : '#d0bfff', 'left', 700, MONO);
+}
+
+/* ================= 步骤讲解 ================= */
+const STEPS = [
+  { b: '三条规则,仅此而已', be: 'Three rules, nothing else',
+    d: '每只鸟只感知半径内的邻居:分离=别撞上,对齐=随大流,凝聚=别掉队;没有领袖,没有队形图纸,也没有谁看得见全貌。',
+    de: 'Each bird senses only neighbors in reach: separation = don\'t collide, alignment = go with the flow, cohesion = don\'t straggle. No leader, no blueprint, no overview.',
+    act() { focusOn = false; tglFocus.checked = false; predator = null; } },
+  { b: '放大一只:局部交互', be: 'Zoom in on one: the local deal',
+    d: '选中一只鸟:圆圈是它的全部世界,三支箭头是它此刻收到的三股力;群体的每个动作,都是这几像素里的谈判算出来的。',
+    de: 'One selected bird: the circle is its entire world; three arrows are the forces it feels right now. Every flock move is computed from negotiations this small.',
+    act() { focusOn = true; tglFocus.checked = true; pickFocus(); } },
+  { b: '絮群涌现', be: 'The flock emerges',
+    d: '紫色曲线是群体质心的轨迹:没有人掌舵,它却会集体转向、收缩、绕行——形状是涌现的,不是画出来的。',
+    de: 'The violet curve traces the flock\'s centroid: nobody steers, yet it turns, contracts and swerves together — the shape emerges, it is not drawn.',
+    act() { focusOn = false; tglFocus.checked = false; centTrail = []; } },
+  { b: '调权重:一群体三副面孔', be: 'Weights morph one body into three',
+    d: '凝聚+对齐调高→鱼群致密球;对齐拉满、凝聚调低→蝗虫带行军纵队;三力均衡→鸟群絮团。点预设或直接拖滑块,形态随权重连续变形。',
+    de: 'Cohesion + alignment up → a dense fish ball; alignment maxed, cohesion low → a marching locust band; balanced → a fluffy flock. Presets below, or drag the sliders.',
+    act() { applyPreset('fish'); } },
+  { b: '障碍分流', be: 'Splitting around obstacles',
+    d: '点击画布放障碍:没有谁下达绕行指令,分流从障碍前线逐层向后传播——局部规则天然给出全局避障;点击障碍可移除。',
+    de: 'Click the canvas to drop obstacles: nobody orders a detour, yet splitting waves ripple back from the obstacle front — local rules deliver global avoidance. Click an obstacle to remove it.',
+    act() {
+      if (obstacles.length < 3)
+        for (const [x, y, r] of [[560, 330, 42], [980, 590, 40], [1290, 300, 38]])
+          if (!obstacles.some(o => Math.hypot(o.x - x, o.y - y) < 10)) obstacles.push({ x, y, r });
+    } },
+  { b: '捕食者与闪避波', be: 'Predator & the panic wave',
+    d: '红色捕食者只追最近的一只;恐慌半径内的鸟急加速逃逸,闪避像波一样在群里传播——再秩序井然的群体,也留着这套应急协议。',
+    de: 'The red predator chases only the nearest bird; inside the panic radius boids bolt, and the dodge propagates outward like a wave — even the most orderly flock keeps this emergency protocol.',
+    act() { if (!predator) predator = { x: 1350, y: 140, vx: -60, vy: 40 }; } },
+];
+const elSteps = document.getElementById('steps');
+function buildSteps() {
+  elSteps.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => setStep(i));
+    elSteps.appendChild(li);
+  });
+  syncSteps();
+}
+function syncSteps() {
+  [...elSteps.children].forEach((li, j) => li.classList.toggle('on', j === stepIdx));
+}
+
+/* ================= UI / 主循环 ================= */
+let stepIdx = 0, stepT = 0, playing = true, speed = 1;
+let trails = false;
+const DWELL = [10, 12, 11, 13, 12, 14];
+const elPlay = document.getElementById('play');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elSeek = document.getElementById('seek'), elSeekVal = document.getElementById('seekVal');
+const tglSep = document.getElementById('tglSep'), tglAli = document.getElementById('tglAli'),
+  tglCoh = document.getElementById('tglCoh'), tglFocus = document.getElementById('tglFocus'),
+  tglTrail = document.getElementById('tglTrail');
+const wSepEl = document.getElementById('wSep'), wAliEl = document.getElementById('wAli'),
+  wCohEl = document.getElementById('wCoh');
+
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elSpeed.addEventListener('input', () => {
+  speed = parseFloat(elSpeed.value);
+  elSpeedVal.textContent = speed.toFixed(2) + '×';
+});
+function bindWeight(el, valEl, set) {
+  el.addEventListener('input', () => { set(parseFloat(el.value)); valEl.textContent = parseFloat(el.value).toFixed(2); });
+}
+bindWeight(wSepEl, document.getElementById('wSepVal'), v => { wSep = v; });
+bindWeight(wAliEl, document.getElementById('wAliVal'), v => { wAli = v; });
+bindWeight(wCohEl, document.getElementById('wCohVal'), v => { wCoh = v; });
+function applyPreset(kind) {
+  const p = { herd: [1.6, 1.0, 0.9], fish: [0.55, 1.5, 1.7], locust: [0.45, 2.0, 0.2] }[kind];
+  [wSep, wAli, wCoh] = p;
+  wSepEl.value = p[0]; wAliEl.value = p[1]; wCohEl.value = p[2];
+  document.getElementById('wSepVal').textContent = p[0].toFixed(2);
+  document.getElementById('wAliVal').textContent = p[1].toFixed(2);
+  document.getElementById('wCohVal').textContent = p[2].toFixed(2);
+}
+document.getElementById('btnHerd').addEventListener('click', () => applyPreset('herd'));
+document.getElementById('btnFish').addEventListener('click', () => applyPreset('fish'));
+document.getElementById('btnLocust').addEventListener('click', () => applyPreset('locust'));
+document.getElementById('btnReset').addEventListener('click', () => {
+  spawnBoids(); obstacles.length = 0; predator = null; applyPreset('herd'); centTrail = [];
+});
+tglSep.addEventListener('change', () => { sOn = tglSep.checked; });
+tglAli.addEventListener('change', () => { aOn = tglAli.checked; });
+tglCoh.addEventListener('change', () => { cOn = tglCoh.checked; });
+tglFocus.addEventListener('change', () => { focusOn = tglFocus.checked; if (focusOn) pickFocus(); });
+tglTrail.addEventListener('change', () => { trails = tglTrail.checked; });
+function setStep(i, keepPlay) {
+  stepIdx = ((i % STEPS.length) + STEPS.length) % STEPS.length;
+  stepT = 0;
+  const st = STEPS[stepIdx];
+  if (st.act) st.act();
+  if (!keepPlay) elSeek.value = stepIdx;
+  elSeekVal.textContent = `${stepIdx + 1}/${STEPS.length}`;
+  syncSteps();
+}
+elSeek.addEventListener('input', () => setStep(parseInt(elSeek.value), true));
+document.getElementById('stepBtn').addEventListener('click', () => { playing = false; setPlayLabel(); setStep(stepIdx + 1); });
+document.getElementById('replayBtn').addEventListener('click', () => {
+  spawnBoids(); centTrail = []; setStep(0); playing = true; setPlayLabel();
+});
+addEventListener('keydown', e => {
+  const tg = e.target;
+  if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'A')) return;
+  if (tg && tg.tagName === 'BUTTON') tg.blur();
+  if (e.code === 'Space') { e.preventDefault(); elPlay.click(); }
+  else if (e.code === 'ArrowRight') { e.preventDefault(); playing = false; setPlayLabel(); setStep(stepIdx + 1); }
+  else if (e.code === 'ArrowLeft') { e.preventDefault(); playing = false; setPlayLabel(); setStep(stepIdx - 1); }
+});
+/* 点击:放/移除障碍 */
+cv.addEventListener('pointerdown', e => {
+  const p = toV(e);
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    if (Math.hypot(p.x - obstacles[i].x, p.y - obstacles[i].y) < obstacles[i].r + 10) {
+      obstacles.splice(i, 1); return;
+    }
+  }
+  if (obstacles.length < 6) obstacles.push({ x: p.x, y: p.y, r: 38 });
+});
+cv.addEventListener('pointermove', e => {
+  const p = toV(e);
+  cv.style.cursor = obstacles.some(o => Math.hypot(p.x - o.x, p.y - o.y) < o.r + 10) ? 'pointer' : 'default';
+});
+
+function updateStats() {
+  document.getElementById('stNbr').textContent = avgNbr.toFixed(1);
+  document.getElementById('stPhi').textContent = phi.toFixed(2);
+  document.getElementById('stRules').textContent =
+    `${(sOn ? 1 : 0) + (aOn ? 1 : 0) + (cOn ? 1 : 0)}/3`;
+  document.getElementById('stObs').textContent = obstacles.length;
+  const el = document.getElementById('stPred');
+  el.textContent = predator ? L('追猎中', 'hunting') : L('无', 'none');
+}
+function render() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, innerWidth, innerHeight);
+  ctx.setTransform(vs * dpr, 0, 0, vs * dpr, vox * dpr, voy * dpr);
+  if (trails) {
+    ctx.globalAlpha = 0.22; ctx.fillStyle = PAL.bg;
+    ctx.fillRect(-20, -20, W + 40, H + 40); ctx.globalAlpha = 1;
+  }
+  if (stepIdx === 2) {
+    let cx = 0, cy = 0;
+    for (const b of boids) { cx += b.x; cy += b.y; }
+    centTrail.push([cx / N, cy / N]);
+    if (centTrail.length > 110) centTrail.shift();
+  }
+  drawObstacles();
+  drawPredator();
+  for (let i = 0; i < N; i++) {
+    const b = boids[i];
+    boidShape(b.x, b.y, Math.atan2(b.vy, b.vx), 8, b.panic > 0 ? '#ff8787' : boidCol(i));
+    if (b.panic > 0) circle(b.x, b.y, 11, null, `rgba(255,107,107,${Math.min(1, b.panic)})`, 1.5);
+  }
+  drawCentTrail();
+  drawFocus();
+  drawRuleCards();
+  drawPhi();
+  updateStats();
+  elSeek.value = stepIdx;
+}
+let last = performance.now(), rafId = 0, running = false;
+function frame(now) {
+  rafId = requestAnimationFrame(frame);
+  const nowDt = Math.min((now - last) / 1000, 0.05); last = now;
+  if (playing) {
+    const dt = nowDt * speed;
+    physics(dt);
+    phiHist.push(phi);
+    if (phiHist.length > 160) phiHist.shift();
+    stepT += nowDt * speed;
+    if (stepT >= DWELL[stepIdx]) setStep(stepIdx + 1, true);
+  }
+  render();
+}
+function start() { if (!running) { running = true; last = performance.now(); rafId = requestAnimationFrame(frame); } }
+function stop() { running = false; cancelAnimationFrame(rafId); }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化(URL 参数) ================= */
+speed = clamp(qsFloat('speed', 1), 0.25, 3);
+elSpeed.value = speed; elSpeedVal.textContent = speed.toFixed(2) + '×';
+playing = !qsBool('pause', false);
+if (!qs.get('pause') && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+stepIdx = clamp(Math.round(qsFloat('t', 0)) | 0, 0, STEPS.length - 1);
+setStep(stepIdx);
+applyTheme();
+applyLang();
+render();
+start();
+</script>
+</body>
+</html>
