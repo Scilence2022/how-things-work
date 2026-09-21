@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>卷积神经网络 · 从像素到识别</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4dabf7;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1864ab;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 30%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(77,171,247,.6); background: rgba(77,171,247,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(24,100,171,.55); background: rgba(24,100,171,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(77,171,247,.10); border-color: rgba(77,171,247,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(24,100,171,.08); border-color: rgba(24,100,171,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #bde9ff; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="卷积神经网络 · 从像素到识别" data-en="Convolutional Networks · From Pixels to Recognition">卷积神经网络 · 从像素到识别</h1>
+  <div class="sub" data-zh="照片在计算机里只是像素矩阵:全连接把它拉平接 100 个神经元 = 78,400 个参数,而且换个位置就失灵→卷积换思路:一个 3×3 核只带 9 个权重扫过全图,权重共享+局部感受野,边缘在哪都认得出→响应图过 ReLU 截负 = 非线性,再 2×2 max 池化:特征图减半,平移容差 +1→层层堆叠:L1 看边缘、L2 认纹理与角、L3 拼部件、L4 成物体——猫视皮层的层级假说是它的原型→输出层给 0–9 置信度;训练不过是用反向传播+梯度下降把那些核学出来 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="An image is just a matrix of pixels: flatten it into 100 neurons and you need 78,400 parameters, and it breaks if the pattern shifts → convolution flips the idea: one 3×3 kernel with only 9 weights sweeps the whole image — weight sharing plus a local receptive field, edges recognized wherever they are → responses pass ReLU (clip negatives = nonlinearity), then 2×2 max pooling halves the map and buys +1 pixel of translation tolerance → stack the layers: L1 sees edges, L2 textures and corners, L3 parts, L4 objects — the cat-visual-cortex hierarchy is its prototype → the output layer scores 0–9 confidence; training is nothing more than backprop + gradient descent learning those kernels · 3D interactive demo · drag to orbit · Space = run/pause">卷积神经网络 · 从像素到识别</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="参数量(全连 : 卷积)" data-en="Params (FC : conv)">参数量(全连 : 卷积)</span><span class="v" id="stP">—</span>
+  <span class="k" data-zh="特征图尺寸" data-en="Feature map">特征图尺寸</span><span class="v" id="stSz">—</span>
+  <span class="k" data-zh="激活 %(>0.05)" data-en="Active % (>0.05)">激活 %(>0.05)</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="当前层" data-en="Current layer">当前层</span><span class="v" id="stL">—</span>
+  <span class="k" data-zh="Top-1 置信度" data-en="Top-1 confidence">Top-1 置信度</span><span class="v" id="stC">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="输出层 0–9 置信度:手工核只给一片模糊的响应;切到学习核链,正确数字一柱独起——特征决定识别力" data-en="Output layer 0–9 confidence: hand kernels give a mush of responses; switch to the learned chain and one bar rises — features decide recognition">输出层 0–9 置信度:手工核只给一片模糊的响应;切到学习核链,正确数字一柱独起——特征决定识别力</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.r" data-zh="全连接:78,400 个参数,位置盲" data-en="fully connected: 78,400 params, position-blind">全连接:78,400 个参数,位置盲</span>
+    <span class="chip.b" data-zh="3×3 核:9 个权重扫全图=权重共享" data-en="3×3 kernel: 9 weights over the whole image = shared">3×3 核:9 个权重扫全图=权重共享</span>
+    <span class="chip.g" data-zh="特征图:卷积响应经 ReLU 截负" data-en="feature map: conv response clipped by ReLU">特征图:卷积响应经 ReLU 截负</span>
+    <span class="chip.o" data-zh="max 池化:4 取 1,平移容差 +1" data-en="max pool: 4→1, +1 px translation tolerance">max 池化:4 取 1,平移容差 +1</span>
+  </div>
+  <div id="actions">
+    <button class="abtn kn" data-k="0" data-zh="边缘V" data-en="Edge V">边缘V</button>
+    <button class="abtn kn" data-k="1" data-zh="边缘H" data-en="Edge H">边缘H</button>
+    <button class="abtn kn" data-k="2" data-zh="Sobel" data-en="Sobel">Sobel</button>
+    <button class="abtn kn" data-k="3" data-zh="模糊" data-en="Blur">模糊</button>
+    <button class="abtn kn" data-k="4" data-zh="锐化" data-en="Sharpen">锐化</button>
+    <button class="abtn kn" data-k="5" data-zh="学习核链" data-en="Learned chain">学习核链</button>
+    <button class="abtn" id="btnLayer" data-zh="逐层推进" data-en="Advance layer">逐层推进</button>
+    <button class="abtn pn" data-p="0" data-zh="输入 0" data-en="Input 0">输入 0</button>
+    <button class="abtn pn" data-p="1" data-zh="输入 7" data-en="Input 7">输入 7</button>
+    <button class="abtn pn" data-p="2" data-zh="输入 X" data-en="Input X">输入 X</button>
+    <button class="abtn pn" data-p="3" data-zh="输入 方波" data-en="Input square">输入 方波</button>
+  </div>
+  <div class="row"><label data-zh="扫描速度" data-en="Scan speed">扫描速度</label><input id="sSv" type="range" min="20" max="300" step="5" value="100"><span class="val" id="sSvVal">×1.0</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChart" type="checkbox" checked> <span data-zh="置信度图" data-en="Confidence">置信度图</span></label>
+      <label><input id="tglPool" type="checkbox" checked> <span data-zh="池化" data-en="Pooling">池化</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../neural-gradient/" data-zh="训练引擎:反向传播+梯度下降" data-en="the training engine: backprop + gradient descent">训练引擎:反向传播+梯度下降</a>
+    <a href="../camera-sensor/" data-zh="像素的上游:传感器怎么成像" data-en="camera sensor: where pixels come from">像素的上游:传感器怎么成像</a>
+    <a href="../fourier-series/" data-zh="卷积的频域亲戚" data-en="Fourier series: convolution's frequency cousin">卷积的频域亲戚</a>
+    <a href="../information-entropy/" data-zh="下游编码:特征之后怎么压" data-en="information entropy: encoding after features">下游编码:特征之后怎么压</a>
+    <a href="../sorting-race/" data-zh="算法同族:复杂度的竞赛" data-en="sorting race: algorithms of the same family">算法同族:复杂度的竞赛</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, f) => a + (b - a) * f;
+const ease = u => u * u * (3 - 2 * u);
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x0b1020, 20, 60);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0b1020 : 0xd9e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x0b1020 : 0xd9e2ea);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('卷积神经网络 · 从像素到识别', 'Convolutional Networks · From Pixels to Recognition');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+  syncBtns();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+let renderer = null, glFail = false;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  document.getElementById('app').appendChild(renderer.domElement);
+} catch (e) { glFail = true; }
+if (glFail) {
+  const err = document.createElement('div');
+  err.style.cssText = 'position:fixed;inset:0;z-index:99;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--text2);font-size:14px;padding:24px;text-align:center;';
+  err.textContent = L('WebGL 初始化失败:3D 视图已停用,面板、步骤与置信度图仍可用。', 'WebGL failed to start: 3D view disabled; panel, steps and confidence chart still work.');
+  document.body.appendChild(err);
+}
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+if (!glFail) {
+  try {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  } catch (e) { /* 环境贴图失败不致命 */ }
+}
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 140);
+camera.position.set(2.5, 6.5, 13.5);
+let controls = null;
+if (!glFail) {
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0.8, 0, 0.3);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 2;
+  controls.maxDistance = 55;
+  controls.autoRotateSpeed = 0.3;
+}
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x141a24, 0.6);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 0.9);
+key.position.set(6, 9, 7);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9ab8ff, 0.3);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ================= 真算:卷积 / ReLU / 池化 / 模板匹配 ================= */
+const N = 16;
+const conv = (src, w, K) => {
+  const out = new Float32Array(w * w);
+  for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) {
+    let s = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      s += src[clamp(y + dy, 0, w - 1) * w + clamp(x + dx, 0, w - 1)] * K[(dy + 1) * 3 + dx + 1];
+    }
+    out[y * w + x] = s;
+  }
+  return out;
+};
+const maxpool = (src, w) => {
+  const o = w >> 1, out = new Float32Array(o * o);
+  for (let y = 0; y < o; y++) for (let x = 0; x < o; x++) {
+    out[y * o + x] = Math.max(src[(2 * y) * w + 2 * x], src[(2 * y) * w + 2 * x + 1], src[(2 * y + 1) * w + 2 * x], src[(2 * y + 1) * w + 2 * x + 1]);
+  }
+  return out;
+};
+const relu = a => a.map(v => v < 0 ? 0 : v);
+const normalize = a => {
+  let m = 0;
+  for (const v of a) if (v > m) m = v;
+  return m > 1e-6 ? a.map(v => v / m) : a;
+};
+/* 输入图案 16×16 */
+function pat0() { /* 0:圆环 */
+  const a = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = (x - 7.5) / 6.2, dy = (y - 7.5) / 7.1;
+    if (Math.abs(Math.hypot(dx, dy) - 0.8) < 0.2) a[y * N + x] = 1;
+  }
+  return a;
+}
+function pat1() { /* 7 */
+  const a = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    if (y >= 1 && y <= 3 && x >= 2 && x <= 13) { a[y * N + x] = 1; continue; }
+    if (y >= 4) { const x0 = 11.2 - (y - 4) * 0.62; if (Math.abs(x - x0) < 1.1) a[y * N + x] = 1; }
+  }
+  return a;
+}
+function pat2() { /* X */
+  const a = new Float32Array(N * N);
+  for (let y = 2; y < 14; y++) for (let x = 2; x < 14; x++) {
+    if (Math.abs(x - y) < 1.25 || Math.abs(x + y - 15) < 1.25) a[y * N + x] = 1;
+  }
+  return a;
+}
+function pat3() { /* 方波 */
+  const a = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const on = (y >= 3 && y <= 5 && x >= 2 && x <= 8) || (y >= 10 && y <= 12 && x >= 8 && x <= 13)
+      || (x >= 7 && x <= 8 && y >= 3 && y <= 12) || (x >= 2 && x <= 3 && y >= 3 && y <= 5) || (x >= 12 && x <= 13 && y >= 10 && y <= 12);
+    if (on) a[y * N + x] = 1;
+  }
+  return a;
+}
+const PATTERNS = [
+  { zh: '0', en: '0', fn: pat0 },
+  { zh: '7', en: '7', fn: pat1 },
+  { zh: 'X', en: 'X', fn: pat2 },
+  { zh: '方波', en: 'square', fn: pat3 },
+];
+/* 手工核(真实权重) */
+const KERNELS = [
+  { zh: '边缘V', en: 'Edge V', k: [-1, 0, 1, -1, 0, 1, -1, 0, 1], rl: true },
+  { zh: '边缘H', en: 'Edge H', k: [-1, -1, -1, 0, 0, 0, 1, 1, 1], rl: true },
+  { zh: 'Sobel', en: 'Sobel', kx: [-1, 0, 1, -2, 0, 2, -1, 0, 1], ky: [-1, -2, -1, 0, 0, 0, 1, 2, 1], sob: true },
+  { zh: '模糊', en: 'Blur', k: [1, 2, 1, 2, 4, 2, 1, 2, 1].map(v => v / 16), rl: false },
+  { zh: '锐化', en: 'Sharpen', k: [0, -1, 0, -1, 5, -1, 0, -1, 0], rl: true },
+  { zh: '学习核链', en: 'Learned chain', learn: true },
+];
+const K_ONES = [1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9];
+const K_CORNER = [1, -2, 1, -2, 5, -2, 1, -2, 1];
+const K_CS = [-1, -1, -1, -1, 8, -1, -1, -1, -1];
+const EDGE4 = [
+  [-1, 0, 1, -1, 0, 1, -1, 0, 1],
+  [-1, -1, -1, 0, 0, 0, 1, 1, 1],
+  [1, 1, 0, 1, 0, -1, 0, -1, -1],
+  [0, 1, 1, -1, 0, 1, -1, -1, 0],
+];
+/* 0–9 字形模板 8×8(在这个小演示里扮演「学到的权重」) */
+const TMPL_S = [
+  ['..####..', '.##..##.', '.##..##.', '.##..##.', '.##..##.', '.##..##.', '.##..##.', '..####..'],
+  ['...##...', '..###...', '.####...', '...##...', '...##...', '...##...', '...##...', '.######.'],
+  ['..####..', '.##..##.', '.....##.', '....##..', '...##...', '..##....', '.##.....', '.######.'],
+  ['..####..', '.##..##.', '.....##.', '...###..', '.....##.', '.....##.', '.##..##.', '..####..'],
+  ['....##..', '...###..', '..####..', '.##.##..', '##..##..', '########', '....##..', '....##..'],
+  ['.######.', '.##.....', '.#####..', '.....##.', '.....##.', '.##..##.', '.##..##.', '..####..'],
+  ['..####..', '.##..##.', '.##.....', '.#####..', '.##..##.', '.##..##.', '.##..##.', '..####..'],
+  ['.######.', '.....##.', '....##..', '...##...', '...##...', '...##...', '...##...', '...##...'],
+  ['..####..', '.##..##.', '.##..##.', '..####..', '.##..##.', '.##..##.', '.##..##.', '..####..'],
+  ['..####..', '.##..##.', '.##..##.', '..#####.', '.....##.', '.....##.', '.##..##.', '..####..'],
+];
+const TMPLS = TMPL_S.map(rows => {
+  const a = new Float32Array(64);
+  rows.forEach((r, y) => [...r].forEach((ch, x) => { a[y * 8 + x] = ch === '#' ? 1 : 0; }));
+  return a;
+});
+/* 状态 */
+let kIdx = clamp(Math.round(qsFloat('k', 0)), 0, 5);
+let pIdx = clamp(Math.round(qsFloat('p', 0)), 0, 3);
+let poolOn = qsBool('pool', true);
+let stage = clamp(Math.round(qsFloat('ly', 0)), 0, 3);
+let sv = clamp(qsFloat('sv', 1), 0.2, 3);
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+const speed = clamp(qsFloat('speed', 1), 0.25, 3);
+let labelsOn = true, chartOn = true;
+let phaseIdx = 0;
+let notifyT = 0, notifyZ = '', notifyE = '';
+/* 计算结果缓存 */
+let inp = pat0(), featN = new Float32Array(N * N), pooled = new Float32Array(64), poolSrc = pooled;
+let chain = null, conf = new Array(10).fill(0), confT = new Array(10).fill(0), top1 = 0;
+let actPct = 0;
+function classify(fv) {
+  const sc = TMPLS.map(t => {
+    let d = 0, nx = 0, nt = 0;
+    for (let i = 0; i < 64; i++) { d += fv[i] * t[i]; nx += fv[i] * fv[i]; nt += t[i] * t[i]; }
+    return d / (Math.sqrt(nx * nt) + 1e-9);
+  });
+  const m = Math.max(...sc);
+  const ex = sc.map(s => Math.exp((s - m) * 14));
+  const S = ex.reduce((a, b) => a + b, 0);
+  confT = ex.map(e => e / S);
+  top1 = confT.indexOf(Math.max(...confT));
+}
+function computeAll() {
+  inp = PATTERNS[pIdx].fn();
+  const K = KERNELS[kIdx];
+  if (K.learn) {
+    const l1 = new Float32Array(N * N);
+    for (const k of EDGE4) { const r = conv(inp, N, k); for (let i = 0; i < r.length; i++) l1[i] += Math.abs(r[i]); }
+    const l1d = normalize(l1);
+    const l1p = normalize(maxpool(l1d, N));
+    const cOnes = conv(l1p, 8, K_ONES), cCor = conv(l1p, 8, K_CORNER);
+    const l2raw = new Float32Array(64);
+    for (let i = 0; i < 64; i++) l2raw[i] = cOnes[i] + Math.abs(cCor[i]) / 2;
+    const l2m = normalize(relu(l2raw));
+    const l2p = normalize(maxpool(l2m, 8));
+    const l3m = normalize(relu(conv(l2p, 4, K_ONES)));
+    const l3p = normalize(maxpool(l3m, 4));
+    const l4p = normalize(maxpool(relu(conv(l3p, 2, K_CS)), 2));
+    chain = { l1d, l1p, l2m, l2p, l3m, l3p, l4p };
+    poolSrc = l1p;
+    featN = l1d;
+  } else {
+    let feat;
+    if (K.sob) {
+      const sx = conv(inp, N, K.kx), sy = conv(inp, N, K.ky);
+      feat = new Float32Array(N * N);
+      for (let i = 0; i < feat.length; i++) feat[i] = Math.hypot(sx[i], sy[i]);
+    } else feat = conv(inp, N, K.k);
+    if (K.rl) feat = relu(feat);
+    featN = normalize(feat);
+    pooled = normalize(maxpool(feat, N));
+    poolSrc = pooled;
+    chain = null;
+  }
+  let nAct = 0;
+  for (const v of poolSrc) if (v > 0.05) nAct++;
+  actPct = nAct / poolSrc.length * 100;
+  classify(poolSrc);
+  updateStats();
+  updateFormula();
+}
+
+/* ---------------- 场景:流水线平面 ---------------- */
+const boxG = new THREE.BoxGeometry(1, 1, 1);
+const _M4 = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _S = new THREE.Vector3(), _V = new THREE.Vector3();
+const HEAT_STOPS = [[0, 13, 21, 34], [0.3, 21, 93, 140], [0.55, 43, 158, 143], [0.78, 255, 212, 59], [1, 255, 92, 92]];
+const _C = new THREE.Color();
+function heat(v) {
+  v = clamp(v, 0, 1);
+  for (let i = 0; i < HEAT_STOPS.length - 1; i++) {
+    const a = HEAT_STOPS[i], b = HEAT_STOPS[i + 1];
+    if (v <= b[0]) { const f = (v - a[0]) / (b[0] - a[0]); return _C.setRGB(lerp(a[1], b[1], f) / 255, lerp(a[2], b[2], f) / 255, lerp(a[3], b[3], f) / 255); }
+  }
+  return _C.setRGB(1, 0.36, 0.36);
+}
+function makeGrid(n, cell, x) {
+  const m = new THREE.InstancedMesh(boxG, new THREE.MeshBasicMaterial({ toneMapped: false }), n * n);
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  m.frustumCulled = false;
+  const sp = cell * 1.14, half = (n - 1) * sp / 2;
+  for (let i = 0; i < n * n; i++) {
+    const px = i % n, py = Math.floor(i / n);
+    _V.set(x, half - py * sp, half - px * sp);
+    _M4.compose(_V, _Q.identity(), _S.setScalar(cell * 0.92));
+    m.setMatrixAt(i, _M4);
+    m.setColorAt(i, heat(0));
+  }
+  scene.add(m);
+  return { m, n, sp, half };
+}
+const gIn = makeGrid(N, 0.26, -5.6);
+const gFeat = makeGrid(N, 0.26, -2.8);
+const gPool = makeGrid(8, 0.52, 0.2);
+const gL2 = makeGrid(4, 1.04, 2.9);
+const gL3 = makeGrid(2, 2.08, 5.0);
+const gL4 = makeGrid(1, 3.4, 6.9);
+function paintGrid(g, arr, dim = 1, reveal = null) {
+  for (let i = 0; i < g.n * g.n; i++) {
+    let v = arr ? arr[i] : 0;
+    if (reveal !== null && i > reveal) v = 0;
+    g.m.setColorAt(i, heat(v * dim));
+  }
+  g.m.instanceColor.needsUpdate = true;
+}
+function paintIn() {
+  for (let i = 0; i < N * N; i++) {
+    const v = clamp(inp[i], 0, 1);
+    gIn.m.setColorAt(i, _C.setRGB(0.13 + 0.85 * v, 0.16 + 0.82 * v, 0.22 + 0.74 * v));
+  }
+  gIn.m.instanceColor.needsUpdate = true;
+}
+/* 3×3 权重块 */
+const kernGrp = new THREE.Group();
+scene.add(kernGrp);
+const kw = [];
+for (let i = 0; i < 9; i++) {
+  const b = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.17), new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.4, emissive: 0x000000 }));
+  b.position.set(((i % 3) - 1) * 0.2, (1 - Math.floor(i / 3)) * 0.2, 0);
+  kernGrp.add(b);
+  kw.push(b);
+}
+function paintKern() {
+  const K = KERNELS[kIdx];
+  const w = K.learn ? [1, 0, 0, -1, 1, 0, 0, -1, 1] : (K.sob ? K.kx : K.k);
+  let mx = 1e-6;
+  for (const v of w) mx = Math.max(mx, Math.abs(v));
+  for (let i = 0; i < 9; i++) {
+    const v = w[i] / mx;
+    kw[i].material.color.setRGB(v > 0 ? 0.35 + 0.65 * v : 0.16, v < 0 ? 0.35 + 0.65 * -v : 0.18, v < 0 ? 0.55 : 0.3 + 0.2 * Math.max(0, v));
+    kw[i].material.emissive.setRGB(v > 0 ? 0.5 * v : 0, 0, v < 0 ? 0.5 * -v : 0);
+  }
+}
+/* 输出柱 0–9 */
+const NB = 10;
+const bars = new THREE.InstancedMesh(boxG, new THREE.MeshBasicMaterial({ toneMapped: false }), NB);
+bars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+bars.frustumCulled = false;
+scene.add(bars);
+const BAR_X = 9.4, BAR_SP = 0.56;
+let dispConf = new Array(NB).fill(0);
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true, parent = null) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblIn = addLabel(() => L(`输入 16×16:程序化字形「${L(PATTERNS[pIdx].zh, PATTERNS[pIdx].en)}」,每个像素一个数`, `input 16×16: procedural glyph "${L(PATTERNS[pIdx].zh, PATTERNS[pIdx].en)}", one number per pixel`), new THREE.Vector3(-5.6, 2.7, 0), '');
+const lblK = addLabel(() => L('3×3 核:只有 9 个权重,扫过全图 = 权重共享(红正蓝负)', '3×3 kernel: just 9 weights sweeping the image = weight sharing (red +, blue −)'), new THREE.Vector3(-5.6, -2.3, 0), 'b');
+const lblFeat = addLabel(() => L('特征图:卷积响应,ReLU 截负 = 非线性', 'feature map: conv response, ReLU clips negatives = nonlinearity'), new THREE.Vector3(-2.8, 2.7, 0), 'g', () => !KERNELS[kIdx].learn);
+const lblPool = addLabel(() => L('2×2 max 池化:4 取 1,尺寸减半,平移容差 +1', '2×2 max pool: 4→1, half the size, +1 px translation tolerance'), new THREE.Vector3(0.2, 2.6, 0), 'o', () => !KERNELS[kIdx].learn && poolOn);
+const lblChain = addLabel(() => L('学习核链:L1 边缘 → L2 纹理与角 → L3 部件 → L4 物体——逐层抽象', 'learned chain: L1 edges → L2 textures & corners → L3 parts → L4 object — abstraction layer by layer'), new THREE.Vector3(3.6, 3.4, 0), 'b', () => !!KERNELS[kIdx].learn);
+const lblOut = addLabel(() => L('输出层:与 0–9 字形模板的余弦相似度 → softmax 置信度', 'output layer: cosine match to 0–9 glyph templates → softmax confidence'), new THREE.Vector3(BAR_X, 3.3, 0), 'g');
+const lblNotify = addLabel(() => {
+  if (notifyT > 0) return L(notifyZ, notifyE);
+  if (KERNELS[kIdx].learn) return L('网络在逐层抽象:杂乱像素 → 边缘 → 纹理 → 部件 → 物体', 'the network abstracts layer by layer: raw pixels → edges → textures → parts → object');
+  return L('手工核只能看边缘和纹理:识别力来自学出来的特征——点「学习核链」对比', 'hand kernels only see edges and textures: recognition comes from learned features — try the learned chain');
+}, new THREE.Vector3(0.6, 4.3, 0), 'r');
+for (let d = 0; d < NB; d++) addLabel(() => String(d), new THREE.Vector3(BAR_X + 0.55, 0.28, (NB - 1) * BAR_SP / 2 - d * BAR_SP));
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls ? controls.target.clone() : new THREE.Vector3(0.8, 0, 0.3), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+const STEPS = [
+  { b: '全连接的浪费:78,400 参数对 9', be: 'The waste of full connection: 78,400 vs 9',
+    d: '把 28×28 图拉平接 100 个神经元,第一层就要 78,400 个参数;而且这种层认的是「绝对位置」——数字挪动两个像素就失灵。参数爆炸+位置盲,是全连接处理图像的两大死穴。',
+    de: 'Flatten a 28×28 image into 100 neurons and the first layer alone needs 78,400 parameters; worse, such a layer learns absolute positions — shift the digit two pixels and it fails. Parameter explosion plus position blindness: the two fatal flaws of fully-connected image processing.',
+    act: () => { phaseIdx = 0; kIdx = 0; computeAll(); syncAll(); notifyT = 3.2; notifyZ = '全连接:78,400 参数,还换个位置就失灵;卷积:9 个参数扫全图'; notifyE = 'fully connected: 78,400 params, breaks under shifts; convolution: 9 params sweeping the image'; flyTo([2.5, 6.5, 13.5], [0.8, 0, 0.3]); } },
+  { b: '卷积:同一个核扫全图 = 权重共享', be: 'Convolution: one kernel over the whole image = shared weights',
+    d: '卷积只问局部:3×3 小窗乘上加权求和,同一个核带着 9 个权重扫遍全图。参数从 78,400 掉到 9,而边缘不管出现在哪,都触发同一个响应——这就是权重共享+局部感受野。',
+    de: 'Convolution only asks local questions: a 3×3 window, weighted sum, the same 9 weights swept across the whole image. Parameters drop from 78,400 to 9, and an edge triggers the same response wherever it appears — weight sharing plus a local receptive field.',
+    act: () => { phaseIdx = 1; kIdx = 0; playing = true; scanT = 0; computeAll(); syncAll(); setPlayLabel(); flyTo([-3.6, 2.2, 6.0], [-4.2, 0.3, 0]); } },
+  { b: '特征图与 ReLU:响应+非线性', be: 'Feature maps & ReLU: response + nonlinearity',
+    d: '每个核扫完得到一张特征图:亮处=匹配强。ReLU 把负响应截成 0——没有这一步,层层线性叠加仍是一条直线,网络再深也只会线性变换。切 Sobel 看梯度的完整幅值。',
+    de: 'Each kernel produces a feature map: bright = strong match. ReLU clips negative responses to zero — without it, stacked linear layers collapse into one big linear map, and depth buys nothing. Switch to Sobel to see the full gradient magnitude.',
+    act: () => { phaseIdx = 2; kIdx = 2; computeAll(); syncAll(); flyTo([-0.8, 1.8, 5.0], [-2.8, 0.2, 0]); } },
+  { b: 'max 池化:平移容差的代价核算', be: 'Max pooling: pricing translation tolerance',
+    d: '2×2 窗口里只留最大值:特征图减半,计算省 4 倍,特征挪动 1 像素内响应不变——平移容差 +1。代价是位置精度:像素级定位任务要慎重,所以现代网络也常用跨步卷积替代。',
+    de: 'Keep only the max of each 2×2 window: the map halves, compute drops 4×, and a feature shifted by 1 pixel still responds — +1 pixel of translation tolerance. The price is positional precision, which is why modern nets sometimes replace it with strided convolutions.',
+    act: () => { phaseIdx = 3; kIdx = 0; poolOn = true; scanT = PH_A + 0.01; computeAll(); syncAll(); flyTo([1.6, 2.2, 6.2], [0.2, 0.2, 0]); } },
+  { b: '层级:边缘→纹理→部件→物体', be: 'Hierarchy: edges→textures→parts→objects',
+    d: '单层核只会看边缘;层层堆叠才有抽象:L1 边缘、L2 纹理与角、L3 部件、L4 物体。这个金字塔的原型是猫视皮层——Hubel & Wiesel 发现神经元从简单感受野逐级汇成复杂概念。',
+    de: 'A single layer only sees edges; abstraction comes from stacking: L1 edges, L2 textures and corners, L3 parts, L4 object. The prototype is cat visual cortex — Hubel & Wiesel watched simple receptive fields build up into complex concepts, level by level.',
+    act: () => { phaseIdx = 4; kIdx = 5; stage = 0; stageT = 0; computeAll(); syncAll(); flyTo([5.2, 5.2, 11.0], [2.8, 0, 0.4]); } },
+  { b: '训练 = 学核权重(反向传播)', be: 'Training = learning the kernels (backprop)',
+    d: '这里的核是手工预置的;真正的网络用反向传播+梯度下降把 9×层数个权重从数据里学出来:输出错了就沿梯度反方向微调每个权重。逐层推进按钮,亲眼看特征从像素变成概念。',
+    de: 'The kernels here are hand-set; a real network learns all 9-weights-per-kernel from data with backprop + gradient descent: when the output errs, every weight is nudged down its gradient. Click Advance layer and watch features turn from pixels into concepts.',
+    act: () => { phaseIdx = 5; kIdx = 5; stage = 3; stageT = 9; computeAll(); syncAll(); notifyT = 3.2; notifyZ = '训练=反向传播+梯度下降学核权重;本页的核链是预置的,引擎见「梯度下降」页'; notifyE = 'training = backprop + gradient descent on kernel weights; this chain is preset — see the gradient descent page for the engine'; flyTo([3.5, 7.5, 14.0], [1.4, 0, 0.5]); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:0–9 置信度 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const padL = 16, padB = 26, padT = 16;
+  const bw = (W - padL - 12) / NB;
+  ctx.font = '14px system-ui';
+  for (let d = 0; d < NB; d++) {
+    const x = padL + d * bw + bw * 0.12, w = bw * 0.76;
+    const h = clamp(dispConf[d], 0, 1) * (H - padB - padT);
+    ctx.fillStyle = d === top1 ? '#4dabf7' : dispConf[d] > 0.12 ? '#3b6a94' : 'rgba(120,140,165,.4)';
+    ctx.fillRect(x, H - padB - h, w, h);
+    ctx.fillStyle = cTxt;
+    ctx.fillText(String(d), x + w / 2 - 5, H - 8);
+    if (d === top1 && dispConf[d] > 0.02) {
+      ctx.fillStyle = '#4dabf7';
+      ctx.fillText((dispConf[d] * 100).toFixed(0) + '%', x + w / 2 - 16, H - padB - h - 6);
+    }
+  }
+  ctx.strokeStyle = 'rgba(128,150,170,.3)';
+  ctx.beginPath(); ctx.moveTo(padL, H - padB); ctx.lineTo(W - 10, H - padB); ctx.stroke();
+  ctx.fillStyle = cTxt;
+  ctx.fillText(L(`输入:${L(PATTERNS[pIdx].zh, PATTERNS[pIdx].en)} · ${KERNELS[kIdx].learn ? L('学习核链', 'learned chain') : L('手工核 ' + KERNELS[kIdx].zh, 'manual ' + KERNELS[kIdx].en)}`, `input: ${L(PATTERNS[pIdx].zh, PATTERNS[pIdx].en)} · ${KERNELS[kIdx].learn ? 'learned chain' : 'manual ' + KERNELS[kIdx].en}`), padL + 4, 13);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elSv = document.getElementById('sSv'), elSvVal = document.getElementById('sSvVal');
+const stP = document.getElementById('stP'), stSz = document.getElementById('stSz'), stA = document.getElementById('stA'),
+  stL = document.getElementById('stL'), stC = document.getElementById('stC');
+const formulaEl = document.getElementById('formula');
+const btnLayer = document.getElementById('btnLayer');
+const knBtns = [...document.querySelectorAll('.kn')], pnBtns = [...document.querySelectorAll('.pn')];
+const LAY_ZH = ['L1 边缘', 'L2 纹理', 'L3 部件', 'L4 物体'], LAY_EN = ['L1 edges', 'L2 textures', 'L3 parts', 'L4 object'];
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elSv.value = Math.round(sv * 100); elSvVal.textContent = '×' + sv.toFixed(1);
+}
+function syncBtns() {
+  knBtns.forEach(b => b.classList.toggle('on', +b.dataset.k === kIdx));
+  pnBtns.forEach(b => b.classList.toggle('on', +b.dataset.p === pIdx));
+  document.getElementById('tglPool').checked = poolOn;
+}
+function updateStats() {
+  const K = KERNELS[kIdx];
+  const pc = K.learn ? 72 : 9;
+  stP.textContent = '78,400 : ' + pc;
+  stP.className = 'v ' + (K.learn ? 'ok' : 'warn');
+  stSz.textContent = K.learn ? '16→8→4→2→1' : (poolOn ? '16×16 → 8×8' : '16×16');
+  stSz.className = 'v';
+  stA.textContent = actPct.toFixed(0) + ' %';
+  stA.className = 'v ' + (actPct > 3 && actPct < 60 ? 'ok' : 'warn');
+  stL.textContent = K.learn ? L(LAY_ZH[stage], LAY_EN[stage]) : (!poolOn ? L('卷积', 'conv') : scanT < PH_A ? L('卷积扫描', 'conv scan') : scanT < PH_B ? L('max 池化', 'max pool') : L('就绪', 'done'));
+  stC.textContent = `${top1} · ${(confT[top1] * 100).toFixed(0)}%`;
+  stC.className = 'v ' + (KERNELS[kIdx].learn && confT[top1] > 0.5 ? 'ok' : confT[top1] > 0.3 ? 'warn' : 'bad');
+}
+function updateFormula() {
+  const K = KERNELS[kIdx];
+  formulaEl.innerHTML = L(
+    `<b>全连接:28×28 = 784 输入 × 100 神经元 = 78,400 参数</b>,换个位置就失灵<br>` +
+    `<b>卷积:3×3 核 = 9 参数扫全图</b>:权重共享+局部感受野,位置无关<br>` +
+    `<b>ReLU 截负 = 非线性;max 池化 2×2 取 1</b>:特征图减半,平移容差 +1<br>` +
+    `<b>层级:L1 边缘 → L2 纹理/角 → L3 部件 → L4 物体</b>(猫视皮层层级假说);训练 = 反向传播学权重<br>` +
+    `<b>当前:${K.learn ? L('学习核链', 'learned chain') : L('手工核', 'manual kernel') + ' ' + L(K.zh, K.en)} · Top-1 = ${top1}(${(confT[top1] * 100).toFixed(0)}%)</b>`,
+    `<b>Fully connected: 28×28 = 784 inputs × 100 neurons = 78,400 params</b>, broken by any shift<br>` +
+    `<b>Convolution: 3×3 kernel = 9 params over the whole image</b>: weight sharing + local receptive fields<br>` +
+    `<b>ReLU clips negatives = nonlinearity; 2×2 max pool</b>: map halves, +1 px translation tolerance<br>` +
+    `<b>Hierarchy: L1 edges → L2 textures/corners → L3 parts → L4 object</b> (cat-cortex hypothesis); training = backprop<br>` +
+    `<b>Now: ${K.learn ? 'learned chain' : 'manual ' + K.en} · Top-1 = ${top1} (${(confT[top1] * 100).toFixed(0)}%)</b>`);
+}
+function syncAll() {
+  syncSliders(); syncBtns(); updateFormula(); updateStats(); drawPlot();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+knBtns.forEach(b => b.addEventListener('click', () => {
+  kIdx = +b.dataset.k;
+  if (kIdx === 5) { stage = 0; stageT = 0; }
+  paintKern();
+  computeAll(); syncAll();
+}));
+pnBtns.forEach(b => b.addEventListener('click', () => { pIdx = +b.dataset.p; scanT = 0; poolT = 0; computeAll(); syncAll(); }));
+btnLayer.addEventListener('click', () => {
+  if (KERNELS[kIdx].learn) { stageT = (Math.floor(stageT / 3) + 1) * 3; stage = Math.floor(stageT / 3) % 4; }
+  else { scanT = 0; poolT = 0; }
+  updateStats(); updateFormula();
+});
+elSv.addEventListener('input', () => { sv = +elSv.value / 100; syncSliders(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChart').addEventListener('change', e => { chartOn = e.target.checked; document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+document.getElementById('tglPool').addEventListener('change', e => { poolOn = e.target.checked; computeAll(); syncAll(); });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+if (controls) controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  if (renderer) renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, accPlot = 0, camTween = null;
+let scanT = 5.2, poolT = 63, stageT = 0;
+const PH_A = 4.16, PH_B = 5.2, PH_C = 6.0;
+if (controls) controls.addEventListener('start', () => { camTween = null; });
+
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speed * sv * (playing ? 1 : 0);
+  if (notifyT > 0) notifyT -= dt0;
+  if (dt > 0) {
+    scanT += dt;
+    if (scanT > PH_C) scanT = 0;
+    if (KERNELS[kIdx].learn) {
+      stageT += dt;
+      if (stageT > 12) stageT = 0;
+      stage = Math.floor(stageT / 3) % 4;
+    }
+    poolT = scanT < PH_A ? -1 : Math.min(63, Math.floor((scanT - PH_A) / (PH_B - PH_A) * 64));
+  }
+  const manual = !KERNELS[kIdx].learn;
+  const scanIdx = manual ? (scanT < PH_A ? Math.floor(scanT / PH_A * 256) : 255) : 255;
+  /* 输入平面恒亮 */
+  paintIn();
+  /* 卷积特征平面(手动模式逐格显现) */
+  if (manual) {
+    paintGrid(gFeat, featN, 1, scanIdx);
+    gFeat.m.visible = true;
+  } else {
+    /* 学习模式:feat 平面显示 L1 密集边缘图 */
+    const dimNow = stage === 0 ? 1 : 0.25;
+    paintGrid(gFeat, chain.l1d, dimNow, null);
+  }
+  /* 池化平面 */
+  gPool.m.visible = manual && poolOn;
+  if (manual && poolOn) paintGrid(gPool, pooled, 1, poolT);
+  /* 学习链平面 */
+  const learnVis = !!chain;
+  gL2.m.visible = gL3.m.visible = gL4.m.visible = learnVis;
+  if (learnVis) {
+    paintGrid(gL2, chain.l2p, stage === 1 ? 1 : stage < 1 ? 0.25 : 0.55);
+    paintGrid(gL3, chain.l3p, stage === 2 ? 1 : stage < 2 ? 0.25 : 0.55);
+    paintGrid(gL4, chain.l4p, stage === 3 ? 1 : 0.3);
+  }
+  /* 核块位置 */
+  const bob = Math.sin(performance.now() / 700) * 0.08;
+  if (manual) {
+    const px = scanIdx % N, py = Math.floor(scanIdx / N);
+    kernGrp.position.set(-5.6, gIn.half - py * gIn.sp + 0.55 + bob, gIn.half - px * gIn.sp);
+  } else {
+    const kx = [-2.8, 0.2, 2.9, 5.0][Math.min(stage, 3)];
+    kernGrp.position.set(kx, 1.1 + bob, 0);
+  }
+  kernGrp.visible = true;
+  /* 输出柱动画 */
+  for (let d = 0; d < NB; d++) dispConf[d] += (confT[d] - dispConf[d]) * Math.min(1, dt0 * 6);
+  for (let d = 0; d < NB; d++) {
+    const h = 0.22 + dispConf[d] * 2.7;
+    _V.set(BAR_X, h / 2, (NB - 1) * BAR_SP / 2 - d * BAR_SP);
+    _M4.compose(_V, _Q.identity(), _S.set(0.4, h, 0.4));
+    bars.setMatrixAt(d, _M4);
+    bars.setColorAt(d, d === top1 ? _C.setRGB(0.3, 0.67, 0.97) : _C.setRGB(0.28, 0.36, 0.45));
+  }
+  bars.instanceMatrix.needsUpdate = true;
+  bars.instanceColor.needsUpdate = true;
+  /* 相机飞行 */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    if (controls) controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.14) { acc = 0; updateStats(); }
+  accPlot += dt0;
+  if (accPlot > 0.066) { accPlot = 0; if (chartOn) drawPlot(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  if (controls) controls.update();
+  if (!glFail) {
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+  }
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+computeAll();
+paintKern();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncAll();
+start();
+</script>
+</body>
+</html>

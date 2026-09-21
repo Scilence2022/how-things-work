@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>X 射线成像 · 穿过你的光</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#3bc9db;
+    --bg:#0d1013; --panel:rgba(13,17,21,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f0f5f9; --text2:#93aab8; --text3:#c3d4de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,21,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,21,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#0c8599;
+    --bg:#edf2f5; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,35,45,.10);
+    --text:#15222c; --text2:#58707d; --text3:#2f4450;
+    --hover:rgba(15,35,45,.05); --shadow:0 8px 26px rgba(25,50,65,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,35,45,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(59,201,219,.6); background: rgba(59,201,219,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(12,133,153,.55); background: rgba(12,133,153,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(59,201,219,.10); border-color: rgba(59,201,219,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(12,133,153,.08); border-color: rgba(12,133,153,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,35,45,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #a5e8f2; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="X 射线成像 · 穿过你的光" data-en="X-ray Imaging · Light That Goes Through You">X 射线成像 · 穿过你的光</h1>
+  <div class="sub" data-zh="灯丝加热甩出电子,40–150 kVp 高压把每个电子加速到同等 keV→轰击钨靶:绝大多数电子在核库仑场里被刹车,发光凑成 0→kVp 的轫致辐射连续谱;少数打掉钨 K 层电子,外层跃迁填补,发出 ~59 keV 的 K 特征线(与焰色光谱同源的能级跃迁)→X 束穿过身体:Beer–Lambert I=I₀·e^(−μt),μ ∝ Z³–Z⁴,骨(钙 Z=20)远大于软组织(Z≈7)→骨白影、软组织灰、空气全黑;kVp 高谱变硬穿透强但对比降,软组织靠碘(Z=53)/钡(Z=56)造影剂破局;mA·s 给光子通量:剂量与噪声 σ∝1/√N 是一枚硬币的两面→探测器把残余光子变影像,剂量永远恪守 ALARA · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="A heated filament boils off electrons and a 40–150 kVp tube accelerates each to the same keV → they slam into a tungsten target: most brake in the Coulomb field of nuclei, their light summing into a 0→kVp bremsstrahlung continuum; a few knock out tungsten K-shell electrons and outer shells drop in, emitting ~59 keV K lines (same level-transition physics as flame spectra) → the beam crosses your body: Beer–Lambert I=I₀·e^(−μt) with μ ∝ Z³–Z⁴, bone (Ca, Z=20) far above soft tissue (Z≈7) → bone white, tissue grey, air black; high kVp hardens the spectrum — penetration up, contrast down — so iodine (Z=53)/barium (Z=56) contrast agents break the standoff; mA·s sets photon flux: dose and noise σ∝1/√N are two faces of one coin → the detector turns survivors into an image, and dose always bows to ALARA · 3D interactive demo · drag to orbit · Space = run/pause">X 射线成像 · 穿过你的光</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="管电压" data-en="Tube voltage">管电压</span><span class="v" id="stKv">—</span>
+  <span class="k" data-zh="阳极热负荷" data-en="Anode heat">阳极热负荷</span><span class="v warn" id="stHeat">—</span>
+  <span class="k" data-zh="平均穿透率" data-en="Transmission">平均穿透率</span><span class="v" id="stPen">—</span>
+  <span class="k" data-zh="骨-组织对比度" data-en="Bone contrast">骨-组织对比度</span><span class="v ok" id="stCon">—</span>
+  <span class="k" data-zh="相对剂量" data-en="Relative dose">相对剂量</span><span class="v" id="stDose">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="X 射线能谱:轫致辐射连续谱爬向 kVp 截止;管电压超过 69.5 keV 后,59 keV 处竖起钨 Kα 线——拖 kVp 看谱变硬" data-en="X-ray spectrum: the bremsstrahlung continuum climbs toward the kVp cutoff; once the tube passes 69.5 keV the tungsten Kα line stands up at 59 keV — drag kVp and watch the spectrum harden">X 射线能谱:轫致辐射连续谱爬向 kVp 截止;管电压超过 69.5 keV 后,59 keV 处竖起钨 Kα 线——拖 kVp 看谱变硬</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.o" data-zh="灯丝电子:热发射,被 kVp 高压加速" data-en="filament electrons: boiled off by heat, accelerated by kVp">灯丝电子:热发射,被 kVp 高压加速</span>
+    <span class="chip.b" data-zh="X 光子:轫致辐射连续谱 + 钨 K 线" data-en="X-ray photons: bremsstrahlung continuum + tungsten K lines">X 光子:轫致辐射连续谱 + 钨 K 线</span>
+    <span class="chip.r" data-zh="骨:钙 Z=20,μ 大 → 白影" data-en="bone: Ca, Z=20, large μ → white shadow">骨:钙 Z=20,μ 大 → 白影</span>
+    <span class="chip.g" data-zh="造影剂:碘 Z=53,血管当众变白" data-en="contrast agent: iodine Z=53, vessels light up">造影剂:碘 Z=53,血管当众变白</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnHand" data-zh="部位:手" data-en="Part: hand">部位:手</button>
+    <button class="abtn" id="btnChest" data-zh="部位:胸" data-en="Part: chest">部位:胸</button>
+    <button class="abtn" id="btnCM" data-zh="造影剂:关" data-en="Contrast: OFF">造影剂:关</button>
+    <button class="abtn" id="btnWide" data-zh="全景视角" data-en="Wide view">全景视角</button>
+  </div>
+  <div class="row"><label data-zh="管电压 kVp" data-en="Tube kVp">管电压 kVp</label><input id="sKv" type="range" min="40" max="150" step="1" value="100"><span class="val" id="sKvVal">100 kVp</span></div>
+  <div class="row"><label data-zh="曝光量 mA·s" data-en="Exposure mA·s">曝光量 mA·s</label><input id="sMas" type="range" min="0" max="100" step="1" value="50"><span class="val" id="sMasVal">8 mAs</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglPh" type="checkbox" checked> <span data-zh="光子流" data-en="Photons">光子流</span></label>
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglPlot" type="checkbox" checked> <span data-zh="图" data-en="Plot">图</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../photoelectric-effect/" data-zh="光电效应:同一套吸收机制" data-en="photoelectric effect: the same absorption mechanism">光电效应:同一套吸收机制</a>
+    <a href="../flame-spectra/" data-zh="焰色光谱:K 线的同源跃迁" data-en="flame spectra: cousin of the K-line transition">焰色光谱:K 线的同源跃迁</a>
+    <a href="../ct-scan/" data-zh="CT:转着拍的断层版" data-en="CT: the tomographic big brother">CT:转着拍的断层版</a>
+    <a href="../pet-scan/" data-zh="PET:另一条医学成像路线" data-en="PET: the other medical imaging route">PET:另一条医学成像路线</a>
+    <a href="../camera-sensor/" data-zh="相机传感器:探测器的亲戚" data-en="camera sensor: the detector's cousin">相机传感器:探测器的亲戚</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, f) => a + (b - a) * f;
+const ease = u => u * u * (3 - 2 * u);
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x0e1216, 18, 58);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0e1216 : 0xdde5ea);
+  scene.fog.color = new THREE.Color(dark ? 0x0e1216 : 0xdde5ea);
+  groundM.color.setHex(dark ? 0x1a2026 : 0xb4c2cc);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('X 射线成像 · 穿过你的光', 'X-ray Imaging · Light That Goes Through You');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+  syncBtns();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+let renderer = null;
+try { renderer = new THREE.WebGLRenderer({ antialias: true }); } catch (err) { renderer = null; }
+const glOK = !!renderer;
+if (glOK) {
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  document.getElementById('app').appendChild(renderer.domElement);
+} else {
+  const dv = document.createElement('div');
+  dv.style.cssText = 'position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--text2);font-size:14px;background:var(--bg)';
+  dv.textContent = L('WebGL 初始化失败:3D 场景不可用,但左侧控制面板仍可浏览。', 'WebGL failed to initialise: the 3D scene is unavailable, but the control panel still works.');
+  document.body.appendChild(dv);
+}
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+if (glOK) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+}
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 140);
+camera.position.set(8.2, 3.8, 11.2);
+let controls = null;
+if (glOK) {
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0.4, 0, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 1.6;
+  controls.maxDistance = 50;
+  controls.autoRotateSpeed = 0.3;
+}
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x181c20, 0.55);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 1.0);
+key.position.set(6, 8, 7);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9ab8ff, 0.3);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ================= 状态 ================= */
+let kv = clamp(qsFloat('kv', 100), 40, 150);
+let mas = clamp(qsFloat('mas', 8), 0.5, 32);
+let part = clamp(Math.round(qsFloat('part', 0)), 0, 1);
+let cmOn = qsBool('cm', false);
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+const speedF = clamp(qsFloat('speed', 1), 0.25, 3);
+let labelsOn = true, chartOn = true;
+let phaseIdx = 0, notifyT = 0, notifyZ = '', notifyE = '';
+let heat = 12, meanT = 0.4, contrastV = 0.5, kLineHi = 0;
+
+/* ---------------- 物理 ---------------- */
+const KABS = 0.174;
+const eEff = () => 0.45 * kv;
+const eFac = () => (50 / eEff()) ** 3;
+const W_BONE = 23, W_CM = 55, W_LUNG = 0.35;
+const VSEG = [[0.18, 0.30, 0.80, -0.62], [0.18, 0.30, -0.35, -0.98], [0.18, 0.30, -0.60, 0.72]];
+function distSeg(px, pz, s) {
+  const vx = s[2] - s[0], vz = s[3] - s[1];
+  const t = clamp(((px - s[0]) * vx + (pz - s[1]) * vz) / (vx * vx + vz * vz), 0, 1);
+  const dx = px - (s[0] + vx * t), dz = pz - (s[1] + vz * t);
+  return Math.sqrt(dx * dx + dz * dz);
+}
+function colTau(py, pz) {
+  let s = 0, chord = 0;
+  if (part === 0) {
+    if (Math.abs(pz) >= 1.2) return { s, chord };
+    const a2 = 0.25 - py * py;
+    if (a2 > 0) { s += Math.sqrt(a2) * 2; chord = s + 0.2; }
+    if (pz < -0.1) { const b2 = 0.0196 - (py - 0.10) ** 2; if (b2 > 0) s += Math.sqrt(b2) * 2 * W_BONE; }
+    else { const b2 = 0.0196 - (py + 0.02) ** 2; if (b2 > 0) s += Math.sqrt(b2) * 2 * W_BONE; }
+    if (cmOn && Math.abs(py - 0.31) < 0.028) s += 0.06 * W_CM;
+  } else {
+    const u = (py / 0.95) ** 2 + (pz / 1.15) ** 2;
+    if (u >= 1) return { s, chord };
+    chord = 2 * 0.95 * Math.sqrt(1 - u);
+    let lung = 0;
+    for (const sz of [-0.55, 0.55]) {
+      const v = ((py - 0.05) / 0.52) ** 2 + ((pz - sz) / 0.48) ** 2;
+      if (v < 1) lung += 2 * 0.52 * Math.sqrt(1 - v);
+    }
+    lung = Math.min(lung, chord);
+    s = (chord - lung) + lung * W_LUNG;
+    const dSp = py + 0.72;
+    if (Math.abs(dSp) < 0.22 && Math.abs(pz) < 0.45) s += Math.sqrt(0.0484 - dSp * dSp) * 2 * W_BONE;
+    for (const cx of [-0.88, 0.88]) {
+      const rr = Math.sqrt((py - cx) ** 2 + pz * pz);
+      for (const R of [0.42, 0.68, 0.94]) if (Math.abs(rr - R) < 0.05 && py < 0.72) s += 0.16 * W_BONE;
+    }
+    const hv = ((py - 0.18) / 0.5) ** 2 + ((pz - 0.30) / 0.42) ** 2;
+    if (hv < 1) s += 0.22;
+    if (cmOn) for (const sg of VSEG) if (distSeg(py, pz, sg) < 0.038) { s += 0.10 * W_CM; break; }
+  }
+  return { s, chord: Math.min(chord, 2.2) };
+}
+function transAt(py, pz) {
+  const c = colTau(py, pz);
+  return c.chord > 0 ? Math.exp(-KABS * eFac() * c.s) : 1;
+}
+const PROBE = [
+  { bone: [0.10, -0.38], soft: [0.0, 0.0] },
+  { bone: [-0.72, 0.0], soft: [0.55, -0.15] },
+];
+function brightAt(py, pz) {
+  return clamp(1 - transAt(py, pz) * 1.1 * Math.sqrt(mas / 8), 0, 1);
+}
+
+/* ---------------- 材质 ---------------- */
+const groundM = new THREE.MeshStandardMaterial({ color: 0x1a2026, roughness: 0.95 });
+const housingM = new THREE.MeshStandardMaterial({ color: 0xaab4bc, roughness: 0.1, metalness: 0.4, transparent: true, opacity: 0.16 });
+const metalM = new THREE.MeshStandardMaterial({ color: 0x8a939c, roughness: 0.4, metalness: 0.7 });
+const darkM = new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.6, metalness: 0.5 });
+const tungM = new THREE.MeshStandardMaterial({ color: 0xb8a890, roughness: 0.35, metalness: 0.6, emissive: 0xff2200, emissiveIntensity: 0.25 });
+const filM = new THREE.MeshStandardMaterial({ color: 0xffc078, emissive: 0xff7a00, emissiveIntensity: 2.4, roughness: 0.5 });
+const focusM = new THREE.MeshStandardMaterial({ color: 0xfff3bf, emissive: 0xff922b, emissiveIntensity: 2.6 });
+const tissueM = new THREE.MeshStandardMaterial({ color: 0xe8b4a0, roughness: 0.6, transparent: true, opacity: 0.92 });
+const boneM = new THREE.MeshStandardMaterial({ color: 0xf2ecdf, roughness: 0.5 });
+const lungM = new THREE.MeshStandardMaterial({ color: 0xd8a8a0, roughness: 0.7, transparent: true, opacity: 0.55 });
+const heartM = new THREE.MeshStandardMaterial({ color: 0xc26555, roughness: 0.5 });
+const vessM = new THREE.MeshStandardMaterial({ color: 0x88dd99, emissive: 0x2f9e44, emissiveIntensity: 0.4, roughness: 0.4, transparent: true, opacity: 0.25 });
+const vessCM = new THREE.MeshStandardMaterial({ color: 0xf5ffe8, emissive: 0xd8ffa0, emissiveIntensity: 1.6, roughness: 0.3 });
+const detM = new THREE.MeshStandardMaterial({ color: 0x2c3a44, roughness: 0.5, metalness: 0.3 });
+const beamM = new THREE.MeshBasicMaterial({ color: 0x8fd8e8, transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false });
+const eM = new THREE.MeshBasicMaterial({ color: 0xffb35c });
+const pM = new THREE.MeshBasicMaterial({ color: 0xa8ecff });
+const tabM = new THREE.MeshStandardMaterial({ color: 0x39434c, roughness: 0.7, metalness: 0.2 });
+
+/* ---------------- 场景搭建 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(16, 16, 0.3, 48), groundM);
+ground.position.y = -2.4;
+scene.add(ground);
+const table = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.1, 3.4), tabM);
+table.position.set(0.2, -1.16, 0);
+scene.add(table);
+
+/* X 射线管剖视 */
+const tubeGrp = new THREE.Group();
+scene.add(tubeGrp);
+const housing = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.7, 1.5), housingM);
+housing.position.set(-4.55, 0.15, 0);
+tubeGrp.add(housing);
+const capA = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.24, 20), metalM);
+capA.rotation.z = Math.PI / 2; capA.position.set(-5.8, 0.15, 0);
+const capB = capA.clone(); capB.position.x = -3.3;
+tubeGrp.add(capA, capB);
+const cathode = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.6), darkM);
+cathode.position.set(-5.35, 0.15, 0);
+tubeGrp.add(cathode);
+const fil = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.028, 8, 18), filM);
+fil.position.set(-5.1, 0.15, 0);
+fil.rotation.y = Math.PI / 2;
+tubeGrp.add(fil);
+const anodeGrp = new THREE.Group();
+anodeGrp.position.set(-4.05, 0.5, 0);
+anodeGrp.rotation.z = -0.24;
+tubeGrp.add(anodeGrp);
+const anodeSpin = new THREE.Group();
+anodeGrp.add(anodeSpin);
+const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.09, 36), tungM);
+anodeSpin.add(disc);
+const focal = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), focusM);
+focal.position.set(0, 0.55, 0);
+anodeSpin.add(focal);
+const rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.5, 16), darkM);
+rotor.rotation.z = Math.PI / 2;
+rotor.position.set(-3.62, 0.15, 0);
+tubeGrp.add(rotor);
+const windowMESH = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.42, 0.42), housingM);
+windowMESH.position.set(-3.35, 0.1, 0);
+tubeGrp.add(windowMESH);
+
+/* 光束走廊 */
+const beamCorr = new THREE.Mesh(new THREE.BoxGeometry(7.4, 2.3, 2.9), beamM);
+beamCorr.position.set(0.5, 0, 0);
+scene.add(beamCorr);
+
+/* phantom:手 / 胸 */
+const phHand = new THREE.Group();
+const armT = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 2.4, 28), tissueM);
+armT.rotation.x = Math.PI / 2;
+phHand.add(armT);
+const boneGeo = new THREE.CylinderGeometry(0.14, 0.14, 1.9, 14);
+const bone1 = new THREE.Mesh(boneGeo, boneM);
+bone1.rotation.x = Math.PI / 2; bone1.position.set(0, 0.10, -0.38);
+const bone2 = new THREE.Mesh(boneGeo, boneM);
+bone2.rotation.x = Math.PI / 2; bone2.position.set(0, -0.02, 0.38);
+phHand.add(bone1, bone2);
+const vessHand = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 2.2, 8), vessCM);
+vessHand.rotation.x = Math.PI / 2; vessHand.position.set(0.12, 0.31, 0);
+vessHand.visible = cmOn;
+phHand.add(vessHand);
+phHand.position.set(0, 0, 0);
+scene.add(phHand);
+const phChest = new THREE.Group();
+const bodyM = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 26), tissueM);
+bodyM.scale.set(0.95, 0.95, 1.15);
+phChest.add(bodyM);
+const lungGeo = new THREE.SphereGeometry(1, 24, 16);
+for (const sz of [-0.55, 0.55]) {
+  const lg = new THREE.Mesh(lungGeo, lungM);
+  lg.scale.set(0.52, 0.52, 0.48);
+  lg.position.set(0, 0.05, sz);
+  phChest.add(lg);
+}
+const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.9, 16), boneM);
+spine.rotation.x = Math.PI / 2;
+spine.position.set(0, -0.72, 0);
+phChest.add(spine);
+for (let k = 0; k < 5; k++) {
+  const rib = new THREE.Mesh(new THREE.TorusGeometry(0.86, 0.05, 8, 40, Math.PI * 1.1), boneM);
+  rib.rotation.x = Math.PI / 2;
+  rib.rotation.z = -0.5 + k * 0.5;
+  rib.position.set(0, 0.1 + (k % 2) * 0.14, 0);
+  rib.scale.set(1, 0.92, 1);
+  phChest.add(rib);
+}
+const heart = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 16), heartM);
+heart.scale.set(0.4, 0.5, 0.42);
+heart.position.set(0.18, 0.18, 0.30);
+phChest.add(heart);
+const vessGrp = new THREE.Group();
+phChest.add(vessGrp);
+function vessTube(pts) {
+  const curve = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+  return new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.035, 8), vessCM);
+}
+vessGrp.add(vessTube([[0.18, 0.18, 0.30], [0.5, 0.3, -0.2], [0.8, 0.1, -0.62]]));
+vessGrp.add(vessTube([[0.18, 0.18, 0.30], [-0.1, 0.35, -0.5], [-0.35, 0.15, -0.98]]));
+vessGrp.add(vessTube([[0.18, 0.18, 0.30], [-0.2, 0.4, 0.4], [-0.6, 0.35, 0.72]]));
+vessGrp.visible = cmOn;
+phChest.position.set(0, 0.05, 0);
+scene.add(phChest);
+phChest.visible = part === 1;
+phHand.visible = part === 0;
+
+/* 探测器 + 实时影像屏 */
+const det = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.5, 3.0), detM);
+det.position.set(4.35, 0, 0);
+scene.add(det);
+const imgCv = document.createElement('canvas');
+const IW = 128, IH = 92;
+imgCv.width = IW; imgCv.height = IH;
+const imgCtx = imgCv.getContext('2d');
+const imgTex = new THREE.CanvasTexture(imgCv);
+imgTex.colorSpace = THREE.SRGBColorSpace;
+const screen = new THREE.Mesh(new THREE.PlaneGeometry(3.1, 2.34), new THREE.MeshBasicMaterial({ map: imgTex }));
+screen.rotation.y = 0.42;
+screen.position.set(4.05, 0, 1.85);
+scene.add(screen);
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true, parent = null) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  if (!glOK) div.style.display = 'none';
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblFil = addLabel(() => L('灯丝:加热到 ~2000 ℃,热发射甩出电子', 'filament: heated to ~2000 °C, boiling off electrons'), new THREE.Vector3(-5.1, 1.0, 0), 'o');
+const lblAnode = addLabel(() => L('旋转钨靶:>99% 的电子能量变成热,不转会熔穿', 'rotating tungsten anode: >99% of electron energy becomes heat — stop the spin and it melts'), new THREE.Vector3(-4.0, 1.9, 0), 'r');
+const lblTube = addLabel(() => L('40–150 kVp 加速:每个电子带上同等 keV 动能', '40–150 kVp acceleration: every electron carries its keV as kinetic energy'), new THREE.Vector3(-4.6, -1.0, 0), 'b');
+const lblPhantom = addLabel(() => L('骨(钙 Z=20)μ ≫ 软组织(C/H/O Z≈7)≫ 空气', 'bone (Ca, Z=20) μ ≫ soft tissue (C/H/O, Z≈7) ≫ air'), new THREE.Vector3(0.3, 1.75, 0.4), 'r');
+const lblScreen = addLabel(() => L('探测器实时影像:闪烁体 + 光电二极管阵列', 'live detector image: scintillator + photodiode array'), new THREE.Vector3(0, 1.62, 0), 'b', () => true, screen);
+const lblNotify = addLabel(() => {
+  if (notifyT > 0) return L(notifyZ, notifyE);
+  if (heat > 85) return L('阳极过热:实际机器会强制冷却——旋转是为了把热点摊成环', 'anode overheating: a real tube forces a cooldown — the spin spreads the hot spot into a ring');
+  return L('拖 kVp:谱变硬、骨影变灰;拖 mA·s:噪声 σ ∝ 1/√N', 'drag kVp: harder spectrum, greyer bone; drag mA·s: noise σ ∝ 1/√N');
+}, new THREE.Vector3(0.4, 3.2, 0), 'r');
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  if (!controls) return;
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+const STEPS = [
+  { b: '高速电子撞靶:轫致辐射连续谱', be: 'Electrons hit the target: bremsstrahlung continuum',
+    d: '灯丝热发射出电子,40–150 kVp 把每个电子加速到同等 keV。电子掠过钨核的强库仑场被急剧减速,损失的动能变成光子:一次一闪,能量从 0 连续铺到 kVp——这就是轫致辐射(braking radiation),谱形按 Kramers 律 I ∝ Z(E₀−E)/E。',
+    de: 'The filament boils off electrons and 40–150 kVp accelerates each to its keV. Sweeping past a tungsten nucleus\u2019s Coulomb field, an electron brakes hard and its lost kinetic energy becomes a photon: one flash each, energies spread continuously from 0 up to kVp — bremsstrahlung, with the Kramers shape I ∝ Z(E₀−E)/E.',
+    act: () => { phaseIdx = 0; kv = 100; syncAll(); flyTo([-2.6, 1.6, 4.6], [-4.4, 0.2, 0]); notify('电子每被核刹车一次就闪出一个光子:0→kVp 连续谱', 'each nuclear braking event flashes one photon: the 0→kVp continuum'); } },
+  { b: '钨 K 线:能级跃迁的亲戚', be: 'The tungsten K line: a familiar transition',
+    d: '少数电子撞掉钨 K 层(最内层)电子:K 层结合能 69.5 keV,所以管电压必须超过它,谱里才会竖起 59 keV 的 Kα 尖峰——外层电子跃迁填补空位,能量差以光子放出。这与焰色光谱是同一套能级跃迁物理,只是能量高了四万倍。',
+    de: 'A few electrons knock out tungsten\u2019s innermost K-shell electron: the K binding energy is 69.5 keV, so only a tube voltage above that raises the 59 keV Kα spike — an outer electron drops in and emits the energy gap. The same level-transition physics as flame spectra, forty thousand times more energetic.',
+    act: () => { phaseIdx = 1; kv = 125; kLineHi = 3; syncAll(); flyTo([-3.0, 1.2, 4.0], [-4.2, 0.3, 0]); } },
+  { b: '99% 变热:旋转阳极的真相', be: '99% becomes heat: the rotating anode',
+    d: '电子信息论上很高效,实际上 >99% 的电子能量在靶里变成热,只有 <1% 变成 X 光。阳极盘以几千转/分旋转,把焦点的热点摊成一个环,否则一次曝光就能熔出一个坑。看右下角热负荷:拉高 kVp 和 mA·s,它一路飙红。',
+    de: 'On paper it\u2019s efficient; in reality >99% of electron energy becomes heat in the target, <1% leaves as X-rays. The anode disc spins at thousands of rpm to smear the focal hot spot into a ring, or a single exposure would gouge a crater. Watch the heat readout: push kVp and mA·s and it races to red.',
+    act: () => { phaseIdx = 2; kv = 140; mas = 32; syncAll(); flyTo([-1.6, 1.8, 3.4], [-4.05, 0.4, 0]); } },
+  { b: '骨为什么白:μ 与 Z 的幂次', be: 'Why bone is white: μ and the power of Z',
+    d: '穿过身体时 Beer–Lambert 律 I=I₀·e^(−μt) 逐层打折:衰减系数 μ 近似 ∝ Z³–Z⁴·ρ/E³。钙 Z=20 对软组织 Z≈7 是碾压性的差距——骨把 X 光拦下来,胶片上就是白影;空气全透,洗出来全黑。切到 60 kVp 看骨白得发亮。',
+    de: 'Through the body, Beer–Lambert I=I₀·e^(−μt) taxes the beam layer by layer: μ roughly ∝ Z³–Z⁴·ρ/E³. Calcium at Z=20 crushes soft tissue\u2019s Z≈7 — bone intercepts the X-rays and prints white; air passes everything and prints black. Switch to 60 kVp and watch bone blaze.',
+    act: () => { phaseIdx = 3; kv = 60; mas = 8; setPart(0); setCm(false); syncAll(); flyTo([5.6, 2.6, 7.4], [0.8, 0, 0]); notify('kVp=60:μ∝1/E³,骨影白得清楚——代价是穿透差', 'kVp=60: μ∝1/E³, bone prints crisp white — the price is poor penetration'); } },
+  { b: 'kVp 权衡:造影剂破局', be: 'The kVp trade-off: contrast agents break it',
+    d: 'kVp 拉高:谱变硬、穿透强、剂量可以降,但 μ 随 E³ 下跌,骨-组织对比被抹平——胸片常用高 kVp 穿透,软组织却糊成一片。破局靠造影剂:碘 Z=53 / 钡 Z=56 灌进血管或肠道,靠原子序数硬拉出对比。打开造影剂,看血管一条条亮起。',
+    de: 'Raise kVp: the spectrum hardens, penetration improves, dose can drop — but μ falls as E³ and bone-tissue contrast washes out; chest films ride high kVp while soft tissue turns to mush. The fix is contrast agents: iodine Z=53 / barium Z=56 forced into vessels or gut, buying contrast back by atomic number. Switch it on and watch vessels light up.',
+    act: () => { phaseIdx = 4; kv = 128; setPart(1); setCm(true); syncAll(); flyTo([6.8, 3.2, 9.2], [0.8, 0, 0]); } },
+  { b: '剂量与 ALARA', be: 'Dose and ALARA',
+    d: 'mA·s 直接给光子通量:剂量正比于它(还随 kVp² 上涨),而噪声 σ ∝ 1/√N——想图像干净就要多付剂量。放射防护的底线叫 ALARA:在合理能做到的范围内尽量低。把 mA·s 拖到 0.5,看影像颗粒炸开:这就是「少付剂量」的代价长相。',
+    de: 'mA·s sets photon flux directly: dose scales with it (and with kVp²), while noise σ ∝ 1/√N — a clean image costs dose. The bedrock of radiation protection is ALARA: as low as reasonably achievable. Drag mA·s to 0.5 and watch the image explode into grain: that is what a dose discount looks like.',
+    act: () => { phaseIdx = 5; mas = 0.5; kv = 70; syncAll(); flyTo([8.6, 4.4, 12.2], [0.4, 0, 0]); notify('ALARA:剂量合理尽量低——0.5 mAs 的影像噪点炸裂', 'ALARA: as low as reasonably achievable — 0.5 mAs and the grain explodes'); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+function setPart(p) {
+  part = p;
+  phHand.visible = p === 0;
+  phChest.visible = p === 1;
+  syncBtns();
+}
+function setCm(on) {
+  cmOn = on;
+  vessGrp.visible = on;
+  vessHand.visible = on;
+  syncBtns();
+  if (on) notify('造影剂开:碘 Z=53 的血管在影像里当众变白', 'contrast on: iodine (Z=53) vessels print white in the image');
+}
+
+/* ================= 绘图:能谱 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#93aab8';
+  const padL = 34, padR = 12, padT = 12, padB = 22;
+  const xOf = e => padL + clamp(e, 0, 150) / 150 * (W - padL - padR);
+  const yOf = v => (H - padB) - clamp(v, 0, 1.15) / 1.15 * (H - padB - padT);
+  ctx.font = '13px system-ui';
+  ctx.fillStyle = cTxt;
+  ctx.strokeStyle = 'rgba(140,165,180,.25)';
+  ctx.beginPath(); ctx.moveTo(padL, yOf(0)); ctx.lineTo(W - padR, yOf(0)); ctx.stroke();
+  for (const e of [0, 50, 100, 150]) ctx.fillText(e, xOf(e) - 8, H - 6);
+  ctx.fillText('keV', W - padR - 30, H - 6);
+  /* 轫致辐射 Kramers: I ∝ (E0-E)/E */
+  ctx.beginPath();
+  ctx.moveTo(xOf(0.8), yOf(0));
+  for (let i = 1; i <= 160; i++) {
+    const e = 150 * i / 160;
+    let v = e < kv ? 1.6 * (kv - e) / e : 0;
+    v = Math.min(v, 1.12);
+    if (i === 1) ctx.moveTo(xOf(e), yOf(v));
+    else ctx.lineTo(xOf(e), yOf(v));
+  }
+  ctx.lineTo(xOf(kv), yOf(0));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(59,201,219,.20)';
+  ctx.fill();
+  ctx.strokeStyle = '#3bc9db'; ctx.lineWidth = 2;
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.beginPath();
+    let started = false;
+    for (let i = 1; i <= 160; i++) {
+      const e = 150 * i / 160;
+      let v = e < kv ? Math.min(1.6 * (kv - e) / e, 1.12) : 0;
+      if (pass === 0 && v >= 1.1) continue;
+      if (pass === 1 && v < 1.1) continue;
+      if (!started) { ctx.moveTo(xOf(e), yOf(v)); started = true; }
+      else ctx.lineTo(xOf(e), yOf(v));
+    }
+    ctx.stroke();
+  }
+  /* Kα 59 keV + Kβ 67 keV */
+  const amp = kv > 69.5 ? clamp((kv - 69.5) / 40, 0, 1) : 0;
+  if (amp > 0) {
+    for (const [E, w] of [[59, 1], [67, 0.3]]) {
+      const hi = kLineHi > 0 ? 1.35 : 1;
+      ctx.strokeStyle = '#ffa94d'; ctx.lineWidth = w > 0.5 ? 5 : 3;
+      ctx.beginPath();
+      ctx.moveTo(xOf(E), yOf(0));
+      ctx.lineTo(xOf(E), yOf(Math.min(1.14, (0.55 + 0.5 * amp) * w * hi)));
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#ffa94d';
+    ctx.fillText('Kα 59', xOf(59) + 5, yOf(1.14) + 12);
+    if (kLineHi > 0) kLineHi -= 0.1;
+  } else {
+    ctx.fillStyle = 'rgba(255,169,77,.6)';
+    ctx.fillText(L('kVp < 69.5:K 层打不开', 'kVp < 69.5: K shell out of reach'), xOf(62), yOf(0.55));
+  }
+  ctx.strokeStyle = 'rgba(255,120,120,.8)'; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(xOf(kv), yOf(0)); ctx.lineTo(xOf(kv), yOf(1.08)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ff8787';
+  ctx.fillText(kv + ' kVp', xOf(kv) - 26, padT + 10);
+  ctx.fillStyle = 'rgba(147,170,184,.7)';
+  ctx.font = '11px system-ui';
+  ctx.fillText(L('← 可见光(≈2–3 eV)在坐标原点以左、图外', '← visible light (≈2–3 eV) lies left of 0, off this chart'), padL + 4, H - 6);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elKv = document.getElementById('sKv'), elKvVal = document.getElementById('sKvVal');
+const elMas = document.getElementById('sMas'), elMasVal = document.getElementById('sMasVal');
+const stKv = document.getElementById('stKv'), stHeat = document.getElementById('stHeat'), stPen = document.getElementById('stPen'),
+  stCon = document.getElementById('stCon'), stDose = document.getElementById('stDose');
+const formulaEl = document.getElementById('formula');
+const btnHand = document.getElementById('btnHand'), btnChest = document.getElementById('btnChest'),
+  btnCM = document.getElementById('btnCM'), btnWide = document.getElementById('btnWide');
+const masToSlider = m => Math.round(100 * Math.log(m / 0.5) / Math.log(64));
+const sliderToMas = v => 0.5 * 64 ** (v / 100);
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elKv.value = kv; elKvVal.textContent = Math.round(kv) + ' kVp';
+  elMas.value = masToSlider(mas); elMasVal.textContent = (mas < 10 ? mas.toFixed(1) : mas.toFixed(0)) + ' mAs';
+}
+function syncBtns() {
+  btnHand.classList.toggle('on', part === 0);
+  btnChest.classList.toggle('on', part === 1);
+  btnCM.classList.toggle('on', cmOn);
+  btnCM.textContent = cmOn ? L('造影剂:开', 'Contrast: ON') : L('造影剂:关', 'Contrast: OFF');
+}
+function updateStats() {
+  stKv.textContent = Math.round(kv) + ' kVp';
+  stHeat.textContent = heat.toFixed(0) + ' %';
+  stHeat.className = 'v ' + (heat > 85 ? 'bad' : heat > 60 ? 'warn' : 'ok');
+  stPen.textContent = (meanT * 100).toFixed(0) + ' %';
+  stPen.className = 'v ' + (meanT > 0.3 ? 'ok' : meanT > 0.08 ? 'warn' : 'bad');
+  stCon.textContent = contrastV.toFixed(2);
+  stCon.className = 'v ' + (contrastV > 0.45 ? 'ok' : contrastV > 0.15 ? 'warn' : 'bad');
+  const dose = (kv / 80) ** 2 * (mas / 8) * 100;
+  stDose.textContent = dose.toFixed(0) + ' %';
+  stDose.className = 'v ' + (dose <= 120 ? 'ok' : dose <= 320 ? 'warn' : 'bad');
+}
+function updateFormula() {
+  formulaEl.innerHTML = L(
+    `<b>轫致辐射 I ∝ Z(E₀−E)/E</b>:电子被核库仑场刹车,0→kVp 连续谱<br>` +
+    `<b>W Kα = 59 keV</b>:K 边 69.5 keV,超过才打得掉 K 层;外层跃迁填补——与焰色光谱同源<br>` +
+    `<b>Beer–Lambert:I = I₀·e^(−μt)</b>,μ ∝ Z³–Z⁴·ρ/E³ → 骨(Z=20)≫ 软组织(Z≈7)≫ 空气<br>` +
+    `<b>99% 变热</b>:阳极旋转散热;剂量 ∝ kVp²·mAs,噪声 σ ∝ 1/√N → ALARA<br>` +
+    `<b>当前:kVp = ${Math.round(kv)},Eeff ≈ ${eEff().toFixed(0)} keV,穿透 = ${(meanT * 100).toFixed(0)}%,对比度 = ${contrastV.toFixed(2)}</b>`,
+    `<b>Bremsstrahlung I ∝ Z(E₀−E)/E</b>: electrons braked by nuclear Coulomb fields, a 0→kVp continuum<br>` +
+    `<b>W Kα = 59 keV</b>: the K edge is 69.5 keV — only a higher tube voltage can open the K shell; outer electrons drop in, same physics as flame spectra<br>` +
+    `<b>Beer–Lambert: I = I₀·e^(−μt)</b>, μ ∝ Z³–Z⁴·ρ/E³ → bone (Z=20) ≫ soft tissue (Z≈7) ≫ air<br>` +
+    `<b>99% heat</b>: the rotating anode pays the bill; dose ∝ kVp²·mAs, noise σ ∝ 1/√N → ALARA<br>` +
+    `<b>Now: kVp = ${Math.round(kv)}, Eeff ≈ ${eEff().toFixed(0)} keV, transmission = ${(meanT * 100).toFixed(0)}%, contrast = ${contrastV.toFixed(2)}</b>`);
+}
+function syncAll() {
+  syncSliders(); syncBtns(); updateFormula(); updateStats(); drawPlot();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+elKv.addEventListener('input', () => { kv = +elKv.value; syncSliders(); updateStats(); updateFormula(); });
+elMas.addEventListener('input', () => { mas = sliderToMas(+elMas.value); syncSliders(); updateStats(); updateFormula(); });
+btnHand.addEventListener('click', () => { setPart(0); updateStats(); });
+btnChest.addEventListener('click', () => { setPart(1); updateStats(); });
+btnCM.addEventListener('click', () => setCm(!cmOn));
+btnWide.addEventListener('click', () => flyTo([8.2, 3.8, 11.2], [0.4, 0, 0]));
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglPh').addEventListener('change', e => { photons.visible = electrons.visible = beamCorr.visible = e.target.checked; });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglPlot').addEventListener('change', e => { chartOn = e.target.checked; document.getElementById('plot').style.display = e.target.checked ? '' : 'none'; });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+if (controls) controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  if (renderer) renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ---------------- 实时影像渲染 ---------------- */
+let imgData = null;
+function drawImage() {
+  if (!imgData) imgData = imgCtx.createImageData(IW, IH);
+  const d = imgData.data;
+  const F = KABS * eFac();
+  const kF = 1.1 * Math.sqrt(mas / 8);
+  let sum = 0;
+  for (let iy = 0; iy < IH; iy++) {
+    const py = (0.5 - iy / (IH - 1)) * 2.0;
+    for (let ix = 0; ix < IW; ix++) {
+      const pz = (ix / (IW - 1) - 0.5) * 2.8;
+      const c = colTau(py, pz);
+      const T = c.chord > 0 ? Math.exp(-F * c.s) : 1;
+      sum += T;
+      let B = clamp(1 - T * kF, 0, 1);
+      const N = Math.max(mas * T * 0.55, 0.02);
+      B = clamp(B + (Math.random() + Math.random() - 1) * 0.42 / Math.sqrt(N), 0, 1);
+      const v = B * 255;
+      const o = (iy * IW + ix) * 4;
+      d[o] = d[o + 1] = d[o + 2] = v;
+      d[o + 3] = 255;
+    }
+  }
+  imgCtx.putImageData(imgData, 0, 0);
+  meanT = sum / (IW * IH);
+  const pb = PROBE[part];
+  contrastV = Math.abs(brightAt(pb.bone[0], pb.bone[1]) - brightAt(pb.soft[0], pb.soft[1]));
+  imgTex.needsUpdate = true;
+}
+
+/* ---------------- 粒子:电子 + 光子 ---------------- */
+const NEL = 26, NPH = 90;
+const electrons = new THREE.InstancedMesh(new THREE.SphereGeometry(0.035, 6, 4), eM, NEL);
+const photons = new THREE.InstancedMesh(new THREE.SphereGeometry(0.05, 6, 4), pM, NPH);
+electrons.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+photons.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+electrons.frustumCulled = photons.frustumCulled = false;
+scene.add(electrons, photons);
+const elSeed = [];
+for (let i = 0; i < NEL; i++) elSeed.push({ t: Math.random(), jx: (Math.random() - 0.5) * 0.3, jz: (Math.random() - 0.5) * 0.24, sp: 5 + Math.random() * 4 });
+const phSeed = [];
+for (let i = 0; i < NPH; i++) {
+  phSeed.push({
+    y: (Math.random() - 0.5) * 2.1, z: (Math.random() - 0.5) * 2.8,
+    x: -3.3 + Math.random() * 7.6, sp: 6 + Math.random() * 4, dead: 0,
+    s: 0, ch: 0, dirty: true,
+  });
+}
+const _M4 = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _S = new THREE.Vector3(), _V = new THREE.Vector3(), _O = new THREE.Vector3();
+function syncParticles(dt) {
+  /* 电子:灯丝 → 焦点 */
+  for (let i = 0; i < NEL; i++) {
+    const s = elSeed[i];
+    s.t += dt * s.sp;
+    if (s.t > 1) { s.t = 0; s.jx = (Math.random() - 0.5) * 0.3; s.jz = (Math.random() - 0.5) * 0.24; }
+    const u = s.t;
+    _V.set(lerp(-5.05, -3.95, u) + s.jx * (1 - u), 0.15 + 0.85 * u + s.jx * (1 - u) * 0.3, s.jz * (1 - u) * 0.3);
+    _M4.compose(_V, _Q, _S.set(1, 1, 1));
+    electrons.setMatrixAt(i, _M4);
+  }
+  electrons.instanceMatrix.needsUpdate = true;
+  /* 光子:窗口 → 探测器,途中按 μ 概率被吸收 */
+  const F = KABS * eFac();
+  for (let i = 0; i < NPH; i++) {
+    const p = phSeed[i];
+    if (p.dead > 0) {
+      p.dead -= dt;
+      if (p.dead <= 0) { p.x = -3.3; p.y = (Math.random() - 0.5) * 2.1; p.z = (Math.random() - 0.5) * 2.8; p.dirty = true; }
+    } else {
+      p.x += dt * p.sp;
+      if (p.dirty) { const c = colTau(p.y, p.z); p.s = c.s; p.ch = c.chord; p.dirty = false; }
+      if (p.ch > 0 && Math.abs(p.x) < p.ch * 0.55) {
+        const mu = F * p.s / p.ch;
+        if (Math.random() < 1 - Math.exp(-mu * dt * p.sp)) p.dead = 0.3 + Math.random() * 0.7;
+      }
+      if (p.x > 4.3) { p.x = -3.3; p.y = (Math.random() - 0.5) * 2.1; p.z = (Math.random() - 0.5) * 2.8; p.dirty = true; }
+    }
+    const vis = p.dead <= 0;
+    _M4.compose(_V.set(p.x, p.y, p.z), _Q, _S.set(vis ? 1 : 0.001, vis ? 1 : 0.001, 1));
+    photons.setMatrixAt(i, _M4);
+  }
+  photons.instanceMatrix.needsUpdate = true;
+}
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, accPlot = 0, accImg = 0, camTween = null;
+if (controls) controls.addEventListener('start', () => { camTween = null; });
+let anodeA = 0;
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speedF * (playing ? 1 : 0);
+  if (notifyT > 0) notifyT -= dt0;
+  if (kLineHi > 0) kLineHi -= dt0;
+  /* 阳极旋转 + 热模型 + 热致发光 */
+  anodeA += dt * (6 + heat * 0.5);
+  anodeSpin.rotation.y = anodeA;
+  if (playing) heat += dt * kv * mas * 0.0009;
+  heat = clamp(heat - dt0 * heat * 0.011, 0, 100);
+  tungM.emissiveIntensity = 0.25 + (heat / 100) ** 1.6 * 2.2;
+  filM.emissiveIntensity = 2.2 + Math.sin(performance.now() / 300) * 0.3;
+  syncParticles(dt);
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.14) { acc = 0; updateStats(); }
+  accPlot += dt0;
+  if (accPlot > 0.066) { accPlot = 0; if (chartOn) drawPlot(); }
+  accImg += dt0;
+  if (accImg > 0.1) { accImg = 0; drawImage(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+setPart(part);
+setCm(cmOn);
+drawImage();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncAll();
+if (glOK) start();
+</script>
+</body>
+</html>
