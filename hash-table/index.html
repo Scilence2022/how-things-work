@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>哈希表 · 冲突与布隆过滤器</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#ffa94d;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#e8590c;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0c2; border-color: rgba(255,169,77,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(255,169,77,.6); background: rgba(255,169,77,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(232,89,12,.55); background: rgba(232,89,12,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(255,169,77,.10); border-color: rgba(255,169,77,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(232,89,12,.08); border-color: rgba(232,89,12,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #ffe0c2; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="哈希表 · 冲突与布隆过滤器" data-en="The Hash Table · Collisions & the Bloom Filter">哈希表 · 冲突与布隆过滤器</h1>
+  <div class="sub" data-zh="键被 FNV-1a 搅成 32 位整数,mod 16 拍进 0~15 号桶——O(1) 魔法;鸽笼原理注定冲突:两键同桶,链地址串成珠链,期望探查 1+α/2;开放寻址往隔壁找位,聚集后探查 ≈½(1+1/(1−α)) 爆炸;α=n/m 爬过 0.75 红线就扩容重哈希:桶排翻倍、键重新归位、链变短,一次 O(n) 手术换回 O(1);右侧布隆过滤器:k=3 个哈希点亮 64 位数组,「一定不在」从不骗人,「可能在」才付误报率 p≈(1−e^(−kn/m))^k · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="Each key is first scrambled byte by byte by FNV-1a into a 32-bit integer (h=(h⊕byte)×16777619), and hash mod 16 slams it straight into bucket 0–15 — no comparisons, no scanning: the O(1) trick; yet the pigeonhole principle guarantees collisions: chaining threads same-bucket keys into a bead chain with expected probes 1+α/2, while open addressing probes next door cell by cell and clustering blows the cost up like ½(1+1/(1−α)); when the load factor α=n/m crosses the 0.75 red line it is time to rehash: the bucket row doubles, every key re-flies to its new home, chains almost all shorten — one O(n) surgery buys back O(1) per operation; on the right, a Bloom filter lights a 64-bit array with k=3 hashes: "definitely not" never lies, "maybe" is the only claim that pays the false-positive rate p≈(1−e^(−kn/m))^k · 3D interactive demo · drag to orbit · Space = run/pause">哈希表 · 冲突与布隆过滤器</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="键数 n" data-en="Keys n">键数 n</span><span class="v" id="stN">—</span>
+  <span class="k" data-zh="桶数 m" data-en="Buckets m">桶数 m</span><span class="v" id="stM">—</span>
+  <span class="k" data-zh="装载因子 α" data-en="Load factor α">装载因子 α</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="期望探查" data-en="Expected probes">期望探查</span><span class="v" id="stP">—</span>
+  <span class="k" data-zh="冲突次数" data-en="Collisions">冲突次数</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="布隆误报率" data-en="Bloom FP rate">布隆误报率</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="期望探查次数 vs 装载因子 α —— 链地址 1+α/2 平缓;开放寻址 1/(1−α) 在 0.9 后垂直起飞;红虚线=0.75 扩容红线" data-en="Expected probes vs load factor α — chaining 1+α/2 stays flat; open addressing 1/(1−α) takes off past 0.9; red dash = the 0.75 rehash line">期望探查次数 vs 装载因子 α —— 链地址 1+α/2 平缓;开放寻址 1/(1−α) 在 0.9 后垂直起飞;红虚线=0.75 扩容红线</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="键块:字符串 → FNV-1a 哈希" data-en="key block: string → FNV-1a hash">键块:字符串 → FNV-1a 哈希</span>
+    <span class="chip.o" data-zh="珠链:同桶冲突串成链" data-en="bead chain: colliding keys in one bucket">珠链:同桶冲突串成链</span>
+    <span class="chip.r" data-zh="探测路径:线性探测找空位" data-en="probe path: linear probing for a free slot">探测路径:线性探测找空位</span>
+    <span class="chip.g" data-zh="布隆位:k=3 个哈希点亮" data-en="bloom bits: lit by k=3 hashes">布隆位:k=3 个哈希点亮</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnInsert" data-zh="插入一个键" data-en="Insert one key">插入一个键</button>
+    <button class="abtn" id="btnQuery" data-zh="查询测试(布隆)" data-en="Query test (bloom)">查询测试(布隆)</button>
+    <button class="abtn brk" id="btnRehash" data-zh="扩容重哈希" data-en="Rehash (double m)">扩容重哈希</button>
+  </div>
+  <div class="row"><label data-zh="装载因子目标" data-en="Target load α">装载因子目标</label><input id="sAlpha" type="range" min="0.1" max="0.95" step="0.05" value="0.5"><span class="val" id="sAlphaVal">0.50</span></div>
+  <div class="row"><label data-zh="批量插入数量" data-en="Batch size">批量插入数量</label><input id="sBatch" type="range" min="1" max="12" step="1" value="4"><span class="val" id="sBatchVal">4</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglChain" type="checkbox" checked> <span data-zh="链地址" data-en="Chaining">链地址</span></label>
+      <label><input id="tglBloom" type="checkbox" checked> <span data-zh="布隆过滤器" data-en="Bloom filter">布隆过滤器</span></label>
+      <label><input id="tglHash" type="checkbox"> <span data-zh="显示哈希值" data-en="Show hash">显示哈希值</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../blockchain/" data-zh="区块链:真·密码学哈希的舞台" data-en="blockchain: cryptographic hashes at work">区块链:真·密码学哈希的舞台</a>
+    <a href="../error-correction/" data-zh="纠错码:另一种「冗余换可靠」" data-en="error correction: redundancy for reliability, again">纠错码:另一种「冗余换可靠」</a>
+    <a href="../information-entropy/" data-zh="信息熵:键分布与不确定性" data-en="information entropy: key distributions & uncertainty">信息熵:键分布与不确定性</a>
+    <a href="../pagerank/" data-zh="PageRank:随机游走的另一张图" data-en="PageRank: another random-walk picture">PageRank:随机游走的另一张图</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, f) => a + (b - a) * f;
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const speedMul = clamp(qsFloat('speed', 1), 0.25, 3);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141b, 26, 74);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  groundM.color.setHex(dark ? 0x1c2027 : 0xb0bcc8);
+  bucketM.color.setHex(dark ? 0x30343c : 0xa9b4c0);
+  machineM.color.setHex(dark ? 0x3a4048 : 0x707a86);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('哈希表 · 冲突与布隆过滤器', 'The Hash Table · Collisions & the Bloom Filter');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+  syncBtns();
+  keys.forEach(k => setKeyText(k, false));
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+let renderer = null, webglOK = true;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  document.getElementById('app').appendChild(renderer.domElement);
+} catch (err) {
+  webglOK = false;
+  const errDiv = document.createElement('div');
+  errDiv.style.cssText = 'position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:99;background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;padding:18px 26px;color:var(--text);font-size:14px;max-width:420px;text-align:center';
+  errDiv.textContent = L('WebGL 初始化失败:3D 画面不可用,但左侧控制面板仍可浏览。', 'WebGL failed to start: the 3D view is unavailable, but the control panel still works.');
+  document.body.appendChild(errDiv);
+}
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+if (webglOK) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+}
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 160);
+camera.position.set(0, 7.5, 14.5);
+const controls = new OrbitControls(camera, webglOK ? renderer.domElement : document.body);
+controls.target.set(0, 1.6, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.5;
+controls.maxDistance = 60;
+controls.autoRotateSpeed = 0.3;
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.55);
+scene.add(hemi);
+const keyL = new THREE.DirectionalLight(0xfff2dd, 1.0);
+keyL.position.set(6, 9, 7);
+scene.add(keyL);
+const fillL = new THREE.DirectionalLight(0xd8e6ff, 0.3);
+fillL.position.set(-7, 5, -6);
+scene.add(fillL);
+
+/* ================= 状态(真实算法) ================= */
+const MMAX = 64, MAX_KEYS = 90, BEAD_N = 160;
+let m = 16;
+let chainMode = true, bloomOn = true, hashOn = false;
+let coll = 0, nDone = 0, bloomN = 0, queryCount = 0, fpCount = 0;
+let alphaTarget = 0.5, batchN = 4, pendingInserts = 0, autoT = 0, pendingRehash = false;
+let labelsOn = true;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let phaseIdx = 0, notifyT = 0, notifyZ = '', notifyE = '';
+let verdict = null, verdictT = 0, bloomRestore = 0, lastWord = 'cat', lastHex = '—';
+let gearSpin = 0.6, probeFade = 0;
+const chains = new Map(), slots = new Array(MMAX).fill(null), keys = [];
+const usedWords = new Set();
+let wordSeq = 0;
+
+function fnv1a(str, basis = 0x811c9dc5) {
+  let h = basis >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+const hexOf = h => h.toString(16).toUpperCase().padStart(8, '0');
+const spOf = mm => mm <= 1 ? 1.05 : Math.min(1.05, 23 / (mm - 1));
+const bx = i => (i - (m - 1) / 2) * spOf(m);
+const chainPos = (b, j) => [bx(b) + (j > 0 ? (j % 2 ? 0.3 : -0.3) : 0), 0.72 + j * 0.3, 0];
+const openPos = b => [bx(b), 0.72, 0];
+const WORDS = ['cat', 'dog', 'city', 'sun', 'fox', 'bit', 'zoo', 'api', 'git', 'css', 'web',
+  'node', 'vue', 'ai', 'ml', 'os', 'db', 'key', 'run', 'map', 'set', 'log', 'js', 'ts', 'go', 'py', 'rb', 'rs'];
+function freshWord() {
+  const free = WORDS.filter(w => !usedWords.has(w));
+  if (free.length) return free[(Math.random() * free.length) | 0];
+  return 'k' + (wordSeq++);
+}
+
+/* ---------------- 材质 ---------------- */
+const groundM = new THREE.MeshStandardMaterial({ color: 0x1c2027, roughness: 0.95 });
+const bucketM = new THREE.MeshStandardMaterial({ color: 0x30343c, roughness: 0.6, metalness: 0.35, emissive: 0xffa94d, emissiveIntensity: 0 });
+const machineM = new THREE.MeshStandardMaterial({ color: 0x3a4048, roughness: 0.55, metalness: 0.5 });
+const steelM = new THREE.MeshStandardMaterial({ color: 0x8a93a0, roughness: 0.35, metalness: 0.75 });
+const glassM = new THREE.MeshStandardMaterial({ color: 0xcfd8e6, transparent: true, opacity: 0.22, roughness: 0.15, side: THREE.DoubleSide, depthWrite: false });
+const keyMats = [0x4dabf7, 0xffa94d, 0x69db7c, 0xff8787, 0xb197fc, 0x66d9e8].map(c =>
+  new THREE.MeshStandardMaterial({ color: c, roughness: 0.45, metalness: 0.15, emissive: c, emissiveIntensity: 0.18 }));
+const beadM = new THREE.MeshBasicMaterial({ color: 0xffa94d });
+const cellM = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const probeLineM = new THREE.LineBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0.9 });
+const flashM = new THREE.MeshBasicMaterial({ color: 0xffd43b, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+
+/* ---------------- 场景搭建 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 0.3, 48), groundM);
+ground.position.y = -0.15;
+scene.add(ground);
+
+/* 桶排(预建 64 只,按 m 显示) */
+const buckets = [];
+for (let i = 0; i < MMAX; i++) {
+  const g = new THREE.Group();
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.55, 0.8), bucketM);
+  box.position.y = 0.275;
+  g.add(box);
+  const mouth = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({ color: 0x0d0f12 }));
+  mouth.rotation.x = -Math.PI / 2;
+  mouth.position.y = 0.556;
+  g.add(mouth);
+  scene.add(g);
+  buckets.push(g);
+}
+function layoutBuckets() {
+  const bs = clamp(spOf(m) / 1.05, 0.42, 1);
+  for (let i = 0; i < MMAX; i++) {
+    buckets[i].visible = i < m;
+    buckets[i].position.x = bx(i);
+    buckets[i].scale.setScalar(bs);
+  }
+}
+
+/* 哈希加工器:漏斗 + 齿轮 + 投放口 */
+const chute = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.5, 0.62), glassM);
+chute.position.set(0, 5.35, 0);
+scene.add(chute);
+const funnel = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.32, 0.95, 24, 1, true), glassM);
+funnel.position.set(0, 3.85, 0);
+scene.add(funnel);
+const gear = new THREE.Group();
+gear.position.set(0, 4.42, 0);
+gear.add(new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.11, 10, 24), steelM));
+for (let k = 0; k < 8; k++) {
+  const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.17, 0.15), steelM);
+  const a = k / 8 * Math.PI * 2;
+  tooth.position.set(Math.cos(a) * 0.52, Math.sin(a) * 0.52, 0);
+  gear.add(tooth);
+}
+scene.add(gear);
+const hub = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), machineM);
+hub.position.copy(gear.position);
+scene.add(hub);
+
+/* 探测路径线 + 落桶闪光池 */
+const probeGeo = new THREE.BufferGeometry();
+probeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+const probeLine = new THREE.Line(probeGeo, probeLineM);
+probeLine.visible = false;
+scene.add(probeLine);
+const flashes = [];
+for (let i = 0; i < 6; i++) {
+  const fm = new THREE.Mesh(new THREE.CircleGeometry(0.46, 24), flashM.clone());
+  fm.rotation.x = -Math.PI / 2;
+  fm.visible = false;
+  scene.add(fm);
+  flashes.push({ mesh: fm, t: 1 });
+}
+function flashAt(x, z = 0) {
+  const f = flashes.find(f => f.t >= 1) || flashes[0];
+  f.t = 0; f.mesh.position.set(x, 0.6, z);
+}
+function stepFlashes(dt) {
+  for (const f of flashes) {
+    if (f.t >= 1) { f.mesh.visible = false; continue; }
+    f.t = Math.min(1, f.t + dt * 2.2);
+    f.mesh.visible = true;
+    f.mesh.scale.setScalar(0.4 + f.t * 1.3);
+    f.mesh.material.opacity = 0.8 * (1 - f.t);
+  }
+}
+
+/* 珠链(冲突链可视化) */
+const beads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 10, 8), beadM, BEAD_N);
+scene.add(beads);
+const beadM4 = new THREE.Matrix4();
+let chainsDirty = false;
+function updateChains() {
+  let bi = 0;
+  if (chainMode) {
+    for (const [b, arr] of chains) {
+      for (let j = 1; j < arr.length && bi < BEAD_N; j++) {
+        beadM4.identity(); beadM4.setPosition(bx(b), 0.72 + (j - 1) * 0.3 + 0.16, 0);
+        beads.setMatrixAt(bi++, beadM4);
+      }
+    }
+  }
+  beadM4.makeScale(0, 0, 0);
+  for (let i = bi; i < BEAD_N; i++) beads.setMatrixAt(i, beadM4);
+  beads.instanceMatrix.needsUpdate = true;
+}
+
+/* ---------------- 布隆过滤器:m=64 位数组,k=3 ---------------- */
+const bloomG = new THREE.Group();
+bloomG.position.set(8.8, 4.5, -1.8);
+scene.add(bloomG);
+const bloomFrame = new THREE.Mesh(new THREE.BoxGeometry(3.4, 3.4, 0.12), machineM);
+bloomFrame.position.z = -0.08;
+bloomG.add(bloomFrame);
+const cells = new THREE.InstancedMesh(new THREE.BoxGeometry(0.34, 0.34, 0.1), cellM, 64);
+bloomG.add(cells);
+const bloomBits = new Uint8Array(64);
+const cellM4 = new THREE.Matrix4();
+const C_OFF = new THREE.Color(0x2a2e34), C_ON = new THREE.Color(0xffa94d),
+  C_HIT = new THREE.Color(0xffe066), C_MISS = new THREE.Color(0x51cf66);
+function layoutCells() {
+  for (let i = 0; i < 64; i++) {
+    cellM4.identity();
+    cellM4.setPosition(((i % 8) - 3.5) * 0.4, (((i / 8) | 0) - 3.5) * 0.4, 0);
+    cells.setMatrixAt(i, cellM4);
+  }
+  cells.instanceMatrix.needsUpdate = true;
+}
+function paintCell(i, col) { cells.setColorAt(i, col); cells.instanceColor.needsUpdate = true; }
+function bloomIdx(word, k) { return fnv1a(word, [0x811c9dc5, 0x01000193, 0x85ebca6b][k]) % 64; }
+function bloomInsert(word) {
+  bloomN++;
+  for (let k = 0; k < 3; k++) {
+    const i = bloomIdx(word, k);
+    if (!bloomBits[i]) { bloomBits[i] = 1; paintCell(i, C_ON); }
+  }
+}
+function bloomQuery(word) {
+  const idxs = [0, 1, 2].map(k => bloomIdx(word, k));
+  const allLit = idxs.every(i => bloomBits[i]);
+  idxs.forEach(i => paintCell(i, bloomBits[i] ? C_HIT : C_MISS));
+  bloomRestore = 1.6; queryCount++;
+  if (allLit) fpCount++;
+  verdict = { word, allLit }; verdictT = 4.5;
+  updateStats(); updateFormula();
+  return allLit;
+}
+function bloomRestoreNow() {
+  for (let i = 0; i < 64; i++) paintCell(i, bloomBits[i] ? C_ON : C_OFF);
+}
+function bloomReset() {
+  bloomBits.fill(0); bloomN = 0; queryCount = 0; fpCount = 0; verdict = null; verdictT = 0;
+  bloomRestoreNow();
+}
+
+/* ---------------- 键的插入/飞行状态机 ---------------- */
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+function setKeyText(k, hashing) {
+  const hx = hashOn || hashing ? ' ' + hexOf(k.hash) : '';
+  k.lbl.element.textContent = hashing ? `${k.word}${hx} → ${k.b}` : k.word + hx;
+}
+function insertKey(wordOpt = null, delay = 0) {
+  if (keys.some(k => k.state === 'rehash')) { notify('重哈希飞行中:稍等键落位', 'rehash in flight: wait for keys to land'); return; }
+  if (keys.length >= MAX_KEYS) { notify('键太多:先扩容或清空', 'too many keys: rehash or clear first'); return; }
+  const word = wordOpt && !usedWords.has(wordOpt) ? wordOpt : freshWord();
+  usedWords.add(word);
+  const hash = fnv1a(word), b = hash % m;
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 0.22), keyMats[hash % 6]);
+  mesh.position.set(0, 5.7, 0);
+  scene.add(mesh);
+  const lbl = new CSS2DObject(document.createElement('div'));
+  lbl.element.className = 'lbl o';
+  lbl.position.set(0, 0.28, 0);
+  mesh.add(lbl);
+  const k = { mesh, lbl, word, hash, b, final: b, state: 'wait', t: 0, delay,
+    p0: new THREE.Vector3(), via: new THREE.Vector3(), tb: new THREE.Vector3(), dur: 1 };
+  k.lbl.element.textContent = word;
+  keys.push(k); bloomInsert(word); updateStats();
+}
+function beginFlight(k, target) {
+  k.p0.set(0, 3.9, 0);
+  k.tb.copy(target);
+  k.via.set((k.p0.x + k.tb.x) / 2, 3.0, 0);
+  k.dur = 0.75 + Math.abs(k.tb.x) * 0.022;
+  k.state = 'fly'; k.t = 0;
+}
+function qbez(p0, v, p1, u, out) {
+  const iu = 1 - u;
+  return out.set(iu * iu * p0.x + 2 * iu * u * v.x + u * u * p1.x,
+    iu * iu * p0.y + 2 * iu * u * v.y + u * u * p1.y,
+    iu * iu * p0.z + 2 * iu * u * v.z + u * u * p1.z);
+}
+function updateKeys(dt) {
+  let hot = false;
+  for (const k of keys) {
+    if (k.state === 'wait') { k.delay -= dt; if (k.delay <= 0) { k.state = 'fall'; k.t = 0; } }
+    else if (k.state === 'fall') {
+      k.t += dt / 0.5;
+      const u = Math.min(1, k.t);
+      k.mesh.position.set(0, lerp(5.7, 4.42, u * u), 0);
+      if (k.t >= 1) { k.state = 'hash'; k.t = 0; setKeyText(k, true); }
+    } else if (k.state === 'hash') {
+      hot = true;
+      k.t += dt;
+      if (k.t >= 0.7) {
+        if (chainMode) beginFlight(k, V3(bx(k.b), 1.25, 0));
+        else {
+          let f = k.b, guard = 0;
+          while (slots[f] && guard++ <= m) f = (f + 1) % m;
+          k.final = f;
+          if (f !== k.b) coll++;
+          beginFlight(k, V3(bx(k.b), 0.72, 0));
+        }
+      }
+    } else if (k.state === 'fly') {
+      k.t += dt / k.dur;
+      qbez(k.p0, k.via, k.tb, Math.min(1, k.t), k.mesh.position);
+      if (k.t >= 1) {
+        if (chainMode) {
+          const arr = chains.get(k.b) || [];
+          k.j = arr.length; arr.push(k); chains.set(k.b, arr);
+          if (arr.length > 1) coll++;
+          k.state = 'settle'; k.t = 0; k.p0.copy(k.mesh.position);
+          k.tb.fromArray(chainPos(k.b, k.j));
+        } else if (k.final !== k.b) {
+          k.state = 'probe'; k.t = 0;
+          const p = probeGeo.attributes.position.array;
+          p[0] = p[3] = bx(k.b); p[1] = p[4] = 0.98; p[2] = p[5] = 0;
+          probeGeo.attributes.position.needsUpdate = true;
+          probeLine.visible = true;
+        } else { slots[k.b] = k; finishKey(k); }
+      }
+    } else if (k.state === 'probe') {
+      const cellsN = (k.final - k.b + m) % m;
+      k.t += dt;
+      const u = Math.min(1, k.t / (cellsN * 0.14));
+      k.mesh.position.set(lerp(bx(k.b), bx(k.final), u), 0.72, 0);
+      probeGeo.attributes.position.array[3] = k.mesh.position.x;
+      probeGeo.attributes.position.needsUpdate = true;
+      if (u >= 1) { slots[k.final] = k; probeFade = 1.3; finishKey(k); }
+    } else if (k.state === 'settle') {
+      k.t += dt / 0.2;
+      k.mesh.position.lerpVectors(k.p0, k.tb, Math.min(1, k.t));
+      if (k.t >= 1) finishKey(k);
+    } else if (k.state === 'rehash') {
+      k.delay -= dt;
+      if (k.delay > 0) continue;
+      k.t += dt / 0.85;
+      k.via.set((k.p0.x + k.tb.x) / 2, Math.max(k.p0.y, k.tb.y) + 1.7, 0);
+      qbez(k.p0, k.via, k.tb, Math.min(1, k.t), k.mesh.position);
+      if (k.t >= 1) { k.state = 'done'; k.mesh.position.copy(k.tb); chainsDirty = true; }
+    }
+  }
+  gearSpin += (hot ? 10 : 0.6 - gearSpin) * Math.min(1, dt * 6);
+}
+function finishKey(k) {
+  k.state = 'done';
+  nDone++;
+  setKeyText(k, false);
+  flashAt(k.mesh.position.x);
+  chainsDirty = true;
+  updateStats();
+}
+function placeAll() {
+  chains.clear(); slots.fill(null);
+  let i = 0;
+  for (const k of keys) {
+    if (k.state !== 'done') continue;
+    const b = k.hash % m;
+    k.b = b;
+    if (chainMode) {
+      const arr = chains.get(b) || [];
+      k.j = arr.length; arr.push(k); chains.set(b, arr);
+      k.tb.fromArray(chainPos(b, k.j));
+    } else {
+      let f = b, guard = 0;
+      while (slots[f] && guard++ <= m) f = (f + 1) % m;
+      slots[f] = k; k.final = f;
+      k.tb.fromArray(openPos(f));
+    }
+    k.state = 'rehash';
+    k.delay = i++ * 0.045; k.p0.copy(k.mesh.position);
+  }
+  chainsDirty = true;
+  updateStats();
+}
+function doRehash() {
+  if (!keys.every(k => k.state === 'done')) {
+    pendingRehash = true;
+    notify('等最后一枚键落位,自动扩容…', 'waiting for the last key to land, then rehash…');
+    return;
+  }
+  if (m >= MMAX) { notify('已是 64 桶上限:再按一次清空重置', 'already at the 64-bucket cap: press again to clear'); return; }
+  m *= 2;
+  layoutBuckets();
+  placeAll();
+  syncBtns(); updateFormula();
+  notify(L(`扩容:m=${m},全部键重新哈希飞行,链几乎全部变短`, `rehash: m=${m}, every key re-hashed and re-flown, chains almost all shorten`),
+    `rehash: m=${m}, every key re-hashed and re-flown, chains almost all shorten`);
+}
+function doClear() {
+  for (const k of keys) { scene.remove(k.mesh); k.lbl.element.remove(); }
+  keys.length = 0;
+  chains.clear(); slots.fill(null);
+  m = 16; nDone = 0; coll = 0; pendingInserts = 0; pendingRehash = false;
+  usedWords.clear(); wordSeq = 0;
+  bloomReset();
+  layoutBuckets();
+  probeLine.visible = false;
+  syncBtns(); syncSliders(); updateStats(); updateFormula(); drawPlot();
+}
+function setAutoTarget(v) {
+  alphaTarget = v;
+  elAlpha.value = v; elAlphaVal.textContent = v.toFixed(2);
+  pendingInserts = Math.max(0, Math.round(v * m) - nDone);
+}
+function queryAbsent() {
+  let w = WORDS.find(w => !usedWords.has(w));
+  if (!w) w = 'zz' + (wordSeq++);
+  const fp = bloomQuery(w);
+  if (fp) notify(`「${w}」明明没插入过,3 个位却全亮——这就是误报`, `"${w}" was never inserted, yet all 3 bits are lit — a false positive`);
+}
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true, parent = null) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblHash = addLabel(() => L('哈希器 FNV-1a:h=(h⊕byte)×16777619 mod 2³²', 'hasher FNV-1a: h=(h⊕byte)×16777619 mod 2³²'), V3(0, 5.0, 0), 'o');
+const lblBuckets = addLabel(() => L(`桶排 m=${m}:bucket = hash mod ${m}`, `bucket row m=${m}: bucket = hash mod ${m}`), V3(-9.6, 1.7, 0), 'b');
+const lblChain = addLabel(() => L('链地址:同桶串成链,期望探查 1+α/2', 'chaining: same-bucket keys link up, expected probes 1+α/2'), V3(-6.2, 3.6, 0), 'g', () => chainMode);
+const lblProbe = addLabel(() => L('开放寻址:线性探测逐格找位,聚集可见', 'open addressing: linear probing, clustering visible'), V3(-6.2, 3.6, 0), 'r', () => !chainMode);
+const lblBloom = addLabel(() => L(`布隆过滤器 m=64 · k=3 · 已插入 ${bloomN} 键`, `bloom filter m=64 · k=3 · ${bloomN} keys in`), V3(8.8, 6.6, -1.8), 'g', () => bloomOn);
+const lblVerdict = addLabel(() => {
+  if (!verdict) return '';
+  return verdict.allLit
+    ? L(`「${verdict.word}」:3 位全亮 → 可能在(可能误报!)`, `"${verdict.word}": all 3 lit → maybe in (false positive possible!)`)
+    : L(`「${verdict.word}」:有位是灭的 → 一定不在(零误报)`, `"${verdict.word}": a dark bit → definitely not (zero FP)`);
+}, V3(8.8, 2.55, -1.8), 'o', () => bloomOn && verdictT > 0);
+const lblNotify = addLabel(() => notifyT > 0 ? L(notifyZ, notifyE) : '', V3(0, 7.0, 0), 'r');
+for (let i = 0; i < MMAX; i++) {
+  const i2 = i;
+  addLabel(() => String(i2), V3(0, -0.42, 0), 'b', () => i2 < m, buckets[i]);
+}
+
+/* ================= 交互动作 ================= */
+function flyTo(p, t) { camTween = { p0: camera.position.clone(), p1: V3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: V3(t[0], t[1], t[2]), k: 0 }; }
+function notify(z, e, t = 3.4) { notifyZ = z; notifyE = e; notifyT = t; }
+function setChainMode(b) {
+  chainMode = b;
+  document.getElementById('tglChain').checked = b;
+  if (!keys.every(k => k.state === 'done')) return;
+  placeAll();
+  probeLine.visible = false;
+  updateFormula();
+}
+function setBloom(b) {
+  bloomOn = b;
+  document.getElementById('tglBloom').checked = b;
+  bloomG.visible = b;
+}
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { b: 'O(1) 的魔法:哈希函数把键拍进桶', be: 'The O(1) trick: a hash slams each key into a bucket',
+    d: '插入先过哈希器:FNV-1a 把字符串逐字节搅成 32 位整数(h=(h⊕byte)×16777619),mod 16 直接得到桶号——不比较、不遍历,一步到位。数组寻址是 O(1),哈希把「查找」也变成了 O(1)。点「插入一个键」看它走完全程。', de: 'An insert passes through the hasher: FNV-1a scrambles the string byte by byte into a 32-bit integer (h=(h⊕byte)×16777619), and mod 16 is the bucket number — no comparisons, no scanning, one step. Array indexing is O(1), and hashing turns lookup into O(1) too. Press Insert and watch the whole journey.',
+    act: () => { flyTo([0, 6.4, 12.5], [0, 2.2, 0]); insertKey('cat'); } },
+  { b: '鸽笼原理:冲突不可避免', be: 'Pigeonhole: collisions are inevitable',
+    d: '16 只桶装不止 16 个键:键数一旦超过桶数,必有两键同桶——这不是运气差,是数学必然。冲突率随装载因子 α=n/m 上涨,面板上的冲突计数只增不减。拖动「装载因子目标」,批量灌键看冲突累积。', de: 'Sixteen buckets cannot hold more than 16 keys singly: once keys outnumber buckets, two must share — not bad luck, mathematical necessity. The collision rate climbs with load factor α=n/m, and the collision counter never goes down. Drag the load target to pour keys in and watch it accumulate.',
+    act: () => { setAutoTarget(0.5); flyTo([0, 7.5, 14.5], [0, 1.6, 0]); } },
+  { b: '链地址:同桶串成链', be: 'Chaining: same bucket, one chain',
+    d: '最常用的解法:桶里不存键、存一条链表,新键直接挂到链尾。成功查找的期望探查 1+α/2:α=1 时平均也只看 1.5 个键。链可以无限长、装到 α>1 也不怕,代价是额外的指针内存。', de: 'The classic fix: the bucket stores not keys but a linked list, and each newcomer hangs off the tail. Successful lookup probes 1+α/2 on average — even at α=1 that is just 1.5 keys. Chains can grow forever, the table survives α>1, and the price is pointer memory.',
+    act: () => { setChainMode(true); setAutoTarget(0.7); flyTo([-4.5, 5.2, 9.5], [-2.5, 1.4, 0]); } },
+  { b: '开放寻址:往隔壁找位,聚集的代价', be: 'Open addressing: probe next door, pay for clustering',
+    d: '关掉「链地址」:冲突键沿桶排线性探测,逐格找空位,一条红色路径线记录足迹。麻烦叫「聚集」——连续占用的桶越长,新键撞进来的概率越高,探查长度 ≈½(1+1/(1−α)),α→1 时急剧爆炸。', de: 'Turn chaining off: a colliding key probes linearly along the row cell by cell, a red path line recording its footsteps. The trouble is clustering — the longer a run of occupied buckets, the more likely new keys slam into it; probes ≈½(1+1/(1−α)), exploding as α→1.',
+    act: () => { setChainMode(false); setAutoTarget(0.7); flyTo([2.5, 4.6, 9.0], [2, 1.0, 0]); } },
+  { b: '装载因子:0.75 红线与扩容重哈希', be: 'Load factor: the 0.75 red line and rehash',
+    d: 'α 爬过 0.75 红线,就该按「扩容重哈希」:桶排翻倍,所有键重新哈希、重新起飞归位,链几乎全部变短。rehash 是 O(n) 的一次性大手术,摊还分析说这笔钱值得——之后每次操作又回到 O(1)。', de: 'When α crosses the 0.75 red line, press Rehash: the row doubles, every key re-hashes and re-flies home, chains almost all shorten. A rehash is a one-off O(n) surgery, and amortized analysis says it is worth it — every operation afterwards is back to O(1).',
+    act: () => { setAutoTarget(0.9); pendingRehash = true; flyTo([0, 8.5, 15.5], [0, 1.6, 0]); } },
+  { b: '布隆过滤器:「一定不在」从不骗人', be: 'Bloom filter: "definitely not" never lies',
+    d: '右侧位数组 m=64、k=3:插入点亮 3 个位;查询时 3 位全亮只说明「可能在」(要付误报率 p≈(1−e^(−kn/m))^k),任何一位是灭的,就能斩钉截铁说「一定不在」。点「查询测试」:它查的键从没插入过——位数组没动,结论是绿色。', de: 'The bit array on the right, m=64 with k=3: an insert lights 3 bits; on query, all 3 lit only means "maybe in" (paying p≈(1−e^(−kn/m))^k), but any dark bit licenses "definitely not". Press Query: the key was never inserted — the array did not move, and the verdict is green.',
+    act: () => { setBloom(true); flyTo([8.2, 5.8, 4.4], [8.8, 4.4, -1.8]); queryAbsent(); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:期望探查 vs α ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  if (!plotCv.clientWidth) return;
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const padL = 40, padR = 14, padT = 12, padB = 22, YMAX = 12;
+  const X = a => padL + a / 0.97 * (W - padL - padR);
+  const Y = p => (H - padB) - clamp(p, 0, YMAX) / YMAX * (H - padT - padB);
+  ctx.font = '12px system-ui';
+  ctx.strokeStyle = 'rgba(128,150,170,.25)';
+  ctx.beginPath(); ctx.moveTo(padL, Y(0)); ctx.lineTo(W - padR, Y(0)); ctx.stroke();
+  ctx.fillStyle = cTxt;
+  ctx.fillText('12', 14, Y(12) + 4);
+  ctx.fillText('1', 20, Y(1) + 4);
+  ctx.fillText('α=0.95', W - padR - 52, H - 6);
+  /* 0.75 红线 */
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = 'rgba(255,107,107,.6)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(X(0.75), Y(0)); ctx.lineTo(X(0.75), Y(YMAX)); ctx.stroke();
+  ctx.setLineDash([]);
+  /* 两条曲线 */
+  ctx.strokeStyle = chainMode ? '#ffa94d' : 'rgba(255,169,77,.45)'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let k = 0; k <= 60; k++) { const a = k / 60 * 0.95, p = 1 + a / 2; k ? ctx.lineTo(X(a), Y(p)) : ctx.moveTo(X(a), Y(p)); }
+  ctx.stroke();
+  ctx.strokeStyle = chainMode ? 'rgba(255,107,107,.45)' : '#ff6b6b';
+  ctx.beginPath();
+  for (let k = 0; k <= 200; k++) { const a = k / 200 * 0.95, p = 1 / (1 - a * 0.999); k ? ctx.lineTo(X(a), Y(p)) : ctx.moveTo(X(a), Y(p)); }
+  ctx.stroke();
+  /* 当前 α 动点 */
+  const a = clamp(nDone / m, 0, 0.95);
+  const p1 = 1 + a / 2, p2 = 1 / (1 - a * 0.999);
+  ctx.fillStyle = '#ffa94d';
+  ctx.beginPath(); ctx.arc(X(a), Y(chainMode ? p1 : Math.min(p2, YMAX)), chainMode ? 5 : 3.5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ff6b6b';
+  ctx.beginPath(); ctx.arc(X(a), Y(chainMode ? Math.min(p2, YMAX) : p1), chainMode ? 3.5 : 5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffa94d';
+  ctx.fillText(L('链地址', 'chaining'), padL + 8, padT + 14);
+  ctx.fillStyle = '#ff6b6b';
+  ctx.fillText(L('开放寻址', 'open addressing'), padL + 78, padT + 14);
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elAlpha = document.getElementById('sAlpha'), elAlphaVal = document.getElementById('sAlphaVal');
+const elBatch = document.getElementById('sBatch'), elBatchVal = document.getElementById('sBatchVal');
+const stN = document.getElementById('stN'), stM = document.getElementById('stM'),
+  stA = document.getElementById('stA'), stP = document.getElementById('stP'),
+  stC = document.getElementById('stC'), stF = document.getElementById('stF');
+const formulaEl = document.getElementById('formula');
+const btnInsert = document.getElementById('btnInsert'), btnQuery = document.getElementById('btnQuery'),
+  btnRehash = document.getElementById('btnRehash');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elAlpha.value = alphaTarget; elAlphaVal.textContent = alphaTarget.toFixed(2);
+  elBatch.value = batchN; elBatchVal.textContent = String(batchN);
+}
+function syncBtns() {
+  btnRehash.textContent = m >= MMAX ? L('清空重置', 'Clear all') : L('扩容重哈希', 'Rehash (double m)');
+  btnRehash.classList.toggle('brk', m >= MMAX);
+}
+function bloomP() { return Math.pow(1 - Math.exp(-3 * bloomN / 64), 3); }
+function updateStats() {
+  const a = nDone / m;
+  stN.textContent = String(nDone);
+  stM.textContent = String(m);
+  stA.textContent = a.toFixed(2);
+  stA.className = 'v ' + (a > 0.9 ? 'bad' : a > 0.75 ? 'warn' : 'ok');
+  stP.textContent = chainMode ? (1 + a / 2).toFixed(2) : (a > 0.96 ? '∞' : (1 / (1 - a)).toFixed(1));
+  stP.className = 'v ' + (chainMode ? '' : a > 0.75 ? 'bad' : a > 0.5 ? 'warn' : '');
+  stC.textContent = String(coll);
+  stC.className = 'v ' + (coll > 0 ? 'warn' : '');
+  stF.innerHTML = `${(bloomP() * 100).toFixed(1)}<small> %</small>`;
+  stF.className = 'v ' + (bloomP() > 0.3 ? 'warn' : 'ok');
+}
+function updateFormula() {
+  const a = nDone / m;
+  lastWord = keys.length ? keys[keys.length - 1].word : 'cat';
+  lastHex = keys.length ? hexOf(keys[keys.length - 1].hash) : hexOf(fnv1a('cat'));
+  const kOpt = 0.693 * 64 / Math.max(1, bloomN);
+  formulaEl.innerHTML = L(
+    `<b>散列:bucket = FNV-1a(key) mod ${m}</b>,FNV-1a:h=(h⊕byte)×16777619 mod 2³²(示例 "${lastWord}" → 0x${lastHex})<br>` +
+    `<b>链地址:成功查找期望 1+α/2</b> = ${(1 + a / 2).toFixed(2)}(当前 α=${a.toFixed(2)})<br>` +
+    `<b>开放寻址(线性探测)≈ ½(1+1/(1−α))</b> = ${(0.5 * (1 + 1 / (1 - Math.min(a, 0.96)))).toFixed(2)},α→1 时爆炸<br>` +
+    `<b>扩容:α>0.75 触发 rehash</b>,m 翻倍、全部键重哈希,O(n) 摊还后每次仍 O(1);当前 α=${a.toFixed(2)}${a > 0.75 ? ' <b style="color:#ff8787">已过红线!</b>' : ''}<br>` +
+    `<b>布隆:p = (1−e^(−kn/m))^k</b> = ${(bloomP() * 100).toFixed(1)}%(n=${bloomN}, m=64, k=3),最优 k=0.693·m/n≈${kOpt.toFixed(1)},~10 bit/键 → p≈1%`,
+    `<b>Hash: bucket = FNV-1a(key) mod ${m}</b>, FNV-1a: h=(h⊕byte)×16777619 mod 2³² (e.g. "${lastWord}" → 0x${lastHex})<br>` +
+    `<b>Chaining: expected probes (success) 1+α/2</b> = ${(1 + a / 2).toFixed(2)} (α=${a.toFixed(2)})<br>` +
+    `<b>Open addressing (linear probing) ≈ ½(1+1/(1−α))</b> = ${(0.5 * (1 + 1 / (1 - Math.min(a, 0.96)))).toFixed(2)}, explodes as α→1<br>` +
+    `<b>Resize: α>0.75 triggers rehash</b>, m doubles, all keys re-hashed, O(n) once — amortized O(1); α=${a.toFixed(2)}${a > 0.75 ? ' <b style="color:#ff8787">past the red line!</b>' : ''}<br>` +
+    `<b>Bloom: p = (1−e^(−kn/m))^k</b> = ${(bloomP() * 100).toFixed(1)}% (n=${bloomN}, m=64, k=3), optimal k=0.693·m/n≈${kOpt.toFixed(1)}, ~10 bits/key → p≈1%`);
+}
+function syncAll() {
+  syncSliders(); syncBtns(); updateFormula(); updateStats(); drawPlot();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+elAlpha.addEventListener('input', () => setAutoTarget(+elAlpha.value));
+elBatch.addEventListener('input', () => { batchN = +elBatch.value; elBatchVal.textContent = String(batchN); });
+btnInsert.addEventListener('click', () => insertKey());
+btnQuery.addEventListener('click', queryAbsent);
+btnRehash.addEventListener('click', () => { m >= MMAX ? doClear() : doRehash(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglChain').addEventListener('change', e => { setChainMode(e.target.checked); });
+document.getElementById('tglBloom').addEventListener('change', e => setBloom(e.target.checked));
+document.getElementById('tglHash').addEventListener('change', e => { hashOn = e.target.checked; keys.forEach(k => setKeyText(k, k.state === 'hash')); });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  if (renderer) renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, accPlot = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speedMul * (playing ? 1 : 0);
+  if (notifyT > 0) notifyT -= dt0;
+  if (verdictT > 0) verdictT -= dt0;
+  if (dt > 0) {
+    updateKeys(dt);
+    if (probeFade > 0) {
+      probeFade -= dt;
+      probeLineM.opacity = clamp(probeFade / 1.3, 0, 1) * 0.9;
+      if (probeFade <= 0) probeLine.visible = false;
+    }
+    /* 自动批量插入 */
+    if (pendingInserts > 0) {
+      autoT -= dt;
+      if (autoT <= 0) {
+        autoT = 0.55;
+        const c = Math.min(batchN, pendingInserts);
+        for (let i = 0; i < c; i++) insertKey(null, i * 0.22);
+        pendingInserts -= c;
+      }
+    }
+    if (pendingRehash && pendingInserts <= 0 && keys.every(k => k.state === 'done') && nDone / m > 0.8) {
+      pendingRehash = false;
+      doRehash();
+    }
+    stepFlashes(dt);
+  }
+  gear.rotation.z = gearSpin;
+  if (bloomRestore > 0) {
+    bloomRestore -= dt0;
+    if (bloomRestore <= 0) bloomRestoreNow();
+  }
+  if (chainsDirty) { chainsDirty = false; updateChains(); }
+  /* 相机飞行 */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.14) { acc = 0; updateStats(); }
+  accPlot += dt0;
+  if (accPlot > 0.35) { accPlot = 0; drawPlot(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  controls.update();
+  if (renderer) { renderer.render(scene, camera); labelRenderer.render(scene, camera); }
+}
+function start() { if (raf === null && webglOK) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+layoutBuckets();
+layoutCells();
+updateChains();
+bloomRestoreNow();
+applyTheme();
+buildSteps();
+applyLang();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncAll();
+start();
+</script>
+</body>
+</html>
