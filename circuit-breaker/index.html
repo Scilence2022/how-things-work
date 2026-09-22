@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>断路器 · 热磁双判官与灭弧室</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#ff6b6b;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#e03131;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0c2; border-color: rgba(255,169,77,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(255,107,107,.6); background: rgba(255,107,107,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(224,49,49,.55); background: rgba(224,49,49,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(255,107,107,.10); border-color: rgba(255,107,107,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(224,49,49,.08); border-color: rgba(224,49,49,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #ffc2c2; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="断路器 · 热磁双判官与灭弧室" data-en="Circuit Breaker · Thermal + Magnetic Judges & the Arc Chute">断路器 · 热磁双判官与灭弧室</h1>
+  <div class="sub" data-zh="电流从进线端串过电磁线圈、触头对与双金属片回到出线端;过载 1.45×In(23 A)双金属一小时内弯到顶开锁扣,短路 5×In(80 A)以上线圈吸力∝(NI)² 瞬间吸动衔铁、约 10 ms 猛拉触头;触头一分开电弧燃起,弧角把它拉上 11 片钢片切成 11 段短弧,弧压升至约 340 V 反超 230 V 电源,电流被强制压向过零而熄灭 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="Current flows from LINE through the solenoid, the contact pair and the bimetal back to LOAD; at 1.45×In (23 A) the bimetal bends within an hour to trip the latch, above 5×In (80 A) the coil pull ∝(NI)² snaps the armature and yanks the contacts open in ~10 ms; the arc ignites at once — runners lift it onto 11 steel plates that slice it into 11 series segments, arc voltage climbs to ~340 V, beats the 230 V supply and forces the current to zero · 3D interactive demo · drag to orbit · Space = run/pause">断路器 · 热磁双判官与灭弧室</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="电流" data-en="Current">电流</span><span class="v" id="stI">—</span>
+  <span class="k" data-zh="双金属" data-en="Bimetal">双金属</span><span class="v" id="stTemp">—</span>
+  <span class="k" data-zh="脱扣方式" data-en="Trip mode">脱扣方式</span><span class="v" id="stTrip">—</span>
+  <span class="k" data-zh="分断时间" data-en="Clearing">分断时间</span><span class="v" id="stTime">—</span>
+  <span class="k" data-zh="电弧电压" data-en="Arc volts">电弧电压</span><span class="v" id="stArc">—</span>
+  <span class="k" data-zh="触头状态" data-en="Contacts">触头状态</span><span class="v" id="stContact">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="反时限脱扣特性(log–log):热脱扣 I²t 双曲线,5×In 处磁脱扣竖直跳变;动点=当前工况" data-en="Inverse-time trip curve (log-log): thermal I²t hyperbola, vertical magnetic jump at 5×In; the dot is the current state">反时限脱扣特性(log–log):热脱扣 I²t 双曲线,5×In 处磁脱扣竖直跳变;动点=当前工况</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.o" data-zh="铜:电流路径与灭弧件" data-en="copper: current path & arc gear">铜:电流路径与灭弧件</span>
+    <span class="chip.r" data-zh="红:磁脱扣与故障" data-en="red: magnetic trip & fault">红:磁脱扣与故障</span>
+    <span class="chip.g" data-zh="绿:双金属热脱扣" data-en="green: bimetal thermal trip">绿:双金属热脱扣</span>
+    <span class="chip.b" data-zh="蓝:触头与操作机构" data-en="blue: contacts & mechanism">蓝:触头与操作机构</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnOl" data-zh="过载实验 3×In" data-en="Overload test 3×In">过载实验 3×In</button>
+    <button class="abtn brk" id="btnSc" data-zh="短路实验 12×In" data-en="Short-circuit 12×In">短路实验 12×In</button>
+    <button class="abtn" id="btnRs" data-zh="复位合闸" data-en="Reset & close">复位合闸</button>
+  </div>
+  <div class="row"><label data-zh="负载电流倍数" data-en="Load current">负载电流倍数</label><input id="sI" type="range" min="0.5" max="15" step="0.1" value="1"><span class="val" id="sIV">1.0 ×In</span></div>
+  <div class="row"><label data-zh="双金属时间加速" data-en="Thermal time ×">双金属时间加速</label><input id="sAcc" type="range" min="1" max="60" step="1" value="1"><span class="val" id="sAccV">×1</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglInt" type="checkbox" checked> <span data-zh="内部机构" data-en="Internals">内部机构</span></label>
+      <label><input id="tglPath" type="checkbox" checked> <span data-zh="电流路径" data-en="Current path">电流路径</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../bimetallic-strip/" data-zh="双金属片:热脱扣的芯" data-en="bimetallic strip: the thermal core">双金属片:热脱扣的芯</a>
+    <a href="../relay/" data-zh="继电器:小电流驾驭大电流" data-en="relay: small current steers big current">继电器:小电流驾驭大电流</a>
+    <a href="../lightning/" data-zh="闪电:天然的大电流电弧" data-en="lightning: nature's mega-amp arc">闪电:天然的大电流电弧</a>
+    <a href="../transformer/" data-zh="变压器:短路电流之源" data-en="transformer: where fault current comes from">变压器:短路电流之源</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, f) => a + (b - a) * f;
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const damp = (c, t, k, dt) => c + (t - c) * Math.min(1, dt * k);
+const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const speedMul = clamp(qsFloat('speed', 1), 0.25, 3);
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141b, 14, 42);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  scene.fog.color = new THREE.Color(dark ? 0x10141b : 0xd9e2ea);
+  groundM.color.setHex(dark ? 0x191c22 : 0xb2bec9);
+  caseM.color.setHex(dark ? 0x2c3138 : 0x8794a1);
+  edgeM.color.setHex(dark ? 0x59616b : 0x7f8c99);
+  handleM.color.setHex(dark ? 0xff6b6b : 0xe03131);
+  cableM.color.setHex(dark ? 0x22262b : 0x3d4650);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('断路器 · 热磁双判官与灭弧室', 'Circuit Breaker · Thermal + Magnetic Judges & the Arc Chute');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+  syncBtns();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+/* ---------------- 渲染器 / 场景 ---------------- */
+let renderer = null, webglOK = true;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  document.getElementById('app').appendChild(renderer.domElement);
+} catch (err) {
+  webglOK = false;
+  const errDiv = document.createElement('div');
+  errDiv.style.cssText = 'position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:99;background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;padding:18px 26px;color:var(--text);font-size:14px;max-width:420px;text-align:center';
+  errDiv.textContent = L('WebGL 初始化失败:3D 画面不可用,但左侧控制面板仍可浏览。', 'WebGL failed to start: the 3D view is unavailable, but the control panel still works.');
+  document.body.appendChild(errDiv);
+}
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+if (webglOK) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+}
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 160);
+camera.position.set(7.0, 4.6, 9.2);
+const controls = new OrbitControls(camera, webglOK ? renderer.domElement : document.body);
+controls.target.set(0, 1.7, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 32;
+controls.autoRotateSpeed = 0.3;
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.55);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 1.0);
+key.position.set(7, 10, 8);
+scene.add(key);
+const fillL = new THREE.DirectionalLight(0xffd8a8, 0.25);
+fillL.position.set(-8, 5, -6);
+scene.add(fillL);
+const arcLight = new THREE.PointLight(0x9fc4ff, 0, 6, 2);
+arcLight.position.set(-0.6, 2.3, 0.5);
+scene.add(arcLight);
+/* ================= 物理状态(C16:In = 16 A) ================= */
+const IN = 16, TAU = 160, KTH = 2.1, MAG = 5, PLATES = 11, U_SEG = 27, U_COL = 40;
+const CLOSE_A = 2.60, OPEN_A = 1.98, ON_X = -0.38, OFF_X = 0.38;
+let Iset = 1.0, accel = 1;
+let st = 'closed';                       // closed | tripping | arcing | open | closing
+let tempPU = 0, heatT = 0;               // 双金属积热(×In² 标幺) / 故障累计时间 s
+let Iarc = 0, tripMode = '', tripI = 0, tripT = 0;
+let armA = CLOSE_A, armTgt = CLOSE_A, armAnimT = 0;
+let latchA = 0, latchTgt = 0, handleX = ON_X, handleTgt = ON_X, barTilt = 0, barTgt = 0;
+let slugTgt = 0, slugY = 1.3, bendCur = 0;
+let arcOn = false, arcAnim = 0, arcFade = 0, zeroT = -1, segsNow = 0;
+let labelsOn = true, intOn = true, pathOn = true;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let phaseIdx = 0, notifyT = 0, notifyZ = '', notifyE = '', simT = 0;
+const tPred = I => I * I > KTH ? TAU * Math.log(I * I / (I * I - KTH)) : Infinity;
+const bendPU = () => clamp((tempPU - 0.9) / 1.2, 0, 1.15);
+const Tdisp = () => 25 + bendPU() * 115;
+function fmtT(t) {
+  if (!Number.isFinite(t)) return L('∞', '∞');
+  if (t >= 90) return (t / 60).toFixed(1) + L(' min', ' min');
+  return (t >= 10 ? t.toFixed(0) : t.toFixed(1)) + ' s';
+}
+function Iflow() {
+  if (st === 'closed' || st === 'closing' || st === 'tripping') return Iset;
+  if (arcOn) return Iarc;
+  return 0;
+}
+/* ---------------- 材质 ---------------- */
+const groundM = new THREE.MeshStandardMaterial({ color: 0x191c22, roughness: 0.95 });
+const caseM = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.55, metalness: 0.2, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
+const edgeM = new THREE.LineBasicMaterial({ color: 0x59616b, transparent: true, opacity: 0.8 });
+const copperM = new THREE.MeshStandardMaterial({ color: 0xd9903f, roughness: 0.35, metalness: 0.8 });
+const coilM = new THREE.MeshStandardMaterial({ color: 0xc46a2a, roughness: 0.45, metalness: 0.7 });
+const ironM = new THREE.MeshStandardMaterial({ color: 0x8f979e, roughness: 0.4, metalness: 0.85 });
+const chuteM = new THREE.MeshStandardMaterial({ color: 0x6b737b, roughness: 0.45, metalness: 0.85, side: THREE.DoubleSide });
+const fixM = new THREE.MeshStandardMaterial({ color: 0xd8dce2, roughness: 0.25, metalness: 0.9 });
+const biM = new THREE.MeshStandardMaterial({ color: 0xb06a34, roughness: 0.4, metalness: 0.6, emissive: 0xff4400, emissiveIntensity: 0 });
+const springM = new THREE.MeshStandardMaterial({ color: 0xaab2ba, roughness: 0.4, metalness: 0.85 });
+const handleM = new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.5, metalness: 0.1 });
+const cableM = new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.9 });
+const pathGlowM = new THREE.MeshBasicMaterial({ color: 0xffa050, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false });
+const arcOutM = new THREE.LineBasicMaterial({ color: 0x7fb4ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false });
+const arcInM = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+const segM = new THREE.PointsMaterial({ size: 0.12, vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+const dotM = new THREE.PointsMaterial({ size: 0.09, vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+/* ---------------- 场景搭建 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 6.5, 0.2, 48), groundM);
+ground.position.y = -0.34;
+scene.add(ground);
+const rail = new THREE.Mesh(new THREE.BoxGeometry(5.7, 0.16, 0.42), ironM);
+rail.position.y = -0.16;
+scene.add(rail);
+/* 外壳(6 面板 + 轮廓线):内部机构开=半透明 */
+const caseGrp = new THREE.Group();
+scene.add(caseGrp);
+const casePanel = (w, h, d, x, y, z) => {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), caseM);
+  m.position.set(x, y, z);
+  caseGrp.add(m);
+};
+casePanel(5.3, 3.7, 0.06, 0, 1.7, -1.02);
+casePanel(5.3, 3.7, 0.06, 0, 1.7, 1.02);
+casePanel(0.06, 3.7, 2.1, -2.65, 1.7, 0);
+casePanel(0.06, 3.7, 2.1, 2.65, 1.7, 0);
+casePanel(5.3, 0.06, 2.1, 0, 3.58, 0);
+casePanel(5.3, 0.06, 2.1, 0, -0.08, 0);
+const caseEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(5.36, 3.72, 2.12)), edgeM);
+caseEdge.position.set(0, 1.7, 0);
+scene.add(caseEdge);
+/* 接线端:LINE 左上 / LOAD 右下 + 压线螺钉 + 电缆 */
+function terminal(x, y, screwAxis) {
+  const g = new THREE.Group();
+  const blk = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.62), copperM);
+  blk.position.set(x, y, 0);
+  g.add(blk);
+  const scr = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.2, 14), ironM);
+  if (screwAxis === 'z') { scr.rotation.x = Math.PI / 2; scr.position.set(x, y, 0.38); }
+  else scr.position.set(x, y + 0.33, 0);
+  g.add(scr);
+  scene.add(g);
+  return g;
+}
+terminal(-2.15, 2.98, 'y');
+terminal(2.15, 0.28, 'z');
+const stubTop = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.7, 10), cableM);
+stubTop.position.set(-2.15, 3.75, 0);
+scene.add(stubTop);
+const stubBot = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.7, 10), cableM);
+stubBot.position.set(2.15, -0.1, -0.7);
+scene.add(stubBot);
+/* 电磁线圈(磁脱扣):铁芯 + 漆包螺旋 + 动铁心(slug) */
+const core = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.25, 12), ironM);
+core.position.set(-1.55, 1.32, 0);
+scene.add(core);
+const coil = new THREE.Mesh(helixGeo(0.22, 6, 1.05, 0.045, 150), coilM);
+coil.position.set(-1.55, 0.78, 0);
+scene.add(coil);
+const slug = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.3, 14), ironM);
+slug.position.set(-1.55, 1.3, 0);
+scene.add(slug);
+/* 脱扣杆 + 锁扣机构 */
+const tripBar = new THREE.Mesh(new THREE.BoxGeometry(2.95, 0.05, 0.05), ironM);
+tripBar.position.set(-0.15, 2.06, 0.35);
+scene.add(tripBar);
+const latG = new THREE.Group();
+latG.position.set(1.5, 1.95, 0.3);
+scene.add(latG);
+const pawl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.08, 0.07), ironM);
+pawl.position.set(0.17, 0, 0);
+latG.add(pawl);
+const backArm = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.07, 0.07), ironM);
+backArm.position.set(-0.16, 0, 0);
+latG.add(backArm);
+{
+  const dir = v3(0.87 - 1.5, 1.05 - 1.95, 0 - 0.3);
+  const len = dir.length();
+  const rod = new THREE.Mesh(new THREE.BoxGeometry(0.035, len, 0.035), ironM);
+  rod.position.set(-0.315, -0.45, -0.15);
+  rod.quaternion.setFromUnitVectors(v3(0, 1, 0), dir.normalize());
+  latG.add(rod);
+}
+/* 静触头 + 弧角(灭弧弧角) */
+const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.55, 0.14), copperM);
+post.position.set(-0.1, 1.2, 0);
+scene.add(post);
+const fixPad = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.09, 16), fixM);
+fixPad.position.set(-0.1, 1.52, 0);
+scene.add(fixPad);
+const hornCurve = new THREE.CatmullRomCurve3([v3(-0.28, 1.6, 0), v3(-0.5, 1.86, 0), v3(-0.68, 2.1, 0), v3(-0.82, 2.28, 0)]);
+scene.add(new THREE.Mesh(new THREE.TubeGeometry(hornCurve, 20, 0.035, 8, false), copperM));
+const horn2 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, 0.05), copperM);
+horn2.position.set(0.3, 1.62, 0);
+horn2.rotation.z = 0.5;
+scene.add(horn2);
+/* 动触头臂(绕支点旋转)+ 主弹簧 */
+const PIV = v3(0.85, 1.05, 0);
+const armGrp = new THREE.Group();
+armGrp.position.copy(PIV);
+scene.add(armGrp);
+const armBar = new THREE.Mesh(new THREE.BoxGeometry(1.04, 0.13, 0.15), copperM);
+armBar.position.set(0.5, 0, 0);
+armGrp.add(armBar);
+const armPad = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.09, 0.22), fixM);
+armPad.position.set(1.0, 0.03, 0);
+armGrp.add(armPad);
+const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.2, 12), ironM);
+hub.rotation.x = Math.PI / 2;
+armGrp.add(hub);
+const spring = new THREE.Mesh(helixGeo(0.07, 7, 1, 0.016, 110), springM);
+scene.add(spring);
+const SPRING_A = v3(0.35, 1.92, 0.15);
+function syncSpring() {
+  const b = v3(0.6, 0.06, 0).applyQuaternion(armGrp.quaternion).add(PIV);
+  const dir = b.clone().sub(SPRING_A);
+  const len = dir.length();
+  if (len < 0.02) return;
+  spring.position.copy(SPRING_A);
+  spring.quaternion.setFromUnitVectors(v3(0, 1, 0), dir.normalize());
+  spring.scale.set(1, len, 1);
+}
+/* 双金属片(热脱扣):6 节链,热弯 + 红热自发光 */
+const biAnchor = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.14), ironM);
+biAnchor.position.set(1.95, 0.52, 0);
+scene.add(biAnchor);
+const biSegGeo = new THREE.BoxGeometry(0.1, 0.245, 0.07);
+const biSegs = [];
+{
+  let parent = biAnchor;
+  for (let i = 0; i < 6; i++) {
+    const s = new THREE.Mesh(biSegGeo, biM);
+    s.position.y = i === 0 ? 0.12 : 0.245;
+    parent.add(s);
+    biSegs.push(s);
+    parent = s;
+  }
+}
+/* 灭弧栅:11 片钢片 + 侧支架 */
+const plateGeo = new THREE.BoxGeometry(0.018, 0.78, 0.72);
+for (let i = 0; i < PLATES; i++) {
+  const p = new THREE.Mesh(plateGeo, chuteM);
+  p.position.set(-1.28 + i * 0.09, 2.68, 0);
+  p.rotation.z = i % 2 ? 0.045 : -0.045;
+  scene.add(p);
+}
+for (const sx of [-1.34, -0.32]) {
+  const br = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.95, 0.8), ironM);
+  br.position.set(sx, 2.68, 0);
+  scene.add(br);
+}
+/* 电流路径:实心铜排 + 辉光管 + 流动粒子 */
+const pathA = new THREE.CatmullRomCurve3([v3(-2.15, 2.9, 0), v3(-1.9, 2.1, 0), v3(-1.55, 1.85, 0), v3(-1.55, 0.8, 0), v3(-1.0, 0.95, 0), v3(-0.5, 1.05, 0), v3(-0.1, 1.3, 0), v3(-0.1, 1.48, 0)]);
+const pathB = new THREE.CatmullRomCurve3([v3(0.85, 1.05, 0), v3(1.4, 0.92, 0), v3(1.9, 0.75, 0), v3(1.95, 0.5, 0), v3(1.95, 0.22, 0), v3(2.15, 0.2, 0)]);
+scene.add(new THREE.Mesh(new THREE.TubeGeometry(pathA, 48, 0.055, 10, false), copperM));
+scene.add(new THREE.Mesh(new THREE.TubeGeometry(pathA, 48, 0.085, 10, false), pathGlowM));
+const pathBSolid = new THREE.Mesh(new THREE.TubeGeometry(pathB, 32, 0.055, 10, false), copperM);
+const pathBGlow = new THREE.Mesh(new THREE.TubeGeometry(pathB, 32, 0.085, 10, false), pathGlowM);
+scene.add(pathBSolid, pathBGlow);
+const DOT_N = 44;
+const dotGeo = new THREE.BufferGeometry();
+const dotPos = new Float32Array(DOT_N * 3), dotCol = new Float32Array(DOT_N * 3);
+const dotUs = [], dotOff = [];
+for (let i = 0; i < DOT_N; i++) {
+  dotUs.push(Math.random());
+  dotOff.push([(Math.random() - 0.5) * 0.16, (Math.random() - 0.5) * 0.16, (Math.random() - 0.5) * 0.1]);
+  dotCol[i * 3] = 1; dotCol[i * 3 + 1] = 0.76; dotCol[i * 3 + 2] = 0.42;
+}
+dotGeo.setAttribute('position', new THREE.BufferAttribute(dotPos, 3));
+dotGeo.setAttribute('color', new THREE.BufferAttribute(dotCol, 3));
+const dotPts = new THREE.Points(dotGeo, dotM);
+dotPts.frustumCulled = false;
+scene.add(dotPts);
+/* 电弧:双层折线 + 钢片间弧光点 */
+const ARC_N = 13;
+const arcPosA = new Float32Array(ARC_N * 3), arcPosB = new Float32Array(ARC_N * 3);
+const arcGeoA = new THREE.BufferGeometry(), arcGeoB = new THREE.BufferGeometry();
+arcGeoA.setAttribute('position', new THREE.BufferAttribute(arcPosA, 3));
+arcGeoB.setAttribute('position', new THREE.BufferAttribute(arcPosB, 3));
+const arcLineA = new THREE.Line(arcGeoA, arcOutM);
+const arcLineB = new THREE.Line(arcGeoB, arcInM);
+arcLineA.visible = arcLineB.visible = false;
+arcLineA.frustumCulled = arcLineB.frustumCulled = false;
+scene.add(arcLineA, arcLineB);
+const segGeo = new THREE.BufferGeometry();
+const segPos = new Float32Array(PLATES * 3), segCol = new Float32Array(PLATES * 3);
+for (let i = 0; i < PLATES; i++) { segCol[i * 3] = 0.72; segCol[i * 3 + 1] = 0.85; segCol[i * 3 + 2] = 1; }
+segGeo.setAttribute('position', new THREE.BufferAttribute(segPos, 3));
+segGeo.setAttribute('color', new THREE.BufferAttribute(segCol, 3));
+const segPts = new THREE.Points(segGeo, segM);
+segPts.frustumCulled = false;
+scene.add(segPts);
+/* 手柄:ON/OFF 摇杆 */
+const handleGrp = new THREE.Group();
+handleGrp.position.set(0.5, 3.46, 0.55);
+scene.add(handleGrp);
+const hBase = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.22, 0.12, 14), ironM);
+handleGrp.add(hBase);
+const hLever = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.42, 0.11), handleM);
+hLever.position.y = 0.24;
+handleGrp.add(hLever);
+const armPadW = new THREE.Vector3();
+function buildArc(amp, out) {
+  armPad.getWorldPosition(armPadW);
+  const J = a => (Math.random() - 0.5) * a * amp;
+  let k = 0;
+  const put = (x, y, z) => { out[k * 3] = x; out[k * 3 + 1] = y; out[k * 3 + 2] = z; k++; };
+  put(armPadW.x, armPadW.y, armPadW.z);
+  put(lerp(armPadW.x, -0.1, 0.5) + J(0.16), lerp(armPadW.y, 1.56, 0.5) + J(0.12), J(0.08));
+  put(-0.1 + J(0.06), 1.56 + J(0.06), 0);
+  put(-0.32 + J(0.08), 1.7 + J(0.08), 0);
+  put(-0.55 + J(0.08), 1.96 + J(0.08), 0);
+  put(-0.8 + J(0.08), 2.26 + J(0.08), 0);
+  for (let i = 0; i < 7; i++) {
+    const yy = 2.34 + i * (2.98 - 2.34) / 6;
+    put(-0.86 + (i % 2 ? 0.055 : -0.055) + J(0.05), yy, J(0.04));
+  }
+}
+function syncArcVisual() {
+  const on = arcFade > 0.03;
+  arcLineA.visible = arcLineB.visible = on;
+  segPts.visible = on && segsNow > 0;
+  arcOutM.opacity = 0.55 * arcFade;
+  arcInM.opacity = 0.95 * arcFade;
+  segM.opacity = 0.95 * arcFade;
+  if (!on) return;
+  buildArc(1, arcPosA);
+  buildArc(0.4, arcPosB);
+  arcGeoA.attributes.position.needsUpdate = true;
+  arcGeoB.attributes.position.needsUpdate = true;
+  for (let i = 0; i < PLATES; i++) {
+    if (i < segsNow) { segPos[i * 3] = -1.28 + i * 0.09 + 0.045; segPos[i * 3 + 1] = 2.63 + (i % 2) * 0.07; segPos[i * 3 + 2] = 0.1; }
+    else segPos[i * 3 + 1] = -999;
+  }
+  segGeo.attributes.position.needsUpdate = true;
+  arcLight.intensity = 2.2 * arcFade * (0.6 + Math.min(Iarc, 6) / 6) * (0.85 + 0.25 * Math.sin(simT * 42));
+}
+function helixGeo(rad, turns, h, tuber, seg) {
+  const pts = [];
+  for (let i = 0; i <= seg; i++) {
+    const t = i / seg, a = t * turns * Math.PI * 2;
+    pts.push(v3(Math.cos(a) * rad, t * h, Math.sin(a) * rad));
+  }
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), seg, tuber, 8, false);
+}
+/* ---------------- 视图开关 ---------------- */
+function applyView() {
+  caseM.transparent = intOn;
+  caseM.opacity = intOn ? 0.22 : 1;
+  caseM.depthWrite = !intOn;
+  caseM.needsUpdate = true;
+  caseGrp.visible = true;
+}
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true, parent = null) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblLine = addLabel(() => L('进线端 LINE:接电源', 'LINE terminal: supply side'), v3(-2.35, 4.15, 0), 'b');
+const lblCoil = addLabel(() => L('电磁线圈:磁判官,整定 ≥5×In(80 A)', 'solenoid: magnetic judge, picks up ≥5×In (80 A)'), v3(-2.4, 1.35, 0), 'r');
+const lblContact = addLabel(() => L('静/动触头:弹簧压力保持亚毫欧接触', 'fixed/moving contacts: spring keeps sub-mΩ'), v3(-0.15, 0.95, 0), 'b');
+const lblMech = addLabel(() => L('操作机构:锁扣+弹簧+手柄(自由脱扣)', 'mechanism: latch + spring + handle (trip-free)'), v3(0.95, 2.55, 0.35), 'b');
+const lblBi = addLabel(() => L(`双金属片:热判官,1.13×In 不动 · 1.45×In 必动,现 ${Tdisp().toFixed(0)} °C`, `bimetal: thermal judge — 1.13×In no trip, 1.45×In must trip, now ${Tdisp().toFixed(0)} °C`), v3(2.5, 1.5, 0), 'g');
+const lblChute = addLabel(() => L(`灭弧栅:${PLATES} 片钢片,把长弧切成 ${PLATES} 段短弧`, `arc chute: ${PLATES} steel plates slice the arc`), v3(-0.85, 3.42, 0), 'o');
+const lblHorn = addLabel(() => L('灭弧弧角:把电弧拉长、引上钢片堆', 'arc runners: stretch the arc up into the stack'), v3(-1.35, 2.05, 0), 'o');
+const lblLoad = addLabel(() => L('出线端 LOAD:接负载', 'LOAD terminal: to the load'), v3(2.55, 0.05, 0), 'b');
+const lblHandle = addLabel(() => L('手柄:ON/OFF,脱扣后需再扣', 'handle: ON/OFF, re-latch after trip'), v3(0.55, 4.2, 0.55), 'g');
+const lblNotify = addLabel(() => {
+  if (notifyT > 0) return L(notifyZ, notifyE);
+  return '';
+}, v3(0, 5.1, 0), 'r');
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: v3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: v3(t[0], t[1], t[2]), k: 0 };
+}
+function notify(z, e, t = 3.4) { notifyT = t; notifyZ = z; notifyE = e; }
+function setI(x) { Iset = clamp(x, 0.5, 15); syncSliders(); }
+const STEPS = [
+  { b: '正常导通:一条串联回路,两位判官待命', be: 'Normal conduction: one series loop, two judges on standby',
+    d: '电流从进线端出发,串联流过电磁线圈、静触头—动触头、再经双金属片从出线端返回;C16 额定 16 A,触头弹簧把接触电阻压到 1 mΩ 以下,满载损耗不足 0.3 W;此刻双金属在 40 °C 以下微弯、线圈吸力远不够吸动衔铁——两位判官都在静默积累证据。',
+    de: 'Current leaves LINE in series through the solenoid, the fixed-moving contact pair and the bimetal back to LOAD; a C16 is rated 16 A, spring force keeps contact resistance under 1 mΩ and full-load loss under 0.3 W. The bimetal barely bends below 40 °C and coil pull is far too weak — both judges quietly gather evidence.',
+    act: () => { flyTo([7.0, 4.6, 9.2], [0, 1.7, 0]); } },
+  { b: '过载为什么交给热:反时限容忍浪涌', be: 'Why overload goes to heat: inverse time tolerates inrush',
+    d: '双金属由两种膨胀率不同的合金复合,电流直接流过它、按 I² 积热弯曲:标准要求 1.13×In(18 A)一小时不许动,1.45×In(23.2 A)一小时内必动;电机直接启动的浪涌达 5–7×In 却只持续 0.05–0.2 s,热量来不及攒够就散掉——慢判官天生放过浪涌、专罚持续过载。',
+    de: 'The bimetal bonds two alloys of different expansion; current heats it as I². Standards demand no trip for 1 h at 1.13×In (18 A) and a trip within 1 h at 1.45×In (23.2 A). Motor inrush hits 5–7×In but lasts only 0.05–0.2 s — too brief to accumulate heat, so the slow judge ignores inrush and punishes sustained overload.',
+    act: () => { setI(3); flyTo([4.8, 2.6, 6.2], [1.7, 1.3, 0]); } },
+  { b: '短路为什么必须用磁:10 ms 保命线', be: 'Why short circuits need magnetism: the 10 ms survival line',
+    d: '真短路电流可达 3–10 kA,是额定的一两百倍,100 ms 内导线绝缘就会软化冒烟;线圈吸力 F∝(NI)²,电流越过整定值 5×In(80 A)的瞬间动铁心被吸起撞开锁扣,触头在约 10 ms 内被弹簧猛拉分断——等双金属慢慢弯,线已经烧了。',
+    de: 'A real short circuit drives 3–10 kA — hundreds of times rated — and cooks cable insulation within 100 ms. Coil pull grows as (NI)²; the instant current passes the 5×In (80 A) setting the slug snaps up, hits the latch, and the spring yanks the contacts apart in ~10 ms. Wait for the bimetal and the cable is already burning.',
+    act: () => { setI(12); flyTo([-5.0, 2.6, 5.8], [-1.4, 1.5, 0]); } },
+  { b: '电弧:分不开的等离子桥', be: 'The arc: a plasma bridge that refuses to break',
+    d: '触头分开的瞬间电流并不停:最后接触点的金属熔化、蒸发,被电流电离成 5000–20000 K 的等离子体导电通道——电弧;只要它燃着,故障电流就继续灌入电网,C16 分断 6 kA 时弧能足以把触头焊死或喷铜。分断的真正课题不是分开触头,而是熄灭电弧。',
+    de: 'When the contacts part the current keeps flowing: the last touching point melts, vaporizes and ionizes into a 5,000–20,000 K plasma channel — the arc. While it burns, fault current keeps feeding the grid; interrupting 6 kA can weld or blast the contacts away. The real task is not separating contacts but killing the arc.',
+    act: () => { if (st === 'closed') setI(12); flyTo([-3.6, 2.6, 4.6], [-0.4, 1.8, 0]); } },
+  { b: '灭弧栅:切成 11 段,弧压反杀', be: 'The arc chute: 11 slices, arc-voltage counterattack',
+    d: '弧角先把电弧从触头拉长、拉上钢片堆;11 片钢片把它切成 11 段串联短弧,每段近极压降 25–30 V,总弧压 40+11×27≈340 V,反超 230 V 电源电压;弧压一占上风,电流被强制压向零点,钢片同时散热、去离子,过零后弧隙耐压恢复、不再重燃——毫秒级分断完成。',
+    de: 'Runners stretch the arc off the contacts up into the stack; 11 steel plates slice it into 11 series short arcs, each adding a 25–30 V near-electrode drop. Total arc voltage 40+11×27≈340 V overwhelms the 230 V supply and forces the current toward zero; the plates cool and deionize the gaps so it cannot re-strike. Clearing done in milliseconds.',
+    act: () => { if (st === 'closed') setI(12); flyTo([-4.4, 3.4, 4.8], [-0.85, 2.5, 0]); } },
+  { b: '对比保险丝:可复位、可选择性', be: 'Versus the fuse: resettable and selective',
+    d: '熔断器靠熔体一次性格断,结构简单、分断能力可做到 50–100 kA、限流性能好,但每次都要换芯;断路器脱扣后复扣即恢复,还能指示状态、加装分励/失压脱扣;上下级靠脱扣曲线错开实现选择性——只跳离故障最近的一级,家配电箱里两者混用各司其职。',
+    de: 'A fuse melts once — simple, with breaking capacities of 50–100 kA and excellent current limiting — but needs replacing each time. A breaker re-latches and is back in service, shows its state and accepts shunt/undervoltage trip accessories; upstream grades with staggered trip curves give selectivity, so only the branch nearest the fault trips.',
+    act: () => { flyTo([7.0, 4.6, 9.2], [0, 1.7, 0]); } },
+  { b: 'C 型还是 D 型:一字之差,浪涌去留', be: 'C-curve or D-curve: one letter decides inrush',
+    d: '磁脱扣整定倍数写在型号里:C 型 5–10×In,照明与插座家用标配;D 型 10–20×In,给电机、变压器等浪涌大的回路——8×In 的启动浪涌会让 C 型误跳,D 型稳如泰山;选型一句话:按负载浪涌倍数选曲线,再按现场短路电流校验分断能力(家用 6–10 kA)。',
+    de: 'The magnetic setting is written in the type: C trips at 5–10×In (domestic lighting and sockets), D at 10–20×In for motor and transformer circuits with big inrush — an 8×In start would nuisance-trip a C but leaves a D unmoved. Pick the curve from load inrush, then verify breaking capacity (6–10 kA domestic) against the available fault current.',
+    act: () => { flyTo([-5.0, 2.6, 5.8], [-1.5, 1.5, 0]); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+/* ================= 绘图:反时限脱扣特性(log-log) ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  if (!W || !H) return;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const cAcc = css.getPropertyValue('--acc').trim() || '#ff6b6b';
+  const padL = 40, padR = 12, padT = 12, padB = 24;
+  const lx0 = 0, lx1 = Math.log10(16), lt0 = Math.log10(0.005), lt1 = Math.log10(20000);
+  const xOf = I => padL + (Math.log10(clamp(I, 1, 16)) - lx0) / (lx1 - lx0) * (W - padL - padR);
+  const yOf = t => (H - padB) - (Math.log10(clamp(t, 0.005, 20000)) - lt0) / (lt1 - lt0) * (H - padT - padB);
+  ctx.font = '11px system-ui';
+  /* 网格与刻度 */
+  ctx.strokeStyle = 'rgba(128,150,170,.18)';
+  ctx.fillStyle = cTxt;
+  for (const I of [1, 2, 5, 10]) {
+    ctx.beginPath(); ctx.moveTo(xOf(I), padT); ctx.lineTo(xOf(I), H - padB); ctx.stroke();
+    ctx.fillText(I + '', xOf(I) - 4, H - padB + 14);
+  }
+  for (const t of [0.01, 0.1, 1, 10, 60, 600, 3600]) {
+    ctx.beginPath(); ctx.moveTo(padL, yOf(t)); ctx.lineTo(W - padR, yOf(t)); ctx.stroke();
+    const lab = t < 1 ? t + 's' : t < 60 ? t + 's' : t < 3600 ? (t / 60) + 'min' : '1h';
+    ctx.fillText(lab, 4, yOf(t) + 4);
+  }
+  /* 认证边界:1 h 虚线 + 1.13/1.45 标记 */
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = 'rgba(159,176,195,.5)';
+  ctx.beginPath(); ctx.moveTo(padL, yOf(3600)); ctx.lineTo(W - padR, yOf(3600)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = cTxt;
+  ctx.fillText('1.13', xOf(1.13) - 10, yOf(3600) - 6);
+  ctx.fillText('1.45', xOf(1.45) + 4, yOf(tPred(1.45)) - 8);
+  ctx.strokeStyle = cTxt;
+  for (const [mi, mt] of [[1.13, 3600], [1.45, tPred(1.45)]]) {
+    ctx.beginPath(); ctx.arc(xOf(mi), yOf(mt), 4, 0, Math.PI * 2); ctx.stroke();
+  }
+  /* 热脱扣 I²t 双曲线 */
+  ctx.strokeStyle = '#ff9f4d'; ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  for (let i = 0; i <= 70; i++) {
+    const I = 1.452 + i / 70 * (5 - 1.452);
+    const px = xOf(I), py = yOf(tPred(I));
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#ff9f4d';
+  ctx.fillText(L('热脱扣 I²t', 'thermal I²t'), xOf(2.1) + 6, yOf(tPred(2.1)) + 14);
+  /* 磁脱扣竖直跳变 */
+  ctx.strokeStyle = '#4dabf7'; ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.moveTo(xOf(5), yOf(tPred(5))); ctx.lineTo(xOf(5), yOf(0.01)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(xOf(5), yOf(0.01)); ctx.lineTo(W - padR, yOf(0.01)); ctx.stroke();
+  ctx.fillStyle = '#4dabf7';
+  ctx.fillText(L('磁脱扣 ≤0.1 s', 'magnetic ≤0.1 s'), xOf(5.15), yOf(0.03));
+  /* 动点 */
+  let dx, dy, filled = true;
+  if (st !== 'closed' && tripI > 0) {
+    dx = xOf(tripI); dy = yOf(tripMode === 'mag' ? 0.01 : Math.max(heatT, 0.005));
+  } else {
+    const tp = tPred(Iset);
+    dx = xOf(Iset); dy = Number.isFinite(tp) ? yOf(tp) : H - padB;
+    filled = Number.isFinite(tp);
+  }
+  ctx.fillStyle = cAcc;
+  ctx.beginPath(); ctx.arc(dx, dy, 5, 0, Math.PI * 2); ctx.fill();
+  if (!filled) { ctx.fillStyle = cTxt; ctx.fillText(L('不动作区', 'no-trip zone'), dx - 20, dy - 10); }
+}
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elSI = document.getElementById('sI'), elSIV = document.getElementById('sIV');
+const elAcc = document.getElementById('sAcc'), elAccV = document.getElementById('sAccV');
+const stI = document.getElementById('stI'), stTemp = document.getElementById('stTemp'),
+  stTrip = document.getElementById('stTrip'), stTime = document.getElementById('stTime'),
+  stArc = document.getElementById('stArc'), stContact = document.getElementById('stContact');
+const formulaEl = document.getElementById('formula');
+const btnOl = document.getElementById('btnOl'), btnSc = document.getElementById('btnSc'), btnRs = document.getElementById('btnRs');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elSI.value = Iset;
+  elSIV.textContent = `${Iset.toFixed(1)} ×In · ${(Iset * IN).toFixed(0)} A`;
+  elAcc.value = accel;
+  elAccV.textContent = `×${accel}`;
+}
+function syncBtns() {}
+function updateStats() {
+  const If = Iflow();
+  stI.innerHTML = `${If.toFixed(1)}<small> ×In · ${(If * IN).toFixed(0)} A</small>`;
+  stI.className = 'v ' + (If >= MAG ? 'bad' : If >= 1.13 ? 'warn' : 'ok');
+  const bendMM = bendPU() * 5.5;
+  stTemp.innerHTML = `${Tdisp().toFixed(0)}<small> °C · 弯 ${bendMM.toFixed(1)} mm</small>`;
+  stTemp.className = 'v ' + (tempPU >= KTH ? 'bad' : tempPU / KTH > 0.75 ? 'warn' : '');
+  stTrip.textContent = tripMode === 'th' ? L('热脱扣', 'thermal') : tripMode === 'mag' ? L('磁脱扣', 'magnetic') : '—';
+  stTrip.className = 'v ' + (tripMode === 'th' ? 'warn' : tripMode === 'mag' ? 'bad' : '');
+  if (tripMode) stTime.innerHTML = (tripMode === 'mag' ? '≈10<small> ms</small>' : `${fmtT(heatT)}<small></small>`);
+  else {
+    const tp = tPred(Iset);
+    stTime.innerHTML = Number.isFinite(tp) ? `${fmtT(tp)}<small> ${L('预计', 'est')}</small>` : L('不动作', 'no trip');
+  }
+  const ua = arcOn ? (U_COL + segsNow * U_SEG) * arcFade : 0;
+  stArc.innerHTML = `${ua.toFixed(0)}<small> V</small>`;
+  stArc.className = 'v ' + (ua > 5 ? 'bad' : '');
+  stContact.textContent = st === 'closed' ? L('闭合', 'closed') : st === 'closing' ? L('复闭合中', 're-closing')
+    : (st === 'tripping' || st === 'arcing') ? L('分断中', 'clearing') : L('已分断·待复位', 'open · reset');
+  stContact.className = 'v ' + (st === 'closed' ? 'ok' : st === 'closing' ? 'warn' : 'bad');
+}
+function updateFormula() {
+  const tp = tPred(Iset);
+  const tstr = Number.isFinite(tp) ? fmtT(tp) : L('∞(长期不动作)', '∞ (never trips)');
+  formulaEl.innerHTML = L(
+    `<b>热判官 · 双金属:I²t 积热,dT/dt=(I²−T)/160 s</b>;当前 ${Iset.toFixed(1)}×In 预计 ${tstr},1.13×In(18 A)一小时不动作<br>` +
+    `<b>认证边界(C 型 C16):1.45×In(23.2 A)≤ 1 h 动作 · 磁脱扣 5–10×In(80–160 A)≤ 0.1 s · 分断能力 Icn = 6–10 kA</b><br>` +
+    `<b>磁判官:吸力 F ∝ (N·I)²</b>,整定 5×In = 80 A;真短路 3–10 kA(≈200–600×In),吸力放大逾千倍,10 ms 猛拉触头<br>` +
+    `<b>灭弧:U弧 = 40 V 弧柱 + n×27 V 近极压降</b>,11 段 ≈ 340 V &gt; 230 V 电源 → 电流强制压向过零,钢片散热去离子不再重燃<br>` +
+    `<b>曲线选型:C 型 5–10×In(家用)· D 型 10–20×In(电机/变压器浪涌)</b>;本实验 12×In 仅 192 A,不足真短路十分之一`,
+    `<b>Thermal judge · bimetal: I²t heating, dT/dt=(I²−T)/160 s</b>; now ${Iset.toFixed(1)}×In trips in ${tstr}; 1.13×In (18 A) holds 1 h<br>` +
+    `<b>Proof bounds (C-curve C16): 1.45×In (23.2 A) ≤ 1 h · magnetic 5–10×In (80–160 A) ≤ 0.1 s · Icn = 6–10 kA</b><br>` +
+    `<b>Magnetic judge: pull F ∝ (N·I)²</b>, set at 5×In = 80 A; real faults 3–10 kA (200–600×In) multiply the pull a thousand-fold — 10 ms grab<br>` +
+    `<b>Arc: Uarc = 40 V column + n×27 V electrode drops</b>, 11 gaps ≈ 340 V &gt; 230 V supply → current forced to zero; plates cool and deionize<br>` +
+    `<b>Curves: C 5–10×In (domestic) · D 10–20×In (motor/transformer inrush)</b>; this test at 12×In is only 192 A — a fraction of a real fault`);
+}
+function syncAll() {
+  syncSliders(); syncBtns(); updateFormula(); updateStats(); drawPlot(); applyView();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+/* ================= 动作与脱扣 ================= */
+function startTrip(mode) {
+  tripMode = mode; tripI = Iset; Iarc = Iset;
+  tripT = mode === 'mag' ? 0.01 : heatT;
+  st = 'tripping'; armAnimT = 0; latchTgt = 0.55; handleTgt = OFF_X;
+  if (mode === 'mag') {
+    slugTgt = 1; barTgt = 0.06;
+    notify(`磁脱扣:${Iset.toFixed(1)}×In 吸力∝(NI)²,动铁心撞开锁扣 — 全分断 ≈ 10 ms(动画慢放约 150 倍)`,
+      `magnetic trip: ${Iset.toFixed(1)}×In, pull ∝(NI)² slams the slug — full clearing ≈ 10 ms (slowed ~150×)`);
+  } else {
+    notify(`热脱扣:双金属 ${Tdisp().toFixed(0)} °C 顶开锁扣,反时限 t ≈ ${fmtT(heatT)}`,
+      `thermal trip: bimetal at ${Tdisp().toFixed(0)} °C lifts the latch, inverse time t ≈ ${fmtT(heatT)}`);
+  }
+}
+function doReset(silent) {
+  if (st === 'closed') { if (!silent) notify('触头已闭合,无需复位', 'contacts already closed — nothing to reset'); return; }
+  st = 'closing'; armTgt = CLOSE_A; latchTgt = 0; barTgt = 0; slugTgt = 0; handleTgt = ON_X;
+  arcOn = false; arcAnim = 0; zeroT = -1; tripT = 0; heatT = 0; tripI = 0; tripMode = '';
+  if (tempPU > 1.5) notify('双金属仍烫:合闸后若维持过载会再次跳闸', 'bimetal still hot: it will re-trip quickly if the overload persists');
+  else if (!silent) notify('复位:机构再扣,弹簧重新把触头压紧', 'reset: mechanism re-latched, spring presses the contacts closed');
+}
+btnOl.addEventListener('click', () => {
+  if (st !== 'closed') doReset(true);
+  setI(3); updateFormula();
+  notify(`过载实验:3×In = 48 A 持续流过双金属,按 I² 积热反时限弯曲,预计 ${fmtT(tPred(3))} 后顶开锁扣(可用时间加速)`,
+    `Overload test: 3×In = 48 A sustained — the bimetal heats as I² and trips in about ${fmtT(tPred(3))} (use the time slider)`);
+});
+btnSc.addEventListener('click', () => {
+  if (st !== 'closed') doReset(true);
+  setI(12); updateFormula();
+  notify('短路实验:12×In = 192 A,线圈吸力∝(NI)² 瞬间吸动衔铁,10 ms 内分断(动画慢放)',
+    'Short-circuit test: 12×In = 192 A — pull ∝(NI)² snaps the armature, clearing in 10 ms (animation slowed)');
+});
+btnRs.addEventListener('click', () => doReset(false));
+elSI.addEventListener('input', () => { Iset = +elSI.value; syncSliders(); updateFormula(); });
+elAcc.addEventListener('input', () => { accel = +elAcc.value; syncSliders(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglInt').addEventListener('change', e => { intOn = e.target.checked; applyView(); });
+document.getElementById('tglPath').addEventListener('change', e => { pathOn = e.target.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  if (renderer) renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, accPlot = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speedMul * (playing ? 1 : 0);
+  const dtTh = dt * accel;
+  if (notifyT > 0) notifyT -= dt0;
+  /* --- 物理:双金属 ODE + 脱扣状态机 --- */
+  const If = Iflow();
+  tempPU += ((If * If) - tempPU) / TAU * dtTh;
+  if (st === 'closed' && Iset > 1.0) heatT += dtTh;
+  if (tempPU < 0.2) heatT = 0;
+  if (st === 'closed') {
+    if (Iset >= MAG) startTrip('mag');
+    else if (tempPU >= KTH) startTrip('th');
+  } else if (st === 'tripping') {
+    armAnimT += dt * 2.1;
+    if (armAnimT > 0.12) armTgt = OPEN_A;
+    if (armAnimT > 0.3 && !arcOn && tripI >= 0.3) { arcOn = true; arcAnim = 0; zeroT = -1; }
+    if (armAnimT >= 1) st = 'arcing';
+  } else if (st === 'arcing') {
+    arcAnim += dt * 0.8;
+    segsNow = Math.min(PLATES, Math.floor(Math.min(arcAnim, 1) * PLATES));
+    if (segsNow >= 10 && zeroT < 0) {
+      zeroT = simT;
+      notify(`电弧被切成 ${segsNow} 段,弧压 ${U_COL + segsNow * U_SEG} V > 230 V,电流过零熄灭`,
+        `arc sliced into ${segsNow} segments, ${U_COL + segsNow * U_SEG} V beats 230 V — extinguished at current zero`);
+    }
+    if (zeroT >= 0 && simT - zeroT > 0.38) { arcOn = false; arcAnim = 0; segsNow = 0; st = 'open'; }
+  } else if (st === 'closing') {
+    if (Math.abs(armA - CLOSE_A) < 0.03) st = 'closed';
+  }
+  if (!arcOn) segsNow = 0;
+  simT += dt;
+  /* --- 机构动画 --- */
+  armA = damp(armA, armTgt, armTgt < armA ? 16 : 7, dt);
+  armGrp.rotation.z = armA;
+  latchA = damp(latchA, latchTgt, 12, dt);
+  latG.rotation.z = latchA;
+  handleX = damp(handleX, handleTgt, 10, dt);
+  handleGrp.rotation.x = handleX;
+  barTilt = damp(barTilt, barTgt, 18, dt);
+  tripBar.rotation.z = barTilt;
+  const slugTarget = slugTgt ? 1.9 : 1.3 + clamp((Iset * Iset - 13) / 12, 0, 1) * 0.14;
+  slugY = damp(slugY, slugTarget, slugTgt ? 26 : 8, dt);
+  slug.position.y = slugY;
+  bendCur = damp(bendCur, bendPU(), 6, dt);
+  for (const s of biSegs) s.rotation.z = -bendCur * 0.03;
+  biM.emissiveIntensity = bendCur * 0.5;
+  syncSpring();
+  /* --- 电流路径视觉 --- */
+  const closed = st === 'closed';
+  pathBSolid.visible = pathBGlow.visible = closed;
+  pathGlowM.opacity = pathOn && If > 0.05 ? 0.16 + 0.1 * Math.min(If, 6) / 6 + 0.04 * Math.sin(simT * 9) : 0;
+  if (pathOn && If > 0.05 && playing) {
+    for (let i = 0; i < DOT_N; i++) {
+      dotUs[i] = (dotUs[i] + dt * (0.04 + 0.045 * If)) % 1;
+      const u = dotUs[i], off = dotOff[i];
+      const p = u < 0.62 ? pathA.getPoint(u / 0.62) : pathB.getPoint((u - 0.62) / 0.38);
+      dotPos[i * 3] = p.x + off[0]; dotPos[i * 3 + 1] = p.y + off[1]; dotPos[i * 3 + 2] = p.z + off[2];
+    }
+  } else {
+    for (let i = 0; i < DOT_N; i++) dotPos[i * 3 + 1] = -999;
+  }
+  dotGeo.attributes.position.needsUpdate = true;
+  /* --- 电弧视觉 --- */
+  arcFade = damp(arcFade, arcOn ? 1 : 0, 5, dt);
+  if (!arcOn) arcLight.intensity = 0;
+  syncArcVisual();
+  /* --- 相机飞行 --- */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.14) { acc = 0; updateStats(); }
+  accPlot += dt0;
+  if (accPlot > 0.12) { accPlot = 0; drawPlot(); }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  controls.update();
+  if (renderer) { renderer.render(scene, camera); labelRenderer.render(scene, camera); }
+}
+function start() { if (raf === null && webglOK) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+applyView();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncAll();
+start();
+</script>
+</body>
+</html>
