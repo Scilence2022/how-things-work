@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LZ77 无损压缩 · 滑动窗口</title>
+<style>
+:root,:root[data-theme="dark"]{color-scheme:dark;
+  --acc:#4dabf7;--bg:#0f1214;--panel:rgba(15,18,20,.86);--panel-border:rgba(255,255,255,.09);
+  --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;--hover:rgba(255,255,255,.05);
+  --shadow:0 8px 30px rgba(0,0,0,.45);--tool:rgba(15,18,20,.78);--tool-border:rgba(255,255,255,.12);}
+:root[data-theme="light"]{color-scheme:light;
+  --acc:#1864ab;--bg:#eef2f6;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+  --text:#16202c;--text2:#5b6b7d;--text3:#33414f;--hover:rgba(15,25,40,.05);
+  --shadow:0 8px 26px rgba(30,45,70,.15);--tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+  font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s;}
+#app{position:fixed;inset:0;}
+#main{display:block;width:100%;height:100%;}
+#tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px;}
+.tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);color:var(--text3);
+  font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;padding:0 12px;
+  border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
+  gap:6px;text-decoration:none;backdrop-filter:blur(6px);transition:border-color .15s,color .15s,transform .15s;}
+.tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px);}
+#title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px);}
+#title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6);}
+#title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5);}
+#stats{position:fixed;right:18px;bottom:244px;z-index:4;background:var(--panel);
+  border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+  backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px;}
+#stats .k{font-size:12px;color:var(--text2);align-self:center;}
+#stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
+#stats .v small{font-size:11px;color:var(--text2);font-weight:400;}
+#stats .v.ok{color:#7bd88f;}#stats .v.warn{color:#ffa94d;}
+#panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+  background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;
+  padding:14px 16px 12px;backdrop-filter:blur(6px);box-shadow:var(--shadow);
+  max-height:calc(100vh - 160px);overflow:auto;}
+#actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+.abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 40%;background:var(--hover);
+  color:var(--text2);border:1px solid var(--tool-border);border-radius:9px;padding:7px 10px;
+  font-size:12.5px;font-weight:600;transition:border-color .15s,color .15s,background .15s;}
+.abtn:hover{border-color:var(--acc);color:var(--text);}
+.abtn.on{border-color:rgba(77,171,247,.6);background:rgba(77,171,247,.12);color:var(--text);}
+:root[data-theme="light"] .abtn.on{border-color:rgba(24,100,171,.55);background:rgba(24,100,171,.10);}
+#formula{margin-top:8px;font-size:11.5px;line-height:1.55;color:var(--text2);
+  border-top:1px dashed var(--panel-border);padding-top:7px;}
+#formula b{color:var(--text3);font-weight:600;}
+#steps{list-style:none;margin-top:8px;}
+#steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+  border:1px solid transparent;align-items:flex-start;}
+#steps li:hover{background:var(--hover);}
+#steps li.on{background:rgba(77,171,247,.10);border-color:rgba(77,171,247,.45);}
+:root[data-theme="light"] #steps li.on{background:rgba(24,100,171,.08);border-color:rgba(24,100,171,.4);}
+#steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;
+  display:flex;align-items:center;justify-content:center;margin-top:1px;
+  background:rgba(255,255,255,.12);color:var(--text3);}
+:root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10);}
+#steps li.on .n{background:var(--acc);color:#fff;}
+#steps .t{font-size:12px;color:var(--text3);line-height:1.45;}
+#steps .t b{color:var(--text);font-size:12px;}
+#steps li.on .t b{color:#bde9ff;}
+:root[data-theme="light"] #steps li.on .t b{color:var(--acc);}
+#ctrl{margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border);display:flex;flex-direction:column;gap:6px;}
+#ctrl label{font-size:12px;color:var(--text2);display:flex;justify-content:space-between;}
+#ctrl input[type=range]{width:100%;accent-color:var(--acc);height:4px;cursor:pointer;}
+@media(max-width:900px){#stats{display:none;}}
+@media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh;}
+  #title{max-width:calc(100vw - 200px);}#title h1{font-size:16px;}}
+</style>
+</head>
+<body>
+<div id="app"><canvas id="main"></canvas></div>
+<div id="title">
+  <h1 data-zh="LZ77 无损压缩" data-en="LZ77 Lossless Compression">LZ77 无损压缩</h1>
+  <div class="sub" data-zh="滑动窗口找重复串，三元组取代副本——ZIP 与 PNG 的核心" data-en="Sliding window finds repeats, triples replace copies — the core of ZIP and PNG">滑动窗口找重复串，三元组取代副本——ZIP 与 PNG 的核心</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="原始" data-en="Original">原始</span><span class="v" id="stOrig">— <small>ch</small></span>
+  <span class="k" data-zh="压缩后" data-en="Compressed">压缩后</span><span class="v ok" id="stComp">— <small>tok</small></span>
+  <span class="k" data-zh="压缩比" data-en="Ratio">压缩比</span><span class="v" id="stRatio">—</span>
+  <span class="k" data-zh="令牌类型" data-en="Token type">令牌类型</span><span class="v" id="stTok">—</span>
+</div>
+<div id="panel">
+  <div id="actions">
+    <button class="abtn" id="btnEncode" data-zh="逐步编码" data-en="Step encode">逐步编码</button>
+    <button class="abtn" id="btnAuto"   data-zh="自动" data-en="Auto">自动</button>
+    <button class="abtn" id="btnDecomp" data-zh="解压" data-en="Decompress">解压</button>
+    <button class="abtn" id="btnChange" data-zh="换输入" data-en="Change input">换输入</button>
+  </div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <label>
+      <span data-zh="窗口大小" data-en="Window size">窗口大小</span>
+      <span id="slWVal">16</span>
+    </label>
+    <input type="range" id="slW" min="8" max="32" step="1" value="16">
+  </div>
+</div>
+<script>
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG  = localStorage.getItem('htw-lang')  || 'zh';
+const L = (zh,en) => LANG==='en'?en:zh;
+
+const INPUTS = [
+  'abracadabra abracadabra',
+  'aaaaaaaaaaaaaaa',
+  'the cat sat on the mat',
+  'banana bandana banana',
+];
+let inputIdx = 0;
+let inputStr = INPUTS[inputIdx];
+let windowSize = 16;
+
+function lz77Encode(s, wSize){
+  const tokens = []; let i = 0;
+  while(i < s.length){
+    const winStart = Math.max(0, i - wSize);
+    const buf = s.slice(winStart, i);
+    let bestOff = 0, bestLen = 0;
+    for(let j = 0; j < buf.length; j++){
+      let len = 0;
+      while(i+len < s.length && buf[(j+len) % buf.length] === s[i+len]){ len++; if(len>=255)break; }
+      if(len > bestLen){ bestLen = len; bestOff = buf.length - j; }
+    }
+    if(bestLen >= 3){ tokens.push({type:'copy',offset:bestOff,length:bestLen,pos:i}); i+=bestLen; }
+    else { tokens.push({type:'lit',char:s[i],pos:i}); i++; }
+  }
+  return tokens;
+}
+
+let tokens = [], encodeStep = 0, cursorPos = 0;
+let mode = 'idle', autoTimer = null;
+let arcAnim = null;
+let decompStr = '', decompStep = 0;
+
+function resetState(){
+  tokens = lz77Encode(inputStr, windowSize);
+  encodeStep = 0; cursorPos = 0; mode = 'idle';
+  decompStr = ''; decompStep = 0; arcAnim = null;
+  clearInterval(autoTimer); autoTimer = null;
+  document.getElementById('btnAuto').classList.remove('on');
+  document.getElementById('btnDecomp').classList.remove('on');
+  updateStats();
+}
+
+function stepEncode(){
+  if(encodeStep >= tokens.length){ mode='idle'; return; }
+  const tok = tokens[encodeStep];
+  cursorPos = tok.pos + (tok.type==='copy' ? tok.length : 1);
+  if(tok.type==='copy'){
+    arcAnim = {tok, progress:0};
+  }
+  encodeStep++;
+  updateStats();
+}
+
+function stepDecomp(){
+  if(decompStep >= tokens.length){ mode='idle'; return; }
+  const tok = tokens[decompStep];
+  if(tok.type==='lit'){ decompStr += tok.char; }
+  else {
+    const start = decompStr.length - tok.offset;
+    for(let k=0;k<tok.length;k++) decompStr += decompStr[start + (k % tok.offset)] || '';
+  }
+  decompStep++;
+  updateStats();
+}
+
+function updateStats(){
+  document.getElementById('stOrig').innerHTML = inputStr.length+'<small> ch</small>';
+  const compSize = tokens.slice(0,encodeStep).reduce((a,t)=>a+(t.type==='lit'?1:3),0);
+  document.getElementById('stComp').innerHTML = encodeStep+'<small> tok</small>';
+  const ratio = compSize>0 ? (inputStr.length/compSize).toFixed(2) : '—';
+  document.getElementById('stRatio').textContent = ratio;
+  const lastTok = encodeStep>0 ? tokens[encodeStep-1] : null;
+  document.getElementById('stTok').textContent = lastTok ? (lastTok.type==='lit'?L('字面','lit'):L('复制','copy')) : '—';
+}
+
+function updateFormula(){
+  document.getElementById('formula').innerHTML =
+    '<b>'+L('格式','Format')+':</b> '+L('字面量','literal')+' = (ch) | '+L('复制令牌','copy') +' = (offset, len)<br>'+
+    '<b>'+L('窗口','Window')+':</b> '+windowSize+' '+L('字符','chars')+' | '+
+    '<b>'+L('输入','Input')+':</b> "'+( inputStr.length>22?inputStr.slice(0,22)+'…':inputStr)+'"';
+}
+
+const cv = document.getElementById('main');
+const ctx = cv.getContext('2d');
+
+function resize(){
+  cv.width = innerWidth * devicePixelRatio;
+  cv.height = innerHeight * devicePixelRatio;
+  cv.style.width = innerWidth+'px';
+  cv.style.height = innerHeight+'px';
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+}
+
+function isDark(){ return htmlEl.getAttribute('data-theme')==='dark'; }
+
+function charColor(c){
+  const h = (c.charCodeAt(0)*37)%360;
+  return isDark() ? 'hsl('+h+',65%,68%)' : 'hsl('+h+',55%,38%)';
+}
+
+function roundRect(c,x,y,w,h,r){
+  c.beginPath();
+  c.moveTo(x+r,y); c.lineTo(x+w-r,y); c.arcTo(x+w,y,x+w,y+r,r);
+  c.lineTo(x+w,y+h-r); c.arcTo(x+w,y+h,x+w-r,y+h,r);
+  c.lineTo(x+r,y+h); c.arcTo(x,y+h,x,y+h-r,r);
+  c.lineTo(x,y+r); c.arcTo(x,y,x+r,y,r); c.closePath();
+}
+
+function draw(){
+  const W = innerWidth, H = innerHeight;
+  const dark = isDark();
+  ctx.fillStyle = dark ? '#0f1214' : '#eef2f6';
+  ctx.fillRect(0,0,W,H);
+
+  const panelRight = 430;
+  const statsWidth = 200;
+  const statsLeft = W - statsWidth - 18;
+  const usableW = statsLeft - panelRight - 40;
+  const startX = panelRight + 20;
+
+  const n = inputStr.length;
+  const bW = Math.max(14, Math.min(34, Math.floor(usableW / n)));
+  const bH = 34;
+  const strY = Math.round(H * 0.28);
+
+  // Window highlight
+  if(encodeStep > 0){
+    const winStart = Math.max(0, cursorPos - windowSize);
+    const winLen = Math.min(windowSize, cursorPos);
+    if(winLen > 0){
+      ctx.fillStyle = dark ? 'rgba(77,171,247,0.09)' : 'rgba(24,100,171,0.09)';
+      ctx.strokeStyle = dark ? 'rgba(77,171,247,0.4)' : 'rgba(24,100,171,0.4)';
+      ctx.lineWidth = 1;
+      roundRect(ctx, startX+winStart*bW-2, strY-6, winLen*bW+4, bH+12, 6);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = dark ? 'rgba(77,171,247,0.65)' : 'rgba(24,100,171,0.65)';
+      ctx.font = '10px system-ui'; ctx.textAlign='center';
+      ctx.fillText(L('搜索窗口','search window'), startX+(winStart+winLen/2)*bW, strY-13);
+    }
+  }
+
+  // Arc animation for copy match
+  if(arcAnim && arcAnim.tok){
+    const tok = arcAnim.tok;
+    const fromX = startX + (tok.pos - tok.offset + tok.offset/2) * bW;
+    const toX   = startX + (tok.pos + tok.length/2) * bW;
+    const alpha = 0.4 + arcAnim.progress*0.5;
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(255,213,0,'+alpha+')';
+    ctx.lineWidth = 2;
+    const cpx = (fromX+toX)/2, cpy = strY - 45 - Math.abs(toX-fromX)*0.25;
+    ctx.moveTo(fromX, strY+bH/2);
+    ctx.quadraticCurveTo(cpx, cpy, toX, strY+bH/2);
+    ctx.stroke();
+    // arrowhead
+    const ang = Math.atan2(strY+bH/2 - cpy, toX - cpx);
+    ctx.beginPath(); ctx.fillStyle='rgba(255,213,0,0.85)';
+    ctx.moveTo(toX, strY+bH/2);
+    ctx.lineTo(toX-9*Math.cos(ang-0.35), strY+bH/2-9*Math.sin(ang-0.35));
+    ctx.lineTo(toX-9*Math.cos(ang+0.35), strY+bH/2-9*Math.sin(ang+0.35));
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Draw character blocks
+  const lastTok = encodeStep>0 ? tokens[encodeStep-1] : null;
+  for(let i=0;i<n;i++){
+    const x = startX + i*bW;
+    if(x+bW > statsLeft-10) break;
+    const ch = inputStr[i];
+    let bg = dark ? '#1a2030' : '#dde4ee';
+    if(i < cursorPos) bg = dark ? '#182818' : '#d0edd8';
+    if(lastTok){
+      if(lastTok.type==='copy' && i>=lastTok.pos && i<lastTok.pos+lastTok.length) bg=dark?'#2d2200':'#fff4c0';
+      if(lastTok.type==='lit' && i===lastTok.pos) bg=dark?'#001b2d':'#c0e4ff';
+    }
+    ctx.fillStyle=bg; roundRect(ctx,x+1,strY,bW-2,bH,4); ctx.fill();
+    ctx.strokeStyle=dark?'rgba(255,255,255,0.08)':'rgba(0,0,0,0.08)'; ctx.lineWidth=1;
+    roundRect(ctx,x+1,strY,bW-2,bH,4); ctx.stroke();
+    // cursor line
+    if(i===cursorPos && encodeStep>0 && encodeStep<tokens.length){
+      ctx.strokeStyle='#ff6b6b'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(x,strY-7); ctx.lineTo(x,strY+bH+7); ctx.stroke();
+    }
+    ctx.fillStyle=charColor(ch);
+    ctx.font='bold '+Math.min(bW-4,15)+'px monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(ch, x+bW/2, strY+bH/2);
+  }
+
+  // Label above
+  ctx.fillStyle=dark?'#9fb0c3':'#5b6b7d';
+  ctx.font='11px system-ui'; ctx.textAlign='left'; ctx.textBaseline='top';
+  ctx.fillText(L('输入字符串','Input string'), startX, strY-24);
+
+  // Token stream
+  const tokY = strY + bH + 52;
+  ctx.fillStyle=dark?'#9fb0c3':'#5b6b7d';
+  ctx.font='11px system-ui'; ctx.textAlign='left';
+  ctx.fillText(L('令牌流','Token stream'), startX, tokY-18);
+
+  let tx = startX;
+  const tkH = 28;
+  for(let idx=0;idx<encodeStep;idx++){
+    const tok=tokens[idx];
+    const isLast=idx===encodeStep-1;
+    if(tok.type==='lit'){
+      const tw=Math.max(bW,24);
+      if(tx+tw > statsLeft-10) break;
+      ctx.fillStyle=isLast?(dark?'#1b3a55':'#c5e8ff'):(dark?'#1a2030':'#dde4ee');
+      roundRect(ctx,tx,tokY,tw,tkH,4); ctx.fill();
+      ctx.strokeStyle=dark?'rgba(77,171,247,0.4)':'rgba(24,100,171,0.25)'; ctx.lineWidth=1;
+      roundRect(ctx,tx,tokY,tw,tkH,4); ctx.stroke();
+      ctx.fillStyle=dark?'#7bd88f':'#1e6b3a'; ctx.font='bold 12px monospace';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(tok.char, tx+tw/2, tokY+tkH/2);
+      tx+=tw+3;
+    } else {
+      const tw=52;
+      if(tx+tw > statsLeft-10) break;
+      ctx.fillStyle=isLast?(dark?'#2d1e00':'#fff4c8'):(dark?'#1a1800':'#fdf7e0');
+      roundRect(ctx,tx,tokY,tw,tkH,4); ctx.fill();
+      ctx.strokeStyle=dark?'rgba(255,165,0,0.45)':'rgba(160,110,0,0.35)'; ctx.lineWidth=1;
+      roundRect(ctx,tx,tokY,tw,tkH,4); ctx.stroke();
+      ctx.fillStyle=dark?'#ffa94d':'#7a4e00'; ctx.font='10px monospace';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(tok.offset+','+tok.length, tx+tw/2, tokY+tkH/2);
+      tx+=tw+3;
+    }
+  }
+
+  // Decompression output
+  if(decompStr.length > 0){
+    const dY = tokY + tkH + 52;
+    ctx.fillStyle=dark?'#9fb0c3':'#5b6b7d';
+    ctx.font='11px system-ui'; ctx.textAlign='left';
+    ctx.fillText(L('解压输出','Decompress output'), startX, dY-18);
+    for(let i=0;i<decompStr.length;i++){
+      const x=startX+i*bW;
+      if(x+bW > statsLeft-10) break;
+      ctx.fillStyle=dark?'#182818':'#d0edd8';
+      roundRect(ctx,x+1,dY,bW-2,bH,4); ctx.fill();
+      ctx.fillStyle=charColor(decompStr[i]); ctx.font='bold '+Math.min(bW-4,15)+'px monospace';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(decompStr[i], x+bW/2, dY+bH/2);
+    }
+  }
+
+  // Ratio bar
+  const barX = statsLeft-160, barY = strY, barW = 140, barH = 12;
+  const compSize = tokens.slice(0,encodeStep).reduce((a,t)=>a+(t.type==='lit'?1:3),0);
+  const ratio = compSize>0 ? inputStr.length/compSize : 1;
+  ctx.fillStyle=dark?'#1a2030':'#dde4ee';
+  roundRect(ctx,barX,barY,barW,barH,3); ctx.fill();
+  const fill = Math.min(ratio/3,1);
+  ctx.fillStyle=ratio>=2?'#7bd88f':ratio>=1.2?'#4dabf7':'#ffa94d';
+  roundRect(ctx,barX,barY,barW*fill,barH,3); ctx.fill();
+  ctx.fillStyle=dark?'#9fb0c3':'#5b6b7d'; ctx.font='10px system-ui';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(L('压缩比','Ratio')+': '+ratio.toFixed(2)+'x', barX+barW/2, barY+barH/2);
+}
+
+let raf=null;
+function frame(){
+  raf=requestAnimationFrame(frame);
+  if(arcAnim){ arcAnim.progress=Math.min(1,(arcAnim.progress||0)+0.06); if(arcAnim.progress>=1) arcAnim=null; }
+  draw();
+}
+
+document.getElementById('btnEncode').addEventListener('click',()=>{ stepEncode(); });
+document.getElementById('btnAuto').addEventListener('click',()=>{
+  if(autoTimer){ clearInterval(autoTimer); autoTimer=null; document.getElementById('btnAuto').classList.remove('on'); return; }
+  document.getElementById('btnAuto').classList.add('on');
+  autoTimer=setInterval(()=>{ if(encodeStep>=tokens.length){clearInterval(autoTimer);autoTimer=null;document.getElementById('btnAuto').classList.remove('on');return;} stepEncode(); },380);
+});
+document.getElementById('btnDecomp').addEventListener('click',()=>{
+  encodeStep=tokens.length; cursorPos=inputStr.length;
+  decompStr=''; decompStep=0;
+  document.getElementById('btnDecomp').classList.add('on');
+  const t=setInterval(()=>{ if(decompStep>=tokens.length){clearInterval(t);document.getElementById('btnDecomp').classList.remove('on');return;} stepDecomp(); },260);
+});
+document.getElementById('btnChange').addEventListener('click',()=>{
+  inputIdx=(inputIdx+1)%INPUTS.length; inputStr=INPUTS[inputIdx]; resetState(); updateFormula();
+});
+document.getElementById('slW').addEventListener('input',()=>{
+  windowSize=parseInt(document.getElementById('slW').value);
+  document.getElementById('slWVal').textContent=windowSize;
+  resetState(); updateFormula();
+});
+
+const STEPS=[
+  {zh:'滑动窗口：编码器在已编码内容中找最长匹配（窗口大小决定回看距离）',en:'Sliding window: encoder searches previously seen content for longest match'},
+  {zh:'匹配搜索：从当前位置向窗口内找最长前缀，记录(偏移,长度)',en:'Match search: find longest prefix match then record (offset, length)'},
+  {zh:'输出令牌：找到匹配→(偏移,长度)；否则→字面值',en:'Emit token: match found → (offset, length); no match → literal'},
+  {zh:'解压：(偏移,长度)令牌→从已解压缓冲区回找偏移处复制',en:'Decompress: (offset,length) token → go back offset bytes, copy length chars'},
+  {zh:'自引用复制：偏移<长度时，从自身新写输出延伸——(1,5) 从 a 变 aaaaaa',en:'Self-referential copy: offset<length extends from own output; (1,5) turns a into aaaaaa'},
+  {zh:'DEFLATE：ZIP/PNG 用 LZ77 找重复串，再用霍夫曼编码压令牌',en:'DEFLATE: ZIP/PNG use LZ77 for matching, then Huffman-code the tokens'},
+];
+function buildSteps(){
+  const ol=document.getElementById('steps'); ol.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    const txt=LANG==='en'?s.en:s.zh;
+    const sep=txt.indexOf('：')!==-1?'：':':';
+    const parts=txt.split(sep);
+    li.innerHTML='<span class="n">'+(i+1)+'</span><span class="t"><b>'+parts[0]+'</b>'+(parts.length>1?'<br>'+parts.slice(1).join(sep):'')+'</span>';
+    li.addEventListener('click',()=>{document.querySelectorAll('#steps li').forEach(x=>x.classList.remove('on'));li.classList.add('on');});
+    ol.appendChild(li);
+  });
+}
+
+function applyTheme(){ htmlEl.setAttribute('data-theme',THEME); document.getElementById('themeBtn').textContent=THEME==='dark'?'☀':'☾'; }
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el=>{el.textContent=LANG==='en'?el.dataset.en:el.dataset.zh;});
+  document.getElementById('langBtn').textContent=LANG==='en'?'中':'EN';
+  document.title=L('LZ77 无损压缩 · 滑动窗口','LZ77 Lossless Compression · Sliding Window');
+  buildSteps(); updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+document.getElementById('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+addEventListener('resize',()=>{ resize(); });
+document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=null;}else{raf=requestAnimationFrame(frame);}});
+
+resize(); applyTheme(); applyLang(); buildSteps(); resetState(); updateFormula();
+raf=requestAnimationFrame(frame);
+</script>
+</body></html>

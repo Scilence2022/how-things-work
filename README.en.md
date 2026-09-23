@@ -573,6 +573,33 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **ramjet/** — A full cutaway of a ramjet: inlet-cone shocks, diffuser, V-gutter flame holder, Laval nozzle. Flow particles are colour-coded along the whole path: blue = compressed, denser air; orange = heat release; cyan = exhaust accelerated by the nozzle. Turbo mode shows the spinning fan for contrast; scram mode keeps the flow supersonic with cross-flow fuel burning in milliseconds. At rest the flame dies and a red solid booster stands by; Drag the Mach slider to watch pressure ratio and thrust climb, and the engine roar alight past Ma 0.5; pull back to 0 for the flameout alarm, then press Boost &amp; light; Slow flow studies the recirculation behind the V-gutter; switch engines to compare thrust curves. URL: `?mach=` `?mode=turbo|ram|scram` `?thr=` `?t=` `?pause=` `?speed=` `?labels=` `?spin=`
 - **decompression-sickness/** — A simple diver descends and ascends through a layered water column; at centre, a cross-sectioned blood vessel (red cells in parabolic flow) beside a tissue block: yellow dots are nitrogen dissolved under pressure, white bubbles are precipitated by supersaturation, green ones are nitrogen exhaled through the lungs. A soda bottle on the right mirrors the physics — pop the cap and it foams. The plot shows the depth-time profile and supersaturation ratio R against the 1.6 nucleation threshold; Set target depth and ascent rate to watch tissues load and off-gas; hit slow-mo nucleation to see bubbles appear from nothing and jam red cells; pop the soda cap for the analogy; run the hyperbaric chamber to recompress; use the safety-stop slider for the 5 m / 3 min demo. URL: `?depth=` `?asc=` `?stay=` `?soda=1` `?t=` `?pause=` `?speed=` `?labels=` `?spin=`
 
+### Phase 42 · Cross-Family Gap-Fill Batch 13 (24/24 complete)
+
+- [x] Rack and Pinion (pitch circle rolls on pitch line — one revolution advances 2πr; involute contact at constant 20°; steering rack application) ✅ **rack-and-pinion/**
+- [x] Toggle Mechanism (F_out/F_in=1/(2sinθ); gain → ∞ as θ→0°; self-locks past dead center; presses and clamps) ✅ **toggle-mechanism/**
+- [x] Constant-Velocity Joint (Rzeppa cage forces 6 balls into bisecting plane; output speed = input at any joint angle; FWD driveshaft) ✅ **constant-velocity-joint/**
+- [x] Nernst Equation (E=E°−(0.059/n)log Q; drag [Cu²⁺] to 0.001 mol/L — voltage drops 90 mV live; concentration cell E°=0) ✅ **nernst-equation/**
+- [x] Aldol Condensation (base → enolate; α-C attacks carbonyl C → new C–C bond; heat → dehydration → α,β-unsaturated aldehyde) ✅ **aldol-condensation/**
+- [x] Saponification (OH⁻ attacks ester C=O → tetrahedral intermediate → C–O breaks; carboxylate resonance makes it irreversible; micelle forms) ✅ **saponification/**
+- [x] Apoptosis (Fas or cytochrome c triggers caspase cascade; apoptosome heptamer; caspase-3/7 cleaves hundreds of targets; silent engulfment) ✅ **apoptosis/**
+- [x] Hormone Negative Feedback (TRH→TSH→T3/T4 negative loop; primary hypothyroidism: TSH↑ T4↓; Graves': autoantibody bypasses feedback) ✅ **hormone-feedback/**
+- [x] Epigenetics (CpG methylation → silencing; H3K27me3 compacts; H3K9ac opens; DNMT1 maintains pattern after replication) ✅ **epigenetics/**
+- [x] Hall Effect (V_H=IB/(nqt); n-type negative, p-type positive; BLDC commutation; ABS; clamp ammeter) ✅ **hall-effect/**
+- [x] Standing Waves & Resonance (y=2Acos(kx)sin(ωt); nodes stationary, antinodes double; f_n=nv/2L; resonance builds amplitude) ✅ **standing-waves/**
+- [x] Hawking Radiation (virtual pairs split at horizon; T_H∝1/M; runaway evaporation; information paradox unsolved) ✅ **blackhole-evaporation/**
+- [x] Bernoulli Effect (A₁v₁=A₂v₂; p+½ρv²=const; Venturi meter; Pitot tube) ✅ **bernoulli-effect/**
+- [x] Hydraulic Jump (Fr=v/√(gd)>1 → abrupt jump; conjugate depth formula; stilling basin application) ✅ **hydraulic-jump/**
+- [x] Boundary Layer Separation & Stall (adverse gradient → near-wall reversal → detachment; ~15° stall; turbulent BL resists separation) ✅ **flow-separation/**
+- [x] Neural Network Backpropagation (z=Wx+b → activation; chain-rule backprop; W←W−η·∂L/∂W; ReLU avoids vanishing gradient) ✅ **neural-network/**
+- [x] LZ77 Lossless Compression (sliding window finds longest match; self-referential copy; DEFLATE = LZ77 + Huffman) ✅ **compression-lz/**
+- [x] Binary Search Tree (left < root < right, O(log n); sorted inserts degenerate to O(n) chain; in-order → sorted output) ✅ **binary-search-tree/**
+- [x] LED Display (RGB PWM dimming; 8-bit × 3 → 16.7 M colors; Gamma 2.2; OLED true black vs LCD backlight bleed) ✅ **led-display/**
+- [x] Electric Vehicle Energy Flow (battery→inverter~98%→PMSM~95%→reduction→wheels; overall ~91%; regen recovers ~70%) ✅ **electric-vehicle/**
+- [x] Nuclear Fission & Reactor Control (U-235+thermal neutron→fission+2-3 neutrons; water moderates; k=1 critical; control rods; 0.65% delayed neutrons) ✅ **nuclear-fission-reactor/**
+- [x] Pulsar Timing & Gravitational Waves (MSP stability ~10⁻¹³; GW stretches Earth–pulsar distance; Hellings-Downs correlation; NANOGrav 2023) ✅ **pulsar-timing/**
+- [x] Stellar Nucleosynthesis (Big Bang→H/He; p-p chain→He; triple-alpha→C/O; iron core collapse; r-process→gold/uranium) ✅ **stellar-nucleosynthesis/**
+- [x] Dark Matter — Indirect Evidence (flat rotation curves; gravitational lensing excess; Bullet Cluster gas/DM separation; CMB peak ratio→27%) ✅ **dark-matter/**
+
 ### Phase 41 deep dives (condensed)
 
 - **screw-jack/** — A cutaway jack lifts a car corner while its helix unrolls into an incline of the same lead angle: the moment ledger T=W·(d₂/2)·tan(λ+ρ′) prices every turn, the self-lock test lets go of the handle and nothing back-drives, and the ball-screw comparison trades 44% efficiency for 90% — along with the lock.
