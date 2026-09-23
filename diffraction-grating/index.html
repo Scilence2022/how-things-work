@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>光栅衍射 · N 条缝把光梳成光谱</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#ffa94d;
+    --bg:#0f131a; --panel:rgba(13,17,24,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,24,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,24,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#e8590c;
+    --bg:#eef1f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe3c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.o { color:#d9480f; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: var(--acc); }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe3c2; border-color: rgba(255,169,77,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#d9480f; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(255,169,77,.6); background: rgba(255,169,77,.12); color: var(--text); }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(232,89,12,.55); background: rgba(232,89,12,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(255,169,77,.10); border-color: rgba(255,169,77,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(232,89,12,.08); border-color: rgba(232,89,12,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #ffd9a8; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="光栅衍射 · N 条缝把光梳成光谱" data-en="Diffraction Grating · N Slits Comb Light into a Spectrum">光栅衍射 · N 条缝把光梳成光谱</h1>
+  <div class="sub" data-zh="平行光穿过一排等距狭缝,每个缝都是新波源;只有 d·sinθ=mλ 的方向上,几百个波前同相叠加成明亮主极大,其余方向彼此抵消——缝数 N 越多,主极大越细越亮,次极大被压得几乎消失;白光被打成连续彩虹,二级光谱开始与一级重叠;CD 刻痕间距 740 nm,本身就是一块反射光栅;光谱仪靠分辨率 R=mN 分开靠得极近的两条谱线 · 波长与缝距按比例放大演示 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="Parallel light passes a row of equally spaced slits and every slit becomes a new wave source; only in directions where d·sinθ = mλ do hundreds of wavefronts add in phase into bright principal maxima — everywhere else they cancel. More slits N: maxima get thinner and brighter while secondary maxima are pressed nearly out of existence. White light is combed into a continuous rainbow, second-order spectra overlapping the first; a CD's 740 nm track pitch already makes it a reflection grating; spectrometers separate close doublets on resolving power R = mN · wavelength &amp; pitch scaled up for demo · 3D interactive · drag to orbit / Space = run/pause">平行光穿过一排等距狭缝,每个缝都是新波源;只有 d·sinθ=mλ 的方向上,几百个波前同相叠加成明亮主极大,其余方向彼此抵消——缝数 N 越多,主极大越细越亮,次极大被压得几乎消失;白光被打成连续彩虹,二级光谱开始与一级重叠;CD 刻痕间距 740 nm,本身就是一块反射光栅;光谱仪靠分辨率 R=mN 分开靠得极近的两条谱线 · 波长与缝距按比例放大演示 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="一级衍射角 θ₁" data-en="1st-order angle θ₁">一级衍射角 θ₁</span><span class="v ok" id="stTheta">—</span>
+  <span class="k" data-zh="主极大半角宽 Δθ" data-en="Half-width Δθ (∝1/N)">主极大半角宽 Δθ</span><span class="v" id="stWidth">—</span>
+  <span class="k" data-zh="分辨率 R = mN" data-en="Resolving power R = mN">分辨率 R = mN</span><span class="v" id="stRes">—</span>
+  <span class="k" data-zh="可见级次" data-en="Visible orders">可见级次</span><span class="v" id="stOrd">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="强度 I(θ)=I₀·(sin Nα/sin α)² · 竖线 = m 级主极大" data-en="I(θ) = I₀·(sin Nα/sin α)² · vertical lines = order-m maxima">强度 I(θ)=I₀·(sin Nα/sin α)² · 竖线 = m 级主极大</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.o" data-zh="琥珀射线:主极大方向 m=±1/±2" data-en="amber rays: principal-max directions m=±1/±2">琥珀射线:主极大方向 m=±1/±2</span>
+    <span class="chip.g" data-zh="光栅板:N 条等距狭缝" data-en="grating plate: N equally spaced slits">光栅板:N 条等距狭缝</span>
+    <span class="chip.r" data-zh="Δ = d·sinθ:相邻缝路径差" data-en="Δ = d·sinθ: path gap between neighbouring slits">Δ = d·sinθ:相邻缝路径差</span>
+    <span class="chip.b" data-zh="推进波面:波长 λ(按比例放大)" data-en="advancing wavefronts: wavelength λ (scaled up)">推进波面:波长 λ(按比例放大)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnWhite" data-zh="白光模式" data-en="white mode">白光模式</button>
+    <button class="abtn" id="btnOrders" data-zh="显示 m=±1/±2 级标注" data-en="mark orders m=±1/±2">显示 m=±1/±2 级标注</button>
+    <button class="abtn on" id="btnWave" data-zh="波前动画:开" data-en="wavefronts: on">波前动画:开</button>
+  </div>
+  <div class="row"><label data-zh="缝数 N" data-en="Slits N">缝数 N</label><input id="sN" type="range" min="2" max="200" step="1" value="20"><span class="val" id="sNVal">20</span></div>
+  <div class="row"><label data-zh="缝距 d" data-en="Pitch d">缝距 d</label><input id="sD" type="range" min="2" max="10" step="0.5" value="4"><span class="val" id="sDVal">4.0 μm</span></div>
+  <div class="row"><label data-zh="波长 λ" data-en="Wavelength λ">波长 λ</label><input id="sL" type="range" min="400" max="700" step="5" value="550"><span class="val" id="sLVal">550 nm</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglSpin" type="checkbox"> <span data-zh="环绕视角" data-en="auto-orbit">环绕视角</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../double-slit/" data-zh="双缝干涉:只有两条缝的雏形" data-en="double-slit: the two-slit embryo">双缝干涉:只有两条缝的雏形</a>
+    <a href="../flame-spectra/" data-zh="焰色光谱:光栅是读谱的眼睛" data-en="flame-spectra: the grating is how we read spectra">焰色光谱:光栅是读谱的眼睛</a>
+    <a href="../thin-film/" data-zh="薄膜干涉:另一种相位差" data-en="thin-film: interference by another path difference">薄膜干涉:另一种相位差</a>
+    <a href="../refraction/" data-zh="折射:棱镜分光的对手" data-en="refraction: the prism's rival for splitting light">折射:棱镜分光的对手</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const mod = (x, m) => ((x % m) + m) % m;
+const R2D = 180 / Math.PI;
+const speedMul = clamp(qsFloat('speed', 1), 0.25, 3);
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f131a);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background.set(dark ? 0x0f131a : 0xeef1f6);
+  floorM.color.setHex(dark ? 0x15171c : 0xb9c3cd);
+  frameM.color.setHex(dark ? 0x39424f : 0x8a93a3);
+  grilleM.color.setHex(dark ? 0x2e3742 : 0x6f7c8a);
+  bodyM.color.setHex(dark ? 0x1a2029 : 0x4c5866);
+  screenM.color.setHex(dark ? 0x10151d : 0x151b25);
+  rayM.color.setHex(dark ? 0xffb35c : 0xd9480f);
+  for (const m of [wfM, waveM]) {
+    m.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
+    m.opacity = dark ? 1 : 0.5;
+    m.needsUpdate = true;
+  }
+  themeFade = dark ? 1 : 0.62;
+  drawPlot();
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('光栅衍射 · N 条缝把光梳成光谱', 'Diffraction Grating · N Slits Comb Light into a Spectrum');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  buildSteps();
+  setPlayLabel();
+  syncBtns();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+let renderer = null, webglOK = true;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  document.getElementById('app').appendChild(renderer.domElement);
+} catch (err) {
+  webglOK = false;
+  const errDiv = document.createElement('div');
+  errDiv.style.cssText = 'position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:99;background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;padding:18px 26px;color:var(--text);font-size:14px;max-width:420px;text-align:center';
+  errDiv.textContent = L('WebGL 初始化失败:3D 画面不可用,但左侧控制面板仍可浏览。', 'WebGL failed to start: the 3D view is unavailable, but the control panel still works.');
+  document.body.appendChild(errDiv);
+}
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 120);
+camera.position.set(-4.9, 3.0, 7.3);
+const controls = new OrbitControls(camera, webglOK ? renderer.domElement : document.body);
+controls.target.set(0.9, 1.15, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.2;
+controls.maxDistance = 24;
+controls.autoRotateSpeed = 0.4;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.6));
+const key = new THREE.DirectionalLight(0xfff4e0, 1.2);
+key.position.set(4, 9, 6);
+scene.add(key);
+
+/* ---------------- 布局与状态 ---------------- */
+const X_SRC = -3.0, X_G = -0.3, X_S = 4.6, H = 1.35, W = 2.3;
+const NS = 176, MAXW = 40, RINGS = 4, WF = 9;
+const zOf = s => s / 0.985 * 1.2;
+
+let N = 20, dUm = 4, lamNm = 550;
+let white = false, ordersOn = false, waveOn = true;
+let labelsOn = true, playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let labelsQ = qsBool('labels', true);
+let phaseIdx = 0, simT = 0, wPh = 0, themeFade = 1;
+let notifyT = 0, notifyZ = '', notifyE = '', nTween = null, camTween = null;
+
+/* ---------------- 材质 ---------------- */
+const floorM = new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: 0.95 });
+const frameM = new THREE.MeshStandardMaterial({ color: 0x39424f, roughness: 0.55, metalness: 0.4 });
+const grilleM = new THREE.MeshStandardMaterial({ color: 0x2e3742, roughness: 0.45, metalness: 0.6 });
+const bodyM = new THREE.MeshStandardMaterial({ color: 0x1a2029, roughness: 0.6, metalness: 0.3 });
+const screenM = new THREE.MeshStandardMaterial({ color: 0x10151d, roughness: 0.7 });
+const wfM = new THREE.MeshBasicMaterial({ color: 0x8ce99a, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+const waveM = new THREE.MeshBasicMaterial({ color: 0x8ce99a, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+const emitM = new THREE.MeshBasicMaterial({ color: 0x8ce99a, toneMapped: false });
+const stripM = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+const rayM = new THREE.LineBasicMaterial({ color: 0xffb35c, transparent: true, opacity: 0.9, toneMapped: false });
+
+/* ---------------- 场景搭建 ---------------- */
+const floor = new THREE.Mesh(new THREE.BoxGeometry(11.5, 0.14, 4.4), floorM);
+floor.position.set(0.8, -0.07, 0);
+scene.add(floor);
+/* 光源:窄缝出光口 */
+const srcBody = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.74, 2.54), bodyM);
+srcBody.position.set(X_SRC - 0.38, H, 0);
+scene.add(srcBody);
+const srcFace = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.66, 2.46), emitM);
+srcFace.position.set(X_SRC - 0.16, H, 0);
+scene.add(srcFace);
+for (const dz of [-1.0, 1.0]) {
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.5, 0.12), frameM);
+  leg.position.set(X_SRC - 0.38, 0.25, dz);
+  scene.add(leg);
+}
+/* 光栅:N+1 根遮光条(InstancedMesh,count 随 N 变) */
+const grilleGrp = new THREE.Group();
+grilleGrp.position.set(X_G, H, 0);
+scene.add(grilleGrp);
+const barGeo = new THREE.BoxGeometry(0.07, 1.7, 1);
+const grilleMesh = new THREE.InstancedMesh(barGeo, grilleM, 201);
+grilleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+grilleGrp.add(grilleMesh);
+for (const y of [-0.89, 0.89]) {
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, W + 0.18), frameM);
+  rail.position.set(0, y, 0);
+  grilleGrp.add(rail);
+}
+for (const dz of [-(W / 2 + 0.06), W / 2 + 0.06]) {
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.86, 0.08), frameM);
+  post.position.set(0, 0, dz);
+  grilleGrp.add(post);
+}
+for (const dz of [-0.9, 0.9]) {
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.55, 0.09), frameM);
+  leg.position.set(X_G, 0.27, dz);
+  scene.add(leg);
+}
+/* 屏幕:暗色探测板 + 强度亮条(InstancedMesh) */
+const screenPlate = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.42, 2.68), screenM);
+screenPlate.position.set(X_S + 0.02, H, 0);
+scene.add(screenPlate);
+const stripGeo = new THREE.BoxGeometry(0.02, 1.98, 2.4 / NS * 0.94);
+const stripMesh = new THREE.InstancedMesh(stripGeo, stripM, NS);
+{
+  const o = new THREE.Object3D();
+  for (let i = 0; i < NS; i++) {
+    o.position.set(X_S - 0.075, H, -1.2 + 2.4 * i / (NS - 1));
+    o.updateMatrix();
+    stripMesh.setMatrixAt(i, o.matrix);
+    stripMesh.setColorAt(i, new THREE.Color(0.03, 0.035, 0.045));
+  }
+}
+scene.add(stripMesh);
+for (const dz of [-1.1, 1.1]) {
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.14), frameM);
+  leg.position.set(X_S, 0.08, dz);
+  scene.add(leg);
+}
+/* 平面波前(入射平行光,推进) */
+const wfMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.02, 1.7, 2.5), wfM, WF);
+wfMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+for (let i = 0; i < WF; i++) wfMesh.setColorAt(i, new THREE.Color(0, 0, 0));
+scene.add(wfMesh);
+/* 缝间球面子波(惠更斯,弧片,InstancedMesh) */
+const arcGeo = new THREE.TorusGeometry(1, 0.015, 6, 48, 2.0);
+arcGeo.rotateZ(-1.0);
+arcGeo.rotateX(-Math.PI / 2);
+const waveMesh = new THREE.InstancedMesh(arcGeo, waveM, MAXW * RINGS);
+waveMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+for (let i = 0; i < MAXW * RINGS; i++) waveMesh.setColorAt(i, new THREE.Color(0, 0, 0));
+scene.add(waveMesh);
+/* m=±1/±2 主极大方向射线 */
+const rays = [];
+for (let i = 0; i < 4; i++) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const ln = new THREE.Line(g, rayM);
+  ln.visible = false;
+  scene.add(ln);
+  rays.push(ln);
+}
+
+/* ---------------- 波长→RGB ---------------- */
+function wlColor(nm) {
+  let r = 0, g = 0, b = 0;
+  if (nm < 440) { r = (440 - nm) / 60; b = 1; }
+  else if (nm < 490) { g = (nm - 440) / 50; b = 1; }
+  else if (nm < 510) { g = 1; b = (510 - nm) / 20; }
+  else if (nm < 580) { r = (nm - 510) / 70; g = 1; }
+  else if (nm < 645) { r = 1; g = (645 - nm) / 65; }
+  else r = 1;
+  let f = 1;
+  if (nm < 420) f = 0.4 + 0.6 * (nm - 380) / 40;
+  else if (nm > 700) f = 0.4 + 0.6 * (760 - nm) / 60;
+  const gm = x => Math.pow(Math.max(0, x) * f, 0.8);
+  return [gm(r), gm(g), gm(b)];
+}
+
+/* ---------------- 光栅 / 子波 / 射线 更新 ---------------- */
+const tmpO = new THREE.Object3D();
+const cTmp = new THREE.Color();
+function grilleUpdate() {
+  const pitch = W / N;
+  for (let k = 0; k <= N; k++) {
+    const bw = pitch * (k === 0 || k === N ? 0.34 : 0.62);
+    tmpO.position.set(0, 0, -W / 2 + k * pitch);
+    tmpO.scale.set(1, 1, bw);
+    tmpO.updateMatrix();
+    grilleMesh.setMatrixAt(k, tmpO.matrix);
+  }
+  grilleMesh.count = N + 1;
+  grilleMesh.instanceMatrix.needsUpdate = true;
+}
+let wSlitZ = [];
+function waveletsUpdate() {
+  const nS = Math.min(N, MAXW);
+  wSlitZ = [];
+  for (let i = 0; i < nS; i++) wSlitZ.push(-W / 2 + (i + 0.5) * W / N);
+  waveMesh.count = nS * RINGS;
+}
+function setWaveColors() {
+  if (white) { wfM.color.setHex(0xdde3f2); waveM.color.setHex(0xe7ebf7); emitM.color.setHex(0xdde3f2); }
+  else {
+    const c = wlColor(lamNm);
+    wfM.color.setRGB(c[0], c[1], c[2]);
+    waveM.color.setRGB(Math.min(1, c[0] * 0.85 + 0.15), Math.min(1, c[1] * 0.85 + 0.15), Math.min(1, c[2] * 0.85 + 0.15));
+    emitM.color.setRGB(c[0], c[1], c[2]);
+  }
+}
+const ordOk = [false, false, false, false], ordTxt = ['', '', '', ''];
+function updateRays() {
+  const k = 1000 * dUm / lamNm;
+  const ms = [-2, -1, 1, 2];
+  for (let i = 0; i < 4; i++) {
+    const m = ms[i], s = m / k, ok = ordersOn && Math.abs(s) <= 0.985;
+    ordOk[i] = ok;
+    rays[i].visible = ok;
+    ordTxt[i] = ok ? `m=${m > 0 ? '+' : ''}${m} · θ=${(Math.asin(Math.abs(s)) * R2D).toFixed(1)}°` : '';
+    if (ok) {
+      const p = rays[i].geometry.attributes.position;
+      p.setXYZ(0, X_G + 0.06, H, 0);
+      p.setXYZ(1, X_S - 0.1, H, zOf(s));
+      p.needsUpdate = true;
+      ordLbl[i].position.set((X_G + X_S) / 2, H + 0.34, zOf(s) / 2);
+    }
+  }
+}
+
+/* ---------------- 屏幕强度分布 ---------------- */
+function Iof(s, k) {
+  const a = Math.PI * k * s, sa = Math.sin(a);
+  if (Math.abs(sa) < 1e-7) return 1;
+  const sn = Math.sin(N * a);
+  return sn * sn / (sa * sa) / (N * N);
+}
+function updateStrips() {
+  const k = 1000 * dUm;
+  if (white) {
+    const acc = new Float32Array(NS * 3);
+    let mx = 1e-6;
+    for (let i = 0; i < NS; i++) {
+      const s = -0.985 + 1.97 * i / (NS - 1);
+      for (let lam = 395; lam <= 715; lam += 10) {
+        const c = wlColor(lam), I = Iof(s, k / lam);
+        acc[i * 3] += c[0] * I; acc[i * 3 + 1] += c[1] * I; acc[i * 3 + 2] += c[2] * I;
+      }
+      mx = Math.max(mx, acc[i * 3], acc[i * 3 + 1], acc[i * 3 + 2]);
+    }
+    for (let i = 0; i < NS; i++) {
+      const v = x => Math.min(1, Math.pow(x / mx, 0.6) * 1.18 + 0.03);
+      stripMesh.setColorAt(i, cTmp.setRGB(v(acc[i * 3]), v(acc[i * 3 + 1]), v(acc[i * 3 + 2])));
+    }
+  } else {
+    const c = wlColor(lamNm);
+    for (let i = 0; i < NS; i++) {
+      const s = -0.985 + 1.97 * i / (NS - 1), I = Iof(s, k / lamNm);
+      const v = Math.min(1.18, I * 1.1 + 0.035);
+      stripMesh.setColorAt(i, cTmp.setRGB(Math.min(1, 0.03 + v * c[0]), Math.min(1, 0.035 + v * c[1]), Math.min(1, 0.045 + v * c[2])));
+    }
+  }
+  if (stripMesh.instanceColor) stripMesh.instanceColor.needsUpdate = true;
+}
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, vis, last: '' });
+  div.textContent = textFn();
+  return o;
+}
+const lblBeam = addLabel(() => L(`入射平行光 · λ = ${lamNm} nm`, `incident parallel light · λ = ${lamNm} nm`), new THREE.Vector3(X_SRC + 0.5, H + 1.1, 0), 'b');
+const lblGrating = addLabel(() => L(`光栅 · N = ${N} 缝 · d = ${dUm.toFixed(1)} μm`, `grating · N = ${N} slits · d = ${dUm.toFixed(1)} μm`), new THREE.Vector3(X_G, H + 1.28, 0), 'g');
+const lblScreen = addLabel(() => white ? L('屏:连续彩虹 · 高级次互相重叠', 'screen: continuous rainbow · orders overlap') : L('屏:亮纹 = 主极大(d·sinθ = mλ)', 'screen: bright lines = principal maxima (d·sinθ = mλ)'), new THREE.Vector3(X_S, H + 1.5, 0), 'st');
+const lblDelta = addLabel(() => L('相邻缝路程差 Δ = d·sinθ', 'path gap of neighbours Δ = d·sinθ'), new THREE.Vector3(X_G, H - 1.12, 0.55), 'r', () => phaseIdx === 1);
+const ordLbl = [];
+for (let i = 0; i < 4; i++) {
+  const idx = i;
+  ordLbl.push(addLabel(() => ordTxt[idx], new THREE.Vector3((X_G + X_S) / 2, H + 0.34, 0), 'o', () => ordOk[idx]));
+}
+const lblNotify = addLabel(() => notifyT > 0 ? L(notifyZ, notifyE) : '', new THREE.Vector3(0.9, 3.35, 0), 'o');
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis() && r.text() !== '';
+}
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+function notify(z, e, t = 3.4) { notifyT = t; notifyZ = z; notifyE = e; }
+function startNTween() { nTween = { t: 0, from: N, dur: 3.4 }; }
+const STEPS = [
+  { b: '每条缝都是新波源(惠更斯)', be: 'Every slit is a new wave source (Huygens)',
+    d: '平面波前抵达光栅,每条缝按惠更斯原理成为新的球面波源,向右发出一圈圈子波;N 条缝 = N 列完全同相的子波,它们一起决定右边的光场。缝再密、再细,规则不变:每缝贡献一份振幅。',
+    de: 'Plane wavefronts reach the grating and every slit re-radiates as a spherical wavelet (Huygens). N slits = N perfectly in-phase wavelet trains that together shape the field beyond; however dense and narrow the slits, the rule holds: each contributes one amplitude.',
+    act: () => { flyTo([-1.6, 2.7, 3.6], [X_G, H, 0]); notify('每条缝亮起一串同相同频的球面子波', 'each slit lights up a train of in-phase spherical wavelets'); } },
+  { b: '相邻路径差 Δ = d·sinθ', be: 'Path difference Δ = d·sinθ',
+    d: '朝远处同一方向 θ 看,相邻两条缝发出的波路程相差 Δ = d·sinθ;这个纯几何的差乘上 2π/λ,就是两列子波打在屏上同一点时的相位差——整幅衍射图样都从它算起。',
+    de: 'Looking toward one far-away direction θ, wavelets from adjacent slits travel paths differing by Δ = d·sinθ; times 2π/λ this purely geometric gap is the phase difference where they land on the screen — the entire pattern follows from it.',
+    act: () => { flyTo([-8.2, 2.3, 2.8], [X_G + 0.3, H, 0]); notify('盯住相邻两条缝:路程差 Δ = d·sinθ', 'watch two neighbouring slits: path gap Δ = d·sinθ'); } },
+  { b: '同相叠加 = 主极大:d·sinθ = mλ', be: 'In-phase add-up = principal max: d·sinθ = mλ',
+    d: '当 Δ 恰为整数个波长,所有缝的子波到达屏幕时步调一致:N 份振幅相加,强度正比于 N²——这是第 m 级主极大;Δ 为半整数波长时彼此抵消成暗纹。0 级直进,±1、±2…对称排开。',
+    de: 'When Δ is a whole number of wavelengths, every slit arrives in step: N amplitudes add and the intensity scales as N² — the m-th principal maximum. Half-integer Δ cancels into darkness. Order 0 goes straight; ±1, ±2… unfold symmetrically.',
+    act: () => { ordersOn = true; document.getElementById('btnOrders').classList.add('on'); updateRays(); flyTo([7.8, 3.0, 4.2], [X_S, H, 0]); notify('Δ = 整数波长 → N 束同相叠加,强度 ∝ N²', 'Δ = integer λ → N beams add in phase, intensity ∝ N²'); } },
+  { b: 'N 越大越锐:半角宽 ∝ 1/(N·d·cosθ)', be: 'More slits, sharper lines: width ∝ 1/(N·d·cosθ)',
+    d: 'N 束振幅相加,在偏离主极大 1/N 个条纹间距处出现第一个零点,主极大半角宽 Δθ ≈ λ/(N·d·cosθ);N 从 2 拉到 200,屏上胖条纹当场收成细针,次极大被压到峰值的 ≈4.5% 以下、几乎消失。',
+    de: 'Summing N amplitudes puts the first zero just one N-th of a fringe spacing off the maximum, so the half-width is Δθ ≈ λ/(N·d·cosθ). Dragging N from 2 to 200 pinches fat fringes into needles while secondary maxima flatten below ≈4.5% of the peak.',
+    act: () => { startNTween(); flyTo([8.6, 1.9, 0.01], [X_S, H, 0]); notify('N 自动扫到 160 再回来:主极大收成细针(宽度 ∝ 1/N)', 'N sweeps to 160 and back: principal maxima pinch into needles (width ∝ 1/N)'); } },
+  { b: '白光展开与级次重叠', be: 'White light unfolds and orders overlap',
+    d: 'd·sinθ = mλ 对每个波长都成立:短波偏折小、长波偏折大,白光在每一级展开成连续彩虹;级次越高彩虹越宽,红端的 2×740 nm 追上紫端……从 m=2 起光谱互相重叠,只有 0 级仍是白线。',
+    de: 'The grating equation holds for every wavelength: short waves bend little, long waves bend more, so white light unfolds into a continuous rainbow per order. Higher orders stretch wider — second-order red overtakes first-order violet — and from m = 2 the spectra overlap; only order 0 stays white.',
+    act: () => { setWhite(true); flyTo([7.8, 3.0, 4.2], [X_S, H, 0]); notify('每级展开成彩虹;m ≥ 2 后彩虹互相重叠', 'each order unfolds into a rainbow; from m ≥ 2 they overlap'); } },
+  { b: 'CD 与光栅光谱仪:R = mN', be: 'CDs & grating spectrometers: R = mN',
+    d: 'CD 刻痕间距 740 nm ≈ 1350 条/mm,本身就是一块反射光栅,白光下看就是彩虹;光谱仪用同样的原理读原子谱线:能分开多近的两条线由色分辨本领 R = mN 决定——N = 200、m = 1 时可分辨 550 nm 附近相差 λ/R ≈ 2.8 nm 的双线。',
+    de: 'A CD\'s tracks sit 740 nm apart ≈ 1,350/mm — a reflective grating, which is why it glows rainbow under white light. Spectrometers read atomic lines the same way: how close a doublet they can split is set by resolving power R = mN — at N = 200, m = 1, lines 2.8 nm apart near 550 nm are resolved.',
+    act: () => { flyTo([-3.5, 6.8, 9.8], [0.7, 1.05, 0]); notify('CD 刻痕距 740 nm ≈ 1350 条/mm:一块反射光栅;光谱仪分辨本领 R = mN', 'CD track pitch 740 nm ≈ 1,350/mm: a reflective grating; spectrometer resolution R = mN'); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncSteps(); });
+    el.appendChild(li);
+  });
+}
+function syncSteps() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+
+/* ================= 绘图:I(θ) 曲线 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W2 = plotCv.width = plotCv.clientWidth * 2;
+  const H2 = plotCv.height = plotCv.clientHeight * 2;
+  if (!W2 || !H2) return;
+  ctx.clearRect(0, 0, W2, H2);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const padL = 30, padR = 8, padT = 8, padB = 16;
+  const k = 1000 * dUm / lamNm, mm = Math.floor(k - 1e-9);
+  const S = Math.min(0.99, (mm + 0.6) / k);
+  const xOf = s => padL + (s + S) / (2 * S) * (W2 - padL - padR);
+  const yOf = v => H2 - padB - clamp(v, 0, 1.02) * (H2 - padT - padB);
+  ctx.font = '10px system-ui';
+  ctx.strokeStyle = 'rgba(128,150,170,.22)';
+  ctx.beginPath(); ctx.moveTo(padL, yOf(1)); ctx.lineTo(W2 - padR, yOf(1)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(padL, yOf(0)); ctx.lineTo(W2 - padR, yOf(0)); ctx.stroke();
+  ctx.fillStyle = cTxt;
+  ctx.textAlign = 'center';
+  for (const m of [-2, -1, 0, 1, 2]) {
+    if (Math.abs(m) > mm) continue;
+    const x = xOf(m / k);
+    ctx.strokeStyle = 'rgba(255,169,77,.45)';
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H2 - padB); ctx.stroke();
+    ctx.fillText('m=' + (m > 0 ? '+' : '') + m, x, H2 - 4);
+  }
+  ctx.textAlign = 'left';
+  ctx.fillText('I/I₀', 2, padT + 8);
+  ctx.fillText('sinθ', W2 - 30, yOf(0) - 4);
+  const NSAMP = 640;
+  if (!white) {
+    const c = wlColor(lamNm);
+    const col = `rgb(${c[0] * 255 | 0},${c[1] * 255 | 0},${c[2] * 255 | 0})`;
+    ctx.beginPath();
+    for (let i = 0; i <= NSAMP; i++) {
+      const s = -S + 2 * S * i / NSAMP, y = yOf(Iof(s, k));
+      i ? ctx.lineTo(xOf(s), y) : ctx.moveTo(xOf(s), y);
+    }
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.stroke();
+    ctx.lineTo(xOf(S), yOf(0)); ctx.lineTo(xOf(-S), yOf(0)); ctx.closePath();
+    ctx.fillStyle = `rgba(${c[0] * 255 | 0},${c[1] * 255 | 0},${c[2] * 255 | 0},.13)`;
+    ctx.fill();
+    ctx.lineWidth = 1;
+  } else {
+    const cols = ['#ff6b6b', '#69db7c', '#4dabf7'];
+    const arr = [new Float32Array(NSAMP + 1), new Float32Array(NSAMP + 1), new Float32Array(NSAMP + 1)];
+    let mx = 1e-6;
+    for (let i = 0; i <= NSAMP; i++) {
+      const s = -S + 2 * S * i / NSAMP;
+      for (let lam = 395; lam <= 715; lam += 10) {
+        const c = wlColor(lam), I = Iof(s, 1000 * dUm / lam);
+        arr[0][i] += c[0] * I; arr[1][i] += c[1] * I; arr[2][i] += c[2] * I;
+      }
+      mx = Math.max(mx, arr[0][i], arr[1][i], arr[2][i]);
+    }
+    for (let ch = 0; ch < 3; ch++) {
+      ctx.beginPath();
+      for (let i = 0; i <= NSAMP; i++) {
+        const s = -S + 2 * S * i / NSAMP, y = yOf(Math.pow(arr[ch][i] / mx, 0.6) * 0.95);
+        i ? ctx.lineTo(xOf(s), y) : ctx.moveTo(xOf(s), y);
+      }
+      ctx.strokeStyle = cols[ch]; ctx.lineWidth = 1.4; ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+  }
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const sN = document.getElementById('sN'), sNVal = document.getElementById('sNVal');
+const sD = document.getElementById('sD'), sDVal = document.getElementById('sDVal');
+const sL = document.getElementById('sL'), sLVal = document.getElementById('sLVal');
+const stTheta = document.getElementById('stTheta'), stWidth = document.getElementById('stWidth'),
+  stRes = document.getElementById('stRes'), stOrd = document.getElementById('stOrd');
+const formulaEl = document.getElementById('formula');
+const btnWhite = document.getElementById('btnWhite'), btnOrders = document.getElementById('btnOrders'),
+  btnWave = document.getElementById('btnWave');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  sN.value = N; sNVal.textContent = String(N);
+  sD.value = dUm; sDVal.textContent = dUm.toFixed(1) + ' μm';
+  sL.value = lamNm; sLVal.textContent = lamNm + ' nm';
+}
+function syncBtns() {
+  btnWhite.classList.toggle('on', white);
+  btnWhite.textContent = white ? L('单色模式', 'mono mode') : L('白光模式', 'white mode');
+  btnOrders.classList.toggle('on', ordersOn);
+  btnWave.classList.toggle('on', waveOn);
+  btnWave.textContent = waveOn ? L('波前动画:开', 'wavefronts: on') : L('波前动画:关', 'wavefronts: off');
+}
+function updateStats() {
+  const k = 1000 * dUm / lamNm, mm = Math.floor(k - 1e-9);
+  const s1 = Math.min(1, 1 / k), th1 = Math.asin(s1) * R2D;
+  stTheta.innerHTML = th1.toFixed(2) + '<small>°</small>';
+  const hw = 1 / (N * k * Math.sqrt(Math.max(0.02, 1 - s1 * s1))) * R2D;
+  stWidth.innerHTML = hw.toFixed(3) + '<small>° ∝1/N</small>';
+  stRes.innerHTML = N + '<small> · Δλ≈' + (lamNm / Math.max(2, N)).toFixed(1) + ' nm</small>';
+  stOrd.innerHTML = '±' + mm + '<small> 共 ' + (2 * mm + 1) + ' 条</small>';
+}
+function updateFormula() {
+  const k = 1000 * dUm / lamNm;
+  const th1 = Math.asin(Math.min(1, 1 / k)) * R2D;
+  const hw = 1 / (N * k * Math.sqrt(Math.max(0.02, 1 - 1 / (k * k)))) * R2D;
+  const dl = lamNm / Math.max(2, N);
+  formulaEl.innerHTML = L(
+    `<b>光栅方程 d·sinθ = mλ</b> → θ₁ = asin(λ/d) = ${th1.toFixed(2)}°(d = ${dUm.toFixed(1)} μm,λ = ${lamNm} nm)<br>` +
+    `<b>I(θ) = I₀·(sin Nα / sin α)²,α = πd·sinθ/λ</b> · N = ${N}:次极大压到峰值 ≈4.5% 以下,几乎看不见<br>` +
+    `<b>主极大半角宽 Δθ ≈ λ/(N·d·cosθ₁) = ${hw.toFixed(3)}°</b> · N 越大谱线越细越亮<br>` +
+    `<b>色分辨本领 R = mN = ${N}(m = 1)→ 可分辨 Δλ = λ/R ≈ ${dl.toFixed(1)} nm 的双线</b><br>` +
+    `<b>CD:刻痕距 740 nm ≈ 1350 条/mm</b> · 550 nm 的 ±1 级展开到 ±48°,白光高级次彩虹互相重叠`,
+    `<b>Grating equation d·sinθ = mλ</b> → θ₁ = asin(λ/d) = ${th1.toFixed(2)}° (d = ${dUm.toFixed(1)} μm, λ = ${lamNm} nm)<br>` +
+    `<b>I(θ) = I₀·(sin Nα / sin α)², α = πd·sinθ/λ</b> · N = ${N}: secondary maxima squashed below ≈4.5% of the peak<br>` +
+    `<b>Half-width Δθ ≈ λ/(N·d·cosθ₁) = ${hw.toFixed(3)}°</b> · larger N → finer, brighter lines<br>` +
+    `<b>Resolving power R = mN = ${N} (m = 1) → splits doublets Δλ = λ/R ≈ ${dl.toFixed(1)} nm</b><br>` +
+    `<b>CD: 740 nm track pitch ≈ 1,350/mm</b> · 550 nm first order at ±48°; white-light orders overlap into rainbows`);
+}
+function setWhite(v) {
+  white = v;
+  setWaveColors();
+  updateStrips();
+  drawPlot();
+  updateFormula();
+  syncBtns();
+}
+sN.addEventListener('input', () => {
+  N = +sN.value; sNVal.textContent = String(N);
+  grilleUpdate(); waveletsUpdate(); updateStrips(); drawPlot(); updateStats(); updateFormula();
+});
+sD.addEventListener('input', () => {
+  dUm = +sD.value; sDVal.textContent = dUm.toFixed(1) + ' μm';
+  updateStrips(); updateRays(); drawPlot(); updateStats(); updateFormula();
+});
+sL.addEventListener('input', () => {
+  lamNm = +sL.value; sLVal.textContent = lamNm + ' nm';
+  setWaveColors(); updateStrips(); updateRays(); drawPlot(); updateStats(); updateFormula();
+});
+btnWhite.addEventListener('click', () => setWhite(!white));
+btnOrders.addEventListener('click', () => {
+  ordersOn = !ordersOn;
+  btnOrders.classList.toggle('on', ordersOn);
+  updateRays();
+});
+btnWave.addEventListener('click', () => {
+  waveOn = !waveOn;
+  wfMesh.visible = waveMesh.visible = waveOn;
+  syncBtns();
+});
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglSpin').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+if (!labelsQ) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+if (qsBool('spin', false)) document.getElementById('tglSpin').checked = true;
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  if (renderer) renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 波动动画 ================= */
+function updateWaves(dt) {
+  const lamV = 0.55 * lamNm / 550, span = X_G - X_SRC;
+  wPh = mod(wPh + dt * 0.85, 1e5);
+  const off = wPh * lamV;
+  for (let i = 0; i < WF; i++) {
+    const x = X_G - mod(off + i * lamV, span);
+    const f = clamp((x - X_SRC) / 0.5, 0, 1) * clamp((X_G - x) / 0.5, 0, 1);
+    const b = (0.14 + 0.62 * f) * themeFade;
+    tmpO.position.set(x, H, 0);
+    tmpO.scale.set(1, 1, 1);
+    tmpO.updateMatrix();
+    wfMesh.setMatrixAt(i, tmpO.matrix);
+    wfMesh.setColorAt(i, cTmp.setRGB(b, b, b));
+  }
+  wfMesh.instanceMatrix.needsUpdate = true;
+  if (wfMesh.instanceColor) wfMesh.instanceColor.needsUpdate = true;
+  const nS = wSlitZ.length, rMax = RINGS * lamV, r0 = mod(off, rMax);
+  let id = 0;
+  for (let j = 0; j < nS; j++) for (let r = 0; r < RINGS; r++) {
+    const rad = r0 + r * lamV + 0.05;
+    const fade = Math.pow(Math.max(0, 1 - rad / (rMax + 0.05)), 1.7) * 0.9 * themeFade;
+    tmpO.position.set(X_G + 0.03, H, wSlitZ[j]);
+    tmpO.scale.setScalar(rad);
+    tmpO.updateMatrix();
+    waveMesh.setMatrixAt(id, tmpO.matrix);
+    waveMesh.setColorAt(id, cTmp.setRGB(fade, fade, fade));
+    id++;
+  }
+  waveMesh.instanceMatrix.needsUpdate = true;
+  if (waveMesh.instanceColor) waveMesh.instanceColor.needsUpdate = true;
+}
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null;
+controls.addEventListener('start', () => { camTween = null; });
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speedMul * (playing ? 1 : 0);
+  if (notifyT > 0) notifyT -= dt0;
+  if (dt > 0) simT += dt;
+  if (nTween) {
+    nTween.t += dt0;
+    const u = Math.min(1, nTween.t / nTween.dur);
+    const nv = Math.round(nTween.from + (160 - nTween.from) * Math.sin(Math.PI * u));
+    if (nv !== N) {
+      N = nv; sN.value = N; sNVal.textContent = String(N);
+      grilleUpdate(); waveletsUpdate(); updateStrips(); drawPlot(); updateStats(); updateFormula();
+    }
+    if (u >= 1) nTween = null;
+  }
+  if (waveOn && dt > 0) updateWaves(dt);
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis(), t = on ? r.text() : '';
+    r.o.visible = !!t;
+    if (on && t !== r.last) { r.o.element.textContent = t; r.last = t; }
+  }
+  controls.update();
+  if (renderer) { renderer.render(scene, camera); labelRenderer.render(scene, camera); }
+}
+function start() { if (raf === null && webglOK) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+setWaveColors();
+grilleUpdate();
+waveletsUpdate();
+updateWaves(0.013);
+updateStrips();
+updateRays();
+updateStats();
+updateFormula();
+syncSliders();
+syncBtns();
+setPlayLabel();
+syncSteps();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncSteps();
+start();
+</script>
+</body>
+</html>

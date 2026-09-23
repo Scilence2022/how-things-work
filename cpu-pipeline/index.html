@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>五级流水线 · 让 CPU 像洗车房一样干活</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#38d9a9;
+    --bg:#0f1213; --panel:rgba(15,18,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,18,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,18,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#0ca678;
+    --bg:#eef2f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe3c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  :root[data-theme="light"] .lbl.o { color:#d9480f; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #38d9a9; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe3c2; border-color: rgba(255,169,77,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.n { color: var(--text2); border-color: var(--tool-border); }
+  :root[data-theme="light"] .chip.o { color:#d9480f; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  :root[data-theme="light"] .chip.g { color:#2b8a3e; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(56,217,169,.6); background: rgba(56,217,169,.12); color: var(--text); }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(12,166,120,.55); background: rgba(12,166,120,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(56,217,169,.10); border-color: rgba(56,217,169,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(12,166,120,.08); border-color: rgba(12,166,120,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #c9f7ea; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="五级流水线 · 让 CPU 像洗车房一样干活" data-en="The Five-Stage Pipeline · A Car Wash Inside the CPU">五级流水线 · 让 CPU 像洗车房一样干活</h1>
+  <div class="sub" data-zh="取指 IF、译码 ID、执行 EX、访存 MEM、写回 WB——一条指令拆成五站,流水满载时五条指令同时在工位上,理想情况每个时钟周期都有一条完工:吞吐率 ×5,而单条指令的延迟一点没变;冒险随之而来:下一条要用上一条的结果(RAW)就前递或停一拍,分支预测错了就冲刷整条流水;最慢的一站决定主频——洗车房的速度由最慢的工位决定 · 节拍按可视速度演示 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停" data-en="Fetch IF, decode ID, execute EX, memory MEM, write-back WB — one instruction split across five stations; with the pipe full, five instructions sit on the stations at once and, ideally, one finishes every clock cycle: 5× throughput while each instruction's own latency is unchanged. Hazards follow: when the next instruction needs the previous one's result (RAW), forward it or stall a beat; a mispredicted branch flushes the whole pipe. The slowest stage sets the clock — a car wash runs as fast as its slowest bay · beats shown at visual speed · 3D interactive demo · drag to orbit / Space = run/pause">取指 IF、译码 ID、执行 EX、访存 MEM、写回 WB——一条指令拆成五站,流水满载时五条指令同时在工位上,理想情况每个时钟周期都有一条完工:吞吐率 ×5,而单条指令的延迟一点没变;冒险随之而来:下一条要用上一条的结果(RAW)就前递或停一拍,分支预测错了就冲刷整条流水;最慢的一站决定主频——洗车房的速度由最慢的工位决定 · 节拍按可视速度演示 · 3D 交互演示 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="CPI(24 拍窗口)" data-en="CPI (24-beat win)">CPI(24 拍窗口)</span><span class="v" id="stCpi">—</span>
+  <span class="k" data-zh="完工速率" data-en="Retire rate">完工速率</span><span class="v" id="stIps">—</span>
+  <span class="k" data-zh="气泡(流水内)" data-en="Bubbles (in pipe)">气泡(流水内)</span><span class="v" id="stBub">0</span>
+  <span class="k" data-zh="冲刷次数" data-en="Flushes">冲刷次数</span><span class="v" id="stFl">0</span>
+  <span class="k" data-zh="前递次数" data-en="Forwards">前递次数</span><span class="v" id="stFw">0</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="实时 CPI(24 拍窗口)· 绿虚线 = 理想 CPI=1 · 红竖线 = 冲刷" data-en="Live CPI (24-beat window) · green dashed = ideal CPI=1 · red marks = flushes">实时 CPI(24 拍窗口)· 绿虚线 = 理想 CPI=1 · 红竖线 = 冲刷</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <div id="legend">
+    <span class="chip.b" data-zh="蓝块 ADD/SUB:寄存器运算" data-en="blue ADD/SUB: register arithmetic">蓝块 ADD/SUB:寄存器运算</span>
+    <span class="chip.g" data-zh="绿块 LOAD:读内存,第 4 拍才有数据" data-en="green LOAD: data only after MEM">绿块 LOAD:读内存,第 4 拍才有数据</span>
+    <span class="chip.o" data-zh="橙块 STORE:写内存" data-en="orange STORE: write memory">橙块 STORE:写内存</span>
+    <span class="chip.r" data-zh="红块 BEQ:分支,预测错 → 冲刷" data-en="red BEQ: branch, mispredict → flush">红块 BEQ:分支,预测错 → 冲刷</span>
+    <span class="chip.n" data-zh="半透明块:气泡(空拍)" data-en="translucent: bubble (wasted slot)">半透明块:气泡(空拍)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnPair" data-zh="注入 load-use 对" data-en="Inject load-use pair">注入 load-use 对</button>
+    <button class="abtn" id="btnBr" data-zh="注入分支(50% 预测)" data-en="Inject branch (50% predict)">注入分支(50% 预测)</button>
+    <button class="abtn on" id="btnFwd">前递:开</button>
+    <button class="abtn" id="btnFlush" data-zh="冲刷动画" data-en="Flush animation">冲刷动画</button>
+  </div>
+  <div class="row"><label data-zh="时钟节拍" data-en="Clock rate">时钟节拍</label><input id="sRate" type="range" min="0.25" max="3" step="0.25" value="1"><span class="val" id="sRateVal">1.00 拍/s</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglArc" type="checkbox" checked> <span data-zh="前递弧线" data-en="Forward wires">前递弧线</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../transistor-adder/" data-zh="晶体管加法器:门级怎么造出这些站" data-en="transistor-adder: how gates build these stations">晶体管加法器:门级怎么造出这些站</a>
+    <a href="../turing-machine/" data-zh="图灵机:计算模型的极端简化" data-en="turing-machine: computation stripped to a tape">图灵机:计算模型的极端简化</a>
+    <a href="../sorting-race/" data-zh="排序竞速:算法层的并行" data-en="sorting-race: parallelism at the algorithm layer">排序竞速:算法层的并行</a>
+    <a href="../packet-switching/" data-zh="分组交换:网络里同样的拆流思想" data-en="packet-switching: the same pipelining, across the wire">分组交换:网络里同样的拆流思想</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const perfNow = () => performance.now() / 1000;
+const speedMul = clamp(qsFloat('speed', 1), 0.25, 3);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x101418, 22, 64);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x101418 : 0xdde5ec);
+  scene.fog.color = new THREE.Color(dark ? 0x101418 : 0xdde5ec);
+  groundM.color.setHex(dark ? 0x171a20 : 0xb9c3cd);
+  beltM.color.setHex(dark ? 0xffffff : 0xd6dde5);
+  legM.color.setHex(dark ? 0x232830 : 0x6b7885);
+  archM.color.setHex(dark ? 0x39424e : 0x8b98a6);
+  archExM.color.setHex(dark ? 0x3d4a56 : 0x7f95a6);
+  padM.color.setHex(dark ? 0x2a303a : 0x7c8996);
+  clkM.color.setHex(dark ? 0x39404a : 0x9aa7b4);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('五级流水线 · 让 CPU 像洗车房一样干活', 'The Five-Stage Pipeline · A Car Wash Inside the CPU');
+  for (const o of labelReg) o.element.textContent = o.userData.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+  syncBtns();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+let renderer = null, webglOK = true;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));   // DPR ≤ 2
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  document.getElementById('app').appendChild(renderer.domElement);
+} catch (err) {
+  webglOK = false;
+  const errDiv = document.createElement('div');
+  errDiv.style.cssText = 'position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:99;background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;padding:18px 26px;color:var(--text);font-size:14px;max-width:420px;text-align:center';
+  errDiv.textContent = L('WebGL 初始化失败:3D 画面不可用,但左侧控制面板仍可浏览。', 'WebGL failed to start: the 3D view is unavailable, but the control panel still works.');
+  document.body.appendChild(errDiv);
+}
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+if (webglOK) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+}
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 160);
+camera.position.set(12, 7.5, 13.5);
+const controls = new OrbitControls(camera, webglOK ? renderer.domElement : document.body);
+controls.target.set(0, 1.3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 40;
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.5);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 0.95);
+key.position.set(8, 14, 9);
+scene.add(key);
+const fillL = new THREE.DirectionalLight(0xcfeee2, 0.35);
+fillL.position.set(-9, 6, -7);
+scene.add(fillL);
+
+/* ================= 流水线模型参数 =================
+   五级 IF→ID→EX→MEM→WB,逐拍推进;冒险/前递/冲刷按经典五级流水语义。
+   指令块用对象池(禁逐帧 new Mesh)。                          */
+const SX = [-9, -4.5, 0, 4.5, 9], SPACING = 4.5, BLOCK_Y = 1.46;
+const OPC = {
+  ADD: { c: 0x4dabf7, k: 'b' }, SUB: { c: 0x4dabf7, k: 'b' }, AND: { c: 0x4dabf7, k: 'b' },
+  LOAD: { c: 0x51cf66, k: 'g' }, STORE: { c: 0xffa94d, k: 'o' }, BEQ: { c: 0xff6b6b, k: 'r' }
+};
+const BASE = [
+  { op: 'ADD', text: 'ADD R1,R2,R3', dst: 'R1', src: ['R2', 'R3'], kind: 'alu' },
+  { op: 'SUB', text: 'SUB R4,R1,R5', dst: 'R4', src: ['R1', 'R5'], kind: 'alu' },
+  { op: 'LOAD', text: 'LOAD R6,[R4]', dst: 'R6', src: ['R4'], kind: 'load' },
+  { op: 'STORE', text: 'STORE [R7],R2', dst: null, src: ['R7', 'R2'], kind: 'store' }
+];
+const PAIR_LOAD = { op: 'LOAD', text: 'LOAD R6,[R4]', dst: 'R6', src: ['R4'], kind: 'load' };
+const PAIR_USE = { op: 'AND', text: 'AND R8,R6,R7', dst: 'R8', src: ['R6', 'R7'], kind: 'alu' };
+const BRDEF = { op: 'BEQ', text: 'BEQ R2,R0', dst: null, src: ['R2'], kind: 'branch' };
+
+let rateHz = 1, fwdOn = true, arcsOn = true, labelsOn = true;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let phaseIdx = 0, notifyT = 0, notifyZ = '', notifyE = '';
+let cycles = 0, retired = 0, fwCount = 0, flushCount = 0, bubbleTotal = 0;
+let pipe = [null, null, null, null, null], injectQ = [], basePtr = 0;
+let stalled = false, stallNt = false;
+let arc1Glow = 0, arc2Glow = 0, clkGlow = 0, slowGlow = 0;
+const hist = [], ipsT = [], flushTimes = [], samples = [];
+const cycleSec = () => 1 / clamp(rateHz * speedMul, 0.05, 12);
+
+/* ---------------- 材质 ---------------- */
+const groundM = new THREE.MeshStandardMaterial({ color: 0x171a20, roughness: 0.95 });
+const beltM = new THREE.MeshStandardMaterial({ roughness: 0.85 });
+const legM = new THREE.MeshStandardMaterial({ color: 0x232830, roughness: 0.6, metalness: 0.4 });
+const archM = new THREE.MeshStandardMaterial({ color: 0x39424e, roughness: 0.5, metalness: 0.5 });
+const archExM = new THREE.MeshStandardMaterial({ color: 0x3d4a56, roughness: 0.45, metalness: 0.5, emissive: 0x38d9a9, emissiveIntensity: 0.05 });
+const padM = new THREE.MeshStandardMaterial({ color: 0x2a303a, roughness: 0.7 });
+const clkM = new THREE.MeshStandardMaterial({ color: 0x39404a, roughness: 0.4, metalness: 0.6, emissive: 0x38d9a9, emissiveIntensity: 0.2 });
+const arc1M = new THREE.MeshBasicMaterial({ color: 0x38d9a9, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false });
+const arc2M = arc1M.clone();
+
+function beltTexture() {
+  const cv = document.createElement('canvas'); cv.width = 128; cv.height = 64;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#2e3540'; c.fillRect(0, 0, 128, 64);
+  c.strokeStyle = '#3d4654'; c.lineWidth = 10;
+  for (let x = -64; x < 200; x += 32) { c.beginPath(); c.moveTo(x, 72); c.lineTo(x + 30, -8); c.stroke(); }
+  c.fillStyle = 'rgba(56,217,169,.7)'; c.fillRect(0, 28, 128, 4);
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(10, 1);
+  return t;
+}
+const beltTex = beltTexture();
+beltM.map = beltTex;
+
+/* ---------------- 场景搭建 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(36, 0.3, 13), groundM);
+ground.position.y = -0.15;
+scene.add(ground);
+const belt = new THREE.Mesh(new THREE.BoxGeometry(30, 0.5, 2.4), beltM);
+belt.position.y = 0.75;
+scene.add(belt);
+for (const lx of [-12, -6, 0, 6, 12]) {
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.55, 1.8), legM);
+  leg.position.set(lx, 0.25, 0);
+  scene.add(leg);
+}
+/* 五座拱门工站(EX 用加粗拱门 = 最慢一站) */
+for (let i = 0; i < 5; i++) {
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(2.3, i === 2 ? 0.2 : 0.13, 10, 40, Math.PI), i === 2 ? archExM : archM);
+  arch.position.set(SX[i], 0.85, 0);
+  scene.add(arch);
+  for (const dz of [-2.3, 2.3]) {
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.5), padM);
+    pad.position.set(SX[i] + dz, 0.1, 0);
+    scene.add(pad);
+  }
+}
+/* 前递捷径弧线:EX/MEM→EX 与 MEM/WB→EX */
+const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const arc1 = new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(
+  v3(SX[2] + 2.1, 1.35, 0), v3(SX[2], 4.1, 0), v3(SX[2] - 2.1, 1.35, 0)), 40, 0.05, 8, false), arc1M);
+scene.add(arc1);
+const arc2 = new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(
+  v3(SX[3] + 2.1, 1.35, 0), v3((SX[2] + SX[3]) / 2, 4.6, 0), v3(SX[2] - 2.1, 1.35, 0)), 48, 0.045, 8, false), arc2M);
+scene.add(arc2);
+/* 时钟节拍灯 */
+const clk = new THREE.Mesh(new THREE.OctahedronGeometry(0.32), clkM);
+clk.position.set(-13.2, 2.5, 0);
+scene.add(clk);
+const clkStem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.6, 6), legM);
+clkStem.position.set(-13.2, 1.5, 0);
+scene.add(clkStem);
+
+/* ---------------- 指令块对象池 ---------------- */
+const pool = [];
+const blkGeo = new THREE.BoxGeometry(1.7, 0.85, 1.7);
+for (let i = 0; i < 18; i++) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.15 });
+  const mesh = new THREE.Mesh(blkGeo, mat);
+  mesh.visible = false;
+  scene.add(mesh);
+  const div = document.createElement('div');
+  div.className = 'lbl';
+  const lo = new CSS2DObject(div);
+  lo.position.set(0, 0.85, 0);
+  lo.visible = false;
+  mesh.add(lo);
+  pool.push({ idx: i, busy: false, mesh, mat, lblObj: lo, lblDiv: div, x: 0, tx: 0, flying: false, exiting: false, t: 0, vx: 0, vy: 0, vz: 0, hasLbl: false });
+}
+function acquireBlock(spawnX) {
+  for (const B of pool) if (!B.busy) {
+    B.busy = true; B.flying = false; B.exiting = false; B.t = 0;
+    B.x = spawnX; B.tx = spawnX;
+    B.mesh.position.set(spawnX, BLOCK_Y, 0);
+    B.mesh.rotation.set(0, 0, 0);
+    B.mat.transparent = false; B.mat.opacity = 1; B.mat.depthWrite = true;
+    B.mesh.visible = true;
+    return B.idx;
+  }
+  return -1;
+}
+function styleBlock(idx, instr) {
+  if (idx < 0) return;
+  const B = pool[idx];
+  if (!instr) {
+    B.mat.color.setHex(0x8b98a6); B.mat.transparent = true; B.mat.opacity = 0.22; B.mat.depthWrite = false;
+    B.lblObj.visible = false; B.hasLbl = false;
+    return;
+  }
+  B.mat.color.setHex(OPC[instr.op].c); B.mat.opacity = 1;
+  B.lblDiv.className = 'lbl ' + OPC[instr.op].k;
+  B.lblDiv.textContent = instr.text;
+  B.lblObj.visible = labelsOn; B.hasLbl = true;
+}
+function releaseBlock(B) { B.busy = false; B.mesh.visible = false; B.lblObj.visible = false; B.hasLbl = false; }
+function flyAway(B) {
+  B.flying = true; B.t = 0; B.hasLbl = false; B.lblObj.visible = false;
+  B.vx = (Math.random() - 0.5) * 7; B.vy = 7 + Math.random() * 2.5; B.vz = (Math.random() - 0.5) * 4;
+  B.mat.transparent = true; B.mat.depthWrite = false;
+}
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);           // 直接使用 CSS2DObject
+  o.position.copy(pos);
+  o.userData.text = textFn;
+  o.userData.vis = vis;
+  o.element.textContent = textFn();
+  scene.add(o);
+  labelReg.push(o);
+  return o;
+}
+function refreshLabels() {
+  for (const o of labelReg) o.visible = labelsOn && o.userData.vis();
+  for (const B of pool) if (B.busy && B.hasLbl) B.lblObj.visible = labelsOn;
+}
+const STN = [
+  ['IF · 取指', 'IF · fetch'], ['ID · 译码', 'ID · decode'], ['EX · 执行', 'EX · execute'],
+  ['MEM · 访存', 'MEM · memory'], ['WB · 写回', 'WB · write-back']
+];
+STN.forEach((s, i) => addLabel(() => L(s[0], s[1]), v3(SX[i], 3.85, 0)));
+addLabel(() => L('传送带:每拍前进一站,满载 = 五块同流', 'conveyor: one station per beat; full = five blocks aboard'), v3(-6.5, 1.6, 1.7), 'o');
+addLabel(() => L('前递捷径:结果不排队写回,直接送下一拍 EX 入口', 'forwarding shortcut: the result skips write-back, straight into the next EX'), v3(SX[2], 5.1, 0), 'g', () => fwdOn);
+addLabel(() => L('最慢的一站 = 主频瓶颈:f = 1/T(EX 逻辑最长)', 'slowest stage = clock bottleneck: f = 1/T (EX has the longest logic)'), v3(SX[2], -0.55, 2.4), 'r', () => phaseIdx === 5);
+const lblNotify = addLabel(() => '', v3(0, 6.1, 0), 'o');
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: v3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: v3(t[0], t[1], t[2]), k: 0 };
+}
+function notify(z, e, t = 3.4) { notifyT = t; notifyZ = z; notifyE = e; }
+const STEPS = [
+  { b: '五站分工:IF / ID / EX / MEM / WB', be: 'Five stations: IF / ID / EX / MEM / WB',
+    d: '取指从指令存储器拿来指令,译码读寄存器堆并认出操作,执行做运算,访存读写数据存储器,写回把结果落回寄存器堆。每站只干一件事,组合逻辑深度降到约 1/5——这正是能把主频提上去的前提;洗车房把"洗一辆车"拆成冲、擦、打蜡,同理。',
+    de: 'IF fetches the instruction, ID reads the register file and decodes, EX computes, MEM touches data memory, WB writes the result back. Each station does one job, cutting logic depth to ~1/5 — the precondition for a higher clock, exactly how a car wash splits one car into rinse, wipe and wax.',
+    act: () => { flyTo([12, 7.5, 13.5], [0, 1.3, 0]); notify('五座工站各司其职:指令像车一样逐拍向右移动', 'five stations, one job each: instructions move right one beat at a time'); } },
+  { b: '流水满载:一条/周期,CPI = 1', be: 'Pipe full: one per cycle, CPI = 1',
+    d: '第 1 拍只有 IF 在干活,第 5 拍结束时第一条指令写回完工;此后每个时钟周期都有一条完工。单条指令的延迟仍是 5 拍,一点没变,但完工间隔从 5 拍缩到 1 拍——吞吐率 ×5。稳态 CPI = 1,右下曲线应贴着理想线跑。',
+    de: 'Beat 1: only IF is busy; at the end of beat 5 the first instruction retires. From then on one finishes every cycle. Each instruction still takes 5 beats — latency unchanged — but the finish interval shrinks from 5 beats to 1: throughput ×5. Steady-state CPI = 1; the curve should hug the ideal line.',
+    act: () => { flyTo([1, 4.5, 17.5], [0, 1.2, 0]); notify('满载:五站各占一块,每拍完工一条', 'full pipe: all five stations busy, one finish per beat'); } },
+  { b: '数据冒险 RAW 与前递', be: 'RAW data hazard and forwarding',
+    d: 'SUB 要用 ADD 刚算出的 R1,可 ADD 的结果要到第 5 拍才写回寄存器堆——傻等要停 2~3 拍。前递导线把 EX/MEM、MEM/WB 出口的结果抄近路直送下一拍 EX 的入口,相邻 RAW 就地化解、零代价。把「前递」关掉再观察:气泡接连出现,CPI 立刻被抬到 2 左右。',
+    de: 'SUB needs the R1 that ADD just computed, but ADD only writes it back in beat 5 — waiting naively costs 2–3 stalls. Forwarding wires shortcut results from the EX/MEM and MEM/WB outlets straight into the next beat\'s EX inlet, resolving back-to-back RAW at zero cost. Switch forwarding off and watch bubbles pile up, CPI jumping to ~2.',
+    act: () => { fwdOn = true; syncBtns(); updateFormula(); flyTo([-1.5, 3.4, 8], [0, 1.6, 0]); notify('ADD→SUB 相邻 RAW:绿色弧线亮起 = 前递在抄近路', 'back-to-back RAW (ADD→SUB): the green arc lights up = forwarding at work'); } },
+  { b: '停顿与气泡(load-use)', be: 'Stalls and bubbles (load-use)',
+    d: 'LOAD 的数据要到第 4 拍访存结束才存在,紧跟其后的指令第 3 拍就想用——前递也变不出来,只能停一拍:流水里插进一个半透明气泡,一切照常流动,但那一拍没有完工。点「注入 load-use 对」看气泡诞生、流过全流水、把 CPI 顶起来。',
+    de: 'A LOAD\'s data only exists after MEM in beat 4, but the next instruction wants it in beat 3 — even forwarding cannot conjure it, so the pipe stalls one beat: a translucent bubble is inserted; everything keeps flowing, but that beat finishes nothing. Click "inject load-use pair" and watch a bubble being born, riding the whole pipe, pushing CPI up.',
+    act: () => { injectQ.push({ ...PAIR_LOAD }, { ...PAIR_USE }); flyTo([-0.5, 3.4, 8.5], [-1.5, 1.4, 0]); notify('已注入 LOAD+AND:AND 要用刚载入的数,前递也救不了 → 停一拍出气泡', 'injected LOAD+AND: AND needs the just-loaded value — forwarding cannot help → one bubble'); } },
+  { b: '分支预测与冲刷', be: 'Branch prediction and flush',
+    d: 'BEQ 要到 EX 才知道跳不跳,而取指早已顺手把后面两条装进了流水。策略:赌它不跳,继续顺序取指——猜对零代价;猜错(本页 50% 概率)就把 IF/ID 里那 2~3 条错误路径的指令全部弹出冲走、从正确地址重填,白付 2 拍。分支越早裁决、流水越浅,冲刷代价越小。',
+    de: 'BEQ only learns its direction in EX, but fetch has already pulled the next two instructions in. The gamble: predict not-taken and keep fetching — a correct guess is free; a wrong one (50% here) ejects the 2–3 wrong-path instructions from IF/ID and refills from the right address, wasting 2 beats. The earlier the branch resolves, the smaller the flush penalty.',
+    act: () => { injectQ.push({ ...BRDEF }); flyTo([-11, 4.5, 8.5], [-7, 1.4, 0]); notify('已注入 BEQ:预测不跳、实际 50% 跳;猜错 → 红块弹出冲刷', 'injected BEQ: predicted not-taken, actually 50/50; a wrong guess ejects the wrong-path blocks'); } },
+  { b: '主频由最慢一站决定', be: 'The slowest stage sets the clock',
+    d: '时钟周期必须容纳最慢一站的组合逻辑:五站里 EX 最长,f = 1/T_EX——洗车房的速度由最慢的工位决定。把慢站的活匀给新站(加深流水)能提主频,但级数越深,一个气泡或冲刷浪费的绝对时间占比越大:深度是吞吐与冒险代价的折中,真实 CPU 走过 14~20 级后又退回适中深度。',
+    de: 'The clock period must fit the slowest stage\'s logic — EX here — so f = 1/T_EX: the car wash runs as fast as its slowest bay. Splitting the slow stage further raises the clock, but deeper pipes make each bubble or flush cost a larger fraction of a program\'s time: depth trades throughput against hazard penalty. Real CPUs went to 14–20 stages, then backed off to moderate depth.',
+    act: () => { slowGlow = 3; flyTo([0, 3.2, 6.5], [0, 1.9, 0]); notify('加粗的 EX 拱门 = 最慢工位:它决定整条流水的心跳', 'the thicker EX arch = the slowest bay: it sets the heartbeat of the whole pipe'); } },
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 流水线时序(逐拍精确) ================= */
+function needStall(c, ex, mem) {
+  if (fwdOn) return !!(ex && !ex.bubble && ex.kind === 'load' && ex.dst && c.src.includes(ex.dst));
+  for (const p of [ex, mem]) if (p && !p.bubble && p.dst && c.src.includes(p.dst)) return true;
+  return false;
+}
+function fetchOne() {
+  const d = injectQ.length ? injectQ.shift() : BASE[basePtr++ % BASE.length];
+  const it = { ...d, taken: d.kind === 'branch' ? Math.random() < 0.5 : false, bubble: false, blk: -1 };
+  it.blk = acquireBlock(SX[0] - 3.2);
+  if (it.blk >= 0) styleBlock(it.blk, it);
+  return it;
+}
+function mkBubbleAt(stage) {
+  bubbleTotal++;
+  const b = { bubble: true, taken: false, blk: acquireBlock(SX[stage]) };
+  if (b.blk >= 0) styleBlock(b.blk, null);
+  return b;
+}
+function ejectSlot(i) {
+  const it = pipe[i];
+  if (!it || it.blk < 0) return;
+  if (it.bubble) releaseBlock(pool[it.blk]); else flyAway(pool[it.blk]);
+}
+function retire(it) {
+  retired++;
+  ipsT.push(perfNow());
+  if (it.blk >= 0) pool[it.blk].exiting = true;
+}
+function tick() {
+  cycles++;
+  clkGlow = 1;
+  const EX = pipe[2], memPre = pipe[3], wb = pipe[4];   // 移位前的流水寄存器
+  if (wb && !wb.bubble) retire(wb);
+  pipe[4] = pipe[3];
+  pipe[3] = pipe[2];
+  /* 前递检测:本周期在 EX 的消费者 vs MEM(EX/MEM 寄存器)与 WB(MEM/WB 寄存器)里的生产者 */
+  if (fwdOn && EX && !EX.bubble && EX.src.length) {
+    if (memPre && !memPre.bubble && memPre.dst && EX.src.includes(memPre.dst)) { fwCount++; arc1Glow = 1; }
+    if (wb && !wb.bubble && wb.dst && EX.src.includes(wb.dst)) { fwCount++; arc2Glow = 1; }
+  }
+  /* 分支在 EX 裁决:预测不跳,实际跳 → 冲刷 IF/ID */
+  if (EX && !EX.bubble && EX.kind === 'branch' && EX.taken) {
+    ejectSlot(1); ejectSlot(0);
+    pipe[1] = mkBubbleAt(1);
+    pipe[0] = mkBubbleAt(0);
+    flushCount++;
+    flushTimes.push(perfNow());
+    notify('分支预测错:冲刷 IF/ID 里 2 条错误路径的指令,代价 2 拍', 'branch mispredicted: flushing the 2 wrong-path instructions in IF/ID — a 2-beat penalty');
+  }
+  /* 冒险判定(load-use 或 关前递 RAW)→ 停一拍出气泡 */
+  const c = pipe[1];
+  const stall = !!(c && !c.bubble && needStall(c, EX, memPre));
+  stalled = stall;
+  if (stall) {
+    if (!stallNt) {
+      stallNt = true;
+      notify('冒险:结果还没就绪 → 停一拍,流水里插进气泡', 'hazard: result not ready yet → stall one beat, a bubble is inserted');
+    }
+    pipe[2] = mkBubbleAt(2);
+  } else {
+    stallNt = false;
+    pipe[2] = pipe[1];
+    pipe[1] = pipe[0];
+    pipe[0] = fetchOne();
+  }
+  const sum = hist.reduce((a, b) => a + b, 0);
+  hist.push(wb && !wb.bubble ? 1 : 0);
+  if (hist.length > 24) hist.shift();
+  samples.push({ t: perfNow(), cpi: sum ? hist.length / sum : null });
+  const tn = perfNow();
+  while (samples.length && samples[0].t < tn - 32) samples.shift();
+  while (flushTimes.length && flushTimes[0] < tn - 32) flushTimes.shift();
+  /* 同步块目标位置 */
+  for (let i = 0; i < 5; i++) {
+    const it = pipe[i];
+    if (it && it.blk >= 0 && !pool[it.blk].flying && !pool[it.blk].exiting) pool[it.blk].tx = SX[i];
+  }
+}
+
+/* ================= 绘图:CPI 实时曲线 ================= */
+const plotCv = document.getElementById('plotCv');
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  if (!W || !H) return;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const padL = 32, padR = 8, padT = 8, padB = 14;
+  const t1 = perfNow(), t0 = t1 - 30;
+  const xOf = t => padL + (t - t0) / 30 * (W - padL - padR);
+  const yOf = v => H - padB - (clamp(v, 0.5, 3.5) - 0.5) / 3 * (H - padT - padB);
+  ctx.font = '11px system-ui';
+  ctx.strokeStyle = 'rgba(56,217,169,.85)';
+  ctx.setLineDash([6, 5]);
+  ctx.beginPath(); ctx.moveTo(padL, yOf(1)); ctx.lineTo(W - padR, yOf(1)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = cTxt;
+  ctx.fillText('CPI=1', padL + 6, yOf(1) - 5);
+  ctx.fillText('3.5', 4, yOf(3.5) + 5);
+  ctx.fillText('0.5', 4, yOf(0.5) + 2);
+  ctx.strokeStyle = 'rgba(255,107,107,.8)';
+  for (const ft of flushTimes) if (ft >= t0) {
+    const x = xOf(ft);
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+  }
+  ctx.strokeStyle = '#ffa94d';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  let started = false;
+  for (const s of samples) {
+    if (s.t < t0 || s.cpi == null) { started = false; continue; }
+    const x = xOf(s.t), y = yOf(s.cpi);
+    if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.lineWidth = 1;
+  const last = samples[samples.length - 1];
+  if (last && last.cpi != null && last.t >= t0) {
+    ctx.fillStyle = '#ffa94d';
+    ctx.fillRect(xOf(last.t) - 2, yOf(last.cpi) - 2, 4, 4);
+  }
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elRate = document.getElementById('sRate'), elRateVal = document.getElementById('sRateVal');
+const stCpi = document.getElementById('stCpi'), stIps = document.getElementById('stIps'),
+  stBub = document.getElementById('stBub'), stFl = document.getElementById('stFl'),
+  stFw = document.getElementById('stFw');
+const formulaEl = document.getElementById('formula');
+const btnPair = document.getElementById('btnPair'), btnBr = document.getElementById('btnBr'),
+  btnFwd = document.getElementById('btnFwd'), btnFlush = document.getElementById('btnFlush');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  elRate.value = rateHz;
+  elRateVal.textContent = `${rateHz.toFixed(2)} ${L('拍/s', 'beat/s')}`;
+}
+function syncBtns() {
+  btnFwd.classList.toggle('on', fwdOn);
+  btnFwd.textContent = fwdOn ? L('前递:开', 'Forwarding: ON') : L('前递:关', 'Forwarding: OFF');
+}
+function updateStats() {
+  const sum = hist.reduce((a, b) => a + b, 0);
+  const cpi = sum ? hist.length / sum : NaN;
+  stCpi.textContent = Number.isFinite(cpi) ? cpi.toFixed(2) : '—';
+  stCpi.className = 'v ' + (Number.isFinite(cpi) ? (cpi <= 1.05 ? 'ok' : cpi < 1.8 ? 'warn' : 'bad') : '');
+  const t = perfNow();
+  while (ipsT.length && ipsT[0] < t - 4) ipsT.shift();
+  stIps.innerHTML = `${(ipsT.length / 4).toFixed(1)}<small> /s</small>`;
+  let live = 0;
+  for (const it of pipe) if (it && it.bubble) live++;
+  stBub.textContent = String(live);
+  stBub.className = 'v' + (live ? ' warn' : ' ok');
+  stFl.textContent = String(flushCount);
+  stFl.className = 'v' + (flushCount ? ' warn' : '');
+  stFw.textContent = String(fwCount);
+  stFw.className = 'v ok';
+}
+function updateFormula() {
+  const sum = hist.reduce((a, b) => a + b, 0);
+  const cpi = sum ? (hist.length / sum).toFixed(2) : '—';
+  formulaEl.innerHTML = L(
+    `<b>吞吐率 = f × 1/CPI</b> · 理想 CPI = 1:满载每拍完工 1 条,延迟仍 5 拍、吞吐率 ×5<br>` +
+    `<b>前递 = 抄近路</b> · EX/MEM、MEM/WB 出口直连 EX 入口,每次省 2~3 拍(累计 ${fwCount} 次)<br>` +
+    `<b>冲刷代价 = 分支后已流入的 2–3 条</b> · 预测错 1 次白做 2 拍(累计 ${flushCount} 次)<br>` +
+    `<b>f = ${(rateHz * speedMul).toFixed(2)} 拍/s(可视节拍)</b> · 窗口 CPI = ${cpi} · 累计气泡 ${bubbleTotal} 个`,
+    `<b>Throughput = f × 1/CPI</b> · ideal CPI = 1: one finish per beat when full; latency stays 5 beats, throughput ×5<br>` +
+    `<b>Forwarding = a shortcut</b> · EX/MEM &amp; MEM/WB outlets wired to the EX inlet, saving 2–3 stalls each (${fwCount} so far)<br>` +
+    `<b>Flush cost = the 2–3 instructions behind the branch</b> · one misprediction wastes 2 beats (${flushCount} so far)<br>` +
+    `<b>f = ${(rateHz * speedMul).toFixed(2)} beats/s (visual tempo)</b> · window CPI = ${cpi} · ${bubbleTotal} bubbles total`);
+}
+function syncAll() {
+  syncSliders(); syncBtns(); updateFormula(); updateStats(); drawPlot();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+btnPair.addEventListener('click', () => {
+  injectQ.push({ ...PAIR_LOAD }, { ...PAIR_USE });
+  notify('已注入 LOAD+AND 对:load-use 冒险在路上,留意即将诞生的气泡', 'injected LOAD+AND pair: a load-use hazard is in flight, watch for the bubble');
+});
+btnBr.addEventListener('click', () => {
+  injectQ.push({ ...BRDEF });
+  notify('已注入 BEQ:预测不跳,实际 50% 跳;等它到 EX 裁决', 'injected BEQ: predicted not-taken, actually 50/50; wait for the EX verdict');
+});
+btnFwd.addEventListener('click', () => {
+  fwdOn = !fwdOn;
+  syncBtns(); updateFormula();
+  notify(fwdOn ? '前递开启:RAW 用导线化解,不再停顿' : '前递关闭:每条 RAW 都要傻等 2~3 拍,CPI 飙升', fwdOn ? 'forwarding ON: RAW resolved by wire, no more stalls' : 'forwarding OFF: every RAW stalls 2–3 beats, CPI soars');
+});
+btnFlush.addEventListener('click', () => {
+  let n = 0;
+  for (const i of [0, 1]) {
+    const it = pipe[i];
+    if (!it) { pipe[i] = mkBubbleAt(i); continue; }
+    if (it.bubble) continue;
+    if (it.blk >= 0) flyAway(pool[it.blk]);
+    pipe[i] = mkBubbleAt(i);
+    n++;
+  }
+  if (n) {
+    flushCount++;
+    flushTimes.push(perfNow());
+    notify(`手动冲刷演示:${n} 条在飞指令被弹出流水(代价 ${n} 拍)`, `manual flush demo: ${n} in-flight instruction(s) ejected (a ${n}-beat penalty)`);
+  } else {
+    notify('流水前段是气泡/为空,无可冲刷', 'pipe front is bubbles/empty, nothing to flush');
+  }
+});
+elRate.addEventListener('input', () => { rateHz = +elRate.value; syncSliders(); updateFormula(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglArc').addEventListener('change', e => { arcsOn = e.target.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  if (renderer) renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, accPlot = 0, cycleAcc = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+
+function updateBlock(B, mdt, v) {
+  if (B.flying) {
+    B.t += mdt;
+    B.vy -= 20 * mdt;
+    B.mesh.position.x += B.vx * mdt;
+    B.mesh.position.y += B.vy * mdt;
+    B.mesh.position.z += B.vz * mdt;
+    B.mesh.rotation.x += 5 * mdt;
+    B.mesh.rotation.z += 4 * mdt;
+    if (B.t > 0.45) B.mat.opacity = Math.max(0, 1 - (B.t - 0.45) * 2.2);
+    if (B.t > 0.95) releaseBlock(B);
+    return;
+  }
+  if (B.exiting) {
+    B.x += v * mdt;
+    if (B.x > 13.5) B.mat.opacity = Math.max(0, B.mat.opacity - mdt * 2.5);
+    if (B.x > 16) { releaseBlock(B); return; }
+    B.mesh.position.x = B.x;
+    return;
+  }
+  B.x += clamp(B.tx - B.x, -v * mdt, v * mdt);
+  B.mesh.position.x = B.x;
+}
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  if (notifyT > 0) notifyT -= dt0;
+  cycleAcc += playing ? dt0 * speedMul : 0;   // 拍进位含 speedMul
+  const mdt = playing ? dt0 : 0;              // 块位移用真实 dt,节拍已含在 v 里
+  let guard = 0;
+  while (cycleAcc >= cycleSec() && guard++ < 8) { cycleAcc -= cycleSec(); tick(); }
+  /* 发光衰减 */
+  arc1Glow = Math.max(0, arc1Glow - dt0 * 1.6);
+  arc2Glow = Math.max(0, arc2Glow - dt0 * 1.6);
+  clkGlow = Math.max(0, clkGlow - dt0 * 3);
+  slowGlow = Math.max(0, slowGlow - dt0 * 0.8);
+  /* 指令块随传送带移动 */
+  const v = SPACING / cycleSec();
+  for (const B of pool) if (B.busy) updateBlock(B, mdt, v);
+  /* 传送带条纹 / 弧线 / 时钟灯 */
+  if (playing && !stalled) beltTex.offset.x -= v * dt0 / 3;
+  arc1.visible = arcsOn && fwdOn;
+  arc2.visible = arcsOn && fwdOn;
+  arc1M.opacity = 0.08 + arc1Glow * 0.9;
+  arc2M.opacity = 0.08 + arc2Glow * 0.9;
+  clk.rotation.y += dt0 * (0.5 + clkGlow * 6);
+  clkM.emissiveIntensity = 0.2 + clkGlow * 2.4;
+  archExM.emissiveIntensity = 0.05 + slowGlow * 0.8;
+  /* 提示标签 */
+  lblNotify.visible = labelsOn && notifyT > 0;
+  if (lblNotify.visible) lblNotify.element.textContent = L(notifyZ, notifyE);
+  /* 相机飞行 */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.15) { acc = 0; updateStats(); updateFormula(); }
+  accPlot += dt0;
+  if (accPlot > 0.15) { accPlot = 0; drawPlot(); }
+  controls.update();
+  if (renderer) { renderer.render(scene, camera); labelRenderer.render(scene, camera); }
+}
+function start() { if (raf === null && webglOK) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+const t0 = Math.round(qsFloat('t', 0));
+if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
+syncAll();
+start();
+</script>
+</body>
+</html>
