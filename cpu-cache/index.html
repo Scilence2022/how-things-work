@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>CPU 缓存与局部性 · 64 字节的搬运工</title>
+<style>
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;--acc:#ffa94d;
+    --bg:#0f1113;--panel:rgba(15,17,19,.86);--panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;
+    --hover:rgba(255,255,255,.05);--shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,17,19,.78);--tool-border:rgba(255,255,255,.12);--cv-pill:rgba(15,17,19,.8);
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;--acc:#e8590c;
+    --bg:#f1efec;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+    --text:#16202c;--text2:#5b6b7d;--text3:#33414f;
+    --hover:rgba(15,25,40,.05);--shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);--cv-pill:rgba(255,255,255,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s}
+  #app{position:fixed;inset:0}#app canvas{display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+  .lbl{background:var(--cv-pill);border:1px solid var(--tool-border);color:var(--text3);font-size:12px;
+    line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);transition:opacity .25s}
+  :root[data-theme="light"] .lbl{text-shadow:none}
+  .lbl.o{border-color:rgba(255,169,77,.9);color:#ffe0c2}.lbl.r{border-color:rgba(255,107,107,.9);color:#ffc2c2}
+  .lbl.g{border-color:rgba(116,220,132,.9);color:#c8f5d0}.lbl.b{border-color:rgba(116,192,252,.9);color:#bde9ff}
+  :root[data-theme="light"] .lbl.o{color:#a34e00}:root[data-theme="light"] .lbl.r{color:#c92a2a}
+  :root[data-theme="light"] .lbl.g{color:#2b8a3e}:root[data-theme="light"] .lbl.b{color:#1864ab}
+  #tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px}
+  .tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);
+    color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;
+    padding:0 12px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;text-decoration:none;backdrop-filter:blur(6px);
+    transition:border-color .15s,color .15s,transform .15s}
+  .tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px)}
+  #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px)}
+  #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  #stats{position:fixed;right:18px;bottom:18px;z-index:4;background:var(--panel);
+    border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+    backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px}
+  #stats .k{font-size:12px;color:var(--text2);align-self:center}
+  #stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  #stats .v small{font-size:11px;color:var(--text2);font-weight:400}
+  #stats .v.ok{color:#7bd88f}#stats .v.warn{color:#ffd43b}#stats .v.bad{color:#ff6b6b}
+  :root[data-theme="light"] #stats .v.warn{color:#d98f00}
+  #panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;padding:14px 16px 12px;backdrop-filter:blur(6px);
+    box-shadow:var(--shadow);max-height:calc(100vh - 160px);overflow:auto}
+  #actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 40%;
+    background:var(--hover);color:var(--text2);border:1px solid var(--tool-border);
+    border-radius:9px;padding:7px 10px;font-size:12.5px;font-weight:600;
+    transition:border-color .15s,color .15s,background .15s}
+  .abtn:hover{border-color:var(--acc);color:var(--text)}
+  .abtn.on{border-color:rgba(255,169,77,.6);background:rgba(255,169,77,.12);color:var(--text)}
+  :root[data-theme="light"] .abtn.on{border-color:rgba(232,89,12,.55);background:rgba(232,89,12,.10)}
+  .row{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .row label{font-size:12px;color:var(--text2);flex:0 0 92px}
+  .row .val{font-size:11.5px;color:var(--text3);flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc);height:18px}
+  #steps{list-style:none;margin-top:8px}
+  #steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;align-items:flex-start}
+  #steps li:hover{background:var(--hover)}
+  #steps li.on{background:rgba(255,169,77,.10);border-color:rgba(255,169,77,.45)}
+  :root[data-theme="light"] #steps li.on{background:rgba(232,89,12,.08);border-color:rgba(232,89,12,.4)}
+  #steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;display:flex;
+    align-items:center;justify-content:center;margin-top:1px;
+    background:rgba(255,255,255,.12);color:var(--text3)}
+  :root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10)}
+  #steps li.on .n{background:var(--acc);color:#fff}
+  #steps .t{font-size:12px;color:var(--text3);line-height:1.45}
+  #steps .t b{color:var(--text);font-size:12px}
+  #steps li.on .t b{color:#ffe0c2}
+  :root[data-theme="light"] #steps li.on .t b{color:var(--acc)}
+  #ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border)}
+  #play{grid-row:1/3;grid-column:1;padding:10px 14px;font-size:14px;font-weight:600;
+    background:var(--acc);color:#fff;border:0;border-radius:10px;cursor:pointer}
+  #play:hover{filter:brightness(1.12)}
+  #toggles{display:flex;gap:12px;flex-wrap:wrap}
+  #toggles label{font-size:12px;color:var(--text2);display:flex;gap:5px;align-items:center;cursor:pointer}
+  #toggles input{accent-color:var(--acc)}
+  #rel{margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-border);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #rel span{font-size:11.5px;color:var(--text2)}
+  #rel a{font-size:11.5px;color:var(--text3);text-decoration:none;border:1px solid var(--tool-border);
+    border-radius:999px;padding:3px 10px;transition:color .15s,border-color .15s}
+  #rel a:hover{color:var(--acc);border-color:var(--acc)}
+  @media(max-width:900px){#stats{display:none}}
+  @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
+    #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="CPU 缓存与局部性 · 64 字节的搬运工" data-en="CPU Cache &amp; Locality · The 64-byte Courier">CPU 缓存与局部性 · 64 字节的搬运工</h1>
+  <div class="sub" data-zh="CPU 快、内存慢约百倍，中间垫 L1/L2/L3；缓存按 64 B 行搬运——访问 1 个字节，整行 8 个 double 搬上来。行序扫描一路绿，切列序当场卡成红海：同一算法只换遍历顺序，耗时差数倍 · 拖动旋转 / 空格运行/暂停" data-en="CPU is ~100x faster than DRAM; L1/L2/L3 bridge the gap in 64-byte lines — touch one byte, a whole line of 8 doubles arrives. Row-major scan stays green; column-major turns into a red sea: same algorithm, order alone costs several-fold · drag to orbit / Space = run/pause">CPU 快、内存慢约百倍，中间垫 L1/L2/L3；缓存按 64 B 行搬运——访问 1 个字节，整行 8 个 double 搬上来。行序扫描一路绿，切列序当场卡成红海：同一算法只换遍历顺序，耗时差数倍 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="本轮耗时" data-en="Pass cycles">本轮耗时</span><span class="v" id="stCyc">—</span>
+  <span class="k" data-zh="L1 命中率" data-en="L1 hit rate">L1 命中率</span><span class="v" id="stHit">—</span>
+  <span class="k" data-zh="取内存行" data-en="DRAM lines">取内存行</span><span class="v" id="stMiss">—</span>
+  <span class="k" data-zh="列/行耗时比" data-en="Col/row time">列/行耗时比</span><span class="v" id="stRatio">—</span>
+</div>
+<div id="panel">
+  <div id="actions">
+    <button class="abtn" id="btnRow" data-zh="行序扫描" data-en="Row-major">行序扫描</button>
+    <button class="abtn" id="btnCol" data-zh="列序扫描" data-en="Column-major">列序扫描</button>
+    <button class="abtn" id="btnNew" data-zh="新一轮" data-en="Restart pass">新一轮</button>
+  </div>
+  <div class="row">
+    <label data-zh="矩阵边长 N" data-en="Matrix size N">矩阵边长 N</label>
+    <input id="sN" type="range" min="8" max="24" step="8" value="16">
+    <span class="val" id="sNVal">16×16</span>
+  </div>
+  <div class="row">
+    <label data-zh="访问速度" data-en="Access rate">访问速度</label>
+    <input id="sSpd" type="range" min="60" max="2400" step="20" value="600">
+    <span class="val" id="sSpdVal">600/s</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" data-zh="运行" data-en="Run">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglPref" type="checkbox"> <span data-zh="硬件预取" data-en="HW prefetch">硬件预取</span></label>
+      <label><input id="tglSpin" type="checkbox"> <span data-zh="自动环绕" data-en="Auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../cpu-pipeline/" data-zh="CPU 流水线" data-en="CPU pipeline">CPU 流水线</a>
+    <a href="../transistor-adder/" data-zh="晶体管加法器" data-en="Transistor adder">晶体管加法器</a>
+    <a href="../hash-table/" data-zh="哈希表" data-en="Hash table">哈希表</a>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ============ 工具 / 主题 / 语言 ============ */
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const el=id=>document.getElementById(id);
+const htmlEl=document.documentElement;
+let THEME=localStorage.getItem('htw-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+let LANG=localStorage.getItem('htw-lang')||'zh';
+const L=(zh,en)=>LANG==='en'?en:zh;
+const qs=new URLSearchParams(location.search);
+
+/* ============ 渲染器 / 场景 ============ */
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:3';
+document.body.appendChild(labelRenderer.domElement);
+
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x101418,34,95);
+const camera=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,0.1,300);
+camera.position.set(0,15,27);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(-2,0.5,0);controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=4;controls.maxDistance=80;
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
+scene.add(new THREE.HemisphereLight(0xdfe8f2,0x1a1c22,0.5));
+const key=new THREE.DirectionalLight(0xfff2dd,1.0);key.position.set(8,20,12);scene.add(key);
+
+/* ============ 物理模型（真实量级） ============
+   访问延迟（周期数，参考典型 x86 量级）：L1=4, L2=12, L3=42, DRAM≈200
+   缓存行 64 B = 8 个 double；L1 直映射 4 行 / L2 16 行 / L3 64 行
+   理论上限：行序每 8 次访问才付 1 次 miss → 列序/行序 ≤ 8×（每行元素数），
+   真实硬件再叠加 TLB miss、预取失败等，可到 10× 以上 */
+const LAT={L1:4,L2:12,L3:42,DRAM:200};
+const EPL=8;                     // elements per line（每行元素数）
+let N=16;                        // 矩阵边长（行 = 缓存行对齐，N 为 8 的倍数）
+const P=0.55,MX=10.5;            // 单元间距 / 矩阵中心 x
+let mode='row',prefOn=false,playing=!qs.get('pause');
+let speed=+((parseFloat(qs.get('speed'))||600));
+const l1=new Array(4).fill(-1),l2=new Array(16).fill(-1),l3=new Array(64).fill(-1);
+let k=0,accFrac=0,passT=0,passPause=0,passN=0;
+let cnt={acc:0,h1:0,h2:0,h3:0,dm:0,cyc:0};
+let lastCyc=null,rowRef=null,colRatio=null;
+
+/* ============ 场景物件 ============ */
+const groundM=new THREE.MeshStandardMaterial({color:0x1c2027,roughness:0.95});
+const slabM=new THREE.MeshStandardMaterial({color:0x2e3a47,roughness:0.45,metalness:0.45});
+const cpuM=new THREE.MeshStandardMaterial({color:0x27313d,roughness:0.4,metalness:0.5});
+const dieM=new THREE.MeshStandardMaterial({color:0x74c0fc,emissive:0x1864ab,emissiveIntensity:0.9,roughness:0.3});
+const slotLit={L1:0xffa94d,L2:0x74c0fc,L3:0xb197fc};
+const slotOff=0x232a33;
+
+const ground=new THREE.Mesh(new THREE.BoxGeometry(60,0.3,34),groundM);
+ground.position.set(-2,-0.15,0);scene.add(ground);
+
+/* CPU 封装 */
+const cpuGrp=new THREE.Group();cpuGrp.position.set(-14.5,0,0);scene.add(cpuGrp);
+cpuGrp.add(new THREE.Mesh(new THREE.BoxGeometry(2.6,0.5,2.6),cpuM));
+const die=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.14,1.5),dieM);die.position.y=0.32;cpuGrp.add(die);
+
+/* 三级缓存基座 */
+function slab(x,w,d,tag){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,0.8,d),slabM);
+  m.position.set(x,0.4,0);scene.add(m);return m;
+}
+slab(-8.6,1.2,3.4);slab(-4.6,1.6,4.6);slab(-0.4,2.2,5.8);
+
+/* 槽位：L1 4 行 / L2 4×4 / L3 8×8 —— instanced，有效性用颜色表达 */
+function makeSlots(n,cols,x,y,z0,dz,dx,size){
+  const geo=new THREE.BoxGeometry(size,0.14,size*1.1);
+  const im=new THREE.InstancedMesh(geo,new THREE.MeshStandardMaterial({roughness:0.4}),n);
+  const m=new THREE.Matrix4();
+  for(let i=0;i<n;i++){
+    m.setPosition(x+(i%cols)*dx,y,z0+Math.floor(i/cols)*dz);
+    im.setMatrixAt(i,m);im.setColorAt(i,new THREE.Color(slotOff));
+  }
+  im.instanceColor.needsUpdate=true;scene.add(im);return im;
+}
+const slotsL1=makeSlots(4,1,-8.6,0.87,-1.2,0.8,0,0.55);
+const slotsL2=makeSlots(16,4,-4.6,0.87,-0.85,0.57,0.57,0.42);
+const slotsL3=makeSlots(64,8,-0.4,0.97,-0.91,0.26,0.26,0.2);
+const slotMeshes=[slotsL1,slotsL2,slotsL3];
+
+/* 矩阵（DRAM 数据网格） */
+let matMesh=null,cellState=null,cellFlash=null;
+const UNVIS=new THREE.Color(0x24344a),HIT=new THREE.Color(0x2f9e44),MISS=new THREE.Color(0xd64534);
+const FLASHC=new THREE.Color(0xfff4e0);
+function buildMatrix(){
+  if(matMesh){scene.remove(matMesh);matMesh.dispose();}
+  const n=N*N;
+  matMesh=new THREE.InstancedMesh(new THREE.BoxGeometry(0.44,0.16,0.44),new THREE.MeshStandardMaterial({roughness:0.55}),n);
+  const m=new THREE.Matrix4();
+  for(let i=0;i<n;i++){
+    const p=cellPos(i);
+    m.setPosition(p.x,0.14,p.z);
+    matMesh.setMatrixAt(i,m);matMesh.setColorAt(i,UNVIS);
+  }
+  matMesh.instanceColor.needsUpdate=true;
+  scene.add(matMesh);
+  cellState=new Uint8Array(n);cellFlash=new Float32Array(n);
+}
+function cellPos(i){
+  const r=Math.floor(i/N),c=i%N;
+  return {x:MX-(N-1)*P/2+c*P,z:-(N-1)*P/2+r*P};
+}
+
+/* 缓存行搬运条（64 B 整行点亮飞入 L1） */
+const strips=[];
+for(let s=0;s<4;s++){
+  const mat=new THREE.MeshStandardMaterial({color:0xffa94d,emissive:0xff922b,emissiveIntensity:1.2,transparent:true,opacity:0.95});
+  const mesh=new THREE.Mesh(new THREE.BoxGeometry(8*P-0.1,0.1,0.5),mat);
+  mesh.visible=false;scene.add(mesh);
+  strips.push({mesh,t:1,from:new THREE.Vector3(),to:new THREE.Vector3()});
+}
+function spawnStrip(line){
+  const s=strips.find(s=>s.t>=1)||strips[0];
+  const c0=cellPos(line*EPL),c1=cellPos(line*EPL+EPL-1);
+  s.from.set((c0.x+c1.x)/2,0.35,(c0.z+c1.z)/2);
+  s.to.set(-8.6,1.3,0);
+  s.t=0;s.mesh.visible=true;s.mesh.material.opacity=0.95;
+}
+
+/* 总线请求粒子（装饰：CPU↔DRAM 往返） */
+const busDot=new THREE.Mesh(new THREE.SphereGeometry(0.16,12,10),
+  new THREE.MeshStandardMaterial({color:0xffd43b,emissive:0xf59f00,emissiveIntensity:1.4}));
+scene.add(busDot);
+let busTarget=-14.5;
+
+/* ============ MESI 小剧场（简化一致性协议） ============ */
+const mesiGrp=new THREE.Group();mesiGrp.position.set(-14.5,4.6,0);scene.add(mesiGrp);
+const mesiState=['S','S'];       // 核0 / 核1 中同一行的状态
+const mesiLamps=[[],[]];
+const mesiCol={M:0xff6b6b,E:0xffd43b,S:0x51cf66,I:0x495057};
+for(let core=0;core<2;core++){
+  const b=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.4,1.4),cpuM.clone());
+  b.position.y=core===0?0.62:0;mesiGrp.add(b);
+  for(let i=0;i<4;i++){
+    const lamp=new THREE.Mesh(new THREE.SphereGeometry(0.1,10,8),
+      new THREE.MeshStandardMaterial({color:mesiCol.S,emissive:mesiCol.S,emissiveIntensity:0.8}));
+    lamp.position.set(-0.63+i*0.42,(core===0?0.62:0)+0.27,0.55);
+    mesiGrp.add(lamp);mesiLamps[core].push(lamp);
+  }
+}
+const mesiPhases=[
+  {t:0, s:['S','S'], z:'两核先后读同一行 → 共享 S/S', e:'both cores read → Shared S/S'},
+  {t:3, s:['I','M'], z:'核1 写入 → 核0 副本失效(I)，核1 独占(M)', e:'core1 writes → core0 invalidated (I), core1 Modified (M)'},
+  {t:6, s:['S','S'], z:'核0 再读 → 核1 回写总线，两核回到 S/S', e:'core0 reads → writeback on bus, back to S/S'},
+];
+function mesiTick(t){
+  const ph=t%9;
+  let idx=0;for(let i=0;i<mesiPhases.length;i++)if(ph>=mesiPhases[i].t)idx=i;
+  const p=mesiPhases[idx];
+  for(let c=0;c<2;c++)if(mesiState[c]!==p.s[c]){
+    mesiState[c]=p.s[c];
+    mesiLamps[c].forEach(l=>{l.material.color.setHex(mesiCol[p.s[c]]);l.material.emissive.setHex(mesiCol[p.s[c]]);});
+  }
+  return p;
+}
+
+/* ============ 标签 ============ */
+const labelReg=[];
+function addLabel(textFn,pos,cls='',visFn=()=>true,parent=scene){
+  const div=document.createElement('div');div.className='lbl '+cls;
+  const o=new CSS2DObject(div);o.position.copy(pos);parent.add(o);
+  labelReg.push({o,text:textFn,vis:visFn});div.textContent=textFn();return o;
+}
+addLabel(()=>L('CPU 核心','CPU core'),new THREE.Vector3(0,1.15,0),'b',()=>true,cpuGrp);
+addLabel(()=>L('L1 · 4 行 × 64 B（每核）','L1 · 4 lines x 64 B (per core)'),new THREE.Vector3(-7.8,1.9,1.0),'o');
+addLabel(()=>L('L2 · 16 行','L2 · 16 lines'),new THREE.Vector3(-4.2,2.0,1.0),'b');
+addLabel(()=>L('L3 · 64 行','L3 · 64 lines'),new THREE.Vector3(-0.2,2.1,1.0),'b');
+addLabel(()=>L('DRAM：N×N 个 double，按行连续编址','DRAM: N×N doubles, row-major'),new THREE.Vector3(MX,1.1,-(N*P)/2-0.9),'g');
+addLabel(()=>L('一条 64 B 缓存行 = 8 个 double','one 64 B line = 8 doubles'),new THREE.Vector3(MX-3,0.9,N*P/2+0.7),'o');
+let mesiText='';
+const mesiLbl=addLabel(()=>mesiText,new THREE.Vector3(0,1.75,0),'r',()=>true,mesiGrp);
+addLabel(()=>prefOn?L('预取器：顺序流提前搬下一行进 L2（只对行序有效）','prefetcher: streams next line into L2 (row-major only)'):'',
+  new THREE.Vector3(-6.5,2.6,3.6),'g',()=>prefOn);
+
+/* ============ 访问引擎 ============ */
+function resetPass(){
+  k=0;passT=0;cnt={acc:0,h1:0,h2:0,h3:0,dm:0,cyc:0};
+  cellState.fill(0);cellFlash.fill(0);
+  paintCells();
+}
+const tmpC=new THREE.Color(),tmpB=new THREE.Color();
+function paintCells(){
+  /* 每帧按 状态+闪光衰减 重绘单元颜色：命中绿、miss 红、行邻居橙白闪 */
+  const n=N*N;
+  for(let i=0;i<n;i++){
+    tmpB.copy(cellState[i]===0?UNVIS:cellState[i]===1?HIT:MISS);
+    if(cellFlash[i]>0){tmpC.copy(tmpB).lerp(FLASHC,cellFlash[i]);}else tmpC.copy(tmpB);
+    matMesh.setColorAt(i,tmpC);
+  }
+  matMesh.instanceColor.needsUpdate=true;
+}
+function fullReset(){
+  l1.fill(-1);l2.fill(-1);l3.fill(-1);
+  rowRef=null;colRatio=null;passN=0;resetPass();
+  paintSlots();
+}
+function paintSlots(){
+  const arrs=[l1,l2,l3],lit=[slotLit.L1,slotLit.L2,slotLit.L3];
+  for(let lv=0;lv<3;lv++){
+    const im=slotMeshes[lv],c=new THREE.Color();
+    for(let i=0;i<arrs[lv].length;i++){
+      c.setHex(arrs[lv][i]>=0?lit[lv]:slotOff);
+      im.setColorAt(i,c);
+    }
+    im.instanceColor.needsUpdate=true;
+  }
+}
+function pulseCell(i,state){
+  if(state&&cellState[i]===0)cellState[i]=state;
+  cellFlash[i]=1;
+}
+function doAccess(){
+  /* 行序：第 k 次访问 (r=k/N, c=k%N)；列序：(r=k%N, c=k/N)——地址都是 r*N+c */
+  const i=mode==='row'?(Math.floor(k/N)*N+k%N):((k%N)*N+Math.floor(k/N));
+  const line=Math.floor(i/EPL);
+  let cost,where;
+  if(l1[line%4]===line){cost=LAT.L1;where='L1';cnt.h1++;}
+  else if(l2[line%16]===line){cost=LAT.L2;where='L2';cnt.h2++;l1[line%4]=line;}
+  else if(l3[line%64]===line){cost=LAT.L3;where='L3';cnt.h3++;l2[line%16]=line;l1[line%4]=line;}
+  else{
+    /* DRAM miss：整行搬入三级缓存，行邻居与目标单元一起闪光 */
+    cost=LAT.DRAM;where='DRAM';cnt.dm++;
+    l3[line%64]=line;l2[line%16]=line;l1[line%4]=line;
+    spawnStrip(line);paintSlots();busTarget=MX;
+    pulseCell(i,2);
+    for(let j=0;j<EPL;j++){const p=line*EPL+j;if(p<N*N&&p!==i)pulseCell(p,0);}
+  }
+  if(where!=='DRAM')pulseCell(i,1);
+  if(prefOn&&mode==='row'&&i%EPL===0){const nl=line+1;if(l2[nl%16]!==nl)l2[nl%16]=nl;paintSlots();}
+  cnt.acc++;cnt.cyc+=cost;k++;
+  busTarget=where==='L1'?-8.6:where==='L2'?-4.6:where==='L3'?-0.4:MX;
+}
+function endPass(){
+  lastCyc=cnt.cyc;passN++;
+  if(mode==='row')rowRef=lastCyc;
+  else if(rowRef)colRatio=lastCyc/rowRef;
+  passPause=0.8;
+}
+
+/* ============ 步骤 ============ */
+let camTween=null;
+function flyTo(p,t){camTween={p0:camera.position.clone(),p1:new THREE.Vector3(...p),t0:controls.target.clone(),t1:new THREE.Vector3(...t),k:0};}
+const STEPS=[
+  {zh:'存储墙：CPU 一拍一次，DRAM 约 200 拍——L1/L2/L3 用 4/12/42 拍逐级垫上',
+   en:'Memory wall: CPU 1 cycle, DRAM ~200; L1/L2/L3 bridge with 4/12/42',
+   act:()=>{flyTo([0,15,27],[-2,0.5,0]);}},
+  {zh:'缓存按 64 B 行搬运：访问 1 个字节，整行 8 个 double 一起搬进 L1',
+   en:'Caches move 64 B lines: touch 1 byte, all 8 doubles ride into L1',
+   act:()=>{mode='row';syncMode();speed=90;el('sSpd').value=90;syncUI();fullReset();flyTo([6,7,13],[6,0.5,0]);}},
+  {zh:'局部性：刚用过的还会用（时间）；挨着的马上用（空间）——缓存只对有局部性的代码有效',
+   en:'Locality: reuse soon (temporal), use neighbors (spatial) — caches pay off only with locality',
+   act:()=>{mode='row';syncMode();speed=300;el('sSpd').value=300;syncUI();fullReset();}},
+  {zh:'行序扫描：顺着编址走，每 8 次访问只付 1 次 DRAM miss，其余全 L1 命中',
+   en:'Row-major: every 8th access pays the DRAM miss, the other 7 hit L1',
+   act:()=>{mode='row';syncMode();speed=900;el('sSpd').value=900;syncUI();fullReset();}},
+  {zh:'列序扫描：每步都踩到新行——红海一片；本模型上限 8×（=每行元素数），真实机器叠加 TLB 等可超 10×',
+   en:'Column-major: every step a fresh line — a red sea; model caps at 8x, real machines exceed 10x with TLB misses',
+   act:()=>{mode='col';syncMode();speed=900;el('sSpd').value=900;syncUI();fullReset();}},
+  {zh:'MESI 一致性（简化）：一核写、他核失效；再读时回写总线回到共享——多核缓存不打架',
+   en:'MESI (simplified): one core writes, others invalidate; re-reads share again — caches stay coherent',
+   act:()=>{flyTo([-19,7.5,6.5],[-14.5,4.6,0]);}},
+];
+let activeStep=0;
+function buildSteps(){
+  const ol=el('steps');ol.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="n">${i+1}</span><span class="t"><b>${L(s.zh.split('：')[0],s.en.split(':')[0])}</b>　${L(s.zh.split('：').slice(1).join('：'),s.en.split(':').slice(1).join(':'))}</span>`;
+    li.addEventListener('click',()=>{activeStep=i;s.act();syncSteps();});
+    ol.appendChild(li);
+  });
+  syncSteps();
+}
+function syncSteps(){document.querySelectorAll('#steps li').forEach((li,i)=>li.classList.toggle('on',i===activeStep));}
+
+/* ============ 主题 / 语言 / UI ============ */
+function applyTheme(){
+  htmlEl.dataset.theme=THEME;
+  el('themeBtn').textContent=THEME==='dark'?'☀':'☾';
+  const dark=THEME==='dark';
+  scene.background=new THREE.Color(dark?0x101418:0xe9e4dc);
+  scene.fog.color.setHex(dark?0x101418:0xe9e4dc);
+  groundM.color.setHex(dark?0x1c2027:0xc9c2b6);
+  slabM.color.setHex(dark?0x2e3a47:0x7a8ba0);
+  cpuM.color.setHex(dark?0x27313d:0x8a97a5);
+}
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(e=>{
+    if(e.tagName==='INPUT')return;
+    e.textContent=LANG==='en'?(e.dataset.en||e.dataset.zh):e.dataset.zh;
+  });
+  el('langBtn').textContent=LANG==='en'?'ZH':'EN';
+  buildSteps();syncUI();setPlayLabel();
+}
+function syncMode(){
+  el('btnRow').classList.toggle('on',mode==='row');
+  el('btnCol').classList.toggle('on',mode==='col');
+}
+function syncUI(){
+  el('sNVal').textContent=N+'×'+N;
+  el('sSpdVal').textContent=Math.round(speed)+'/s';
+}
+function setPlayLabel(){el('play').textContent=playing?L('暂停','Pause'):L('运行','Run');}
+function updateStats(){
+  el('stCyc').innerHTML=cnt.cyc+'<small> cyc</small>';
+  const hr=cnt.acc?cnt.h1/cnt.acc*100:0;
+  el('stHit').innerHTML=hr.toFixed(0)+'<small> %</small>';
+  el('stHit').className='v '+(hr>80?'ok':hr>40?'warn':'bad');
+  el('stMiss').innerHTML=cnt.dm+'<small> 行</small>';
+  el('stMiss').className='v '+(cnt.dm===0?'ok':cnt.dm>cnt.acc*0.5?'bad':'warn');
+  el('stRatio').innerHTML=colRatio?('×'+colRatio.toFixed(1)):'—';
+  el('stRatio').className='v '+(colRatio?(colRatio>3?'bad':'ok'):'');
+}
+
+/* ============ 事件 ============ */
+el('btnRow').addEventListener('click',()=>{mode='row';syncMode();fullReset();});
+el('btnCol').addEventListener('click',()=>{mode='col';syncMode();fullReset();});
+el('btnNew').addEventListener('click',fullReset);
+el('sN').addEventListener('input',e=>{N=+e.target.value;rowRef=null;colRatio=null;buildMatrix();fullReset();syncUI();});
+el('sSpd').addEventListener('input',e=>{speed=+e.target.value;syncUI();});
+el('tglPref').addEventListener('change',e=>{prefOn=e.target.checked;});
+el('tglSpin').addEventListener('change',e=>{controls.autoRotate=e.target.checked;});
+el('tglLabels').addEventListener('change',e=>{labelsOn=e.target.checked;});
+el('play').addEventListener('click',()=>{playing=!playing;setPlayLabel();});
+el('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+el('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();el('play').click();}});
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);
+});
+let labelsOn=qs.get('labels')!=='0';
+if(!labelsOn)el('tglLabels').checked=false;
+
+/* ============ 主循环 ============ */
+const clock=new THREE.Clock();
+let raf=null,accT=0,simT=0;
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const dt=clamp(clock.getDelta(),0,0.05);
+  if(playing){
+    simT+=dt;passT+=dt;
+    if(passPause>0){passPause-=dt;if(passPause<=0)resetPass();}
+    else{
+      accFrac+=speed*dt;
+      let guard=0;
+      while(accFrac>=1&&guard<4000){accFrac-=1;doAccess();guard++;}
+      if(k>=N*N)endPass();
+    }
+    /* 闪光衰减并重绘单元颜色 */
+    const n=N*N;
+    for(let i=0;i<n;i++)if(cellFlash[i]>0)cellFlash[i]=Math.max(0,cellFlash[i]-dt*2.4);
+    paintCells();
+    /* 搬运条动画 */
+    for(const s of strips){
+      if(s.t>=1){s.mesh.visible=false;continue;}
+      s.t=Math.min(1,s.t+dt*2.2);
+      s.mesh.position.lerpVectors(s.from,s.to,Math.min(1,s.t*1.1));
+      s.mesh.position.y=0.35+Math.sin(Math.min(1,s.t*1.1)*Math.PI)*1.6;
+      s.mesh.material.opacity=0.95*(1-s.t*s.t);
+    }
+  }
+  /* 总线粒子来回 */
+  busDot.position.x+=clamp(busTarget-busDot.position.x,-dt*40,dt*40);
+  busDot.position.y=1.3;
+  /* MESI 剧场 */
+  const mp=mesiTick(simT);
+  mesiText=L(mp.z,mp.e);
+  /* 相机飞行 */
+  if(camTween){
+    camTween.k=Math.min(1,camTween.k+dt*1.4);
+    const e=1-Math.pow(1-camTween.k,3);
+    camera.position.lerpVectors(camTween.p0,camTween.p1,e);
+    controls.target.lerpVectors(camTween.t0,camTween.t1,e);
+    if(camTween.k>=1)camTween=null;
+  }
+  accT+=dt;if(accT>0.1){accT=0;updateStats();}
+  for(const r of labelReg){
+    const on=labelsOn&&r.vis();
+    r.o.visible=on&&r.text()!=='';
+    if(on)r.o.element.textContent=r.text();
+  }
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+function start(){if(raf===null){clock.getDelta();raf=requestAnimationFrame(frame);}}
+function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+
+/* ============ 初始化 ============ */
+buildMatrix();
+fullReset();
+applyTheme();
+applyLang();
+syncMode();
+el('sSpd').value=speed;syncUI();
+setPlayLabel();
+start();
+</script>
+</body>
+</html>
