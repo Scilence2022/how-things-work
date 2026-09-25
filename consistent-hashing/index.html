@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>一致性哈希 · 环上的加减法</title>
+<style>
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;--acc:#ffa94d;
+    --bg:#0f1113;--panel:rgba(15,17,19,.86);--panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;
+    --hover:rgba(255,255,255,.05);--shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,17,19,.78);--tool-border:rgba(255,255,255,.12);--cv-pill:rgba(15,17,19,.8);
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;--acc:#e8590c;
+    --bg:#f1efec;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+    --text:#16202c;--text2:#5b6b7d;--text3:#33414f;
+    --hover:rgba(15,25,40,.05);--shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);--cv-pill:rgba(255,255,255,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s}
+  #app{position:fixed;inset:0}#app canvas{display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+  .lbl{background:var(--cv-pill);border:1px solid var(--tool-border);color:var(--text3);font-size:12px;
+    line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);transition:opacity .25s}
+  :root[data-theme="light"] .lbl{text-shadow:none}
+  .lbl.o{border-color:rgba(255,169,77,.9);color:#ffe0c2}.lbl.r{border-color:rgba(255,107,107,.9);color:#ffc2c2}
+  .lbl.g{border-color:rgba(116,220,132,.9);color:#c8f5d0}.lbl.b{border-color:rgba(116,192,252,.9);color:#bde9ff}
+  :root[data-theme="light"] .lbl.o{color:#a34e00}:root[data-theme="light"] .lbl.r{color:#c92a2a}
+  :root[data-theme="light"] .lbl.g{color:#2b8a3e}:root[data-theme="light"] .lbl.b{color:#1864ab}
+  #tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px}
+  .tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);
+    color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;
+    padding:0 12px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;text-decoration:none;backdrop-filter:blur(6px);
+    transition:border-color .15s,color .15s,transform .15s}
+  .tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px)}
+  #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px)}
+  #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  #stats{position:fixed;right:18px;bottom:18px;z-index:4;background:var(--panel);
+    border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+    backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px}
+  #stats .k{font-size:12px;color:var(--text2);align-self:center}
+  #stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  #stats .v small{font-size:11px;color:var(--text2);font-weight:400}
+  #panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;padding:14px 16px 12px;backdrop-filter:blur(6px);
+    box-shadow:var(--shadow);max-height:calc(100vh - 160px);overflow:auto}
+  #actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 40%;
+    background:var(--hover);color:var(--text2);border:1px solid var(--tool-border);
+    border-radius:9px;padding:7px 10px;font-size:12.5px;font-weight:600;
+    transition:border-color .15s,color .15s,background .15s}
+  .abtn:hover{border-color:var(--acc);color:var(--text)}
+  .abtn.on{border-color:rgba(255,169,77,.6);background:rgba(255,169,77,.12);color:var(--text)}
+  :root[data-theme="light"] .abtn.on{border-color:rgba(232,89,12,.55);background:rgba(232,89,12,.10)}
+  .row{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .row label{font-size:12px;color:var(--text2);flex:0 0 92px}
+  .row .val{font-size:11.5px;color:var(--text3);flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc);height:18px}
+  #steps{list-style:none;margin-top:8px}
+  #steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;align-items:flex-start}
+  #steps li:hover{background:var(--hover)}
+  #steps li.on{background:rgba(255,169,77,.10);border-color:rgba(255,169,77,.45)}
+  :root[data-theme="light"] #steps li.on{background:rgba(232,89,12,.08);border-color:rgba(232,89,12,.4)}
+  #steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;display:flex;
+    align-items:center;justify-content:center;margin-top:1px;
+    background:rgba(255,255,255,.12);color:var(--text3)}
+  :root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10)}
+  #steps li.on .n{background:var(--acc);color:#fff}
+  #steps .t{font-size:12px;color:var(--text3);line-height:1.45}
+  #steps .t b{color:var(--text);font-size:12px}
+  #steps li.on .t b{color:#ffe0c2}
+  :root[data-theme="light"] #steps li.on .t b{color:var(--acc)}
+  #ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border)}
+  #play{grid-row:1/3;grid-column:1;padding:10px 14px;font-size:14px;font-weight:600;
+    background:var(--acc);color:#fff;border:0;border-radius:10px;cursor:pointer}
+  #play:hover{filter:brightness(1.12)}
+  #toggles{display:flex;gap:12px;flex-wrap:wrap}
+  #toggles label{font-size:12px;color:var(--text2);display:flex;gap:5px;align-items:center;cursor:pointer}
+  #toggles input{accent-color:var(--acc)}
+  #rel{margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-border);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #rel span{font-size:11.5px;color:var(--text2)}
+  #rel a{font-size:11.5px;color:var(--text3);text-decoration:none;border:1px solid var(--tool-border);
+    border-radius:999px;padding:3px 10px;transition:color .15s,border-color .15s}
+  #rel a:hover{color:var(--acc);border-color:var(--acc)}
+  @media(max-width:900px){#stats{display:none}}
+  @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
+    #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="一致性哈希 · 环上的加减法" data-en="Consistent Hashing · Arithmetic on a Ring">一致性哈希 · 环上的加减法</h1>
+  <div class="sub" data-zh="看键与节点一起落到 0~2³² 的哈希环上，键归顺时针第一个节点——看一台新节点上环时只有它逆时针扇区里的键搬家（≈1/N），再对照 hash % N 几乎全军换位 · 拖动旋转 / 空格运行/暂停" data-en="Keys and nodes land on a 0–2³² hash ring; each key belongs to the first node clockwise. Watch a joining node take over only its counter-clockwise sector (~1/N of keys), vs hash % N remapping almost everything · drag to orbit / Space = run/pause">看键与节点一起落到 0~2³² 的哈希环上，键归顺时针第一个节点——看一台新节点上环时只有它逆时针扇区里的键搬家（≈1/N），再对照 hash % N 几乎全军换位 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="节点 / 虚拟节点" data-en="Nodes / vnodes">节点 / 虚拟节点</span><span class="v" id="stN">—</span>
+  <span class="k" data-zh="负载不均 CV" data-en="Load CV">负载不均 CV</span><span class="v" id="stCV">—</span>
+  <span class="k" data-zh="一致性搬家率" data-en="Ring migration">一致性搬家率</span><span class="v" id="stMC">—</span>
+  <span class="k" data-zh="hash%N 搬家率" data-en="mod-N migration">hash%N 搬家率</span><span class="v" id="stMM">—</span>
+</div>
+<div id="panel">
+  <div id="actions">
+    <button class="abtn" id="btnAdd" data-zh="＋ 节点上环" data-en="＋ Join node">＋ 节点上环</button>
+    <button class="abtn" id="btnDel" data-zh="－ 节点下环" data-en="－ Leave node">－ 节点下环</button>
+    <button class="abtn" id="btnReset" data-zh="重置 3 节点" data-en="Reset 3 nodes">重置 3 节点</button>
+    <button class="abtn" id="btnMod" data-zh="切换 %N 对照" data-en="Toggle mod-N view">切换 %N 对照</button>
+  </div>
+  <div class="row">
+    <label data-zh="键数量" data-en="Key count">键数量</label>
+    <input id="sKeys" type="range" min="20" max="150" step="5" value="90">
+    <span class="val" id="sKeysVal">90</span>
+  </div>
+  <div class="row">
+    <label data-zh="虚拟节点/台" data-en="Vnodes / node">虚拟节点/台</label>
+    <input id="sVn" type="range" min="1" max="24" step="1" value="1">
+    <span class="val" id="sVnVal">1</span>
+  </div>
+  <div class="row">
+    <label data-zh="演示速度" data-en="Demo speed">演示速度</label>
+    <input id="sSpd" type="range" min="30" max="200" step="10" value="100">
+    <span class="val" id="sSpdVal">1.0×</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" data-zh="运行" data-en="Run">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglSpin" type="checkbox"> <span data-zh="自动环绕" data-en="Auto-orbit">自动环绕</span></label>
+      <label><input id="tglAuto" type="checkbox" checked> <span data-zh="自动扩缩容" data-en="Auto demo">自动扩缩容</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../hash-table/" data-zh="哈希表" data-en="Hash table">哈希表</a>
+    <a href="../packet-switching/" data-zh="分组交换" data-en="Packet switching">分组交换</a>
+    <a href="../blockchain/" data-zh="区块链" data-en="Blockchain">区块链</a>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ============================================================
+   一致性哈希：把哈希空间 0~2³² 首尾相接成环。
+   - 键与节点都哈希到环上；键归顺时针（角度增大方向）第一个节点。
+   - 加一台节点：只有「逆时针方向、到上一节点为止」扇区里的键搬家 ≈ 1/N。
+   - 对照：hash(key) % N 在 N 变化时，除 h%N==h%(N+1) 的少数键外全部换位
+     （N:3→4 理论保留率 1/(N+1)=25%，搬家 75%；N 越大搬家越接近 100%）。
+   - 虚拟节点：每台物理节点拆 V 个虚拟点落在环上，负载方差骤降。
+   ============================================================ */
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const TAU=Math.PI*2;
+const htmlEl=document.documentElement;
+let THEME=localStorage.getItem('htw-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+let LANG=localStorage.getItem('htw-lang')||'zh';
+const L=(zh,en)=>LANG==='en'?en:zh;
+
+/* ---- renderer ---- */
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:3';
+document.body.appendChild(labelRenderer.domElement);
+
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x101418,22,60);
+const camera=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,0.1,200);
+camera.position.set(2.0,14.8,15.4); /* 拉远抬高并右偏视心，环与三节点完整入画 */
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(-2.3,0,0.55);controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=4;controls.maxDistance=45;
+
+scene.add(new THREE.HemisphereLight(0xdfe8f2,0x1a1c22,0.75));
+const key=new THREE.DirectionalLight(0xfff2dd,1.1);key.position.set(6,10,7);scene.add(key);
+const fill=new THREE.DirectionalLight(0x9ab8ff,0.3);fill.position.set(-7,5,-6);scene.add(fill);
+
+/* ---- 常量 ---- */
+const R_RING=6,R_KEY=5.55,R_SEC=5.08,R_NODE=6.7,MAXK=150,MAXN=6;
+const PALETTE=[0x339af0,0x51cf66,0xffd43b,0xff6b6b,0x845ef7,0x22b8cf];
+const NAMES=['A','B','C','D','E','F'];
+/* 确定性伪随机（页面每次刷新节点/键/虚拟节点位置一致） */
+const det=x=>{const s=Math.sin(x)*43758.5453;return s-Math.floor(s);};
+/* 物理节点主角度：黄金角散开 + 抖动，天然不均（V=1 时负载不均可见） */
+const nodeAng=i=>((i*2.399963+(det(i*3.77)-0.5)*1.1)%TAU+TAU)%TAU;
+/* 虚拟节点角度：独立哈希，v=0 时退化为节点主位置 */
+const vnAng=(ni,v)=>v===0?nodeAng(ni):det(ni*12.9898+v*78.233+5.432)*TAU;
+const keyAng=k=>det(k*12.9898+4.7)*TAU;
+const keyHash=k=>Math.floor(keyAng(k)/TAU*4294967296); // 0~2³²
+
+/* ---- 场景物件 ---- */
+const ring=new THREE.Mesh(new THREE.TorusGeometry(R_RING,0.045,10,160),
+  new THREE.MeshStandardMaterial({color:0x5c6878,roughness:0.4,metalness:0.7}));
+ring.rotation.x=Math.PI/2;scene.add(ring);
+const base=new THREE.Mesh(new THREE.CylinderGeometry(8.6,9.2,0.22,64),
+  new THREE.MeshStandardMaterial({color:0x1c2027,roughness:0.95}));
+base.position.y=-0.15;scene.add(base);
+
+/* 扇区归属弧线（LineSegments，顶点色按属主节点） */
+const sectorMat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.85});
+let sectorLines=null;
+function rebuildSectors(vl){
+  if(sectorLines){scene.remove(sectorLines);sectorLines.geometry.dispose();sectorLines=null;}
+  if(!vl.length)return;
+  const pos=[],col=[],c=new THREE.Color();
+  for(let i=0;i<vl.length;i++){
+    const a=vl[i].ang,b=vl[(i+1)%vl.length].ang;
+    const span=((b-a)%TAU+TAU)%TAU;
+    c.setHex(PALETTE[vl[i].node%PALETTE.length]);
+    const segs=Math.max(2,Math.ceil(span/0.09));
+    for(let s=0;s<segs;s++){
+      const t0=a+span*s/segs,t1=a+span*(s+1)/segs;
+      pos.push(Math.cos(t0)*R_SEC,0.03,Math.sin(t0)*R_SEC,Math.cos(t1)*R_SEC,0.03,Math.sin(t1)*R_SEC);
+      col.push(c.r,c.g,c.b,c.r,c.g,c.b);
+    }
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+  sectorLines=new THREE.LineSegments(g,sectorMat);scene.add(sectorLines);
+}
+
+/* 键点：InstancedMesh，未用实例矩阵先置零缩放 */
+const keyMat4=new THREE.Matrix4();
+const keysIM=new THREE.InstancedMesh(
+  new THREE.SphereGeometry(0.13,10,8),
+  new THREE.MeshStandardMaterial({roughness:0.35,metalness:0.15}),MAXK);
+keysIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+for(let i=0;i<MAXK;i++){keyMat4.makeScale(0,0,0);keysIM.setMatrixAt(i,keyMat4);keysIM.setColorAt(i,new THREE.Color(0x888888));}
+scene.add(keysIM);
+
+/* 节点：立柱 + 彩球 + CSS2D 标签 */
+const nodeRoot=new THREE.Group();scene.add(nodeRoot);
+const labelReg=[];
+function addLabel(textFn,pos,cls='',visFn=()=>true,parent=scene){
+  const div=document.createElement('div');div.className='lbl '+cls;
+  const o=new CSS2DObject(div);o.position.copy(pos);parent.add(o);
+  labelReg.push({o,text:textFn,vis:visFn});div.textContent=textFn();return o;
+}
+function makeNodeMesh(idx){
+  const g=new THREE.Group();
+  const stem=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.085,0.85,10),
+    new THREE.MeshStandardMaterial({color:0x788795,roughness:0.45,metalness:0.7}));
+  stem.position.y=0.42;g.add(stem);
+  const cap=new THREE.Mesh(new THREE.SphereGeometry(0.3,18,14),
+    new THREE.MeshStandardMaterial({color:PALETTE[idx],roughness:0.28,metalness:0.25,emissive:PALETTE[idx],emissiveIntensity:0.25}));
+  cap.position.y=1.0;g.add(cap);
+  addLabel(()=>L(`节点 ${NAMES[idx]} · ${loadCnt[idx]||0} 键`,`Node ${NAMES[idx]} · ${loadCnt[idx]||0} keys`),
+    new THREE.Vector3(0,1.75,0),idx===newIdx?'o':'b',()=>true,g);
+  return g;
+}
+
+/* ---- 状态 ---- */
+let nodes=[];            // {idx,ang,group}
+let vnodeCount=1,keyCount=90;
+let owner=[],ownerMod=[],loadCnt=[];
+let moveC=0,moveM=0;     // 最近一次拓扑变化的搬家键数
+let flashSet=new Set(),flashT=0,pendingFlash=null;
+let newIdx=-1;           // 最新上环节点（标签高亮）
+let playing=true,autoDemo=true,demoT=0,growMode=true,speedK=1,labelsOn=true,simT=0;
+let dropAnims=[];        // 节点升降动画
+
+const qs=new URLSearchParams(location.search);
+
+function vnodeList(){
+  const arr=[];
+  for(const n of nodes)for(let v=0;v<vnodeCount;v++)arr.push({ang:vnAng(n.idx,v),node:n.idx});
+  arr.sort((a,b)=>a.ang-b.ang);return arr;
+}
+/* 键归顺时针（角度增大）第一个虚拟节点 */
+function assignAll(vl){
+  const res=new Array(keyCount);
+  for(let k=0;k<keyCount;k++){
+    const ka=keyAng(k);let lo=0,hi=vl.length;
+    while(lo<hi){const m=(lo+hi)>>1;(vl[m].ang<ka)?lo=m+1:hi=m;}
+    res[k]=vl[lo]?vl[lo].node:vl[0].node;
+  }
+  return res;
+}
+function reassign(track){
+  const vl=vnodeList();
+  const oldO=owner,oldM=ownerMod;
+  owner=assignAll(vl);
+  ownerMod=[];for(let k=0;k<keyCount;k++)ownerMod.push(keyHash(k)%Math.max(1,nodes.length));
+  if(track&&oldO&&oldO.length===owner.length){
+    moveC=0;moveM=0;
+    const changed=[];
+    for(let k=0;k<keyCount;k++){
+      if(owner[k]!==oldO[k]){moveC++;changed.push(k);}
+      if(ownerMod[k]!==oldM[k])moveM++;
+    }
+    pendingFlash=changed;
+  }else if(!track){moveC=0;moveM=0;}
+  loadCnt=new Array(MAXN).fill(0);
+  for(let k=0;k<keyCount;k++)loadCnt[owner[k]]++;
+  rebuildSectors(vl);applyKeyMatrices();applyKeyColors();
+}
+function applyKeyMatrices(){
+  for(let k=0;k<keyCount;k++){
+    const a=keyAng(k);
+    keyMat4.makeTranslation(Math.cos(a)*R_KEY,0.07,Math.sin(a)*R_KEY);
+    keysIM.setMatrixAt(k,keyMat4);
+  }
+  for(let k=keyCount;k<MAXK;k++){keyMat4.makeScale(0,0,0);keysIM.setMatrixAt(k,keyMat4);}
+  keysIM.instanceMatrix.needsUpdate=true;
+}
+const cTmp=new THREE.Color();
+function applyKeyColors(){
+  const useMod=document.getElementById('btnMod').classList.contains('on');
+  for(let k=0;k<keyCount;k++){
+    cTmp.setHex(PALETTE[(useMod?ownerMod[k]:owner[k])%PALETTE.length]);
+    keysIM.setColorAt(k,cTmp);
+  }
+  keysIM.instanceColor.needsUpdate=true;
+}
+
+/* ---- 上环 / 下环 ---- */
+function addNode(){
+  if(nodes.length>=MAXN)return;
+  const idx=nodes.length?nodes[nodes.length-1].idx+1:0;
+  const g=makeNodeMesh(idx);
+  const a=nodeAng(idx);
+  g.position.set(Math.cos(a)*R_NODE,3.6,Math.sin(a)*R_NODE);
+  nodeRoot.add(g);
+  nodes.push({idx,ang:a,group:g});
+  newIdx=idx;moveC=0;moveM=0;
+  reassign(true);
+  dropAnims.push({g,from:3.6,to:0,t:0,dur:0.9});
+}
+function removeNode(){
+  if(nodes.length<=1)return;
+  const n=nodes.pop();
+  dropAnims.push({g:n.group,from:0,to:3.6,t:0,dur:0.9,kill:true});
+  newIdx=-1;
+  reassign(true);
+}
+function resetNodes(n){
+  for(const nd of nodes)nodeRoot.remove(nd.group);
+  for(let j=labelReg.length-1;j>=0;j--)if(nodes.some(nd=>labelReg[j].o.parent===nd.group))labelReg.splice(j,1);
+  nodes=[];newIdx=-1;dropAnims=[];
+  for(let i=0;i<n;i++){
+    const g=makeNodeMesh(i);const a=nodeAng(i);
+    g.position.set(Math.cos(a)*R_NODE,0,Math.sin(a)*R_NODE);
+    nodeRoot.add(g);nodes.push({idx:i,ang:a,group:g});
+  }
+  reassign(false);
+}
+
+/* ---- 主题 / 语言 ---- */
+function applyTheme(){
+  htmlEl.dataset.theme=THEME;
+  document.getElementById('themeBtn').textContent=THEME==='dark'?'☀':'☾';
+  const dark=THEME==='dark';
+  scene.background=new THREE.Color(dark?0x101418:0xe9e4dc);
+  scene.fog.color.setHex(dark?0x101418:0xe9e4dc);
+  base.material.color.setHex(dark?0x1c2027:0xc9c2b6);
+}
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el=>{
+    if(el.tagName==='INPUT')return;
+    el.textContent=LANG==='en'?(el.dataset.en||el.dataset.zh):el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent=LANG==='en'?'ZH':'EN';
+  buildSteps();updateStats();
+}
+
+/* ---- 步骤（点击切换到该相位的场景） ---- */
+function setConfig(n,v){
+  vnodeCount=v;document.getElementById('sVn').value=v;document.getElementById('sVnVal').textContent=v;
+  if(nodes.length!==n)resetNodes(n);else reassign(false);
+}
+const STEPS=[
+  {zh:'哈希环：键与节点各自哈希到 0~2³² 的圆环上，位置由哈希值决定',en:'Hash ring: keys and nodes are hashed onto a 0–2³² circle',
+   act(){document.getElementById('btnMod').classList.remove('on');setConfig(2,1);applyKeyColors();}},
+  {zh:'归属规则：每个键归顺时针遇到的第一个节点，弧线即各节点的管辖扇区',en:'Ownership: each key belongs to the first node clockwise; arcs mark each sector',
+   act(){document.getElementById('btnMod').classList.remove('on');setConfig(3,1);applyKeyColors();}},
+  {zh:'上环：新节点只接管自己逆时针到上一节点之间的键——搬家率 ≈ 1/N',en:'Join: new node takes only its CCW sector, ~1/N of keys move',
+   act(){document.getElementById('btnMod').classList.remove('on');setConfig(3,1);addNode();}},
+  {zh:'下环：节点离开，它的键全部交给顺时针下一台，其余键纹丝不动',en:'Leave: its keys hand to the next node clockwise, others stay put',
+   act(){document.getElementById('btnMod').classList.remove('on');setConfig(4,1);removeNode();}},
+  {zh:'虚拟节点：每台拆成 V 个虚拟点撒在环上，负载不均 CV 从 ~0.5 降到 ~0.1',en:'Vnodes: split each node into V points, load CV drops',
+   act(){document.getElementById('btnMod').classList.remove('on');setConfig(3,12);applyKeyColors();}},
+  {zh:'对照 hash % N：扩容一台，几乎所有键同时换主——这就是环要解决的灾难',en:'Contrast hash % N: one join remaps almost every key',
+   act(){document.getElementById('btnMod').classList.add('on');setConfig(3,1);applyKeyColors();addNode();}},
+  {zh:'Dynamo、Memcached 集群、CDN 边缘调度，都站在这只环上',en:'Dynamo, memcached farms, CDN shards all stand on this ring',
+   act(){document.getElementById('btnMod').classList.remove('on');setConfig(5,8);applyKeyColors();}},
+];
+let activeStep=0;
+function buildSteps(){
+  const el=document.getElementById('steps');el.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="n">${i+1}</span><span class="t"><b>${LANG==='en'?s.en:s.zh}</b></span>`;
+    li.addEventListener('click',()=>{activeStep=i;syncSteps();demoT=0;STEPS[i].act();});
+    el.appendChild(li);
+  });
+  syncSteps();
+}
+function syncSteps(){
+  document.querySelectorAll('#steps li').forEach((li,i)=>li.classList.toggle('on',i===activeStep));
+}
+function updateStats(){
+  document.getElementById('stN').innerHTML=nodes.length+'<small> / '+nodes.length*vnodeCount+'</small>';
+  const m=keyCount/Math.max(1,nodes.length);
+  let ss=0;for(let i=0;i<nodes.length;i++)ss+=(loadCnt[i]-m)*(loadCnt[i]-m);
+  const cv=nodes.length>1&&m>0?Math.sqrt(ss/nodes.length)/m:0;
+  document.getElementById('stCV').innerHTML=cv.toFixed(2)+'<small></small>';
+  document.getElementById('stMC').innerHTML=keyCount?(100*moveC/keyCount).toFixed(0)+'<small> %</small>':'—';
+  document.getElementById('stMM').innerHTML=keyCount?(100*moveM/keyCount).toFixed(0)+'<small> %</small>':'—';
+}
+
+/* ---- 交互 ---- */
+document.getElementById('btnAdd').addEventListener('click',()=>{demoT=0;addNode();});
+document.getElementById('btnDel').addEventListener('click',()=>{demoT=0;removeNode();});
+document.getElementById('btnReset').addEventListener('click',()=>{demoT=0;document.getElementById('btnMod').classList.remove('on');setConfig(3,1);applyKeyColors();moveC=0;moveM=0;updateStats();});
+document.getElementById('btnMod').addEventListener('click',e=>{
+  e.currentTarget.classList.toggle('on');applyKeyColors();updateStats();
+});
+document.getElementById('sKeys').addEventListener('input',e=>{
+  keyCount=+e.target.value;document.getElementById('sKeysVal').textContent=keyCount;
+  moveC=0;moveM=0;reassign(false);
+});
+document.getElementById('sVn').addEventListener('input',e=>{
+  vnodeCount=+e.target.value;document.getElementById('sVnVal').textContent=vnodeCount;
+  moveC=0;moveM=0;reassign(false);
+});
+document.getElementById('sSpd').addEventListener('input',e=>{
+  speedK=+e.target.value/100;document.getElementById('sSpdVal').textContent=speedK.toFixed(1)+'×';
+});
+document.getElementById('play').addEventListener('click',()=>{playing=!playing;
+  document.getElementById('play').textContent=playing?L('暂停','Pause'):L('运行','Run');});
+document.getElementById('tglLabels').addEventListener('change',e=>{labelsOn=e.target.checked;});
+document.getElementById('tglSpin').addEventListener('change',e=>{controls.autoRotate=e.target.checked;});
+document.getElementById('tglAuto').addEventListener('change',e=>{autoDemo=e.target.checked;});
+document.getElementById('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+document.getElementById('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();document.getElementById('play').click();}});
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);
+});
+
+/* ---- 主循环 ---- */
+const clock=new THREE.Clock();
+let raf=null,acc=0;
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const dt=clamp(clock.getDelta(),0,0.05);
+  simT+=dt;
+  if(playing){
+    /* 自动扩缩容演示：交替加/减节点，招牌画面 3.5s 内自动出现 */
+    if(autoDemo){
+      demoT+=dt*speedK;
+      if(demoT>=3.5){
+        demoT=0;
+        if(growMode){addNode();if(nodes.length>=5)growMode=false;}
+        else{removeNode();if(nodes.length<=2)growMode=true;}
+      }
+    }
+    /* 节点升降动画 */
+    for(let i=dropAnims.length-1;i>=0;i--){
+      const a=dropAnims[i];a.t+=dt;
+      const f=clamp(a.t/a.dur,0,1),e=1-Math.pow(1-f,3);
+      a.g.position.y=a.from+(a.to-a.from)*e;
+      if(f>=1){
+        if(a.kill)nodeRoot.remove(a.g);
+        if(pendingFlash){flashSet=new Set(pendingFlash);flashT=1.1;pendingFlash=null;}
+        /* 清掉随节点移除的孤儿标签 */
+        for(let j=labelReg.length-1;j>=0;j--)if(labelReg[j].o.parent===a.g)labelReg.splice(j,1);
+        dropAnims.splice(i,1);
+      }
+    }
+    /* 搬家键闪烁提示 */
+    if(flashT>0){
+      flashT-=dt;
+      const pulse=Math.sin(simT*20)>0;
+      const useMod=document.getElementById('btnMod').classList.contains('on');
+      for(const k of flashSet){
+        if(k>=keyCount)continue;
+        const own=(useMod?ownerMod[k]:owner[k])%PALETTE.length;
+        cTmp.setHex(pulse?0xff4d4d:PALETTE[own]);
+        keysIM.setColorAt(k,cTmp);
+        keyMat4.makeTranslation(Math.cos(keyAng(k))*R_KEY,0.07,Math.sin(keyAng(k))*R_KEY)
+          .multiply(new THREE.Matrix4().makeScale(1.7,1.7,1.7));
+        keysIM.setMatrixAt(k,keyMat4);
+      }
+      keysIM.instanceColor.needsUpdate=true;keysIM.instanceMatrix.needsUpdate=true;
+      if(flashT<=0){applyKeyColors();applyKeyMatrices();}
+    }
+  }
+  acc+=dt;if(acc>0.1){acc=0;updateStats();}
+  for(const r of labelReg){r.o.visible=labelsOn&&r.vis();if(r.o.visible)r.o.element.textContent=r.text();}
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+function start(){if(raf===null){clock.getDelta();raf=requestAnimationFrame(frame);}}
+function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+
+/* ---- 启动 ---- */
+applyTheme();applyLang();buildSteps();
+resetNodes(3);
+if(qs.get('pause')==='1'){playing=false;document.getElementById('play').textContent=L('运行','Run');}
+if(!qsBool('labels',true)){labelsOn=false;document.getElementById('tglLabels').checked=false;}
+if(qs.get('speed')!==null){const v=clamp(parseFloat(qs.get('speed'))||1,0.3,2);
+  speedK=v;document.getElementById('sSpd').value=Math.round(v*100);
+  document.getElementById('sSpdVal').textContent=v.toFixed(1)+'×';}
+function qsBool(k,d){const v=qs.get(k);return v===null?d:(v!=='0'&&v!=='false');}
+updateStats();start();
+</script>
+</body>
+</html>
