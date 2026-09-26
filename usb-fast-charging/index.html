@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>快充与 USB-PD · 握手、恒流与恒压</title>
+<style>
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;--acc:#ffa94d;
+    --bg:#0f1113;--panel:rgba(15,17,19,.86);--panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;
+    --hover:rgba(255,255,255,.05);--shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,17,19,.78);--tool-border:rgba(255,255,255,.12);--cv-pill:rgba(15,17,19,.8);
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;--acc:#e8590c;
+    --bg:#f1efec;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+    --text:#16202c;--text2:#5b6b7d;--text3:#33414f;
+    --hover:rgba(15,25,40,.05);--shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);--cv-pill:rgba(255,255,255,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s}
+  #app{position:fixed;inset:0}#app canvas{display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+  .lbl{background:var(--cv-pill);border:1px solid var(--tool-border);color:var(--text3);font-size:12px;
+    line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);transition:opacity .25s}
+  :root[data-theme="light"] .lbl{text-shadow:none}
+  .lbl.o{border-color:rgba(255,169,77,.9);color:#ffe0c2}.lbl.r{border-color:rgba(255,107,107,.9);color:#ffc2c2}
+  .lbl.g{border-color:rgba(116,220,132,.9);color:#c8f5d0}.lbl.b{border-color:rgba(116,192,252,.9);color:#bde9ff}
+  :root[data-theme="light"] .lbl.o{color:#a34e00}:root[data-theme="light"] .lbl.r{color:#c92a2a}
+  :root[data-theme="light"] .lbl.g{color:#2b8a3e}:root[data-theme="light"] .lbl.b{color:#1864ab}
+  #tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px}
+  .tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);
+    color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;
+    padding:0 12px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;text-decoration:none;backdrop-filter:blur(6px);
+    transition:border-color .15s,color .15s,transform .15s}
+  .tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px)}
+  #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px)}
+  #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  #plot{position:fixed;right:18px;bottom:18px;z-index:4;width:320px;height:206px;
+    background:var(--panel);border:1px solid var(--panel-border);border-radius:12px;backdrop-filter:blur(6px);padding:8px 10px 6px}
+  #plot h3{font-size:12px;color:var(--text2);font-weight:600;margin-bottom:2px}
+  #plotCv{width:100%;height:calc(100% - 20px);display:block}
+  #stats{position:fixed;right:18px;bottom:236px;z-index:4;background:var(--panel);
+    border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+    backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px}
+  #stats .k{font-size:12px;color:var(--text2);align-self:center}
+  #stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  #stats .v small{font-size:11px;color:var(--text2);font-weight:400}
+  #stats .v.warn{color:#ffd43b}#stats .v.bad{color:#ff6b6b}#stats .v.ok{color:#7bd88f}
+  :root[data-theme="light"] #stats .v.warn{color:#d98f00}
+  #panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;padding:14px 16px 12px;backdrop-filter:blur(6px);
+    box-shadow:var(--shadow);max-height:calc(100vh - 160px);overflow:auto}
+  #actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 40%;
+    background:var(--hover);color:var(--text2);border:1px solid var(--tool-border);
+    border-radius:9px;padding:7px 10px;font-size:12.5px;font-weight:600;
+    transition:border-color .15s,color .15s,background .15s}
+  .abtn:hover{border-color:var(--acc);color:var(--text)}
+  .abtn.on{border-color:rgba(255,169,77,.6);background:rgba(255,169,77,.12);color:var(--text)}
+  :root[data-theme="light"] .abtn.on{border-color:rgba(232,89,12,.55);background:rgba(232,89,12,.10)}
+  .row{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .row label{font-size:12px;color:var(--text2);flex:0 0 92px}
+  .row .val{font-size:11.5px;color:var(--text3);flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc);height:18px}
+  #log{margin-top:8px;border:1px solid var(--panel-border);border-radius:9px;background:var(--hover);
+    padding:7px 10px;font:11px/1.7 ui-monospace,Menlo,Consolas,monospace;color:var(--text3);
+    height:104px;overflow-y:auto;white-space:nowrap}
+  #log .hi{color:var(--acc);font-weight:600}
+  #formula{margin-top:8px;font-size:11.5px;line-height:1.55;color:var(--text2);border-top:1px dashed var(--panel-border);padding-top:7px}
+  #formula b{color:var(--text3);font-weight:600}
+  #steps{list-style:none;margin-top:8px}
+  #steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;align-items:flex-start}
+  #steps li:hover{background:var(--hover)}
+  #steps li.on{background:rgba(255,169,77,.10);border-color:rgba(255,169,77,.45)}
+  :root[data-theme="light"] #steps li.on{background:rgba(232,89,12,.08);border-color:rgba(232,89,12,.4)}
+  #steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;display:flex;
+    align-items:center;justify-content:center;margin-top:1px;
+    background:rgba(255,255,255,.12);color:var(--text3)}
+  :root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10)}
+  #steps li.on .n{background:var(--acc);color:#fff}
+  #steps .t{font-size:12px;color:var(--text3);line-height:1.45}
+  #steps .t b{color:var(--text);font-size:12px}
+  #steps li.on .t b{color:#ffe0c2}
+  :root[data-theme="light"] #steps li.on .t b{color:var(--acc)}
+  #ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border)}
+  #play{grid-row:1/3;grid-column:1;padding:10px 14px;font-size:14px;font-weight:600;
+    background:var(--acc);color:#fff;border:0;border-radius:10px;cursor:pointer}
+  #play:hover{filter:brightness(1.12)}
+  #toggles{display:flex;gap:12px;flex-wrap:wrap}
+  #toggles label{font-size:12px;color:var(--text2);display:flex;gap:5px;align-items:center;cursor:pointer}
+  #toggles input{accent-color:var(--acc)}
+  #rel{margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-border);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #rel span{font-size:11.5px;color:var(--text2)}
+  #rel a{font-size:11.5px;color:var(--text3);text-decoration:none;border:1px solid var(--tool-border);
+    border-radius:999px;padding:3px 10px;transition:color .15s,border-color .15s}
+  #rel a:hover{color:var(--acc);border-color:var(--acc)}
+  @media(max-width:1150px){#plot{display:none}#stats{bottom:18px}}
+  @media(max-width:900px){#stats{display:none}}
+  @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
+    #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="快充与 USB-PD · 握手、恒流与恒压" data-en="Fast Charging & USB-PD · Handshake, CC & CV">快充与 USB-PD · 握手、恒流与恒压</h1>
+  <div class="sub" data-zh="功率=电压×电流:老 USB 5V×2A 只有 10W;PD 协议先在 CC 线上「握手」——充电器广播 5/9/15/20V 电压档,手机按电池状态点菜、几百毫秒一次重新协商;电池恒流灌到 ~80% 转恒压涓流,越接近满越慢是保护;温度越线热管理降流 · 换山寨头看功率柱趴窝,拖电量滑块直击 CC→CV 切换 · 拖动旋转 / 空格运行/暂停" data-en="Power = V×I: old USB 5V×2A is just 10 W. PD first 'handshakes' on the CC line — the charger advertises 5/9/15/20 V gears, the phone orders by battery state and re-negotiates every few hundred ms; the cell charges at constant current to ~80%, then constant-voltage trickle — slower near full is protection, not a bug; heat caps the budget · plug in a dumb 5 V charger and watch the power bar crawl · drag to orbit / Space = run/pause">功率=电压×电流:老 USB 5V×2A 只有 10W;PD 协议先在 CC 线上「握手」——充电器广播 5/9/15/20V 电压档,手机按电池状态点菜、几百毫秒一次重新协商;电池恒流灌到 ~80% 转恒压涓流,越接近满越慢是保护;温度越线热管理降流 · 换山寨头看功率柱趴窝,拖电量滑块直击 CC→CV 切换 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="档位电压" data-en="PDO voltage">档位电压</span><span class="v" id="stV">—</span>
+  <span class="k" data-zh="输入电流" data-en="Input current">输入电流</span><span class="v" id="stI">—</span>
+  <span class="k" data-zh="输入功率" data-en="Input power">输入功率</span><span class="v" id="stP">—</span>
+  <span class="k" data-zh="电池温度" data-en="Cell temp">电池温度</span><span class="v" id="stT">—</span>
+</div>
+<div id="plot">
+  <h3 id="plotTitle" data-zh="充电曲线:橙=功率 W,蓝=电流 A(虚线=CC→CV 切换)" data-en="Charging curves: orange = power W, blue = current A (dashed = CC→CV switch)">充电曲线:橙=功率 W,蓝=电流 A(虚线=CC→CV 切换)</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+<div id="panel">
+  <div id="actions">
+    <button class="abtn" id="mPD" data-zh="PD 自动协商" data-en="PD auto">PD 自动协商</button>
+    <button class="abtn" id="mMock" data-zh="山寨头(无 PD)" data-en="Dumb 5V (no PD)">山寨头(无 PD)</button>
+    <button class="abtn" id="mPPS" data-zh="PPS 连续调压" data-en="PPS variable">PPS 连续调压</button>
+    <button class="abtn" id="btnHand" data-zh="重新握手" data-en="Re-handshake">重新握手</button>
+  </div>
+  <div class="row"><label data-zh="当前电量 SOC" data-en="Current SOC">当前电量 SOC</label>
+    <input id="sSOC" type="range" min="5" max="95" step="1" value="62"><span class="val" id="sSOCVal">62%</span></div>
+  <div class="row"><label data-zh="环境温度" data-en="Ambient temp">环境温度</label>
+    <input id="sT" type="range" min="0" max="40" step="1" value="25"><span class="val" id="sTVal">25°C</span></div>
+  <div id="log"></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" data-zh="运行" data-en="Run">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglSpin" type="checkbox"> <span data-zh="自动环绕" data-en="Auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../buck-converter/" data-zh="Buck 降压:20V 进 4V 出的效率账" data-en="Buck converter: 20V in, 4V out">Buck 降压</a>
+    <a href="../li-ion-battery/" data-zh="锂电池:CC/CV 的物理本体" data-en="Li-ion battery: the CC/CV physics">锂电池</a>
+    <a href="../electric-vehicle/" data-zh="电动车:同一套 PD 思路放大百倍" data-en="EV charging: PD ideas, 100× scaled">电动车充电</a>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const htmlEl=document.documentElement;
+let THEME=localStorage.getItem('htw-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+let LANG=localStorage.getItem('htw-lang')||'zh';
+const L=(zh,en)=>LANG==='en'?en:zh;
+const qs=new URLSearchParams(location.search);
+/* 模板公共状态:先于一切使用点声明 */
+let playing=qs.get('pause')!=='1';
+let labelsOn=qs.get('labels')!=='0';
+let speedK=clamp(parseFloat(qs.get('speed'))||1,0.2,3);
+let simT=0,notifyT=0,notifyZ='',notifyE='';
+
+/* ---- 渲染器 ---- */
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:3';
+document.body.appendChild(labelRenderer.domElement);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x101418,20,60);
+const camera=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,0.1,120);
+camera.position.set(0.9,5.0,10.6);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0.3,1.15,0);controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=2.5;controls.maxDistance=40;
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
+scene.add(new THREE.HemisphereLight(0xdfe8f2,0x1a1c22,0.6));
+const key=new THREE.DirectionalLight(0xfff2dd,1.0);key.position.set(5,8,6);scene.add(key);
+
+/* ---- 材质(主题可变) ---- */
+const groundM=new THREE.MeshStandardMaterial({color:0x1c2027,roughness:0.95});
+const chgM=new THREE.MeshStandardMaterial({color:0x2e3a47,roughness:0.45,metalness:0.5});
+const chgAccM=new THREE.MeshStandardMaterial({color:0xffa94d,emissive:0xffa000,emissiveIntensity:0.7,roughness:0.3});
+const cableM=new THREE.MeshStandardMaterial({color:0x3d4654,roughness:0.6,metalness:0.3});
+const phoneM=new THREE.MeshStandardMaterial({color:0x33404f,roughness:0.25,metalness:0.6,transparent:true,opacity:0.32});
+const battM=new THREE.MeshStandardMaterial({color:0x51cf66,emissive:0x2b8a3e,emissiveIntensity:0.5,roughness:0.35});
+const barM=new THREE.MeshStandardMaterial({color:0xffa94d,emissive:0xffa000,emissiveIntensity:0.85,roughness:0.3});
+const partM=new THREE.MeshStandardMaterial({color:0xffd43b,emissive:0xffa000,emissiveIntensity:1.6,roughness:0.3});
+const pedM=new THREE.MeshStandardMaterial({color:0x2a313b,roughness:0.9});
+
+/* ================= 电池与协议参数(真实量级) =================
+ * 锂电池 4.5Ah:OCV(SOC)=3.5+SOC(V),R=0.045Ω
+ * CC 恒流 ≈0.7C=3.2A;端电压 V=OCV+IR 到 4.45V 转 CV:I=(4.45−OCV)/R 指数衰减
+ * 演示时间 ×60 压缩:实际 1 小时 → 60 秒
+ * PDO 档位(45W 充电器):5V/3A,9V/3A,15V/3A,20V/2.25A
+ * buck 效率随降压比变化:20V→0.94,15V→0.93,9V→0.90,5V→0.84,PPS→0.95
+ * 热:T_eq = T_amb + 11·(P/45)^1.5 + 3·(I/3.2)²,>40°C 热限流            */
+const CAP=4.5,RINT=0.045,ICC=3.2,VCV=4.45,PMAX=45;
+const PDO=[[5,3],[9,3],[15,3],[20,2.25]];
+let mode='pd';                          // pd | mock | pps
+let soc=0.62,pdoV=20,pdoI=2.25,T=25,Tamb=25;
+let P_in=0,I_in=0,I_batt=0,V_term=0,phase='cc',full=false,done=false;
+let eff=0.94;
+function ocv(s){return 3.5+s;}
+function effOf(v,m){
+  if(m==='pps')return 0.95;
+  if(m==='mock')return 0.84;
+  return v===20?0.94:v===15?0.93:v===9?0.90:0.84;
+}
+function thermalCap(){
+  if(T<=40)return 1;
+  return clamp(1-(T-40)/6,0.15,1);
+}
+
+/* ---- 握手日志 ---- */
+const logEntries=[];
+function log(zh,en,hi=false){logEntries.push({zh,en,hi});if(logEntries.length>60)logEntries.shift();renderLog();}
+function renderLog(){
+  const el=document.getElementById('log');
+  el.innerHTML=logEntries.slice(-8).map(e=>
+    `<div${e.hi?' class="hi"':''}>${LANG==='en'?e.en:e.zh}</div>`).join('');
+  el.scrollTop=el.scrollHeight;
+}
+function runHandshake(){
+  log('→ Source_Capabilities: [5V/3A 9V/3A 15V/3A 20V/2.25A]',
+      '→ Source_Capabilities: [5V/3A 9V/3A 15V/3A 20V/2.25A]',true);
+  log(`← Request: ${pdoV}V × ${pdoI}A(手机按电池状态点菜)`,
+      `← Request: ${pdoV}V × ${pdoI}A (phone orders by battery state)`,true);
+  log('PD ✓ Accept — 开始输电','PD accepted — power flows',true);
+}
+
+/* ================= 场景搭建 ================= */
+const ground=new THREE.Mesh(new THREE.BoxGeometry(26,0.24,14),groundM);
+ground.position.y=-0.12;scene.add(ground);
+/* 充电器 */
+const chg=new THREE.Group();scene.add(chg);
+const chgBody=new THREE.Mesh(new THREE.BoxGeometry(1.35,0.95,0.85),chgM);
+chgBody.position.y=0.48;chg.add(chgBody);
+const chgStripe=new THREE.Mesh(new THREE.BoxGeometry(1.37,0.16,0.87),chgAccM);
+chgStripe.position.y=0.78;chg.add(chgStripe);
+chg.position.set(-4.2,0,0);
+/* 功率柱:高度=输入功率 */
+const barPed=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.1,0.62),pedM);
+barPed.position.set(-4.2,0.05,-1.7);scene.add(barPed);
+const powerBar=new THREE.Mesh(new THREE.BoxGeometry(0.46,1,0.46),barM);
+powerBar.scale.y=0.05;powerBar.position.set(-4.2,0.1,-1.7);scene.add(powerBar);
+/* 线缆 */
+const cableCurve=new THREE.CatmullRomCurve3([
+  new THREE.Vector3(-3.5,0.5,0),new THREE.Vector3(-2.4,0.12,0.55),
+  new THREE.Vector3(0,0.07,-0.55),new THREE.Vector3(2.05,0.12,0.5),
+  new THREE.Vector3(3.15,0.35,0)]);
+const cable=new THREE.Mesh(new THREE.TubeGeometry(cableCurve,48,0.05,8),cableM);
+scene.add(cable);
+/* 电流粒子:速度=电流,数量=功率 */
+const NPART=48;
+const parts=new THREE.InstancedMesh(new THREE.SphereGeometry(0.05,8,6),partM,NPART);
+scene.add(parts);
+const m4=new THREE.Matrix4(),zeroM=new THREE.Matrix4().makeScale(0,0,0),q0=new THREE.Quaternion();
+const partT=new Float32Array(NPART);
+for(let i=0;i<NPART;i++){partT[i]=i/NPART;parts.setMatrixAt(i,zeroM);}
+const v3=new THREE.Vector3(),s3=new THREE.Vector3(1,1,1);
+function updateParts(dt){
+  const spd=I_in>0.05?0.18+0.85*(I_in/2.25):0;
+  const vis=I_in>0.05?Math.max(3,Math.round(NPART*P_in/PMAX)):0;
+  for(let i=0;i<NPART;i++){
+    if(i<vis){
+      partT[i]=(partT[i]+dt*spd)%1;
+      cableCurve.getPointAt(partT[i],v3);
+      m4.compose(v3,q0,s3);
+    }else m4.copy(zeroM);
+    parts.setMatrixAt(i,m4);
+  }
+  parts.instanceMatrix.needsUpdate=true;
+}
+/* 手机:半透明壳 + 内部电池(液位=SOC) */
+const phone=new THREE.Group();
+const shell=new THREE.Mesh(new THREE.BoxGeometry(1.1,2.15,0.1),phoneM);
+phone.add(shell);
+const battGeo=new THREE.BoxGeometry(0.78,1.5,0.06);battGeo.translate(0,0.75,0);
+const batt=new THREE.Mesh(battGeo,battM);
+batt.position.set(0,-0.86,0.035);phone.add(batt);
+phone.position.set(3.3,1.22,0);phone.rotation.y=-0.38;
+scene.add(phone);
+
+/* ---- 标签 ---- */
+const labelReg=[];
+function addLabel(textFn,p,cls='',visFn=()=>true,parentObj=scene){
+  const div=document.createElement('div');div.className='lbl '+cls;
+  const o=new CSS2DObject(div);o.position.copy(p);parentObj.add(o);
+  labelReg.push({o,text:textFn,vis:visFn});div.textContent=textFn();return o;
+}
+addLabel(()=>mode==='mock'?L('山寨头:无 PD,固定 5V/2A=10W','dumb charger: no PD, 5V/2A = 10 W')
+  :mode==='pps'?L(`PPS:连续调压 ${pdoV.toFixed(1)}V`,`PPS: variable ${pdoV.toFixed(1)} V`)
+  :L(`PD 充电器 45W · 当前档 ${pdoV}V/${pdoI}A`,`PD 45W charger · gear ${pdoV}V/${pdoI}A`),
+  new THREE.Vector3(-4.2,1.35,0),'o');
+addLabel(()=>L('粒子速度=电流 · 到达密度=功率','particle speed = current · arrival rate = power'),
+  new THREE.Vector3(0,0.4,0.7),'b');
+addLabel(()=>phase==='cc'?L(`恒流 CC:${I_batt.toFixed(2)}A 灌入,电压爬坡`,`CC: ${I_batt.toFixed(2)}A constant, voltage climbing`)
+  :full?L('涓流截止:充满','trickle cut off: full')
+  :L(`恒压 CV:4.45V 锁定,电流衰减 ${I_batt.toFixed(2)}A`,`CV: 4.45V locked, current tapering ${I_batt.toFixed(2)}A`),
+  new THREE.Vector3(3.3,2.6,0),'g');
+addLabel(()=>notifyT>0?L(notifyZ,notifyE):'',new THREE.Vector3(0,3.3,0),'r');
+
+/* ================= 协议策略 ================= */
+function policyTarget(){                                // PD 自动:按 SOC 与温度点菜
+  if(T>46)return 5;
+  if(T>42)return 9;
+  if(soc<0.75)return 20;
+  if(soc<0.88)return 9;
+  return 5;
+}
+function setMode(m){
+  mode=m;full=false;done=false;
+  if(m==='mock'){
+    pdoV=5;pdoI=2;eff=0.84;
+    log('✗ 无 PD 握手:该充电器不协商,永远 5V/2A','no PD handshake: this charger never negotiates — 5V/2A forever');
+  }else if(m==='pps'){
+    pdoV=clamp(2.2*V_term||8,3.3,21);pdoI=3;eff=0.95;
+    log('PPS:电压连续可调,无需档位——buck 占空比最优点菜','PPS: continuous voltage — the buck runs at its sweet spot');
+  }else{
+    pdoV=policyTarget();
+    pdoI=PDO.find(p=>p[0]===pdoV)[1];
+    eff=effOf(pdoV,'pd');
+    runHandshake();
+  }
+  syncBtns();
+}
+let negoT=0;
+function maybeRenego(dt){                               // 几百 ms 一次重新协商
+  negoT+=dt;
+  if(negoT<0.6)return;
+  negoT=0;
+  if(mode==='pd'){
+    const tgt=policyTarget();
+    if(tgt!==pdoV){
+      log(`↻ 重新协商:${tgt}V(${T>42?'热限流':soc>=0.88?'接近满,低电压损耗更小':'电量状态变化'})`,
+        `↻ renegotiate: ${tgt}V (${T>42?'thermal throttle':soc>=0.88?'near full — lower V, less loss':'battery state changed'})`);
+      pdoV=tgt;pdoI=PDO.find(p=>p[0]===tgt)[1];eff=effOf(pdoV,'pd');
+    }
+  }else if(mode==='pps'){
+    pdoV=clamp(2.2*V_term,3.3,21);
+  }
+}
+
+/* ================= 物理步进 ================= */
+let hist=[],histT=0,switchT=-1;
+function simStep(dt){
+  maybeRenego(dt);
+  const o=ocv(soc);
+  let ib;
+  if(mode==='pps')eff=0.95;
+  const pAvail=pdoV*pdoI;
+  ib=Math.min(ICC,pAvail*eff/Math.max(o,3.1));          // CC:由功率预算与 0.7C 限流
+  if(o+ib*RINT>=VCV){                                   // 端电压到 4.45V → 恒压
+    if(phase==='cc'&&soc>0.5){phase='cv';switchT=simT;
+      log('电池端电压到 4.45V:CC → CV,进入涓流','terminal hits 4.45V: CC → CV, trickle begins',true);}
+    ib=(VCV-o)/RINT;
+  }
+  ib=Math.max(0,Math.min(ib,ICC*thermalCap()));         // 热限流
+  if(ib<0.15&&soc>0.85&&!full){
+    full=true;
+    log('涓流截止(I<0.15A):充满,充电器回到 5V 待机','trickle cut off (I<0.15A): full, charger idles at 5V');
+  }
+  I_batt=ib;V_term=o+ib*RINT;
+  P_in=Math.min(pAvail,V_term*ib/eff);
+  I_in=P_in/pdoV;
+  /* 热模型:T_eq = T_amb + 线损与 buck 损耗的等效温升 */
+  const Teq=Tamb+11*Math.pow(P_in/PMAX,1.5)+3*Math.pow(ib/ICC,2);
+  T+=(Teq-T)*dt/8;
+  if(!full)soc=clamp(soc+ib*dt*60/(CAP*3600),0,1);      // 时间 ×60 压缩
+  histT+=dt;
+  if(histT>0.25){histT=0;hist.push({t:simT,P:P_in,I:I_in});if(hist.length>260)hist.shift();}
+}
+
+/* ================= 步骤 ================= */
+const STEPS=[
+  {zh:'功率=电压×电流:老 USB 5V×2A 只有 10W——想快,先要更高的电压档',en:'P=V×I: old USB is 10W — going fast needs higher voltage gears'},
+  {zh:'握手:CC 线上的数字对话,充电器广播 PDO 档位,手机 Request 点菜',en:'Handshake: digital chat on the CC line — charger advertises PDOs, phone Requests'},
+  {zh:'20V 上桌:功率柱从 10W 跳上 45W,能量顺着线缆汹涌而来',en:'20V engaged: the power bar leaps from 10W to 45W'},
+  {zh:'恒流 CC:电池像饿汉,电流顶格 ~0.7C,SOC 几乎线性上涨',en:'CC: the cell gulps at ~0.7C while SOC climbs almost linearly'},
+  {zh:'恒压 CV:端电压到 4.45V 锁死,电流指数衰减——越接近满越慢是保护',en:'CV: 4.45V locked, current decays — slower near full is protection'},
+  {zh:'热管理:温度越过 40°C,重新协商降档限流——热是快充的天花板',en:'Thermal: past 40°C it renegotiates down — heat is the ceiling'},
+  {zh:'PPS:电压连续可调,buck 占空比最优;几百毫秒一次重新协商',en:'PPS: continuous voltage keeps the buck optimal; renegotiated every few hundred ms'},
+];
+let activeStep=0;
+function buildSteps(){
+  const el=document.getElementById('steps');el.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="n">${i+1}</span><span class="t"><b>${LANG==='en'?s.en:s.zh}</b></span>`;
+    li.addEventListener('click',()=>{activeStep=i;syncSteps();stepAct(i);});
+    el.appendChild(li);
+  });
+  syncSteps();
+}
+function syncSteps(){document.querySelectorAll('#steps li').forEach((li,i)=>li.classList.toggle('on',i===activeStep));}
+function stepAct(i){
+  if(i===0){setModeSilent('mock');notify('无 PD:10W 顶格——这就是「五福一安」的后代','no PD: capped at 10W — the heir of "five volts one amp"',3.2);}
+  if(i===1){setMode('pd');notify('握手三步:广播 → 点菜 → 输电','handshake in three beats: advertise → request → accept',3.4);}
+  if(i===2){jumpSOC(0.30);if(mode!=='pd')setMode('pd');notify('低电量:手机直接点 20V 档,45W 全力','low SOC: the phone orders 20V — full 45W',3.2);}
+  if(i===3){jumpSOC(0.55);notify('恒流段:电流纹丝不动,SOC 匀速爬','CC phase: current flat, SOC climbing steady',3.0);}
+  if(i===4){jumpSOC(0.79);notify('79%:盯住功率曲线,马上切 CV','79%: watch the curve — CV switch imminent',3.4);}
+  if(i===5){document.getElementById('sT').value=38;Tamb=38;document.getElementById('sTVal').textContent='38°C';
+    notify('夏天没空调:温度越线,自动降档限流','no A/C in summer: heat forces a downshift',3.4);}
+  if(i===6){setMode('pps');notify('PPS:电压跟着电池走,buck 始终在最优点','PPS: voltage tracks the cell — buck stays optimal',3.2);}
+  syncBtns();
+}
+function notify(z,e,t=3.0){notifyT=t;notifyZ=z;notifyE=e;}
+function setModeSilent(m){                              // 切模式但不播握手(步骤 0 用)
+  mode=m;full=false;done=false;
+  if(m==='mock'){pdoV=5;pdoI=2;eff=0.84;}
+  syncBtns();
+}
+function jumpSOC(s){
+  full=false;done=false;hist=[];switchT=-1;
+  /* 预演:从低于目标的起点充到 s,填一段历史曲线(simT 连续推进,时间轴无缝)
+     —— 起点必须严格低于 s,否则 while 一次都不跑,图表/日志首屏全空 */
+  soc=Math.min(0.05,s*0.5);
+  let guard=0;
+  while(soc<s&&guard<700){simT+=0.25;simStep(0.25);guard++;}
+  soc=s;
+  document.getElementById('sSOC').value=Math.round(s*100);
+  document.getElementById('sSOCVal').textContent=Math.round(s*100)+'%';
+}
+
+/* ================= 曲线图 ================= */
+const plotCv=document.getElementById('plotCv');
+function drawPlot(){
+  const ctx=plotCv.getContext('2d');
+  const W=plotCv.width=plotCv.clientWidth*2,H=plotCv.height=plotCv.clientHeight*2;
+  if(!W||!H)return;
+  ctx.clearRect(0,0,W,H);
+  const css=getComputedStyle(document.documentElement);
+  const cTxt=css.getPropertyValue('--text2').trim()||'#9fb0c3';
+  const acc=css.getPropertyValue('--acc').trim()||'#ffa94d';
+  const padL=36,padR=10,padT=10,padB=22,TW=60;
+  const t1=simT,t0=Math.max(0,t1-TW);
+  const xOf=t=>padL+(t-t0)/TW*(W-padL-padR);
+  const yOf=v=>(H-padB)-clamp(v,0,1)*(H-padT-padB);
+  ctx.strokeStyle='rgba(128,150,170,.3)';
+  ctx.beginPath();ctx.moveTo(padL,yOf(0));ctx.lineTo(W-padR,yOf(0));ctx.stroke();
+  ctx.font='12px system-ui';ctx.fillStyle=cTxt;
+  ctx.fillText('45W',padL-34,yOf(1)+4);
+  ctx.fillText('3.2A',padL-34,yOf(3.2/PMAX)+4);
+  ctx.fillText('60s',W-padR-26,H-padB+16);
+  if(switchT>=t0&&switchT<=t1){
+    ctx.setLineDash([5,5]);ctx.strokeStyle='rgba(255,107,107,.7)';
+    ctx.beginPath();ctx.moveTo(xOf(switchT),padT);ctx.lineTo(xOf(switchT),H-padB);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  const line=(key,scale,col)=>{
+    if(hist.length<2)return;
+    ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.beginPath();
+    let started=false;
+    for(const p of hist){
+      if(p.t<t0)continue;
+      const x=xOf(p.t),y=yOf(p[key]/scale);
+      started?ctx.lineTo(x,y):ctx.moveTo(x,y);started=true;
+    }
+    ctx.stroke();ctx.lineWidth=1;
+  };
+  line('P',PMAX,acc);
+  line('I',PMAX,'rgba(116,192,252,.9)');
+  ctx.fillStyle=cTxt;
+  ctx.fillStyle=acc;ctx.fillText('P',padL+8,padT+14);
+  ctx.fillStyle='rgba(116,192,252,.9)';ctx.fillText('I',padL+22,padT+14);
+}
+
+/* ================= 主题 / 语言 / 统计 ================= */
+function applyTheme(){
+  htmlEl.dataset.theme=THEME;
+  document.getElementById('themeBtn').textContent=THEME==='dark'?'☀':'☾';
+  const dark=THEME==='dark';
+  scene.background=new THREE.Color(dark?0x101418:0xe9e4dc);
+  scene.fog.color.setHex(dark?0x101418:0xe9e4dc);
+  groundM.color.setHex(dark?0x1c2027:0xc9c2b6);
+  chgM.color.setHex(dark?0x2e3a47:0x8b98a6);
+}
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el=>{
+    if(el.tagName==='INPUT')return;
+    el.textContent=LANG==='en'?(el.dataset.en||el.dataset.zh):el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent=LANG==='en'?'ZH':'EN';
+  document.title=L('快充与 USB-PD · 握手、恒流与恒压','Fast Charging & USB-PD · Handshake, CC & CV');
+  document.getElementById('formula').innerHTML=L(
+    `<b>P=V×I</b>:5V×2A=10W;PD 20V×2.25A=45W——电压电流两头抬<br>`+
+    `<b>握手</b>:CC 线数字通信,Source_Capabilities→Request→Accept,几百 ms 重新协商<br>`+
+    `<b>CC/CV</b>:I≈0.7C=3.2A 恒流;V端=OCV+IR 到 4.45V 转 CV,I=(4.45−OCV)/R 衰减<br>`+
+    `<b>热</b>:T_eq=T_amb+11·(P/45)^1.5+3·(I/3.2)²;>40°C 降档限流 · 时间 ×60 压缩`,
+    `<b>P=V×I</b>: 5V×2A=10W; PD 20V×2.25A=45W — raise both factors<br>`+
+    `<b>Handshake</b>: digital comms on CC; Source_Capabilities→Request→Accept, renegotiated every few hundred ms<br>`+
+    `<b>CC/CV</b>: I≈0.7C=3.2A constant; at V=OCV+IR=4.45V switch to CV, I=(4.45−OCV)/R decays<br>`+
+    `<b>Thermal</b>: T_eq=T_amb+11·(P/45)^1.5+3·(I/3.2)²; past 40°C it throttles · time ×60`);
+  buildSteps();renderLog();updateStats();
+}
+function updateStats(){
+  document.getElementById('stV').innerHTML=(mode==='pps'?pdoV.toFixed(1):pdoV)+'<small> V</small>';
+  document.getElementById('stI').innerHTML=I_in.toFixed(2)+'<small> A</small>';
+  document.getElementById('stP').innerHTML=P_in.toFixed(1)+'<small> W</small>';
+  const te=document.getElementById('stT');
+  te.innerHTML=T.toFixed(1)+'<small> °C</small>';
+  te.className='v'+(T>42?' bad':T>38?' warn':'');
+}
+
+/* ================= UI ================= */
+function syncBtns(){
+  document.getElementById('mPD').classList.toggle('on',mode==='pd');
+  document.getElementById('mMock').classList.toggle('on',mode==='mock');
+  document.getElementById('mPPS').classList.toggle('on',mode==='pps');
+}
+document.getElementById('mPD').addEventListener('click',()=>{if(mode!=='pd')setMode('pd');});
+document.getElementById('mMock').addEventListener('click',()=>{if(mode!=='mock')setMode('mock');});
+document.getElementById('mPPS').addEventListener('click',()=>{if(mode!=='pps')setMode('pps');});
+document.getElementById('btnHand').addEventListener('click',()=>{
+  if(mode==='mock'){notify('山寨头不会握手:它只会 5V','a dumb charger cannot handshake: 5V only',2.6);return;}
+  runHandshake();notify('重新握手:双方重新报一遍家底','re-handshake: both sides re-advertise',2.4);
+});
+document.getElementById('sSOC').addEventListener('input',e=>{
+  jumpSOC(+e.target.value/100);
+  document.getElementById('sSOCVal').textContent=e.target.value+'%';
+});
+document.getElementById('sT').addEventListener('input',e=>{
+  Tamb=+e.target.value;
+  document.getElementById('sTVal').textContent=Tamb+'°C';
+});
+document.getElementById('tglLabels').addEventListener('change',e=>{labelsOn=e.target.checked;});
+document.getElementById('tglSpin').addEventListener('change',e=>{controls.autoRotate=e.target.checked;});
+document.getElementById('play').addEventListener('click',()=>{
+  playing=!playing;document.getElementById('play').textContent=playing?L('暂停','Pause'):L('运行','Run');});
+document.getElementById('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+document.getElementById('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();document.getElementById('play').click();}});
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock=new THREE.Clock();
+let raf=null,acc=0,accPlot=0;
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const dt=clamp(clock.getDelta(),0,0.05);
+  simT+=dt;
+  if(notifyT>0)notifyT-=dt;
+  if(playing)simStep(dt);
+  /* 3D 状态 */
+  const bs=Math.max(0.02,soc);
+  batt.scale.y=bs;
+  const hot=clamp((T-30)/15,0,1);
+  battM.color.setHSL(0.36-0.30*hot,0.68,0.42+0.1*(1-hot));
+  battM.emissive.setHSL(0.36-0.30*hot,0.8,0.12+0.22*hot);
+  const bh=0.05+2.1*(P_in/PMAX);
+  powerBar.scale.y=bh;powerBar.position.y=0.1+bh/2;
+  barM.emissiveIntensity=0.5+0.9*(P_in/PMAX);
+  if(playing)updateParts(dt);
+  acc+=dt;if(acc>0.1){acc=0;updateStats();}
+  accPlot+=dt;if(accPlot>0.3){accPlot=0;drawPlot();}
+  for(const r of labelReg){
+    const txt=r.text();
+    r.o.visible=labelsOn&&r.vis()&&txt!=='';
+    if(r.o.visible)r.o.element.textContent=txt;
+  }
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+function start(){if(raf===null){clock.getDelta();raf=requestAnimationFrame(frame);}}
+function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+if(!playing)document.getElementById('play').textContent=L('运行','Run');
+document.getElementById('sSOCVal').textContent='62%';
+runHandshake();         // 运行态开屏即有一次完整握手:日志首屏不空
+jumpSOC(0.62);          // 预演:从 5% 充到 62%,曲线/功率柱/粒子首屏即动
+pdoV=policyTarget();pdoI=PDO.find(p=>p[0]===pdoV)[1];eff=effOf(pdoV,'pd');
+updateStats();drawPlot();
+start();
+</script>
+</body>
+</html>
