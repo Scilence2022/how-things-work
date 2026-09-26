@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>扫地机器人与 SLAM · 定位即建图</title>
+<style>
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;--acc:#ffa94d;
+    --bg:#0f1113;--panel:rgba(15,17,19,.86);--panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;
+    --hover:rgba(255,255,255,.05);--shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,17,19,.78);--tool-border:rgba(255,255,255,.12);--cv-pill:rgba(15,17,19,.8);
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;--acc:#e8590c;
+    --bg:#f1efec;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+    --text:#16202c;--text2:#5b6b7d;--text3:#33414f;
+    --hover:rgba(15,25,40,.05);--shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);--cv-pill:rgba(255,255,255,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s}
+  #app{position:fixed;inset:0}#app canvas{display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+  .lbl{background:var(--cv-pill);border:1px solid var(--tool-border);color:var(--text3);font-size:12px;
+    line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);transition:opacity .25s}
+  :root[data-theme="light"] .lbl{text-shadow:none}
+  .lbl.o{border-color:rgba(255,169,77,.9);color:#ffe0c2}.lbl.r{border-color:rgba(255,107,107,.9);color:#ffc2c2}
+  .lbl.g{border-color:rgba(116,220,132,.9);color:#c8f5d0}.lbl.b{border-color:rgba(116,192,252,.9);color:#bde9ff}
+  :root[data-theme="light"] .lbl.o{color:#a34e00}:root[data-theme="light"] .lbl.r{color:#c92a2a}
+  :root[data-theme="light"] .lbl.g{color:#2b8a3e}:root[data-theme="light"] .lbl.b{color:#1864ab}
+  #tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px}
+  .tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);
+    color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;
+    padding:0 12px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;text-decoration:none;backdrop-filter:blur(6px);
+    transition:border-color .15s,color .15s,transform .15s}
+  .tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px)}
+  #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px)}
+  #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  #plot{position:fixed;right:18px;bottom:18px;z-index:4;width:300px;height:196px;
+    background:var(--panel);border:1px solid var(--panel-border);border-radius:12px;backdrop-filter:blur(6px);padding:8px 10px 6px}
+  #plot h3{font-size:12px;color:var(--text2);font-weight:600;margin-bottom:2px}
+  #plotCv{width:100%;height:calc(100% - 20px);display:block}
+  #stats{position:fixed;right:18px;bottom:226px;z-index:4;background:var(--panel);
+    border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+    backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px}
+  #stats .k{font-size:12px;color:var(--text2);align-self:center}
+  #stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  #stats .v small{font-size:11px;color:var(--text2);font-weight:400}
+  #stats .v.warn{color:#ffd43b}#stats .v.bad{color:#ff6b6b}#stats .v.ok{color:#7bd88f}
+  :root[data-theme="light"] #stats .v.warn{color:#d98f00}
+  #panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;padding:14px 16px 12px;backdrop-filter:blur(6px);
+    box-shadow:var(--shadow);max-height:calc(100vh - 160px);overflow:auto}
+  #actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 40%;
+    background:var(--hover);color:var(--text2);border:1px solid var(--tool-border);
+    border-radius:9px;padding:7px 10px;font-size:12.5px;font-weight:600;
+    transition:border-color .15s,color .15s,background .15s}
+  .abtn:hover{border-color:var(--acc);color:var(--text)}
+  .abtn.on{border-color:rgba(255,169,77,.6);background:rgba(255,169,77,.12);color:var(--text)}
+  :root[data-theme="light"] .abtn.on{border-color:rgba(232,89,12,.55);background:rgba(232,89,12,.10)}
+  .row{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .row label{font-size:12px;color:var(--text2);flex:0 0 92px}
+  .row .val{font-size:11.5px;color:var(--text3);flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc);height:18px}
+  #formula{margin-top:8px;font-size:11.5px;line-height:1.55;color:var(--text2);border-top:1px dashed var(--panel-border);padding-top:7px}
+  #formula b{color:var(--text3);font-weight:600}
+  #steps{list-style:none;margin-top:8px}
+  #steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;align-items:flex-start}
+  #steps li:hover{background:var(--hover)}
+  #steps li.on{background:rgba(255,169,77,.10);border-color:rgba(255,169,77,.45)}
+  :root[data-theme="light"] #steps li.on{background:rgba(232,89,12,.08);border-color:rgba(232,89,12,.4)}
+  #steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;display:flex;
+    align-items:center;justify-content:center;margin-top:1px;
+    background:rgba(255,255,255,.12);color:var(--text3)}
+  :root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10)}
+  #steps li.on .n{background:var(--acc);color:#fff}
+  #steps .t{font-size:12px;color:var(--text3);line-height:1.45}
+  #steps .t b{color:var(--text);font-size:12px}
+  #steps li.on .t b{color:#ffe0c2}
+  :root[data-theme="light"] #steps li.on .t b{color:var(--acc)}
+  #ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border)}
+  #play{grid-row:1/3;grid-column:1;padding:10px 14px;font-size:14px;font-weight:600;
+    background:var(--acc);color:#fff;border:0;border-radius:10px;cursor:pointer}
+  #play:hover{filter:brightness(1.12)}
+  #toggles{display:flex;gap:12px;flex-wrap:wrap}
+  #toggles label{font-size:12px;color:var(--text2);display:flex;gap:5px;align-items:center;cursor:pointer}
+  #toggles input{accent-color:var(--acc)}
+  #rel{margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-border);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #rel span{font-size:11.5px;color:var(--text2)}
+  #rel a{font-size:11.5px;color:var(--text3);text-decoration:none;border:1px solid var(--tool-border);
+    border-radius:999px;padding:3px 10px;transition:color .15s,border-color .15s}
+  #rel a:hover{color:var(--acc);border-color:var(--acc)}
+  @media(max-width:1150px){#plot{display:none}#stats{bottom:18px}}
+  @media(max-width:900px){#stats{display:none}}
+  @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
+    #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="扫地机器人与 SLAM · 定位即建图" data-en="Robot Vacuum & SLAM · Localization Is Mapping">扫地机器人与 SLAM · 定位即建图</h1>
+  <div class="sub" data-zh="「我在哪」与「房间长什么样」是同一个问题的两面:LDS 测距头每秒转数圈刷出点云,新点云与已有地图扫描匹配、把轮式里程计的漂移拉回零,占据栅格边走边长;弓字形分区覆盖逐行推进,随机碰撞式覆盖率爬得又慢又乱;悬崖传感器避楼梯,低电量回充断点续扫 · 拖动旋转 / 空格运行/暂停" data-en="'Where am I' and 'what does the room look like' are two faces of one problem: the LDS head spins several turns a second brushing out point clouds, each new scan is matched against the existing map to pull odometry drift back to zero, and the occupancy grid grows as it goes; boustrophedon coverage sweeps row by row while random bouncing crawls; cliff sensors dodge stairs, a low battery docks and resumes where it left off · drag to orbit / Space = run/pause">「我在哪」与「房间长什么样」是同一个问题的两面:LDS 测距头每秒转数圈刷出点云,新点云与已有地图扫描匹配、把轮式里程计的漂移拉回零,占据栅格边走边长;弓字形分区覆盖逐行推进,随机碰撞式覆盖率爬得又慢又乱;悬崖传感器避楼梯,低电量回充断点续扫 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="覆盖率" data-en="Coverage">覆盖率</span><span class="v" id="stCov">—</span>
+  <span class="k" data-zh="已建图格" data-en="Mapped cells">已建图格</span><span class="v" id="stMap">—</span>
+  <span class="k" data-zh="位姿误差" data-en="Pose error">位姿误差</span><span class="v" id="stErr">—</span>
+  <span class="k" data-zh="电量" data-en="Battery">电量</span><span class="v" id="stBat">—</span>
+</div>
+<div id="plot">
+  <h3 id="plotTitle" data-zh="覆盖率-时间曲线:灰线=上一轮运行,橙线=当前" data-en="Coverage vs time: gray = previous run, orange = current">覆盖率-时间曲线:灰线=上一轮运行,橙线=当前</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+<div id="panel">
+  <div id="actions">
+    <button class="abtn" id="btnMode" data-zh="切随机碰撞式" data-en="Random-bounce mode">切随机碰撞式</button>
+    <button class="abtn" id="btnHeat" data-zh="清扫热图" data-en="Coverage heatmap">清扫热图</button>
+    <button class="abtn" id="btnMatch" data-zh="单步定位" data-en="Scan-match once">单步定位</button>
+    <button class="abtn" id="btnDock" data-zh="回充演示" data-en="Go recharge">回充演示</button>
+  </div>
+  <div class="row"><label data-zh="机器人速度" data-en="Robot speed">机器人速度</label>
+    <input id="sSpd" type="range" min="20" max="200" step="5" value="100"><span class="val" id="sSpdVal">1.0×</span></div>
+  <div class="row"><label data-zh="里程计漂移" data-en="Odom. drift">里程计漂移</label>
+    <input id="sDrift" type="range" min="0" max="100" step="1" value="30"><span class="val" id="sDriftVal">1.0×</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" data-zh="运行" data-en="Run">运行</button>
+    <div id="toggles">
+      <label><input id="tglVwall" type="checkbox"> <span data-zh="虚拟墙" data-en="Virtual wall">虚拟墙</span></label>
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglSpin" type="checkbox"> <span data-zh="自动环绕" data-en="Auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../lidar/" data-zh="激光雷达:旋转测距的原理解剖" data-en="LiDAR: spinning range anatomy">激光雷达</a>
+    <a href="../kalman-filter/" data-zh="卡尔曼滤波:漂移与观测的最优融合" data-en="Kalman filter: fusing drift & observation">卡尔曼滤波</a>
+    <a href="../a-star-search/" data-zh="A* 搜索:栅格地图上的路径规划" data-en="A* search: planning on the grid">A* 搜索</a>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const htmlEl=document.documentElement;
+let THEME=localStorage.getItem('htw-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+let LANG=localStorage.getItem('htw-lang')||'zh';
+const L=(zh,en)=>LANG==='en'?en:zh;
+const qs=new URLSearchParams(location.search);
+/* 模板公共状态:先于一切使用点声明 */
+let playing=qs.get('pause')!=='1';
+let labelsOn=qs.get('labels')!=='0';
+let speedK=clamp(parseFloat(qs.get('speed'))||1,0.2,3);
+let simT=0,notifyT=0,notifyZ='',notifyE='';
+
+/* ---- 渲染器 ---- */
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:3';
+document.body.appendChild(labelRenderer.domElement);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x101418,30,85);
+const camera=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,0.1,220);
+camera.position.set(2.5,14.5,10.5);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,0,0);controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=4;controls.maxDistance=55;
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
+scene.add(new THREE.HemisphereLight(0xdfe8f2,0x1a1c22,0.6));
+const key=new THREE.DirectionalLight(0xfff2dd,1.0);key.position.set(6,12,7);scene.add(key);
+
+/* ---- 材质(主题可变) ---- */
+const groundM=new THREE.MeshStandardMaterial({color:0x232a33,roughness:0.92});
+const wallM=new THREE.MeshStandardMaterial({color:0x3a4655,roughness:0.7,metalness:0.2});
+const furnM=new THREE.MeshStandardMaterial({color:0x54452f,roughness:0.8});
+const robotM=new THREE.MeshStandardMaterial({color:0x2b2f36,roughness:0.4,metalness:0.5});
+const turretM=new THREE.MeshStandardMaterial({color:0x11151b,roughness:0.3,metalness:0.6});
+const ghostM=new THREE.MeshStandardMaterial({color:0x74c0fc,wireframe:true,transparent:true,opacity:0.55});
+const beamM=new THREE.LineBasicMaterial({color:0xffa94d,transparent:true,opacity:0.85});
+const ptsM=new THREE.PointsMaterial({color:0xffa94d,size:0.09,sizeAttenuation:true});
+const dockM=new THREE.MeshStandardMaterial({color:0x2e6e46,roughness:0.5,emissive:0x1d7a44,emissiveIntensity:0.35});
+const pitM=new THREE.MeshStandardMaterial({color:0x090b0e,roughness:1});
+const vwM=new THREE.MeshStandardMaterial({color:0xffa94d,transparent:true,opacity:0.55,emissive:0xffa000,emissiveIntensity:0.6});
+const heatM=new THREE.MeshBasicMaterial({transparent:true,opacity:0.5});
+const obsM=new THREE.MeshStandardMaterial({color:0x8b95a3,roughness:0.6});
+
+/* ================= 房间与栅格 ================= */
+/* 世界: x∈[-6,6], z∈[-4,4];栅格 0.5u → 24×16 */
+const GX=24,GZ=16,CELL=0.5;
+const X0=-6,Z0=-4;
+const cliff={x0:3.4,x1:5.9,z0:-4.05,z1:-2.35};      // 楼梯口:地板缺口
+const furn=[                                          // 家具 {cx,cz,w,d}
+  {cx:-3.4,cz:-2.3,w:2.8,d:1.0},
+  {cx:1.6,cz:0.9,w:1.7,d:1.2},
+  {cx:-5.1,cz:2.6,w:1.5,d:1.7},
+  {cx:4.6,cz:2.6,w:2.6,d:2.2},
+];
+const DOCK=new THREE.Vector3(-5.55,0,-0.6);           // 充电座(西墙)
+const vwX=-1.3,vwZ0=-4,vwZ1=0.8;                      // 虚拟墙:x=vwX 的细条
+const occTrue=new Uint8Array(GX*GZ);                  // 1=真障碍(墙/家具/悬崖)
+function cellIdx(x,z){const i=Math.floor((x-X0)/CELL),j=Math.floor((z-Z0)/CELL);
+  return (i<0||i>=GX||j<0||j>=GZ)?-1:j*GX+i;}
+function cellCenter(idx){const i=idx%GX,j=(idx/GX)|0;
+  return [X0+(i+0.5)*CELL,Z0+(j+0.5)*CELL];}
+for(let i=0;i<GX;i++){occTrue[i]=1;occTrue[(GZ-1)*GX+i]=1;}
+for(let j=0;j<GZ;j++){occTrue[j*GX]=1;occTrue[j*GX+GX-1]=1;}
+let freeTrue=0;
+for(let k=0;k<GX*GZ;k++){
+  if(occTrue[k])continue;
+  const [x,z]=cellCenter(k);
+  let bad=x>cliff.x0&&x<cliff.x1&&z>cliff.z0&&z<cliff.z1;
+  if(!bad)for(const f of furn)if(Math.abs(x-f.cx)<f.w/2&&Math.abs(z-f.cz)<f.d/2){bad=true;break;}
+  if(bad)occTrue[k]=1;else freeTrue++;
+}
+/* SLAM 栅格:0 未知,1 已知自由,2 已知障碍 */
+const occMap=new Uint8Array(GX*GZ);
+const visit=new Uint16Array(GX*GZ);                   // 清扫覆盖计数
+
+/* ---- 场景搭建 ---- */
+const floor=new THREE.Mesh(new THREE.BoxGeometry(12.4,0.24,8.4),groundM);
+floor.position.y=-0.12;scene.add(floor);
+/* 楼梯缺口:黑洞 + 两级下行台阶 */
+const pit=new THREE.Mesh(new THREE.BoxGeometry(cliff.x1-cliff.x0,0.1,cliff.z1-cliff.z0),pitM);
+pit.position.set((cliff.x0+cliff.x1)/2,-0.28,(cliff.z0+cliff.z1)/2);scene.add(pit);
+for(let s=0;s<2;s++){
+  const step=new THREE.Mesh(new THREE.BoxGeometry(cliff.x1-cliff.x0,0.16,0.34),wallM);
+  step.position.set((cliff.x0+cliff.x1)/2,-0.36-s*0.16,cliff.z1+0.17+s*0.34);scene.add(step);
+}
+const wallH=0.85;
+function addBox(w,h,d,x,y,z,mat){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);scene.add(m);return m;
+}
+addBox(12.4,wallH,0.24,0,wallH/2,-4.12,wallM);        // 南墙
+addBox(12.4,wallH,0.24,0,wallH/2,4.12,wallM);         // 北墙
+addBox(0.24,wallH,8.4,-6.12,wallH/2,0,wallM);         // 西墙
+addBox(0.24,wallH,8.4,6.12,wallH/2,0,wallM);          // 东墙
+const furnMeshes=furn.map(f=>addBox(f.w,0.5,f.d,f.cx,0.25,f.cz,furnM));
+const vwall=addBox(0.06,0.16,vwZ1-vwZ0,vwX,0.08,(vwZ0+vwZ1)/2,vwM);
+vwall.visible=false;vwall.userData.rayTarget=true;     // 虚拟墙对 LDS 可见:在地图里就是一堵墙
+const dockPad=addBox(0.52,0.1,0.36,DOCK.x,0.05,DOCK.z,dockM);
+/* 清扫热图 + 已知障碍:两套 InstancedMesh,未用实例零缩放 */
+const m4=new THREE.Matrix4(),zeroM=new THREE.Matrix4().makeScale(0,0,0),q0=new THREE.Quaternion();
+const heat=new THREE.InstancedMesh(new THREE.BoxGeometry(CELL*0.94,0.03,CELL*0.94),heatM,GX*GZ);
+const mapObs=new THREE.InstancedMesh(new THREE.BoxGeometry(CELL*0.96,0.1,CELL*0.96),obsM,GX*GZ);
+for(let k=0;k<GX*GZ;k++){heat.setMatrixAt(k,zeroM);mapObs.setMatrixAt(k,zeroM);}
+scene.add(heat,mapObs);
+const tmpC=new THREE.Color();
+let heatOn=false,heatDirty=true,mapDirty=true;
+function refreshHeat(){
+  for(let k=0;k<GX*GZ;k++){
+    if(heatOn&&visit[k]>0){
+      const [x,z]=cellCenter(k);
+      const t=clamp(visit[k]/4,0,1);
+      m4.compose(new THREE.Vector3(x,0.035,z),q0,new THREE.Vector3(1,1,1));
+      heat.setMatrixAt(k,m4);
+      heat.setColorAt(k,tmpC.setHSL(0.58-0.58*t,0.75,0.3+0.3*t));
+    }else heat.setMatrixAt(k,zeroM);
+  }
+  heat.instanceMatrix.needsUpdate=true;
+  if(heat.instanceColor)heat.instanceColor.needsUpdate=true;
+  heatDirty=false;
+}
+function refreshMapObs(){
+  for(let k=0;k<GX*GZ;k++){
+    if(occMap[k]===2){
+      const [x,z]=cellCenter(k);
+      m4.compose(new THREE.Vector3(x,0.05,z),q0,new THREE.Vector3(1,1,1));
+      mapObs.setMatrixAt(k,m4);
+      mapObs.setColorAt(k,tmpC.setHex(THEME==='dark'?0x6d7a8a:0x4c5a6a));
+    }else mapObs.setMatrixAt(k,zeroM);
+  }
+  mapObs.instanceMatrix.needsUpdate=true;
+  if(mapObs.instanceColor)mapObs.instanceColor.needsUpdate=true;
+  mapDirty=false;
+}
+
+/* ================= 机器人:真值 / 估计双位姿 ================= */
+const bot=new THREE.Group();
+const body=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.37,0.16,24),robotM);
+body.position.y=0.1;bot.add(body);
+const turret=new THREE.Mesh(new THREE.CylinderGeometry(0.115,0.13,0.11,16),turretM);
+turret.position.y=0.23;bot.add(turret);
+const nose=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.05,0.14),
+  new THREE.MeshStandardMaterial({color:0xffa94d,emissive:0xffa000,emissiveIntensity:0.8}));
+nose.position.set(0,0.13,0.3);bot.add(nose);
+scene.add(bot);
+const ghost=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.37,0.16,18),ghostM);
+ghost.position.y=0.1;scene.add(ghost);                 // 真实位姿幽灵
+/* LDS 光束 + 点云(3 圈缓存,亮度随年龄衰减) */
+const beamGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]);
+const beam=new THREE.Line(beamGeo,beamM);scene.add(beam);
+const N_RAYS=120,REVBUF=3,PCAP=N_RAYS*REVBUF;
+const pcGeo=new THREE.BufferGeometry();
+const pcPos=new Float32Array(PCAP*3),pcCol=new Float32Array(PCAP*3);
+pcGeo.setAttribute('position',new THREE.BufferAttribute(pcPos,3));
+pcGeo.setAttribute('color',new THREE.BufferAttribute(pcCol,3));
+const points=new THREE.Points(pcGeo,new THREE.PointsMaterial({size:0.085,vertexColors:true,sizeAttenuation:true}));
+scene.add(points);
+let pcCount=0;
+const orange=new THREE.Color(0xffa94d),darkC=new THREE.Color();
+function pushPoint(p,age01){                          // age01: 0 最新 → 1 最老
+  if(pcCount>=PCAP){pcPos.copyWithin(0,3);pcCol.copyWithin(0,3);pcCount=PCAP-1;}
+  pcPos[pcCount*3]=p.x;pcPos[pcCount*3+1]=0.28;pcPos[pcCount*3+2]=p.z;
+  darkC.copy(orange).multiplyScalar(0.3+0.7*(1-age01));
+  pcCol[pcCount*3]=darkC.r;pcCol[pcCount*3+1]=darkC.g;pcCol[pcCount*3+2]=darkC.b;
+  pcCount++;
+  pcGeo.setDrawRange(0,pcCount);
+  pcGeo.attributes.position.needsUpdate=true;
+  pcGeo.attributes.color.needsUpdate=true;
+}
+function fadePoints(){                                // 每满一圈把存量的亮度整体压暗一档
+  for(let i=0;i<pcCount;i++){
+    pcCol[i*3]*=0.45;pcCol[i*3+1]*=0.45;pcCol[i*3+2]*=0.45;
+  }
+  pcGeo.attributes.color.needsUpdate=true;
+}
+
+/* ================= 运动学 / SLAM 状态 ================= */
+let mode='slam';                       // slam=弓字形规划 | random=随机碰撞
+let state='clean';                     // clean | return | charge
+let px=-4.6,pz=1.8,yaw=0;              // 真实位姿
+let ex=0,ez=0,eyaw=0;                  // 里程计漂移(估计-真值)
+let battery=100,matchOn=true,driftK=1.0;
+let ldsAng=0,revs=0;
+let wpList=[],wpI=0,stallT=0,lastD=1e9,bumpCd=0,cliffFlash=0;
+const raycaster=new THREE.Raycaster();
+raycaster.far=3.4;
+let rayTargets=[];
+function buildRayTargets(){
+  rayTargets=[...furnMeshes];
+  scene.traverse(o=>{if(o.userData.rayTarget)rayTargets.push(o);});
+}
+scene.traverse(o=>{if(o.isMesh&&(o.material===wallM||o.material===furnM))o.userData.rayTarget=true;});
+buildRayTargets();
+function markRay(ox,oz,dx,dz,hitD){                   // DDA 逐格:光路=已知自由,命中=已知障碍
+  const steps=Math.ceil(hitD/CELL*1.4)+1;
+  for(let s=1;s<steps;s++){
+    const t=hitD*s/steps;
+    const i=cellIdx(ox+dx*t,oz+dz*t);
+    if(i>=0&&occMap[i]===0)occMap[i]=1;
+  }
+  if(hitD<raycaster.far-0.01){
+    const i=cellIdx(ox+dx*(hitD+0.06),oz+dz*(hitD+0.06));
+    if(i>=0&&occMap[i]!==2){occMap[i]=2;mapDirty=true;}
+  }
+}
+function scanRays(n){                                  // 每帧扫 n 条,凑满一圈触发一次匹配
+  for(let r=0;r<n;r++){
+    const a=yaw+ldsAng;                                // LDS 角度相对机身,叠加朝向
+    const dir=new THREE.Vector3(Math.sin(a),0,Math.cos(a));
+    raycaster.set(new THREE.Vector3(px,0.28,pz),dir);
+    const hits=raycaster.intersectObjects(rayTargets,false);
+    let d=raycaster.far;
+    if(hits.length)d=hits[0].distance;
+    /* 点云按「估计位姿」落图:漂移越大,地图糊得越厉害——这正是 SLAM 要解的耦合 */
+    const sa=Math.sin(a+eyaw),ca=Math.cos(a+eyaw);
+    pushPoint(new THREE.Vector3(px+ex+sa*d,0,pz+ez+ca*d),0);
+    markRay(px+ex,pz+ez,sa,ca,d);
+    ldsAng+=Math.PI*2/N_RAYS;
+    if(ldsAng>Math.PI*2){
+      ldsAng-=Math.PI*2;revs++;fadePoints();
+      if(matchOn)doMatch();
+    }
+  }
+}
+function doMatch(){                                    // 扫描匹配:把漂移拉回零(实际算法=ICP/相关扫描匹配)
+  ex*=0.12;ez*=0.12;eyaw*=0.4;
+  mapDirty=true;
+}
+/* 弓字形(boustrophedon)覆盖规划 */
+function makePlan(){
+  wpList=[];wpI=0;
+  for(let j=1;j<GZ-1;j++){
+    const ltr=j%2===1;
+    for(let t=0;t<GX-2;t++){
+      const i=ltr?1+t:GX-2-t;
+      const k=j*GX+i;
+      if(occTrue[k])continue;
+      wpList.push(k);
+    }
+  }
+}
+function nextWaypoint(){
+  while(wpI<wpList.length){
+    const k=wpList[wpI];
+    if(occMap[k]===2){wpI++;continue;}                 // 规划格被新发现的家具占据 → 跳过
+    const [x,z]=cellCenter(k);
+    return [x,z];
+  }
+  return null;
+}
+function steerTo(tx,tz,dt,spd){
+  const dx=tx-px,dz=tz-pz,dist=Math.hypot(dx,dz);
+  const want=Math.atan2(dx,dz);
+  let d=want-yaw;d=((d+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+  const turn=clamp(d,-3.2*dt,3.2*dt);
+  yaw+=turn;
+  if(Math.abs(d)<0.6){
+    const mv=Math.min(spd*dt,dist);
+    tryMove(Math.sin(yaw)*mv,Math.cos(yaw)*mv);
+  }
+  return dist;
+}
+function tryMove(dx,dz){                               // 悬崖 / 虚拟墙 / 家具碰撞都在此把关
+  const nx=px+dx,nz=pz+dz;
+  if(nx>cliff.x0-0.1&&nx<cliff.x1+0.1&&nz>cliff.z0-0.1&&nz<cliff.z1+0.1){
+    cliffFlash=1;                                      // 悬崖传感器:红外三角测距发现落差,急转避让
+    yaw+=1.4;
+    return false;                                      // 楼梯口
+  }
+  if(vwall.visible&&nx>vwX-0.05&&((pz<vwZ1&&nz>=vwZ1)||(pz>vwZ0&&nz<=vwZ0)||Math.abs(nz)<Math.max(Math.abs(vwZ0),Math.abs(vwZ1)))){
+    if(Math.abs(nx-vwX)<0.22){return false;}
+  }
+  const i=cellIdx(nx,nz);
+  if(i<0||occTrue[i]){return false;}                   // 真墙/家具/悬崖格
+  px=nx;pz=nz;
+  visit[i]++;
+  if(visit[i]===1)heatDirty=true;
+  return true;
+}
+function odometryStep(dt){                             // 轮式里程计:误差随机游走
+  if(driftK<=0)return;
+  ex+=(Math.random()-0.5)*0.05*driftK*dt*speedK;
+  ez+=(Math.random()-0.5)*0.05*driftK*dt*speedK;
+  eyaw+=(Math.random()-0.5)*0.02*driftK*dt*speedK;
+  ex*=1-0.02*dt;ez*=1-0.02*dt;
+}
+function randomBounce(dt,spd){
+  const dir=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
+  raycaster.set(new THREE.Vector3(px,0.2,pz),dir);
+  raycaster.far=0.85;
+  const hit=raycaster.intersectObjects(rayTargets,false);
+  raycaster.far=3.4;
+  const blocked=(hit.length&&hit[0].distance<0.75)||!tryMove(Math.sin(yaw)*spd*dt,Math.cos(yaw)*spd*dt);
+  if(blocked&&bumpCd<=0){
+    yaw+=(Math.random()<0.5?1:-1)*(Math.PI/2+Math.random()*Math.PI/2);
+    bumpCd=0.4;
+    const i=cellIdx(px+Math.sin(yaw)*0.6,pz+Math.cos(yaw)*0.6);
+    if(i>=0&&occMap[i]!==2){occMap[i]=2;mapDirty=true;}
+  }
+  bumpCd-=dt;
+}
+function dockGo(dt,spd){                               // 回充:沿已知自由格直线回家,堵住就侧转
+  const dist=steerTo(DOCK.x,DOCK.z,dt,spd);
+  stallT+=dt;
+  if(Math.abs(dist-lastD)<0.15*spd*dt&&stallT>1.2){yaw+=Math.PI/2;stallT=0;}
+  lastD=dist;
+  if(dist<0.45){state='charge';notify('已对接充电座,充电中…','docked — charging…',2.6);}
+}
+
+/* ================= 标签 ================= */
+const labelReg=[];
+function addLabel(textFn,p,cls='',visFn=()=>true,parentObj=scene){
+  const div=document.createElement('div');div.className='lbl '+cls;
+  const o=new CSS2DObject(div);o.position.copy(p);parentObj.add(o);
+  labelReg.push({o,text:textFn,vis:visFn});div.textContent=textFn();return o;
+}
+addLabel(()=>L('LDS 测距头:约 5 转/秒,一圈 120 点','LDS head: ~5 rev/s, 120 points per rev'),new THREE.Vector3(0,1.15,0),'o',()=>true,bot);
+addLabel(()=>L('ghost = 真实位姿(估计在漂移)','ghost = true pose (estimate drifts)'),new THREE.Vector3(0,0.75,0),'b',()=>Math.hypot(ex,ez)>0.03,ghost);
+addLabel(()=>L('充电座 + 回充红外','charging dock + IR beacon'),new THREE.Vector3(DOCK.x,0.75,DOCK.z),'g');
+addLabel(()=>L('悬崖 = 楼梯口,红外落差检测','cliff = stairwell, IR drop-off'),new THREE.Vector3(4.35,1.55,-2.9),'r');
+addLabel(()=>L('虚拟墙:磁条在地图里就是一堵墙','virtual wall: a wall in the map'),new THREE.Vector3(vwX,0.55,vwZ1+0.3),'o',()=>vwall.visible);
+const lblNotify=addLabel(()=>notifyT>0?L(notifyZ,notifyE):'',new THREE.Vector3(0,2.6,0),'r');
+
+/* ================= 步骤 ================= */
+const STEPS=[
+  {zh:'只靠轮式里程计:每一步都带着噪声,越走越不知道自己在哪',en:'Odometry only: noise per step, drifting farther the longer it walks'},
+  {zh:'LDS 激光测距:测距头旋转扫圈,点云一圈圈刷出墙与家具的轮廓',en:'LDS spinning scans: point clouds brush out walls & furniture, rev by rev'},
+  {zh:'扫描匹配定位:新点云对齐已有地图,漂移误差被一把拉回零',en:'Scan matching: align the new scan to the map, drift snaps back to zero'},
+  {zh:'占据栅格建图:光路格记「空」、命中格记「墙」,地图边走边长',en:'Occupancy grid: rays mark free, hits mark walls — the map grows as it goes'},
+  {zh:'弓字形覆盖:分区规划逐行推进,清扫热图一块块填满',en:'Boustrophedon coverage: row-by-row plan fills the heatmap'},
+  {zh:'随机碰撞对照:不建图不规划,同房间覆盖率曲线又慢又乱',en:'Random bounce: no map, no plan — the same room, a slow ragged curve'},
+  {zh:'悬崖·虚拟墙·回充:传感器避险,低电量回充后从断点继续扫',en:'Cliffs & virtual walls keep it safe; it docks to recharge, then resumes'},
+];
+let activeStep=0;
+function buildSteps(){
+  const el=document.getElementById('steps');el.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="n">${i+1}</span><span class="t"><b>${LANG==='en'?s.en:s.zh}</b></span>`;
+    li.addEventListener('click',()=>{activeStep=i;syncSteps();stepAct(i);});
+    el.appendChild(li);
+  });
+  syncSteps();
+}
+function syncSteps(){document.querySelectorAll('#steps li').forEach((li,i)=>li.classList.toggle('on',i===activeStep));}
+function stepAct(i){
+  if(i===0){mode='slam';state='clean';matchOn=false;document.getElementById('sDrift').value=85;driftK=2.6;
+    document.getElementById('sDriftVal').textContent='2.6×';notify('关掉匹配:估计位姿(实体)越走越偏,ghost 才是真位置','matching off: the solid robot drifts, the ghost is truth',4.0);}
+  if(i===1){matchOn=false;notify('点云每圈刷出房间轮廓——这就是 LDS 看到的世界','each rev brushes out the room outline — the LDS view',3.2);}
+  if(i===2){matchOn=true;doMatch();notify('扫描匹配开启:误差从 ~10 cm 拉回 ~0','scan matching on: error pulled from ~10 cm to ~0',3.4);}
+  if(i===3){mode='slam';state='clean';syncModeBtn();notify('灰色小方块 = 已发现的障碍格,地图边走边长','gray blocks = discovered obstacle cells; the map grows',3.2);}
+  if(i===4){mode='slam';state='clean';syncModeBtn();heatOn=true;document.getElementById('btnHeat').classList.add('on');
+    notify('弓字形规划:逐行推进,蓝色热图渐渐填满','boustrophedon plan: row by row the heatmap fills',3.4);}
+  if(i===5){setMode('random');notify('随机碰撞式:没有地图与规划,覆盖率爬得又慢又乱','random bounce: no map or plan — slow, ragged coverage',3.6);}
+  if(i===6){battery=18;notify('电量 18% → 回充;充满后从断点继续','battery 18% → dock; resumes from the breakpoint',3.4);}
+  syncModeBtn();
+}
+function notify(z,e,t=3.0){notifyT=t;notifyZ=z;notifyE=e;}
+function setMode(m){
+  if(mode===m)return;
+  covPrev=covCur;covCur=[];
+  mode=m;makePlan();wpI=0;
+  notify(m==='slam'?'切回 LDS 规划模式,断点续扫':'随机碰撞模式:只靠碰撞转向',
+    m==='slam'?'back to LDS planning, resuming coverage':'random-bounce mode: turning on contact only',2.8);
+}
+function syncModeBtn(){
+  const b=document.getElementById('btnMode');
+  b.textContent=L(mode==='slam'?'切随机碰撞式':'切 SLAM 规划式',
+                  mode==='slam'?'Random-bounce mode':'SLAM planned mode');
+  b.classList.toggle('on',mode==='random');
+}
+
+/* ================= 覆盖率曲线 ================= */
+const plotCv=document.getElementById('plotCv');
+let covCur=[],covPrev=[],covT=0;
+function drawPlot(){
+  const ctx=plotCv.getContext('2d');
+  const W=plotCv.width=plotCv.clientWidth*2,H=plotCv.height=plotCv.clientHeight*2;
+  if(!W||!H)return;
+  ctx.clearRect(0,0,W,H);
+  const css=getComputedStyle(document.documentElement);
+  const cTxt=css.getPropertyValue('--text2').trim()||'#9fb0c3';
+  const acc=css.getPropertyValue('--acc').trim()||'#ffa94d';
+  const padL=34,padR=8,padT=8,padB=22,TMAX=120;
+  const t1=simT,t0=Math.max(0,t1-TMAX);                // 滚动窗口:只看最近 120s
+  const xOf=t=>padL+clamp((t-t0)/TMAX,0,1)*(W-padL-padR);
+  const yOf=v=>(H-padB)-(v/100)*(H-padT-padB);
+  ctx.strokeStyle='rgba(128,150,170,.3)';
+  ctx.beginPath();ctx.moveTo(padL,yOf(0));ctx.lineTo(W-padR,yOf(0));ctx.stroke();
+  ctx.beginPath();ctx.moveTo(padL,yOf(0));ctx.lineTo(padL,yOf(100));ctx.stroke();
+  ctx.font='12px system-ui';ctx.fillStyle=cTxt;
+  ctx.fillText('0',padL-16,yOf(0)+4);ctx.fillText('100%',padL-34,yOf(100)+4);
+  ctx.fillText('120s',W-padR-34,H-padB+16);
+  const line=(arr,col)=>{
+    if(arr.length<2)return;
+    ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.beginPath();
+    let started=false;
+    for(const p of arr){
+      if(p[0]<t0)continue;
+      const x=xOf(p[0]),y=yOf(p[1]);
+      started?ctx.lineTo(x,y):ctx.moveTo(x,y);started=true;
+    }
+    ctx.stroke();ctx.lineWidth=1;
+  };
+  line(covPrev,'rgba(128,140,155,.55)');
+  line(covCur,acc);
+  ctx.fillStyle=cTxt;
+  ctx.fillText(L('灰=上一轮','gray = prev'),padL+8,padT+14);
+  ctx.fillStyle=acc;ctx.fillText(L('橙=当前','orange = now'),padL+92,padT+14);
+}
+
+/* ================= 主题 / 语言 / 统计 ================= */
+function applyTheme(){
+  htmlEl.dataset.theme=THEME;
+  document.getElementById('themeBtn').textContent=THEME==='dark'?'☀':'☾';
+  const dark=THEME==='dark';
+  scene.background=new THREE.Color(dark?0x101418:0xe9e4dc);
+  scene.fog.color.setHex(dark?0x101418:0xe9e4dc);
+  groundM.color.setHex(dark?0x232a33:0xcfc8ba);
+  wallM.color.setHex(dark?0x3a4655:0x9aa5b1);
+  mapDirty=true;
+}
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el=>{
+    if(el.tagName==='INPUT')return;
+    el.textContent=LANG==='en'?(el.dataset.en||el.dataset.zh):el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent=LANG==='en'?'ZH':'EN';
+  document.title=L('扫地机器人与 SLAM · 定位即建图','Robot Vacuum & SLAM · Localization Is Mapping');
+  document.getElementById('formula').innerHTML=L(
+    `<b>覆盖率</b> = 已清扫自由格 / 总自由格;SLAM 模式 ~1 分钟可扫 80%+,随机式同期往往不到 40%<br>`+
+    `<b>定位</b>:里程计误差随机游走;扫描匹配(如 ICP)把每圈点云对齐地图,误差×0.12<br>`+
+    `<b>建图</b>:光路格记「自由」,命中格记「占据」;点云按估计位姿落图——漂移越大,墙越糊<br>`+
+    `<b>功耗</b>:LDS+风机 ~25W,18% 电量触发回充,对接后从断点继续`,
+    `<b>Coverage</b> = swept free cells / all free cells; SLAM sweeps ~80% in a minute, random rarely 40%<br>`+
+    `<b>Localization</b>: odometry error random-walks; scan matching (e.g. ICP) aligns each rev, error ×0.12<br>`+
+    `<b>Mapping</b>: ray cells marked free, hit cells occupied; points land via the estimated pose — more drift, blurrier walls<br>`+
+    `<b>Power</b>: LDS+fan ~25 W; at 18% it docks, then resumes from the breakpoint`);
+  buildSteps();syncModeBtn();updateStats();
+}
+function updateStats(){
+  let covN=0;
+  for(let k=0;k<GX*GZ;k++)if(visit[k]>0&&!occTrue[k])covN++;
+  const cov=100*covN/freeTrue;
+  const el=document.getElementById('stCov');
+  el.innerHTML=cov.toFixed(1)+'<small> %</small>';
+  el.className='v'+(cov>70?' ok':'');
+  let mapN=0;
+  for(let k=0;k<GX*GZ;k++)if(occMap[k])mapN++;
+  document.getElementById('stMap').innerHTML=mapN+'<small> / '+(GX*GZ)+'</small>';
+  const err=Math.hypot(ex,ez)*100;
+  const ee=document.getElementById('stErr');
+  ee.innerHTML=err.toFixed(1)+'<small> cm</small>';
+  ee.className='v'+(err>6?' bad':err>2?' warn':' ok');
+  const be=document.getElementById('stBat');
+  be.innerHTML=battery.toFixed(0)+'<small> %</small>';
+  be.className='v'+(battery<22?' bad':'');
+}
+
+/* ================= UI ================= */
+document.getElementById('btnMode').addEventListener('click',()=>{setMode(mode==='slam'?'random':'slam');syncModeBtn();});
+document.getElementById('btnHeat').addEventListener('click',e=>{
+  heatOn=!heatOn;e.currentTarget.classList.toggle('on',heatOn);heatDirty=true;});
+document.getElementById('btnMatch').addEventListener('click',()=>{doMatch();notify('单步扫描匹配:位姿误差立即回零','single scan-match: pose error snapped to zero',2.2);});
+document.getElementById('btnDock').addEventListener('click',()=>{battery=Math.min(battery,18);notify('低电量 → 返回充电座','low battery → returning to dock',2.4);});
+document.getElementById('sSpd').addEventListener('input',e=>{
+  speedK=+e.target.value/100;
+  document.getElementById('sSpdVal').textContent=speedK.toFixed(1)+'×';});
+document.getElementById('sDrift').addEventListener('input',e=>{
+  driftK=+e.target.value/30;
+  document.getElementById('sDriftVal').textContent=driftK.toFixed(1)+'×';});
+document.getElementById('tglVwall').addEventListener('change',e=>{vwall.visible=e.target.checked;});
+document.getElementById('tglLabels').addEventListener('change',e=>{labelsOn=e.target.checked;});
+document.getElementById('tglSpin').addEventListener('change',e=>{controls.autoRotate=e.target.checked;});
+document.getElementById('play').addEventListener('click',()=>{
+  playing=!playing;document.getElementById('play').textContent=playing?L('暂停','Pause'):L('运行','Run');});
+document.getElementById('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+document.getElementById('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();document.getElementById('play').click();}});
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock=new THREE.Clock();
+let raf=null,acc=0,accPlot=0;
+const orangeC2=new THREE.Color(0xffa94d),redC=new THREE.Color(0xff6b6b);
+function simStep(dt){                                  // 一步物理+决策:frame 与 presim 共用
+  const spd=1.15*speedK;
+  odometryStep(dt);
+  scanRays(Math.max(2,Math.round(14*speedK)));
+  if(state==='clean'){
+    battery-=dt*speedK*(mode==='random'?1.5:1.25);
+    if(battery<=18){state='return';notify('电量 18%:沿已知地图回充','battery 18%: returning along the known map',2.8);}
+    if(mode==='slam'){
+      const wp=nextWaypoint();
+      if(wp){const d=steerTo(wp[0],wp[1],dt,spd);
+        if(d<0.33)wpI++;
+        stallT+=dt;
+        if(Math.abs(d-lastD)<0.1*spd*dt&&stallT>1.6){   // 卡住:把前方格记为障碍,跳过
+          const i=cellIdx(px+Math.sin(yaw)*0.6,pz+Math.cos(yaw)*0.6);
+          if(i>=0&&occMap[i]!==2){occMap[i]=2;mapDirty=true;}
+          wpI++;stallT=0;}
+        lastD=d;
+      }else if(wpList.length){makePlan();wpI=0;}        // 扫完一遍重新铺弓字形
+    }else randomBounce(dt,spd);
+  }else if(state==='return'){
+    battery-=dt*speedK*0.7;
+    dockGo(dt,spd*1.15);
+  }else{                                                // charge
+    battery=Math.min(100,battery+16*dt);
+    if(battery>=99){state='clean';lastD=1e9;stallT=0;notify('充满!从断点继续清扫','charged! resuming from the breakpoint',2.8);}
+  }
+  covT+=dt;
+  if(covT>0.8){covT=0;
+    let covN=0;for(let k=0;k<GX*GZ;k++)if(visit[k]>0&&!occTrue[k])covN++;
+    covCur.push([simT,100*covN/freeTrue]);
+    if(covCur.length>300)covCur.shift();
+  }
+}
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const dt=clamp(clock.getDelta(),0,0.05);
+  simT+=dt;
+  if(notifyT>0)notifyT-=dt;
+  if(cliffFlash>0)cliffFlash=Math.max(0,cliffFlash-dt*2.5);
+  if(playing)simStep(dt);
+  beamM.color.copy(orangeC2).lerp(redC,cliffFlash);     // 悬崖报警:光束闪红
+  /* 3D 位姿:实体=估计位姿,ghost=真实位姿 */
+  bot.position.set(px+ex,0,pz+ez);
+  bot.rotation.y=yaw+eyaw;
+  ghost.position.set(px,0,pz);
+  ghost.rotation.y=yaw;
+  const bm=beamGeo.attributes.position;
+  bm.setXYZ(0,0,0.28,0.1);
+  bm.setXYZ(1,Math.sin(ldsAng)*3.2,0.28,Math.cos(ldsAng)*3.2);
+  bm.needsUpdate=true;
+  beam.position.set(px+ex,0,pz+ez);
+  beam.rotation.y=eyaw;
+  points.position.set(0,0,0);
+  if(mapDirty)refreshMapObs();
+  if(heatDirty)refreshHeat();
+  acc+=dt;if(acc>0.1){acc=0;updateStats();}
+  accPlot+=dt;if(accPlot>0.5){accPlot=0;drawPlot();}
+  for(const r of labelReg){
+    const txt=r.text();
+    r.o.visible=labelsOn&&r.vis()&&txt!=='';
+    if(r.o.visible)r.o.element.textContent=txt;
+  }
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+function start(){if(raf===null){clock.getDelta();raf=requestAnimationFrame(frame);}}
+function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+if(!playing)document.getElementById('play').textContent=L('运行','Run');
+makePlan();
+/* 预演 ~18s:点云/热图/覆盖率曲线首屏不空(?pause=1 时停在预演后的静止画面) */
+for(let t=0;t<360;t++){simT+=0.05;simStep(0.05);}
+battery=100;state='clean';ex=0;ez=0;eyaw=0;doMatch();notifyT=0;
+refreshMapObs();
+updateStats();
+drawPlot();
+start();
+</script>
+</body>
+</html>
