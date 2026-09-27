@@ -139,6 +139,27 @@
     #title { max-width: calc(100vw - 200px); }
     #title h1 { font-size: 16px; }
   }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
 </style>
 </head>
 <body>
@@ -171,6 +192,7 @@
 </div>
 
 <div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
   <div id="legend">
     <span class="chip.o" data-zh="黄 = 淀粉长链→双糖→葡萄糖" data-en="yellow = starch chain→disaccharides→glucose">黄 = 淀粉长链→双糖→葡萄糖</span>
     <span class="chip.r" data-zh="红 = 蛋白链→肽段→氨基酸" data-en="red = protein chain→peptides→amino acids">红 = 蛋白链→肽段→氨基酸</span>
@@ -298,9 +320,9 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
 const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 140);
-camera.position.set(4.5, 2.2, 16.5);
+camera.position.set(4.5, 4.8, 16.5);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0.2, -0.6, 0);
+controls.target.set(0.2, 2.0, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.minDistance = 1.5;
@@ -527,8 +549,8 @@ function refreshLabels() {
   for (const r of labelReg) r.o.visible = labelsOn && r.vis();
 }
 const lblMouth = addLabel(() => L('口腔:pH 7,咀嚼增面 + 唾液淀粉酶(停留秒级)', 'mouth: pH 7, chewing adds area + salivary amylase (seconds)'), V(-6.6, 8.5), 'o');
-const lblEso = addLabel(() => L('食管:蠕动推送,不消化', 'esophagus: peristaltic shuttle, no digestion'), V(-6.6, 6.6), '');
-const lblStom = addLabel(() => L('胃:pH 1.5–3.5 盐酸反应釜,杀菌 + 蛋白变性,胃蛋白酶剪肽段(2–4 h)', 'stomach: pH 1.5–3.5 HCl reactor — sterilizes, denatures protein; pepsin clips peptides (2–4 h)'), V(-5.15, 5.35), 'r');
+const lblEso = addLabel(() => L('食管:蠕动推送,不消化', 'esophagus: peristaltic shuttle, no digestion'), V(-3.0, 5.9), '');
+const lblStom = addLabel(() => L('胃:pH 1.5–3.5 盐酸反应釜,杀菌 + 蛋白变性,胃蛋白酶剪肽段(2–4 h)', 'stomach: pH 1.5–3.5 HCl reactor — sterilizes, denatures protein; pepsin clips peptides (2–4 h)'), V(1.5, 5.35), 'r');
 const lblDuo = addLabel(() => L('十二指肠:pH~8,胆汁乳化(面积 ×1000)+ 胰酶总攻', 'duodenum: pH~8 — bile emulsification (area ×1000) + the pancreatic blitz'), V(-3.2, 0.9, -0.9), 'g');
 const lblVilli = addLabel(() => L('小肠绒毛+微绒毛:吸收面 ~30 m²,单体入血管/乳糜管', 'villi + microvilli: ~30 m² absorbing surface — units into blood / lacteal'), V(2.9, -0.35, 0.5), 'b');
 const lblLI = addLabel(() => L('大肠:回收水 ~1.5 L/天,菌群发酵纤维→短链脂肪酸', 'colon: reclaims ~1.5 L water/day, flora ferment fiber→SCFAs'), V(6.35, 1.85), 'g');
@@ -892,6 +914,39 @@ const t0 = Math.round(qsFloat('t', 0));
 if (qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length) { phaseIdx = t0; STEPS[t0].act(); }
 syncAll();
 start();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
 </script>
 </body>
 </html>

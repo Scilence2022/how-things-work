@@ -128,6 +128,27 @@
     #title { max-width: calc(100vw - 200px); }
     #title h1 { font-size: 16px; }
   }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
 </style>
 </head>
 <body>
@@ -158,6 +179,7 @@
 </div>
 
 <div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
   <div id="modeRow">
     <button class="gbtn" id="mbRace" data-zh="实测对比" data-en="Race">实测对比</button>
     <button class="gbtn" id="mbLock" data-zh="单独抱死" data-en="Lock only">单独抱死</button>
@@ -358,6 +380,8 @@ function addLabel(textFn, pos, cls = '', target = scene) {
   div.textContent = textFn();
   return o;
 }
+const G = 9.81, GRACE = 0.8;
+let tSim = 0;
 for (let m = 0; m <= 300; m += 25) {
   const mm = m;
   addLabel(() => mm === 0 ? L('刹车线 0 m', 'brake line 0 m') : mm + ' m',
@@ -422,9 +446,9 @@ function makeCar(lane, isAbs) {
     skids.push(q);
   }
   /* 车顶标签 */
-  const lbl = addLabel(() => carLabel(c), new THREE.Vector3(0, 2.15, 0), isAbs ? 'ok' : 'bad', g);
-  const car = { g, wheels, steerG, tail, lane, abs: isAbs, skids, lbl,
+  const car = { g, wheels, steerG, tail, lane, abs: isAbs, skids, lbl: null,
     x: 0, z: 0, v: 0, vz: 0, lam: 0, p: 0, thW: 0, stopX: null, lockFrom: null };
+  car.lbl = addLabel(() => carLabel(car), new THREE.Vector3(0, 2.15, 0), isAbs ? 'ok' : 'bad', g);
   return car;
 }
 const cAbs = makeCar(-2.3, true);
@@ -472,7 +496,6 @@ let partIdx = 0, spawnAcc = 0;
 const smokeDummy = new THREE.Object3D();
 
 /* ================= 物理模型 ================= */
-const G = 9.81, GRACE = 0.8;
 const ROADS = {
   dry:  { mp: 0.95, ms: 0.68, lp: 0.15 },
   wet:  { mp: 0.55, ms: 0.38, lp: 0.13 },
@@ -483,7 +506,6 @@ let roadKey = 'dry';
 let v0 = 100 / 3.6;
 let steerIn = 0;
 let mode = 'race';                         // race | lock | abs | roll
-let tSim = 0;
 let playing = !qsBool('pause', false);
 if (matchMedia('(prefers-reduced-motion: reduce)').matches && qs.get('pause') === null) playing = false;
 let speed = clamp(qsFloat('speed', 1), 0.2, 3);
@@ -910,6 +932,39 @@ setPlayLabel();
   if (tq > 0) advanceSim(tq);
 }
 rafId = requestAnimationFrame(frame);
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
 </script>
 </body>
 </html>

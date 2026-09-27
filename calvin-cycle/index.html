@@ -138,6 +138,27 @@
     #title { max-width: calc(100vw - 200px); }
     #title h1 { font-size: 16px; }
   }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
 </style>
 </head>
 <body>
@@ -161,6 +182,7 @@
 </div>
 
 <div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
   <div id="legend">
     <span class="chip co2" data-zh="CO₂（绿球）" data-en="CO₂ (green spheres)">CO₂（绿球）</span>
     <span class="chip nrg" data-zh="ATP / NADPH（光反应供给）" data-en="ATP / NADPH (from light reactions)">ATP / NADPH（光反应供给）</span>
@@ -406,6 +428,7 @@ addLabel(() => L('羧化酶', 'carboxylase'), new THREE.Vector3(0.62, 0.2, 0), '
 cyc.add(rub);
 
 /* 3-PGA / G3P 变形卡片（3C，沿弧滑动换名） */
+let tNow = 0, tSim = 0;
 const morphCard = makeCard(3, 0x2ec4b6,
   () => tNow >= 0.50 ? (tNow >= 0.66 ? 'G3P ×5' : 'G3P ×6') : '3-PGA ×6', '', true);
 cyc.add(morphCard.g);
@@ -513,6 +536,26 @@ for (let i = 0; i < 6; i++)   // 还原的 6 NADPH
 for (let i = 0; i < 3; i++)   // 再生的 3 ATP
   addChip(0.75 + i * 0.03, 0.10, 0.84 + i * 0.03, 0.10, ATP_FROM, P_REG, 'ATP', 'a', 'ADP');
 
+/* ================= 相位讲解（六步，与原页一致） ================= */
+const STEPS = [
+  { t0: 0.00, t1: 0.22, n: 1, b: '碳固定（羧化）', d: 'Rubisco 把 CO₂ 加到 5 碳的 RuBP 上，中间物立即裂解成 2 个 3 碳的 3-PGA。',
+    be: 'Carbon fixation (carboxylation)', de: 'Rubisco adds CO₂ to the 5-carbon RuBP; the unstable intermediate immediately splits into two 3-carbon 3-PGA.' },
+  { t0: 0.22, t1: 0.40, n: 2, b: '磷酸化', d: '每个 3-PGA 消耗 1 个 ATP，接上磷酸基 → 1,3-二磷酸甘油酸（活化）。',
+    be: 'Phosphorylation', de: 'Each 3-PGA spends 1 ATP to take on a phosphate → 1,3-bisphosphoglycerate (activated).' },
+  { t0: 0.40, t1: 0.58, n: 3, b: '还原 → G3P', d: 'NADPH 提供氢（高能电子），把羧基还原成醛基 → 三碳糖磷酸 G3P。',
+    be: 'Reduction → G3P', de: 'NADPH donates hydrogen (high-energy electrons), reducing the carboxyl group to an aldehyde → the triose phosphate G3P.' },
+  { t0: 0.58, t1: 0.72, n: 4, b: '净产物离开', d: '每 6 个 G3P 有 1 个离开循环，作为合成蔗糖、淀粉等糖类的原料。',
+    be: 'Net product exits', de: '1 of every 6 G3P leaves the cycle as the feedstock for building sucrose, starch and other sugars.' },
+  { t0: 0.72, t1: 0.92, n: 5, b: 'RuBP 再生', d: '其余 5 个 G3P（15C）再耗 3 个 ATP，重排成 3 个 RuBP（15C），碳架回到起点。',
+    be: 'RuBP regeneration', de: 'The other 5 G3P (15C) spend 3 more ATP and rearrange into 3 RuBP (15C) — the carbon scaffold is back at the start.' },
+  { t0: 0.92, t1: 1.00, n: 6, b: '总账', d: '每 3 CO₂：耗 9 ATP + 6 NADPH，净得 1 个 G3P —— 全部来自光反应的供给。',
+    be: 'The ledger', de: 'Per 3 CO₂: 9 ATP + 6 NADPH consumed for 1 net G3P — all supplied by the light reactions.' },
+];
+function stepIndex(t) {
+  for (let i = 0; i < STEPS.length; i++) if (t >= STEPS[i].t0 && t < STEPS[i].t1) return i;
+  return STEPS.length - 1;
+}
+
 /* ================= 中心说明 + 相位公式字幕 ================= */
 addLabel(() => stepIndex(tNow) === 5 ? L('净得 1 G3P → 合成糖类', 'Net: 1 G3P → sugars')
   : L('卡尔文循环', 'Calvin cycle'), new THREE.Vector3(0, 0.42, 0), 'st', cyc, true);
@@ -546,25 +589,6 @@ for (let i = 0; i < P_COUNT; i++) {
 cyc.add(parts);
 const pDummy = new THREE.Object3D();
 
-/* ================= 相位讲解（六步，与原页一致） ================= */
-const STEPS = [
-  { t0: 0.00, t1: 0.22, n: 1, b: '碳固定（羧化）', d: 'Rubisco 把 CO₂ 加到 5 碳的 RuBP 上，中间物立即裂解成 2 个 3 碳的 3-PGA。',
-    be: 'Carbon fixation (carboxylation)', de: 'Rubisco adds CO₂ to the 5-carbon RuBP; the unstable intermediate immediately splits into two 3-carbon 3-PGA.' },
-  { t0: 0.22, t1: 0.40, n: 2, b: '磷酸化', d: '每个 3-PGA 消耗 1 个 ATP，接上磷酸基 → 1,3-二磷酸甘油酸（活化）。',
-    be: 'Phosphorylation', de: 'Each 3-PGA spends 1 ATP to take on a phosphate → 1,3-bisphosphoglycerate (activated).' },
-  { t0: 0.40, t1: 0.58, n: 3, b: '还原 → G3P', d: 'NADPH 提供氢（高能电子），把羧基还原成醛基 → 三碳糖磷酸 G3P。',
-    be: 'Reduction → G3P', de: 'NADPH donates hydrogen (high-energy electrons), reducing the carboxyl group to an aldehyde → the triose phosphate G3P.' },
-  { t0: 0.58, t1: 0.72, n: 4, b: '净产物离开', d: '每 6 个 G3P 有 1 个离开循环，作为合成蔗糖、淀粉等糖类的原料。',
-    be: 'Net product exits', de: '1 of every 6 G3P leaves the cycle as the feedstock for building sucrose, starch and other sugars.' },
-  { t0: 0.72, t1: 0.92, n: 5, b: 'RuBP 再生', d: '其余 5 个 G3P（15C）再耗 3 个 ATP，重排成 3 个 RuBP（15C），碳架回到起点。',
-    be: 'RuBP regeneration', de: 'The other 5 G3P (15C) spend 3 more ATP and rearrange into 3 RuBP (15C) — the carbon scaffold is back at the start.' },
-  { t0: 0.92, t1: 1.00, n: 6, b: '总账', d: '每 3 CO₂：耗 9 ATP + 6 NADPH，净得 1 个 G3P —— 全部来自光反应的供给。',
-    be: 'The ledger', de: 'Per 3 CO₂: 9 ATP + 6 NADPH consumed for 1 net G3P — all supplied by the light reactions.' },
-];
-function stepIndex(t) {
-  for (let i = 0; i < STEPS.length; i++) if (t >= STEPS[i].t0 && t < STEPS[i].t1) return i;
-  return STEPS.length - 1;
-}
 
 /* ================= 碳账本（DOM HUD） ================= */
 const LG = [
@@ -602,7 +626,6 @@ if (matchMedia('(prefers-reduced-motion: reduce)').matches && qs.get('pause') ==
 let speed = qsFloat('speed', 1);
 let showLabels = qsBool('labels', true);
 let showLedger = qsBool('ledger', true);
-let tNow = 0, tSim = 0;
 
 const elPlay = document.getElementById('play');
 const elSpeed = document.getElementById('speed');
@@ -799,6 +822,39 @@ applyTheme();
 applyLang();
 setPlayLabel();
 rafId = requestAnimationFrame(frame);
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
 </script>
 </body>
 </html>

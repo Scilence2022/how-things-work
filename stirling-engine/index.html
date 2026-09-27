@@ -122,6 +122,27 @@
     #title { max-width: calc(100vw - 200px); }
     #title h1 { font-size: 16px; }
   }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
 </style>
 <script type="importmap">
 {
@@ -160,6 +181,7 @@
 </div>
 
 <div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
   <div class="row"><label data-zh="热源温度" data-en="Heat-source T">热源温度</label><input id="th" type="range" min="450" max="900" step="10" value="650"><span class="val" id="thVal">650 K</span></div>
   <div class="row"><label data-zh="转速" data-en="Speed">转速</label><input id="rpm" type="range" min="15" max="180" step="5" value="45"><span class="val" id="rpmVal">45 rpm</span></div>
   <div class="row"><label data-zh="速度" data-en="Rate">速度</label><input id="spd" type="range" min="0.2" max="3" step="0.1" value="1"><span class="val" id="spdVal">1.0×</span></div>
@@ -449,6 +471,9 @@ flowArrows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 flowArrows.renderOrder = 7;
 scene.add(flowArrows);
 
+let ThSet = 650, ThGas = 650;                // 热源设定 / 热腔实际(缓变)
+let srcMode = 0;                             // 热源类型(标签回调即刻引用,须先声明)
+
 /* ---------------- CSS2D 标签 ---------------- */
 const labelReg = [];
 let labelsOn = true;
@@ -479,7 +504,6 @@ function refreshLabels() {
 
 /* ---------------- 热力学状态模型 ---------------- */
 const TC = 300;                              // 冷腔 K
-let ThSet = 650, ThGas = 650;                // 热源设定 / 热腔实际(缓变)
 const NR = 0.1013, CV = 1.5 * NR;            // nR、Cv(kPa·L/K → J/K)
 const VC = 0.30, VA = 0.105;                 // 平均容积 / 振幅(L)
 let rpm = 45, speed = 1, cycles = 0, tWall = 0;
@@ -488,7 +512,6 @@ if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').m
 speed = clamp(qsFloat('speed', 1), 0.2, 3);
 rpm = clamp(qsFloat('rpm', 45), 15, 180);
 ThSet = clamp(qsFloat('th', 650), 450, 900);
-let srcMode = 0;
 let wCyc = 10, qhCyc = 30, etaCyc = 0.2, integTh = 0;
 
 const V1 = VC - VA, V2 = VC + VA, LNR = Math.log(V2 / V1);
@@ -860,6 +883,39 @@ cycles = clamp(qsFloat('t', 0), 0, 600) * rpm / 60;
 updateWorld(cycles - Math.floor(cycles), 0.016);
 if (tglPlot.checked) drawPlot(cycles - Math.floor(cycles));
 start();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
 </script>
 </body>
 </html>

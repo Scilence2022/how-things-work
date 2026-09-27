@@ -136,6 +136,27 @@
     #title { max-width: calc(100vw - 200px); }
     #title h1 { font-size: 16px; }
   }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
 </style>
 </head>
 <body>
@@ -161,6 +182,7 @@
 </div>
 
 <div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
   <div id="actions">
     <button class="abtn" id="btnIn" data-zh="插对钥匙" data-en="right key">插对钥匙</button>
     <button class="abtn" id="btnWrong" data-zh="插错钥匙" data-en="wrong key">插错钥匙</button>
@@ -605,18 +627,19 @@ function addLabel(textFn, pos, cls = '', vis = () => true, target = scene) {
   return o;
 }
 function refreshLabels() {
-  for (const r of labelReg) r.o.element.style.display = labelsOn && r.vis() ? '' : 'none';
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
 }
 function snapLabel(pos, cls) {
   const div = document.createElement('div');
   div.className = 'lbl ' + cls;
   const span = document.createElement('span');
   span.className = 'pop';
+  span.addEventListener('animationend', () => span.classList.remove('on'));
   div.appendChild(span);
   const o = new CSS2DObject(div);
   o.position.copy(pos);
   scene.add(o);
-  labelReg.push({ o, text: () => '', span });
+  labelReg.push({ o, text: () => '', span, vis: () => span.classList.contains('on') });
   return { o, span };
 }
 function fireSnap(s, word) {
@@ -629,6 +652,19 @@ const snapPin = snapLabel(new THREE.Vector3(0, 1.28, 0.2), 'g');
 const snapFalse = snapLabel(new THREE.Vector3(0, 1.5, 0.2), 'g');
 const snapJam = snapLabel(new THREE.Vector3(0, 1.25, 0.2), 'r');
 const snapOpen = snapLabel(new THREE.Vector3(-2.15, 0.4, 0.25), 'g');
+
+/* ================= 状态 ================= */
+let nPins = clamp(Math.round(qsFloat('pins', 5)), 3, 6);
+let secPins = false;
+let keyKind = null, keyX = KEY_OUT;
+let rotorA = 0, rotorTarget = 0, openK = 0, openKTgt = 0, open = false;
+let jamPin = -1, falsePin = -1, wIdx = 1;
+let pickOn = false, wrenchOn = false, pickTip = 1.2, pickIdx = -1, pickK = 0, bindA = 0.05;
+let tSim = 0;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let curName = 'idle';
 
 const lblStatus = addLabel(() => statusText(), new THREE.Vector3(0, 1.78, 0), 'st');
 const lblShear = addLabel(() => L('剪切线:锁芯/锁体分界', 'shear line: plug/housing boundary'),
@@ -646,19 +682,6 @@ const lblPick = addLabel(() => L('单钩:逐根提起弹子', 'pick: lift pins o
   new THREE.Vector3(-0.3, -0.62, 0.15), 'dm', () => pickOn);
 const lblJam = addLabel(() => L(`#${jamPin + 1} 骑线 → 全线卡死`, `#${jamPin + 1} rides the line → all jam`),
   new THREE.Vector3(0, 1.34, 0.1), 'r', () => jamPin >= 0);
-
-/* ================= 状态 ================= */
-let nPins = clamp(Math.round(qsFloat('pins', 5)), 3, 6);
-let secPins = false;
-let keyKind = null, keyX = KEY_OUT;
-let rotorA = 0, rotorTarget = 0, openK = 0, openKTgt = 0, open = false;
-let jamPin = -1, falsePin = -1, wIdx = 1;
-let pickOn = false, wrenchOn = false, pickTip = 1.2, pickIdx = -1, pickK = 0, bindA = 0.05;
-let tSim = 0;
-let playing = !qsBool('pause', false);
-if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
-let speed = clamp(qsFloat('speed', 1), 0.2, 3);
-let curName = 'idle';
 
 function alignedCount() {
   if (keyKind && keyX < 0.3) {
@@ -980,7 +1003,10 @@ function frame() {
   stR.className = 'v ' + (open ? 'acc' : rotatable() ? 'ok' : 'bad');
   formulaAcc += dt;
   if (formulaAcc > 0.25) { formulaAcc = 0; updateFormula(); }
-  for (const r of labelReg) if (labelsOn && r.vis() && !r.span) r.o.element.textContent = r.text();
+  for (const r of labelReg) {
+    r.o.visible = labelsOn && r.vis();
+    if (r.o.visible && !r.span) r.o.element.textContent = r.text();
+  }
   const si = stepIndex();
   if (si !== lastStep) {
     lastStep = si;
@@ -1011,6 +1037,39 @@ applyTheme();
 applyLang();
 refreshLabels();
 start();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
 </script>
 </body>
 </html>
