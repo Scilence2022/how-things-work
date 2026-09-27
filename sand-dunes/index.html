@@ -138,6 +138,27 @@
     #title { max-width: calc(100vw - 200px); }
     #title h1 { font-size: 16px; }
   }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
 </style>
 </head>
 <body>
@@ -169,6 +190,7 @@
 </div>
 
 <div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
   <div id="legend">
     <span class="chip.b" data-zh="跃移沙粒:弹道 + 溅射" data-en="saltating grains: ballistic + splash">跃移沙粒:弹道 + 溅射</span>
     <span class="chip.g" data-zh="风粒子流:贴地加速" data-en="wind streaks: speeding near the ground">风粒子流:贴地加速</span>
@@ -236,9 +258,19 @@ function applyTheme() {
   htmlEl.dataset.theme = THEME;
   document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
   const dark = THEME === 'dark';
+  if (renderer) renderer.toneMappingExposure = dark ? 1 : 0.72;
   scene.background = new THREE.Color(dark ? 0x151009 : 0xede3cf);
   scene.fog.color = new THREE.Color(dark ? 0x151009 : 0xede3cf);
-  bedM.color.setHex(dark ? 0x2c2318 : 0xc9b593);
+  bedM.color.setHex(dark ? 0x2c2318 : 0xbfab84);
+  bedM.envMapIntensity = dark ? 1 : 0.5;
+  duneM.envMapIntensity = dark ? 1 : 0.3;
+  hemi.intensity = dark ? 0.6 : 0.42;
+  windPts.material.color.setHex(dark ? 0xd8cdb4 : 0x8a7a5c);
+  windPts.material.size = dark ? 0.08 : 0.12;
+  saltPts.material.color.setHex(dark ? 0xffd43b : 0xc07a00);
+  saltPts.material.size = dark ? 0.13 : 0.16;
+  avalPts.material.color.setHex(dark ? 0xffe8a3 : 0xd09500);
+  avalPts.material.size = dark ? 0.1 : 0.14;
 }
 function applyLang() {
   htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
@@ -372,8 +404,8 @@ scene.add(windArrow);
 
 function updateDuneMesh() {
   const dark = THEME === 'dark';
-  const sR = dark ? 0.85 : 0.93, sG = dark ? 0.66 : 0.76, sB = dark ? 0.36 : 0.46;   /* 沙金 */
-  const bR = dark ? 0.22 : 0.62, bG = dark ? 0.185 : 0.53, bB = dark ? 0.14 : 0.4;   /* 基岩/沙席 */
+  const sR = dark ? 0.85 : 0.74, sG = dark ? 0.66 : 0.55, sB = dark ? 0.36 : 0.27;   /* 沙金 */
+  const bR = dark ? 0.22 : 0.52, bG = dark ? 0.185 : 0.43, bB = dark ? 0.14 : 0.29;  /* 基岩/沙席 */
   /* 顶点顺序着色(vMap:顶点 → 格元),高度同步写入 */
   for (let vi = 0; vi < vMap.length; vi++) {
     const idx = vMap[vi];
@@ -381,7 +413,8 @@ function updateDuneMesh() {
     const hx1 = H[gi((x + 1) % NX, zi)], hx0 = H[gi((x - 1 + NX) % NX, zi)];
     const hz1 = H[gi(x, Math.min(NZ - 1, zi + 1))], hz0 = H[gi(x, Math.max(0, zi - 1))];
     const slope = (hx1 - hx0) + (hz1 - hz0);                       /* 顺风更亮,背风更暗 */
-    const sh = clamp(0.72 - slope * 0.9, 0.42, 1.05);
+    const sh = dark ? clamp(0.72 - slope * 0.9, 0.42, 1.05)
+                    : clamp(0.68 - slope * 1.7, 0.26, 1.08);
     let r, g2, b2;
     if (H[idx] < 0.02) { r = bR; g2 = bG; b2 = bB; }
     else {
@@ -824,7 +857,7 @@ function frame() {
   if (accMeas > 0.3) { accMeas = 0; measure(); }
   /* 标签跟随峰位 */
   const cwx = crestGX * DX - NX * DX / 2, cwz = crestGZ * DX - NZ * DX / 2;
-  lblCrest.position.set(cwx, peakH + 0.9, cwz);
+  lblCrest.position.set(cwx + 4.5, peakH + 0.9, cwz + 1.2);
   lblLee.position.set(cwx + 4.5, Math.max(0.6, peakH * 0.45), cwz + 1.5);
   lblWind.position.set(cwx - 8, peakH * 0.7 + 0.8, cwz + 3);
   windArrow.position.set(-21, 2.6, cwz);
@@ -863,6 +896,39 @@ const t0s = Math.round(qsFloat('t', 0));
 if (qs.get('t') !== null && t0s >= 0 && t0s < STEPS.length) { phaseIdx = t0s; STEPS[t0s].act(); }
 else syncAll();
 start();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
 </script>
 </body>
 </html>
