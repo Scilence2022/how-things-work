@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>陀飞轮 · 把重力误差转进一圈里平均掉</title>
+<style>
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;--acc:#e8b96a;
+    --bg:#0f1113;--panel:rgba(15,17,19,.86);--panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;
+    --hover:rgba(255,255,255,.05);--shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,17,19,.78);--tool-border:rgba(255,255,255,.12);--cv-pill:rgba(15,17,19,.8);
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;--acc:#d4a24e;
+    --bg:#f1efec;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+    --text:#16202c;--text2:#5b6b7d;--text3:#33414f;
+    --hover:rgba(15,25,40,.05);--shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);--cv-pill:rgba(255,255,255,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s}
+  #app{position:fixed;inset:0}#app canvas{display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+  .lbl{background:var(--cv-pill);border:1px solid var(--tool-border);color:var(--text3);font-size:12px;
+    line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);transition:opacity .25s}
+  :root[data-theme="light"] .lbl{text-shadow:none}
+  .lbl.o{border-color:rgba(232,185,106,.9);color:#ffe6b8}.lbl.r{border-color:rgba(255,107,107,.9);color:#ffc2c2}
+  .lbl.g{border-color:rgba(116,220,132,.9);color:#c8f5d0}.lbl.b{border-color:rgba(116,192,252,.9);color:#bde9ff}
+  :root[data-theme="light"] .lbl.o{color:#8a6414}:root[data-theme="light"] .lbl.r{color:#c92a2a}
+  :root[data-theme="light"] .lbl.g{color:#2b8a3e}:root[data-theme="light"] .lbl.b{color:#1864ab}
+  #tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px}
+  .tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);
+    color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;
+    padding:0 12px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;text-decoration:none;backdrop-filter:blur(6px);
+    transition:border-color .15s,color .15s,transform .15s}
+  .tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px)}
+  #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px)}
+  #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  #stats{position:fixed;right:18px;bottom:18px;z-index:4;background:var(--panel);
+    border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+    backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px}
+  #stats .k{font-size:12px;color:var(--text2);align-self:center}
+  #stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  #stats .v small{font-size:11px;color:var(--text2);font-weight:400}
+  #stats .v.warn{color:#ff6b6b}#stats .v.ok{color:#8ce99a}
+  #panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;padding:14px 16px 12px;backdrop-filter:blur(6px);
+    box-shadow:var(--shadow);max-height:calc(100vh - 160px);overflow:auto}
+  #actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 30%;
+    background:var(--hover);color:var(--text2);border:1px solid var(--tool-border);
+    border-radius:9px;padding:7px 10px;font-size:12.5px;font-weight:600;
+    transition:border-color .15s,color .15s,background .15s}
+  .abtn:hover{border-color:var(--acc);color:var(--text)}
+  .abtn.on{border-color:rgba(232,185,106,.6);background:rgba(232,185,106,.12);color:var(--text)}
+  :root[data-theme="light"] .abtn.on{border-color:rgba(212,162,78,.55);background:rgba(212,162,78,.10)}
+  .row{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .row label{font-size:12px;color:var(--text2);flex:0 0 92px}
+  .row .val{font-size:11.5px;color:var(--text3);flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc);height:18px}
+  #steps{list-style:none;margin-top:8px}
+  #steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;align-items:flex-start}
+  #steps li:hover{background:var(--hover)}
+  #steps li.on{background:rgba(232,185,106,.10);border-color:rgba(232,185,106,.45)}
+  :root[data-theme="light"] #steps li.on{background:rgba(212,162,78,.08);border-color:rgba(212,162,78,.4)}
+  #steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;display:flex;
+    align-items:center;justify-content:center;margin-top:1px;
+    background:rgba(255,255,255,.12);color:var(--text3)}
+  :root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10)}
+  #steps li.on .n{background:var(--acc);color:#2f230b}
+  #steps .t{font-size:12px;color:var(--text3);line-height:1.45}
+  #steps .t b{color:var(--text);font-size:12px}
+  #steps li.on .t b{color:#f7e3b6}
+  :root[data-theme="light"] #steps li.on .t b{color:var(--acc)}
+  #ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border)}
+  #play{grid-row:1/3;grid-column:1;padding:10px 14px;font-size:14px;font-weight:600;
+    background:var(--acc);color:#2f230b;border:0;border-radius:10px;cursor:pointer}
+  #play:hover{filter:brightness(1.08)}
+  #toggles{display:flex;gap:12px;flex-wrap:wrap}
+  #toggles label{font-size:12px;color:var(--text2);display:flex;gap:5px;align-items:center;cursor:pointer}
+  #toggles input{accent-color:var(--acc)}
+  #rel{margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-border);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #rel span{font-size:11.5px;color:var(--text2)}
+  #rel a{font-size:11.5px;color:var(--text3);text-decoration:none;border:1px solid var(--tool-border);
+    border-radius:999px;padding:3px 10px;transition:color .15s,border-color .15s}
+  #rel a:hover{color:var(--acc);border-color:var(--acc)}
+  @media(max-width:900px){#stats{display:none}}
+  @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
+    #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; }
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="陀飞轮 · 把重力误差转进一圈里平均掉" data-en="Tourbillon · averaging gravity's error over one turn">陀飞轮 · 把重力误差转进一圈里平均掉</h1>
+  <div class="sub" data-zh="摆轮横放竖放，重力经摆轮轴/轴承带来的附加力矩不同——同一机芯不同方位日误差可差几十秒；陀飞轮把摆轮+游丝+擒纵叉+擒纵轮整套装进 60 秒自转一圈的金色笼架，每位姿的误差在圆周上逐位平均，一圈回到原位时恰好抵消 · 拖动旋转 / 空格运行暂停" data-en="Lay a balance flat or on edge and gravity loads its staff and pivots differently — the same movement can gain or lose tens of seconds/day by position; the tourbillon mounts balance, hairspring, lever and escape wheel in a gold cage turning once per 60 s, so each position's error is averaged around the circle and cancels exactly on return · drag to orbit / Space = run/pause">摆轮横放竖放，重力经摆轮轴/轴承带来的附加力矩不同——同一机芯不同方位日误差可差几十秒；陀飞轮把摆轮+游丝+擒纵叉+擒纵轮整套装进 60 秒自转一圈的金色笼架，每位姿的误差在圆周上逐位平均，一圈回到原位时恰好抵消 · 拖动旋转 / 空格运行暂停</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="笼架转角" data-en="Cage angle">笼架转角</span><span class="v" id="stCage">—</span>
+  <span class="k" data-zh="演示倍速" data-en="Demo speed">演示倍速</span><span class="v" id="stSpeed">—</span>
+  <span class="k" data-zh="普通机芯日误差" data-en="Plain movement">普通机芯日误差</span><span class="v" id="stErrP">—</span>
+  <span class="k" data-zh="陀飞轮平均日误差" data-en="Tourbillon mean">陀飞轮平均日误差</span><span class="v" id="stErrT">—</span>
+  <span class="k" data-zh="摆轮摆幅" data-en="Amplitude">摆轮摆幅</span><span class="v" id="stAmp">—</span>
+</div>
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="actions">
+    <button class="abtn on" id="bAll" data-zh="总览" data-en="Overview">总览</button>
+    <button class="abtn" id="bT" data-zh="看陀飞轮" data-en="Tourbillon">看陀飞轮</button>
+    <button class="abtn" id="bP" data-zh="看对照" data-en="Plain">看对照</button>
+    <button class="abtn" id="bTurn" data-zh="重置一圈" data-en="Reset turn">重置一圈</button>
+  </div>
+  <div class="row">
+    <label data-zh="演示倍速" data-en="Demo speed">演示倍速</label>
+    <input id="sSpeed" type="range" min="5" max="240" step="5" value="60">
+    <span class="val" id="sSpeedVal">60×</span>
+  </div>
+  <div class="row">
+    <label data-zh="摆轮摆幅" data-en="Amplitude">摆轮摆幅</label>
+    <input id="sAmp" type="range" min="120" max="320" step="5" value="270">
+    <span class="val" id="sAmpVal">270°</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" data-zh="暂停" data-en="Pause">暂停</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglRef" type="checkbox" checked> <span data-zh="对照机芯" data-en="Ref. movement">对照机芯</span></label>
+      <label><input id="tglBars" type="checkbox" checked> <span data-zh="误差对比条" data-en="Error bars">误差对比条</span></label>
+      <label><input id="tglSpin" type="checkbox"> <span data-zh="自动环绕" data-en="Auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../escapement/" data-zh="擒纵机构：步进与放能" data-en="Escapement: stepping & power">擒纵机构</a>
+    <a href="../quartz-watch/" data-zh="石英表：为什么后来不需要陀飞轮" data-en="Quartz watch: why tourbillons stopped mattering">石英表</a>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const v3=(x,y,z)=>new THREE.Vector3(x,y,z);
+const htmlEl=document.documentElement;
+let THEME=localStorage.getItem('htw-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+let LANG=localStorage.getItem('htw-lang')||'zh';
+const L=(zh,en)=>LANG==='en'?en:zh;
+
+/* ---- 渲染器与场景 ---- */
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:3';
+document.body.appendChild(labelRenderer.domElement);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x101418,9,26);
+const camera=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,0.1,200);
+camera.position.set(0.15,1.55,5.6);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0.15,0.30,0);controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=1.4;controls.maxDistance=18;
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
+scene.add(new THREE.HemisphereLight(0xdfe8f2,0x1a1c22,0.5));
+const key=new THREE.DirectionalLight(0xfff2dd,1.15);key.position.set(4,8,6);scene.add(key);
+const fill=new THREE.DirectionalLight(0x9ab8ff,0.3);fill.position.set(-6,4,-5);scene.add(fill);
+
+/* ---- 材质：金笼架/钢机芯件/红宝石轴眼，红条=普通误差 绿条=陀飞轮平均 ---- */
+const goldM=new THREE.MeshStandardMaterial({color:0xd7a94f,metalness:0.92,roughness:0.28});
+const goldDk=new THREE.MeshStandardMaterial({color:0x9a7328,metalness:0.9,roughness:0.38});
+const steelM=new THREE.MeshStandardMaterial({color:0xb9c6d4,metalness:0.9,roughness:0.32});
+const rubyM=new THREE.MeshStandardMaterial({color:0xe03131,metalness:0.3,roughness:0.3,emissive:0x5c0e0e,emissiveIntensity:0.6});
+const plateM=new THREE.MeshStandardMaterial({color:0x262b33,metalness:0.55,roughness:0.5});
+const groundM=new THREE.MeshStandardMaterial({color:0x1c2027,roughness:0.95});
+const barRM=new THREE.MeshStandardMaterial({color:0xff6b6b,emissive:0xc92a2a,emissiveIntensity:0.5,roughness:0.45,side:THREE.DoubleSide});
+const barGM=new THREE.MeshStandardMaterial({color:0x69db7a,emissive:0x2b8a3e,emissiveIntensity:0.5,roughness:0.45,side:THREE.DoubleSide});
+
+/* ---- 几何工具 ---- */
+function gearGeo(n,rO,rI,d){ // n 齿外径/根径/厚的齿轮（擒纵轮）
+  const s=new THREE.Shape(),T=Math.PI*2/n;
+  for(let i=0;i<n;i++){
+    const a=i*T;
+    [[0.10,rI],[0.26,rO],[0.56,rO],[0.72,rI]].forEach((q,j)=>{
+      const x=Math.cos(a+q[0]*T)*q[1],y=Math.sin(a+q[0]*T)*q[1];
+      (i===0&&j===0)?s.moveTo(x,y):s.lineTo(x,y);
+    });
+  }
+  s.closePath();
+  const g=new THREE.ExtrudeGeometry(s,{depth:d,bevelEnabled:false});
+  g.translate(0,0,-d/2);return g;
+}
+function spiralGeo(turns,r0,r1,tub){ // 阿基米德螺线（游丝）
+  const pts=[],N=Math.round(turns*36);
+  for(let i=0;i<=N;i++){const t=i/N,a=t*turns*Math.PI*2,r=r0+(r1-r0)*t;
+    pts.push(v3(Math.cos(a)*r,Math.sin(a)*r,0));}
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),N,tub,6,false);
+}
+function buildBalance(r){ // 摆轮：环+十字辐条+螺钉+轴+圆盘钉（绕 z 往复）
+  const g=new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(r,0.034,10,44),goldM));
+  const b1=new THREE.Mesh(new THREE.BoxGeometry(r*2,0.05,0.032),goldM);
+  const b2=b1.clone();b2.rotation.z=Math.PI/2;g.add(b1,b2);
+  const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.055,0.05,14),goldM);
+  hub.rotation.x=Math.PI/2;g.add(hub);
+  for(let i=0;i<6;i++){const a=i*Math.PI/3+0.26;
+    const sc=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.055,8),goldDk);
+    sc.rotation.z=a+Math.PI/2;sc.position.set(Math.cos(a)*r,Math.sin(a)*r,0);g.add(sc);}
+  const staff=new THREE.Mesh(new THREE.CylinderGeometry(0.017,0.017,0.64,8),steelM);
+  staff.rotation.x=Math.PI/2;g.add(staff);
+  const roller=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.028,12),steelM);
+  roller.rotation.x=Math.PI/2;roller.position.z=0.075;g.add(roller);
+  return g;
+}
+function buildFork(){ // 擒纵叉：叉杆+两枚红宝石瓦+尾叉
+  const g=new THREE.Group();
+  const lever=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.034,0.024),steelM);lever.position.x=0.075;g.add(lever);
+  const j1=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.017,0.02),rubyM);
+  j1.position.set(0.135,0.028,0);j1.rotation.z=0.55;
+  const j2=j1.clone();j2.position.y=-0.028;j2.rotation.z=-0.55;g.add(j1,j2);
+  const tail=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.026,0.022),steelM);tail.position.x=-0.065;g.add(tail);
+  const h1=new THREE.Mesh(new THREE.BoxGeometry(0.028,0.012,0.018),steelM);h1.position.set(-0.125,0.012,0);
+  const h2=h1.clone();h2.position.y=-0.012;g.add(h1,h2);
+  return g;
+}
+
+/* ---- 场景组装：地面/基座 ---- */
+const ground=new THREE.Mesh(new THREE.BoxGeometry(18,0.3,10),groundM);
+ground.position.set(0,-1.5,0);scene.add(ground);
+const base=new THREE.Mesh(new THREE.BoxGeometry(4.8,0.1,1.3),plateM);
+base.position.set(0.05,-1.30,-0.35);scene.add(base);
+
+/* ---- 陀飞轮：金色笼架（两端圆环+3立柱）绕水平 z 轴转，机构装在笼内随之公转 ---- */
+const tourb=new THREE.Group();tourb.position.set(-1.35,0.45,0);scene.add(tourb);
+// 飞行式支架：立柱+悬臂+轴承（固定，不随笼转）
+const tCol=new THREE.Mesh(new THREE.BoxGeometry(0.13,1.88,0.13),plateM);
+tCol.position.set(-1.35,-0.49,-1.0);scene.add(tCol);
+const tArm=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.09,0.55),plateM);
+tArm.position.set(-1.35,0.45,-0.82);scene.add(tArm);
+const tCollar=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.05,12),goldM);
+tCollar.rotation.x=Math.PI/2;tCollar.position.set(-1.35,0.45,-0.585);scene.add(tCollar);
+// 固定四轮轴（实机由它驱动笼架；此处静止作轴线）
+const arbor=new THREE.Mesh(new THREE.CylinderGeometry(0.026,0.026,1.16,10),steelM);
+arbor.rotation.x=Math.PI/2;arbor.position.z=-0.02;tourb.add(arbor);
+const jewB=new THREE.Mesh(new THREE.CylinderGeometry(0.032,0.032,0.03,12),rubyM);
+jewB.rotation.x=Math.PI/2;jewB.position.z=-0.56;tourb.add(jewB);
+const cage=new THREE.Group();tourb.add(cage);
+const rimF=new THREE.Mesh(new THREE.TorusGeometry(0.72,0.042,12,56),goldM);rimF.position.z=0.30;
+const rimB=rimF.clone();rimB.position.z=-0.30;cage.add(rimF,rimB);
+for(let i=0;i<3;i++){const a=Math.PI/2+i*2*Math.PI/3;   // 3 根立柱
+  const post=new THREE.Mesh(new THREE.CylinderGeometry(0.034,0.034,0.60,10),goldDk);
+  post.rotation.x=Math.PI/2;post.position.set(Math.cos(a)*0.62,Math.sin(a)*0.62,0);cage.add(post);}
+for(let i=0;i<3;i++){const a=Math.PI/6+i*2*Math.PI/3;   // 背面三叉辐条
+  const arm=new THREE.Mesh(new THREE.BoxGeometry(0.50,0.055,0.028),goldDk);
+  arm.position.set(Math.cos(a)*0.34,Math.sin(a)*0.34,-0.27);arm.rotation.z=a;cage.add(arm);}
+const bridge=new THREE.Mesh(new THREE.BoxGeometry(1.34,0.075,0.03),goldM);bridge.position.z=0.305;cage.add(bridge);
+const hubF=new THREE.Mesh(new THREE.TorusGeometry(0.085,0.02,8,24),goldM);hubF.position.z=0.315;cage.add(hubF);
+/* 笼内调速机构：摆轮居中，擒纵轮/擒纵叉偏置绕其公转（陀飞轮标志性画面） */
+const balance=buildBalance(0.26);cage.add(balance);
+const spring=new THREE.Group();
+spring.add(new THREE.Mesh(spiralGeo(4,0.028,0.14,0.008),steelM));
+spring.position.z=0.05;cage.add(spring);
+const escW=new THREE.Mesh(gearGeo(15,0.135,0.098,0.028),steelM);
+escW.position.set(0.52,0,0);cage.add(escW);
+const fork=buildFork();fork.position.set(0.37,0,0.052);cage.add(fork);
+
+/* ---- 对照"普通机芯"：摆轮+擒纵轮，方位固定 + 方位角指针（读出当前演示方位 θ） ---- */
+const refG=new THREE.Group();refG.position.set(1.45,0.45,0);scene.add(refG);
+const rCol=new THREE.Mesh(new THREE.BoxGeometry(0.12,1.78,0.12),plateM);
+rCol.position.set(0,-0.98,-0.62);refG.add(rCol);
+const rArm=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.09,0.46),plateM);
+rArm.position.set(0,-0.03,-0.23);refG.add(rArm);
+const rPlate=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.055,48),plateM);
+rPlate.rotation.x=Math.PI/2;refG.add(rPlate);
+const rBezel=new THREE.Mesh(new THREE.TorusGeometry(0.5,0.035,10,56),goldM);refG.add(rBezel);
+const refBal=buildBalance(0.2);refBal.position.z=0.055;refG.add(refBal);
+const refEsc=new THREE.Mesh(gearGeo(15,0.105,0.076,0.026),steelM);
+refEsc.position.set(0.315,0,0.055);refG.add(refEsc);
+const ringS=new THREE.Mesh(new THREE.TorusGeometry(0.66,0.012,8,56),steelM);refG.add(ringS);
+for(let i=0;i<4;i++){const a=i*Math.PI/2;
+  const tk=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.08,0.015),steelM);
+  tk.position.set(Math.cos(a)*0.66,Math.sin(a)*0.66,0);tk.rotation.z=a+Math.PI/2;refG.add(tk);}
+const ptr=new THREE.Group();refG.add(ptr);   // 方位角指针，随笼角同步转
+const pShaft=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.02,0.016),goldM);pShaft.position.x=0.60;ptr.add(pShaft);
+const pTip=new THREE.Mesh(new THREE.ConeGeometry(0.045,0.11,10),goldM);
+pTip.rotation.z=-Math.PI/2;pTip.position.x=0.78;ptr.add(pTip);
+
+/* ---- 误差对比条：红=普通（随 cosθ 摆动） 绿=陀飞轮（围圈平均→趋零），基线在 y0 ---- */
+const Y0=0.30;
+const barUnit=new THREE.BoxGeometry(0.16,1,0.16);barUnit.translate(0,0.5,0);
+const barP=new THREE.Mesh(barUnit,barRM);barP.position.set(-0.15,Y0+0.01,0);scene.add(barP);
+const barT=new THREE.Mesh(barUnit,barGM);barT.position.set(0.30,Y0+0.01,0);scene.add(barT);
+const shelf=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.05,0.4),plateM);
+shelf.position.set(0.075,Y0-0.015,0);scene.add(shelf);
+const zeroLn=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.012,0.02),
+  new THREE.MeshStandardMaterial({color:0xdddddd,emissive:0x555555,emissiveIntensity:0.4}));
+zeroLn.position.set(0.075,Y0+0.024,0.19);scene.add(zeroLn);
+
+/* ---- 状态 ----
+   误差模型：位差 E(θ)=E0·cosθ，E0=30 s/day（实机未调校位差为几十秒/day 量级）。
+   陀飞轮取"自最近一次回零起围圆圈的夹角平均"：∫cosθdθ/θ = sinθ/θ，
+   θ=2π 时恰好为 0——一圈回到原位，位差项严格抵消。
+   演示时基：笼角速度=speed °/s（60×→6 s/圈；6×≈实机 60 s/圈）。
+   摆轮摆动为可视频率显示（实机 3~4 Hz，直接放快到看不清），擒纵轮每拍进 1 齿。 */
+let playing=true,labelsOn=true,refOn=true,barsOn=true,simT=0;
+let speed=60,amp=270;            // 演示倍速(°/s)、摆幅(°)
+let Theta=0;                      // 笼累计转角(°)
+let balPhase=0,lastBeat=0;        // 摆轮相位/拍计数
+let escAngle=0,escTarget=0,forkSide=1,forkAngle=0;
+const F_VIS=1.15;                 // 摆轮可视频率 Hz（演示）
+const E0=30;                      // 位差幅值 s/day
+const qs=new URLSearchParams(location.search);
+if(qs.get('pause')==='1')playing=false;
+if(qs.get('labels')==='0')labelsOn=false;
+
+/* ---- 步骤 ---- */
+const STEPS=[
+ {zh:'普通机芯：摆轮方位不同，重力经摆轮轴/轴承改变恢复力矩，日误差可差几十秒',
+  en:'Plain movement: balance orientation changes gravity torque on the staff — tens of s/day by position'},
+ {zh:'擒纵机构拆解：摆轮+游丝给出节拍，擒纵叉往复，擒纵轮逐齿步进放能',
+  en:'Anatomy: balance + hairspring set the beat, the lever flips, the escape wheel creeps tooth by tooth'},
+ {zh:'把整套调速机构装进金色笼架：摆轮居中，擒纵轮/擒纵叉绕其公转',
+  en:'Mount the whole regulator in a gold cage: balance centered, escapement orbiting it'},
+ {zh:'笼每 60 s 自转一圈：各位姿误差 E₀·cosθ 在圆周上被逐位平均',
+  en:'The cage turns once per 60 s: per-position error E₀·cosθ is averaged around the circle'},
+ {zh:'一圈回到原位：∫cosθdθ=0，平均位差恰好归零（只余非位差项）',
+  en:'After one full turn ∫cosθdθ = 0 — the positional term cancels exactly'},
+ {zh:'成本与注脚：为竖放怀表而生；手表多平放、意义有限，如今是高级工艺的展示',
+  en:'Footnote: born for vertical pocket watches; wristwatches sit dial-up, so today it is mainly haute horlogerie'},
+];
+let activeStep=3;
+function buildSteps(){
+  const el=document.getElementById('steps');el.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="n">${i+1}</span><span class="t"><b>${LANG==='en'?s.en:s.zh}</b></span>`;
+    li.addEventListener('click',()=>{activeStep=i;applyPhase(i);});
+    el.appendChild(li);
+  });
+  syncSteps();
+}
+function syncSteps(){document.querySelectorAll('#steps li').forEach((li,i)=>li.classList.toggle('on',i===activeStep));}
+function setSpeed(v){speed=v;document.getElementById('sSpeed').value=v;document.getElementById('sSpeedVal').textContent=v+'×';}
+function setRef(v){refOn=v;refG.visible=v;document.getElementById('tglRef').checked=v;}
+function setBars(v){barsOn=v;barP.visible=barT.visible=shelf.visible=zeroLn.visible=v;document.getElementById('tglBars').checked=v;}
+function flyTo(tgt,pos){camA.copy(camera.position);camB.copy(pos);tgtA.copy(controls.target);tgtB.copy(tgt);camT=0;}
+function applyPhase(i){
+  if(i===0){setRef(true);setSpeed(45);flyTo(v3(1.45,0.75,2.7),v3(1.45,0.45,0));playing=true;}
+  else if(i===1){setSpeed(10);flyTo(v3(-1.35,0.85,2.5),v3(-1.35,0.45,0));playing=true;}
+  else if(i===2){setSpeed(30);flyTo(v3(-1.8,0.95,2.9),v3(-1.35,0.45,0));playing=true;}
+  else if(i===3){setBars(true);setSpeed(60);flyTo(v3(0.15,0.30,0),v3(0.15,1.35,5.2));playing=true;}
+  else if(i===4){Theta=0;setBars(true);setSpeed(60);flyTo(v3(0.15,0.30,0),v3(0.15,1.35,5.2));playing=true;}
+  else {flyTo(v3(0.15,0.40,0),v3(0.3,1.8,6.2));playing=true;}
+  syncSteps();syncPlayBtn();
+}
+
+/* ---- 读数 ---- */
+function updateStats(){
+  const deg=((Theta%360)+360)%360;
+  document.getElementById('stCage').textContent=deg.toFixed(0)+'°';
+  document.getElementById('stSpeed').textContent='×'+speed;
+  const th=Theta*Math.PI/180;
+  const errP=E0*Math.cos(th);
+  const errT=th<1e-4?E0:E0*Math.sin(th)/th;   // 围圈夹角平均：sinθ/θ → 2π 时恰为 0
+  const eP=document.getElementById('stErrP');
+  eP.innerHTML=(errP>=0?'+':'')+errP.toFixed(1)+'<small> s/day</small>';
+  eP.className='v'+(Math.abs(errP)>2?' warn':'');
+  const eT=document.getElementById('stErrT');
+  eT.innerHTML=(errT>=0?'+':'')+errT.toFixed(1)+'<small> s/day</small>';
+  eT.className='v ok';
+  document.getElementById('stAmp').textContent=amp+'°';
+}
+
+/* ---- 标签 ---- */
+const labelReg=[];
+function addLabel(textFn,pos,cls='',visFn=()=>true,parent=scene){
+  const div=document.createElement('div');div.className='lbl '+cls;
+  const o=new CSS2DObject(div);o.position.copy(pos);parent.add(o);
+  labelReg.push({o,text:textFn,vis:visFn});div.textContent=textFn();return o;
+}
+addLabel(()=>L('陀飞轮笼架 · 60 s/圈','Tourbillon cage · 60 s/turn'),v3(-1.35,1.32,0),'o');
+addLabel(()=>L(`摆轮+游丝（往复 ±${amp}°）`,`Balance + hairspring (±${amp}°)`),v3(-2.5,0.95,0),'b');
+addLabel(()=>L('擒纵轮·擒纵叉 绕摆轮公转','Escape wheel + lever orbit the balance'),v3(0.80,-0.34,0),'g',()=>true,cage);
+addLabel(()=>L('对照机芯（方位固定）','Plain movement (fixed position)'),v3(1.45,1.22,0),'r');
+addLabel(()=>L('方位角 θ：位差 ∝ cosθ','Azimuth θ: error ∝ cosθ'),v3(1.45,-0.52,0),'b');
+addLabel(()=>L('误差条 红=普通 · 绿=陀飞轮平均','Bars: red = plain · green = tourbillon mean'),v3(0.075,-0.14,0.2),'g',()=>barsOn);
+addLabel(()=>L('一圈平均 → 0','Full-turn mean → 0'),v3(-1.35,-0.62,0),'g',()=>Theta>=360);
+
+/* ---- 事件 ---- */
+function syncPlayBtn(){document.getElementById('play').textContent=playing?L('暂停','Pause'):L('运行','Run');}
+document.getElementById('play').addEventListener('click',()=>{playing=!playing;syncPlayBtn();});
+document.getElementById('sSpeed').addEventListener('input',e=>setSpeed(+e.target.value));
+document.getElementById('sAmp').addEventListener('input',e=>{
+  amp=+e.target.value;document.getElementById('sAmpVal').textContent=amp+'°';});
+document.getElementById('tglLabels').addEventListener('change',e=>{labelsOn=e.target.checked;});
+document.getElementById('tglRef').addEventListener('change',e=>{refOn=e.target.checked;refG.visible=refOn;});
+document.getElementById('tglBars').addEventListener('change',e=>setBars(e.target.checked));
+document.getElementById('tglSpin').addEventListener('change',e=>{controls.autoRotate=e.target.checked;});
+function markView(id){['bAll','bT','bP'].forEach(b=>document.getElementById(b).classList.toggle('on',b===id));}
+document.getElementById('bAll').addEventListener('click',()=>{markView('bAll');flyTo(v3(0.15,0.30,0),v3(0.15,1.55,5.6));});
+document.getElementById('bT').addEventListener('click',()=>{markView('bT');flyTo(v3(-1.35,0.45,0),v3(-1.35,0.85,2.9));});
+document.getElementById('bP').addEventListener('click',()=>{markView('bP');flyTo(v3(1.45,0.45,0),v3(1.45,0.8,2.9));});
+document.getElementById('bTurn').addEventListener('click',()=>{Theta=0;playing=true;syncPlayBtn();});
+document.getElementById('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+document.getElementById('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();document.getElementById('play').click();}});
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);
+});
+
+/* ---- 主题/语言 ---- */
+function applyTheme(){
+  htmlEl.dataset.theme=THEME;
+  document.getElementById('themeBtn').textContent=THEME==='dark'?'☀':'☾';
+  const dark=THEME==='dark';
+  scene.background=new THREE.Color(dark?0x101418:0xe9e4dc);
+  scene.fog.color.setHex(dark?0x101418:0xe9e4dc);
+  groundM.color.setHex(dark?0x1c2027:0xc9c2b6);
+}
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el=>{
+    if(el.tagName==='INPUT')return;
+    el.textContent=LANG==='en'?(el.dataset.en||el.dataset.zh):el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent=LANG==='en'?'ZH':'EN';
+  syncPlayBtn();buildSteps();
+}
+
+/* ---- 主循环 ---- */
+const clock=new THREE.Clock();
+let raf=null,acc=0;
+let camT=1;
+const camA=v3(0,0,0),camB=v3(0,0,0),tgtA=v3(0,0,0),tgtB=v3(0,0,0);
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const dt=clamp(clock.getDelta(),0,0.05);
+  simT+=dt;
+  if(playing){
+    Theta+=speed*dt;                                   // 笼：speed °/s（60×→6 s/圈）
+    balPhase+=dt*F_VIS*2*Math.PI;                      // 摆轮：可视频率往复
+    const beat=Math.floor(balPhase/Math.PI);           // 每半周期一拍（过零冲走）
+    if(beat!==lastBeat){lastBeat=beat;escTarget+=2*Math.PI/15;forkSide*=-1;}
+  }
+  const balAngle=amp*Math.sin(balPhase)*Math.PI/180;   // 摆轮角(rad)
+  escAngle+=(escTarget-escAngle)*Math.min(1,dt*22);    // 擒纵轮步进（快趋近）
+  forkAngle+=(forkSide*0.16-forkAngle)*Math.min(1,dt*26); // 擒纵叉往复
+  const th=Theta*Math.PI/180;
+  cage.rotation.z=th;            // 笼架绕水平 z 轴转
+  balance.rotation.z=balAngle;
+  const br=1+0.10*(balAngle/(amp*Math.PI/180));        // 游丝呼吸（随摆轮收放）
+  spring.scale.set(br,br,1);
+  refBal.rotation.z=balAngle;refEsc.rotation.z=escAngle;
+  ptr.rotation.z=th;             // 对照机芯上的方位角指针同步
+  /* 误差与对比条 */
+  const errP=E0*Math.cos(th);
+  const errT=th<1e-4?E0:E0*Math.sin(th)/th;
+  barP.scale.y=errP/E0*0.85;
+  barT.scale.y=errT/E0*0.85;
+  /* 相机飞行 */
+  if(camT<1){
+    camT=Math.min(1,camT+dt/0.85);
+    const e=camT<0.5?2*camT*camT:1-Math.pow(-2*camT+2,2)/2;
+    camera.position.lerpVectors(camA,camB,e);controls.target.lerpVectors(tgtA,tgtB,e);
+  }
+  acc+=dt;if(acc>0.1){acc=0;updateStats();}
+  for(const r of labelReg){r.o.visible=labelsOn&&r.vis();if(r.o.visible)r.o.element.textContent=r.text();}
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+function start(){if(raf===null){clock.getDelta();raf=requestAnimationFrame(frame);}}
+function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+
+/* ---- 初始化：笼架 60× 旋转 + 摆轮往复 + 误差条摆动，招牌画面即刻出现 ---- */
+labelsOn=!(qs.get('labels')==='0');
+document.getElementById('tglLabels').checked=labelsOn;
+applyTheme();buildSteps();
+setSpeed(60);setRef(true);setBars(true);
+if(!playing){/* ?pause=1 时静止在招牌画面 */}
+updateStats();syncPlayBtn();start();
+</script>
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div');
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
