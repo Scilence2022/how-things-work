@@ -104,6 +104,27 @@
   @media(max-width:900px){#stats{display:none}}
   @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
     #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
 </style>
 </head>
 <body>
@@ -130,6 +151,7 @@
   <canvas id="plotCv"></canvas>
 </div>
 <div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
   <div id="actions">
     <button class="abtn on" id="c0" data-zh="N,N-二甲基苯胺" data-en="N,N-dimethylaniline">N,N-二甲基苯胺</button>
     <button class="abtn" id="c1" data-zh="苯酚" data-en="Phenol">苯酚</button>
@@ -211,9 +233,9 @@ for(const k in EL){
   atomMat[k]=new THREE.MeshStandardMaterial({color:EL[k].c,roughness:0.35,metalness:0.25});
 }
 function bond(a,b){
-  const dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);
+  const dx=b[1]-a[1],dy=b[2]-a[2],len=Math.hypot(dx,dy);
   const m=new THREE.Mesh(new THREE.CylinderGeometry(0.042,0.042,len,8),mBond);
-  m.position.set((a[0]+b[0])/2,(a[1]+b[1])/2,0);
+  m.position.set((a[1]+b[1])/2,(a[2]+b[2])/2,0);
   m.rotation.z=Math.atan2(dy,dx)-Math.PI/2;
   return m;
 }
@@ -286,8 +308,8 @@ function buildProduct(ci){
     const r2=benzene(0,y2),r2b=benzene(0.9526,y2);
     off=a.length;
     a.push(...r2.a,...r2b.a);
-    b.push(...r2.b,...r2b.b.map(p=>[p[0]+12,p[1]+12]));
-    b.push([n,off+3]);                  // N2 接萘环底顶点
+    b.push(...r2.b.map(p=>[p[0]+off,p[1]+off]),...r2b.b.map(p=>[p[0]+off+12,p[1]+off+12]));
+    b.push([n,off+6]);                  // N2 接萘环底顶点
     const m=a.length;
     a.push(['O',0.9526,y2+0.93],['H',1.17,y2+1.13]);
     b.push([off+12,m],[m,m+1]);
@@ -295,14 +317,14 @@ function buildProduct(ci){
     const r2=benzene(0,y2);
     off=a.length;
     a.push(...r2.a);b.push(...r2.b.map(p=>[p[0]+off,p[1]+off]));
-    b.push([n,off+3]);
+    b.push([n,off+6]);                    // N2 接环2底顶点（与环1顶顶点相对）
     const m=a.length;
     if(ci===0){
       a.push(['N',0,y2+0.93],['C',0.39,y2+1.13],['C',-0.39,y2+1.13]);
-      b.push([off+4,m],[m,m+1],[m,m+2]);
+      b.push([off,m],[m,m+1],[m,m+2]);    // 给电子基接环2顶顶点（对位）
     }else{
       a.push(['O',0,y2+0.93],['H',0.22,y2+1.14]);
-      b.push([off+4,m],[m,m+1]);
+      b.push([off,m],[m,m+1]);            // 给电子基接环2顶顶点（对位）
     }
   }
   return makeMol(a,b);
@@ -637,6 +659,39 @@ addEventListener('resize',()=>{
 document.getElementById('tglLabels').checked=labelsOn;
 
 applyTheme();applyLang();updateStats();start();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
 </script>
 </body>
 </html>

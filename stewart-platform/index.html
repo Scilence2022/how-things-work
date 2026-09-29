@@ -95,6 +95,27 @@
   @media(max-width:900px){#stats{display:none}}
   @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
     #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
 </style>
 </head>
 <body>
@@ -116,6 +137,7 @@
   <span class="k" data-zh="末端误差（串联）" data-en="End error (serial)">末端误差（串联）</span><span class="v" id="stErr">—</span>
 </div>
 <div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
   <div id="actions">
     <button class="abtn" id="btnWave" data-zh="浪涌模拟" data-en="Swell preset">浪涌模拟</button>
     <button class="abtn" id="btnCircle" data-zh="圆周扫掠" data-en="Circle sweep">圆周扫掠</button>
@@ -185,9 +207,9 @@ document.body.appendChild(labelRenderer.domElement);
 const scene=new THREE.Scene();
 scene.fog=new THREE.Fog(0x101418,26,70);
 const camera=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,0.1,200);
-camera.position.set(6.8,4.6,9.5);
+camera.position.set(6.1,4.6,9.5);
 const controls=new OrbitControls(camera,renderer.domElement);
-controls.target.set(1.6,1.5,0); controls.enableDamping=true; controls.dampingFactor=0.08;
+controls.target.set(0.9,1.5,0); controls.enableDamping=true; controls.dampingFactor=0.08;
 controls.minDistance=3; controls.maxDistance=60;
 
 const pmrem=new THREE.PMREMGenerator(renderer);
@@ -311,9 +333,9 @@ function addLabel(textFn,pos,cls='',visFn=()=>true,parent=scene){
   const o=new CSS2DObject(div); o.position.copy(pos); parent.add(o);
   labelReg.push({o,text:textFn,vis:visFn}); div.textContent=textFn(); return o;
 }
-addLabel(()=>L('基础平台（固定）','Base platform (fixed)'),new THREE.Vector3(0,0.55,2.6),'g');
+addLabel(()=>L('基础平台（固定）','Base platform (fixed)'),new THREE.Vector3(0.9,0.55,2.6),'g');
 addLabel(()=>L('上平台：6 腿长 ↔ 位姿一一对应','Top platform: 6 lengths ↔ one pose'),new THREE.Vector3(0,1.0,0),'o',()=>true,platform);
-addLabel(()=>L('球铰 ×12','Ball joints ×12'),new THREE.Vector3(RT+0.5,0.1,RT+0.5),'b',()=>true,platform);
+addLabel(()=>L('球铰 ×12','Ball joints ×12'),new THREE.Vector3(2.13,0.35,0.53),'b',()=>true,platform);
 addLabel(()=>L('串联机械臂：误差逐级累积','Serial arm: errors stack up'),new THREE.Vector3(0,3.4,0),'r',()=>armG.visible,armG);
 /* 六条腿的腿长读数 */
 const legLabels=[];
@@ -481,7 +503,7 @@ function frame(){
   /* 腿长读数贴到各腿中部（legLabels[i] 本身就是 CSS2DObject） */
   for(let i=0;i<6;i++){
     const leg=legs[i];
-    vTmp.set(0,legLens[i]*0.55,0).applyQuaternion(leg.g.quaternion).add(leg.g.position);
+    vTmp.set(0,legLens[i]*[0.58,0.52,0.62,0.62,0.36,0.70][i],0).applyQuaternion(leg.g.quaternion).add(leg.g.position);
     legLabels[i].position.copy(vTmp);
   }
   acc+=dt; if(acc>0.1){acc=0; updateStats();}
@@ -504,6 +526,39 @@ document.getElementById('tglLabels').checked=labelsOn;
 document.getElementById('play').textContent=playing?L('暂停','Pause'):L('运行','Run');
 updateLegs(heave,pitch,roll);
 applyTheme(); applyLang(); buildSteps(); start();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
 </script>
 </body>
 </html>
