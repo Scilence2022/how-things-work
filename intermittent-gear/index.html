@@ -41,6 +41,7 @@
   #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 340px)}
   #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
   #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  :root[data-theme="light"] #title .sub{color:var(--text3);text-shadow:0 1px 3px rgba(255,255,255,.55)}
   #plot{position:fixed;right:18px;bottom:18px;z-index:4;width:330px;height:214px;
     background:var(--panel);border:1px solid var(--panel-border);border-radius:12px;backdrop-filter:blur(6px);padding:8px 10px 6px}
   #plot h3{font-size:12px;color:var(--text2);font-weight:600;margin-bottom:2px}
@@ -100,6 +101,27 @@
   @media(max-width:900px){#stats{display:none}}
   @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
     #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
 </style>
 </head>
 <body>
@@ -125,6 +147,7 @@
   <canvas id="plotCv"></canvas>
 </div>
 <div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
   <div id="actions">
     <button class="abtn" id="btnSlow" data-zh="慢放啮合" data-en="Slow motion">慢放啮合</button>
     <button class="abtn" id="btnReset" data-zh="复位重放" data-en="Reset">复位重放</button>
@@ -250,8 +273,8 @@ driverG.add(meshD);drivenG.add(meshV);scene.add(driverG,drivenG);
 const pinD=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.6,14),mPin);
 pinD.rotation.x=Math.PI/2;scene.add(pinD);
 const pinV=pinD.clone();scene.add(pinV);
-const ptr=new THREE.Mesh(new THREE.BoxGeometry(0.05,R2+0.02,0.05),mPtr);
-ptr.position.set(0,(R2+0.02)/2,0.2);drivenG.add(ptr);   // 从动轮指针：停歇时肉眼可见「冻结」
+const ptr=new THREE.Mesh(new THREE.BufferGeometry(),mPtr);
+drivenG.add(ptr);   // 从动轮指针：停歇时肉眼可见「冻结」（几何在 rebuild() 里按 R2 生成）
 const arcHi=new THREE.Mesh(new THREE.RingGeometry(1,1.1,48,1,0,1),mArc);
 driverG.add(arcHi);                                     // 有齿段高亮（随主动轮转）
 const lockHi=new THREE.Mesh(new THREE.RingGeometry(1,1.1,48,1,0,1),mLock);
@@ -296,6 +319,9 @@ function rebuild(){
   arcHi.geometry=new THREE.RingGeometry(R1+0.07,R1+0.17,48,1,-HALFB,BETA);
   lockHi.geometry.dispose();
   lockHi.geometry=new THREE.RingGeometry(R2+0.06,R2+0.2,48,1,Math.PI-Wpsi,2*Wpsi);
+  ptr.geometry.dispose();
+  ptr.geometry=new THREE.BoxGeometry(0.05,R2+0.02,0.05);
+  ptr.position.set(0,(R2+0.02)/2,0.2);
 }
 rebuild();
 
@@ -516,6 +542,39 @@ function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
 document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
 
 applyTheme();applyLang();prefillBuf();updateStats();start();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
 </script>
 </body>
 </html>

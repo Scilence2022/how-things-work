@@ -100,6 +100,27 @@
   @media(max-width:900px){#stats{display:none}}
   @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
     #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
 </style>
 </head>
 <body>
@@ -122,6 +143,7 @@
 </div>
 <div id="plot"><h3 id="plotTitle">小行星带 a 分布直方图（红=共振）</h3><canvas id="plotCv"></canvas></div>
 <div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
   <div id="actions">
     <button class="abtn on" id="btnBelt" data-zh="案例 · 柯克伍德空隙" data-en="Case · Kirkwood gaps">案例 · 柯克伍德空隙</button>
     <button class="abtn" id="btnIo" data-zh="案例 · 木卫一火山" data-en="Case · Io volcanoes">案例 · 木卫一火山</button>
@@ -219,15 +241,13 @@ scene.add(beltGroup,ioGroup,plutoGroup);
 const NB=420;
 const bx=new Float32Array(NB),by=new Float32Array(NB),bvxE=new Float32Array(NB),bvy=new Float32Array(NB);
 const alive=new Uint8Array(NB);
-let beltPos,beltGeo,beltPts;
-{
-  const p=new Float32Array(NB*3),c=new Float32Array(NB*3);
-  for(let i=0;i<NB;i++){c[i*3]=0.82;c[i*3+1]=0.84;c[i*3+2]=0.9;}
-  beltGeo=new THREE.BufferGeometry();
-  beltGeo.setAttribute('position',new THREE.BufferAttribute(p,3));
-  beltGeo.setAttribute('color',new THREE.BufferAttribute(c,3));
-  beltPts=new THREE.Points(beltGeo,new THREE.PointsMaterial({size:0.09,vertexColors:true,sizeAttenuation:true}));
-  beltGroup.add(beltPts);beltPos=p;
+let beltPts;
+{   // 实例化小球渲染带内小行星（本页 Points 绘制路径不稳定，Mesh 路径经实测可靠）
+  beltPts=new THREE.InstancedMesh(new THREE.SphereGeometry(0.055,6,4),
+    new THREE.MeshBasicMaterial({color:0x9db4d6,transparent:true,opacity:0.8}),NB);
+  beltPts.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  beltPts.frustumCulled=false;
+  scene.add(beltPts);
 }
 function beltInit(){
   for(let i=0;i<NB;i++){
@@ -239,13 +259,14 @@ function beltInit(){
     bvxE[i]=-h*by[i]/(r*r);bvy[i]=h*bx[i]/(r*r);
     alive[i]=1;
   }
-  beltGeo.attributes.color.needsUpdate=true;
 }
 /* 演示小行星（高亮）+ 尾迹 */
 let dx=0,dy=0,dvx=0,dvy=0,demoE=0,demoEj=0;
 const trailPts=[];
-const trailLine=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3()]),
+const trailLine=new THREE.Line(new THREE.BufferGeometry(),
   new THREE.LineBasicMaterial({color:0xffa94d,transparent:true,opacity:0.85}));
+trailLine.geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(500*3),3));
+trailLine.geometry.setDrawRange(0,0);
 beltGroup.add(trailLine);
 const demoDot=new THREE.Mesh(new THREE.SphereGeometry(0.22,14,12),new THREE.MeshBasicMaterial({color:0xffa94d}));
 beltGroup.add(demoDot);
@@ -282,7 +303,7 @@ function beltStep(h){
     const a=-GMS/(2*eps);
     const hAng=bx[i]*bvy[i]-by[i]*bvxE[i];
     const e=Math.sqrt(Math.max(0,1+hAng*hAng*eps*2/(GMS*GMS)));
-    if(a<1.8||a>4.6||e>0.5||r>14){alive[i]=0;beltPos[i*3+1]=9999;}
+    if(a<1.8||a>4.6||e>0.5||r>14)alive[i]=0;
   }
   /* 演示小行星同样积分 */
   {
@@ -308,15 +329,20 @@ function beltStep(h){
   }
 }
 /* 每帧把模拟状态写进渲染几何 */
+const _im4=new THREE.Matrix4();
 function beltSync(){
   for(let i=0;i<NB;i++){
-    if(!alive[i])continue;
-    beltPos[i*3]=bx[i]*AU;beltPos[i*3+1]=0;beltPos[i*3+2]=by[i]*AU;
+    if(alive[i])_im4.setPosition(bx[i]*AU,0,by[i]*AU);
+    else _im4.setPosition(0,-9999,0);
+    beltPts.setMatrixAt(i,_im4);
   }
-  beltGeo.attributes.position.needsUpdate=true;
+  beltPts.instanceMatrix.needsUpdate=true;
   trailPts.push(new THREE.Vector3(dx*AU,0,dy*AU));
   if(trailPts.length>500)trailPts.shift();
-  trailLine.geometry.setFromPoints(trailPts);
+  const tp=trailLine.geometry.attributes.position.array;
+  for(let i=0;i<trailPts.length;i++){tp[i*3]=trailPts[i].x;tp[i*3+1]=trailPts[i].y;tp[i*3+2]=trailPts[i].z;}
+  trailLine.geometry.attributes.position.needsUpdate=true;
+  trailLine.geometry.setDrawRange(0,trailPts.length);
   demoDot.position.set(dx*AU,0,dy*AU);
   demoLblPos.set(dx*AU,0.6,dy*AU);
 }
@@ -384,7 +410,7 @@ const labelReg=[];
 function addLabel(textFn,pos,cls,visFn,parent){
   const div=document.createElement('div');div.className='lbl '+cls;
   const o=new CSS2DObject(div);o.position.copy(pos);(parent||scene).add(o);
-  labelReg.push({o,text:textFn,vis:visFn});div.textContent=textFn();return o;
+  labelReg.push({o,text:textFn,vis:visFn,pos});div.textContent=textFn();return o;
 }
 const jupLblPos=new THREE.Vector3();
 addLabel(()=>L('木星：每 11.86 年一圈','Jupiter: one lap per 11.86 yr'),jupLblPos,'o',()=>mode==='belt');
@@ -399,6 +425,7 @@ addLabel(()=>L('会合只发生在远日点（r≈49 AU）→ 永远追不上海
 function setMode(m){
   mode=m;
   beltGroup.visible=m==='belt';
+  beltPts.visible=m==='belt';
   ioGroup.visible=m==='io';
   plutoGroup.visible=m==='pluto';
   sun.visible=m==='belt';
@@ -568,6 +595,8 @@ function applyTheme(){
   htmlEl.dataset.theme=THEME;
   document.getElementById('themeBtn').textContent=THEME==='dark'?'☀':'☾';
   scene.background=new THREE.Color(THEME==='dark'?0x07090c:0xdde6ee);
+  /* 带内小行星点色随主题切换：浅色背景换深灰蓝，避免与背景融为一体 */
+  beltPts.material.color.setHex(THEME==='dark'?0xd1d6e6:0x596475);
 }
 function applyLang(){
   htmlEl.lang=LANG==='en'?'en':'zh-CN';
@@ -636,12 +665,12 @@ function frame(){
         const r=Math.hypot(bx[i],by[i]),v2=bvxE[i]*bvxE[i]+bvy[i]*bvy[i];
         const eps=v2/2-GMS/r,a=-GMS/(2*eps);
         const bi=clamp(Math.floor((a-2.05)/1.5*40),0,39);histBins[bi]++;}
-      beltGeo.attributes.position.needsUpdate=true;
     }
     drawPlot();
   }
   acc+=dt;if(acc>0.1){acc=0;updateStats();}
-  for(const r of labelReg){r.o.visible=labelsOn&&r.vis();
+  for(const r of labelReg){if(r.pos)r.o.position.copy(r.pos);
+    r.o.visible=labelsOn&&r.vis();
     if(r.o.visible)r.o.element.textContent=r.text();}
   controls.update();
   renderer.render(scene,camera);
@@ -659,7 +688,42 @@ for(let i=0;i<NB;i++){ /* 初始直方图基准 */
   const eps=v2/2-GMS/r,a=-GMS/(2*eps);
   histInit[clamp(Math.floor((a-2.05)/1.5*40),0,39)]++;
 }
-demoPlace();setMode('belt');updateStats();start();
+demoPlace();setMode('belt');updateStats();
+beltPts.frustumCulled = false; trailLine.frustumCulled = false;   // 位置每帧变化，包围球不可靠，禁用视锥剔除
+start();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
 </script>
 </body>
 </html>
