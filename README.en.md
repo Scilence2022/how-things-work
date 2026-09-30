@@ -600,6 +600,33 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] Robot Vacuum & SLAM (point clouds land via the estimated pose — more drift, blurrier walls, scan-match snaps it back; boustrophedon heatmap and coverage-time curves against the random-bounce gray line; cliff turns, virtual wall, 18% dock & resume) ✅ **robot-vacuum/**
 - [x] Fast Charging & USB-PD (handshake log scrolls as the power bar leaps 10W→45W, dumb-charger mode crawls; CC holds until the terminal hits 4.45V, then CV tapers live; ambient-temp slider triggers thermal downshifting, PPS for contrast) ✅ **usb-fast-charging/**
 
+### Phase 47 · Cross-Family Gap-Fill Batch 18 (24/24 complete)
+
+- [x] Excavator Hydraulics (the pump delivers flow while the load sets the pressure; small piston × high pressure = huge force through three lever stages; hit a rock and pressure spikes until the relief valve dumps oil and stalls the cylinder) ✅ **excavator-hydraulics/**
+- [x] Music Box (cylinder pins arranged as a score pluck the comb tooth by tooth; tooth length = natural frequency while speed only changes tempo; slow-motion bend-release-vibrate with pin-to-note mapping) ✅ **music-box/**
+- [x] Rotary-Vane Vacuum Pump (the eccentric rotor's crescent chamber cycles suction-seal-compression-exhaust; chamber pressure falls logarithmically to the ultimate-pressure plateau; gas-ballast anti-condensation comparison) ✅ **vacuum-pump/**
+- [x] Activated Carbon (a gram of carbon unfolded into 1000 m² of inner wall; the adsorption zone advances downstream and breakthrough clouds the outlet; heat-driven desorption regeneration comparison) ✅ **activated-carbon/**
+- [x] Freeze-Drying (below the triple point ice sublimates straight away, honeycomb intact; shelf heat in, cold-trap vapor out to hold the gradient; botched pressure melts it on the spot) ✅ **freeze-drying/**
+- [x] Chemiluminescence (peroxide oxidizes the ester into a high-energy intermediate that excites the dye; three dyes, three gaps, three colors; hot/cold water shows brightness vs duration conserved) ✅ **chemiluminescence/**
+- [x] Natural Selection (the moth color histogram migrates wholesale with the background; the predation slider re-weights each generation; the no-predator control leaves only drift) ✅ **natural-selection/**
+- [x] Pollination & Fertilization (nectar wages and color-scent advertising; the pollen tube drills down the style in slow motion, twin sperm fire double flashes; self-incompatibility stops the tube halfway) ✅ **pollination/**
+- [x] Stem Cells & Differentiation (a Waddington slope rolls cells into three valleys along signal gradients; asymmetric division keeps one stem and releases one down; Yamanaka factors reprogram back uphill) ✅ **stem-cells/**
+- [x] Acoustic Levitation (a transducer-reflector standing wave traps droplets at pressure nodes; every λ/2 of spacing moves the nodes; detune drops them, power strings them into beads) ✅ **acoustic-levitation/**
+- [x] Bose–Einstein Condensate (laser plus evaporative cooling down to nK; a sharp central peak rises on the velocity distribution as the condensed fraction jumps; release the trap for TOF expansion imaging) ✅ **bose-einstein-condensate/**
+- [x] Pair Production & Annihilation (a γ ray splits into e⁺e⁻ at a nucleus, opposite spirals in a magnetic field; the 1.022 MeV threshold vs sub-threshold pass-through; back-to-back 511 keV photons feeding PET coincidence lines) ✅ **pair-production/**
+- [x] Solar Sail (photons land double momentum, 9 μN/m² at 1 AU pushing forever; the β ratio crossing 1 escapes on the spot; sail angle ±45° climbs or descends the orbit) ✅ **solar-sail/**
+- [x] Tidal Heating (Jupiter's bulge kneads Io every orbit, the cross-section glowing in rhythm; the 1:2:4 Laplace resonance holds the eccentricity; cut the resonance and the orbit circularizes, volcanoes die) ✅ **tidal-heating/**
+- [x] Meteor Showers (comet dust bands crossed the same week each year; space/ground dual views of the radiant converging; single-meteor ablation slow motion and the speed-brightness ledger) ✅ **meteor-shower/**
+- [x] Hailstones (the updraft elevator carries an embryo in impact-freezing loops; white/clear onion layers in cross-section; the updraft slider grows it then drops it) ✅ **hailstone/**
+- [x] The Teapot Effect (a slow pour's filament curls over the spout and drips from the wall, a fast pour's inertia flings clear; contact angle and coating toggles; filament-flip slow motion) ✅ **teapot-effect/**
+- [x] The Turbulence Cascade (stirring feeds big eddies that shred downward, vorticity colored; the spectrum board draws the −5/3 inertial range live; the viscosity slider sets the Kolmogorov scale and dissipation) ✅ **turbulence-cascade/**
+- [x] The Bloom Filter (k hashes light k bits, queries say definitely-not or maybe; the false-positive formula moves live with k and m/n; memory comparison against a hash table) ✅ **bloom-filter/**
+- [x] Floating-Point Numbers (1+11+52 bit cells toggle live under the decimal readout; 0.1+0.2−0.3 computes its gap on stage; big-swallows-small plus Inf/NaN demos) ✅ **floating-point/**
+- [x] Ray Tracing (a three-sphere scene toggles rasterizer↔ray tracing, reflections and refraction appear on the spot; per-pixel reverse rays with intersection and bouncing; depth slider and scanline progress) ✅ **ray-tracing/**
+- [x] The Refrigerator (compress-condense-throttle-evaporate with refrigerant changing color and phase; COP=T_c/(T_h−T_c) readout; door-open heat wave and compressor duty) ✅ **refrigerator/**
+- [x] The Automatic Door (a 10.5 GHz Doppler shift judges motion, standing still fails to open; motor-belt-roller opening with a hold countdown; a light-curtain block reverses on the spot) ✅ **automatic-door/**
+- [x] The QR Code (three finder squares and masking over 0/1 modules; the occlusion slider burns error-correction budget, scans within it and fails past it; L/M/Q/H capacity comparison) ✅ **qr-code/**
+
 ### Phase 46 · Cross-Family Gap-Fill Batch 17 (24/24 complete)
 
 - [x] Tourbillon (gold cage rotating about a horizontal axis with the full balance-spring-escapement timing inside; a plain movement's error swings with cos of orientation vs the tourbillon's circle average dying to zero; speed/amplitude sliders and a reference-movement toggle) ✅ **tourbillon/**
@@ -1936,6 +1963,30 @@ water-treatment/       Water treatment plant: coagulation-sedimentation-filtrati
 journal-bearing/        Journal Bearing & Oil Film: the oil wedge that floats the shaft (Three.js, CDN)
 pantograph/             The Pantograph: similar triangles as an analog computer (Three.js, CDN)
 wood-joinery/           Wood Joinery (Mortise & Tenon): interlock without nails or glue (Three.js, CDN)
+excavator-hydraulics/  Excavator Hydraulics: flow sets speed, the load sets pressure, the relief valve saves the system (Three.js, CDN)
+music-box/            Music Box: pins pluck the comb — tooth length is pitch (Three.js, CDN)
+vacuum-pump/          Rotary-Vane Vacuum Pump: a crescent chamber of growing cells carries gas out (Three.js, CDN)
+activated-carbon/     Activated Carbon: van der Waals force in the pores and the advancing adsorption front (Three.js, CDN)
+freeze-drying/        Freeze-Drying: below the triple point ice leaves directly, honeycomb intact (Three.js, CDN)
+chemiluminescence/    Chemiluminescence: bond-breaking energy excites the dye; the gap sets the color (Three.js, CDN)
+natural-selection/    Natural Selection: swap the background and the population shifts wholesale (Three.js, CDN)
+pollination/          Pollination & Fertilization: the flower hires couriers; two sperm, two fertilizations (Three.js, CDN)
+stem-cells/           Stem Cells: fate rolls down the Waddington slope (Three.js, CDN)
+acoustic-levitation/  Acoustic Levitation: standing-wave nodes hold droplets up (Three.js, CDN)
+bose-einstein-condensate/ Bose–Einstein Condensate: 170 nK freezes a cloud into one wave (Three.js, CDN)
+pair-production/      Pair Production: 1.022 MeV to split a photon, 511 keV back-to-back to merge (Three.js, CDN)
+solar-sail/           Solar Sail: photon momentum pushes a mirror; β>1 escapes (Three.js, CDN)
+tidal-heating/        Tidal Heating: eccentric kneading lights Io's volcanoes (Three.js, CDN)
+meteor-shower/        Meteor Showers: hitting a comet's dust band, the radiant by perspective (Three.js, CDN)
+hailstone/            Hailstones: the updraft elevator rolls an ice onion (Three.js, CDN)
+teapot-effect/        Teapot Effect: the filament curls over the spout and hangs (Three.js, CDN)
+turbulence-cascade/   Turbulence Cascade: big eddies shred small, a −5/3 spectrum down to heat (Three.js, CDN)
+bloom-filter/         Bloom Filter: k hashed bits say "definitely not" (Three.js, CDN)
+floating-point/       Floating-Point: a 1+11+52 rounding life; 0.1+0.2≠0.3 (Three.js, CDN)
+ray-tracing/          Ray Tracing: one ray per pixel, bounces give reflections for free (Three.js, CDN)
+refrigerator/         Refrigerator: the compression cycle pumps heat uphill (Three.js, CDN)
+automatic-door/       Automatic Door: Doppler judges motion, the light curtain reverses (Three.js, CDN)
+qr-code/              QR Code: finder squares + Reed–Solomon, scan with a third torn away (Three.js, CDN)
 tourbillon/          Tourbillon: a cage rotating once a minute averages positional error (Three.js, CDN)
 archimedes-screw/    Archimedes Screw: pockets of water relayed up the incline (Three.js, CDN)
 roberval-balance/    Roberval Balance: parallelogram links ignore off-center loads (Three.js, CDN)

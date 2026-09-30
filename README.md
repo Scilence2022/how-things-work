@@ -1028,6 +1028,33 @@
 - [x] 扫地机器人与 SLAM(点云按估计位姿落图,漂移滑块越大墙越糊、匹配开启立即锁回；弓字形热图与覆盖率-时间曲线,随机碰撞灰线对照；悬崖急转、虚拟墙、18% 回充断点续扫) ✅ **robot-vacuum/**
 - [x] 快充与 USB-PD(握手日志三步滚动,功率柱从 10W 跳上 45W,山寨头对照趴窝；CC 恒流到 4.45V 当场切 CV、电流指数收尾；环境温度滑块触发热限流降档,PPS 连续调压对照) ✅ **usb-fast-charging/**
 
+### Phase 47 · 跨家族补缺第十八批(24/24 收官)
+
+- [x] 挖掘机液压(泵送流量、负载定压力；小活塞×高压=大推力、三级杠杆放大；挖到硬石压力冲顶看溢流阀当场泄油憋住) ✅ **excavator-hydraulics/**
+- [x] 八音盒(滚筒音钉按谱排布、音梳悬臂梁逐齿拨动；齿长=固有频率、转速只改节拍；慢放压弯-释放-振颤与谱面钉位对应) ✅ **music-box/**
+- [x] 旋片真空泵(偏心转子月牙腔吸气-封闭-压缩-排气循环；真空罩压强对数下降到极限压强卡住；气镇掺空气防凝结对照) ✅ **vacuum-pump/**
+- [x] 活性炭吸附(一克炭上千平米内壁、微孔两面夹击抓分子；吸附带往下游推进、穿透当场变浑；升温脱附再生对照) ✅ **activated-carbon/**
+- [x] 冻干(压强抽到三相点以下冰直接升华、蜂窝孔隙不塌；搁板供热与冷阱捕汽维持压差；压强调错当场化水对照) ✅ **freeze-drying/**
+- [x] 荧光棒与化学发光(双氧水氧化酯、高能中间体激发染料；三色染料能隙定颜色；热/冰水对照亮度与时长守恒) ✅ **chemiluminescence/**
+- [x] 自然选择(椒花蛾体色直方图随背景整体迁移；捕食强度滑杆逐代加权更新；无捕食对照只剩漂移) ✅ **natural-selection/**
+- [x] 传粉与受精(花蜜工资与色香广告；花粉管沿花柱钻行慢放、双精子双受精双闪光；自交不亲和半路停摆对照) ✅ **pollination/**
+- [x] 干细胞与分化(Waddington 斜坡地形随信号梯度滚落三谷；不对称分裂一留干一下滑；山中因子重编程爬回山顶) ✅ **stem-cells/**
+- [x] 声悬浮(换能器-反射器驻波节点势阱托水滴；间距每变 λ/2 节点搬家；失谐掉落与功率串珠) ✅ **acoustic-levitation/**
+- [x] 玻色–爱因斯坦凝聚(激光冷却+蒸发冷却温度滑到 nK；速度分布宽峰长出中央尖峰、凝聚分数跳升；关阱 TOF 膨胀成像) ✅ **bose-einstein-condensate/**
+- [x] 电子对产生与湮灭(γ 撞核分身正负电子、磁场旋向相反；1.022 MeV 阈值与阈下穿透对照；511 keV 背靠背湮灭接 PET 符合线) ✅ **pair-production/**
+- [x] 太阳帆(光子动量反射翻倍、1 AU 9 μN/m² 持续推；β=光压/引力跨过 1 当场逃逸；帆角 ±45° 爬轨/降轨对照) ✅ **solar-sail/**
+- [x] 潮汐加热(木星潮汐隆起随偏心轨道反复揉捏、剖面热流节律发亮；1:2:4 拉普拉斯共振维持偏心；解除共振轨道圆化火山熄灭对照) ✅ **tidal-heating/**
+- [x] 流星雨(彗星尘带与地球每年同日穿越；太空/地面双视角看辐射点汇聚；单颗压缩烧蚀慢放与速度-亮度账) ✅ **meteor-shower/**
+- [x] 冰雹(上升气流电梯托住冰胚绕圈撞冻；白层/透明层洋葱剖面；气流滑杆看长个与砸落) ✅ **hailstone/**
+- [x] 茶壶效应(慢倒液丝绕过壶嘴爬外壁挂珠滴落、快倒惯性甩离；接触角与涂层开关对照；液丝翻转慢放) ✅ **teapot-effect/**
+- [x] 湍流级串(搅拌注入大涡逐级撕小、涡量着色；能谱板实时画出 −5/3 惯性区；黏度滑杆看 Kolmogorov 尺度与耗散) ✅ **turbulence-cascade/**
+- [x] 布隆过滤器(k 个哈希点亮 k 位、查询肯定没有/可能见过；误报率公式随 k 与 m/n 实时变；与哈希表内存对照) ✅ **bloom-filter/**
+- [x] 浮点数(1+11+52 位格逐位拨动实时跳读数；0.1+0.2−0.3 现场算出差值；大数吞小数与 Inf/NaN 演示) ✅ **floating-point/**
+- [x] 光线追踪(三球场景光栅化↔光追一键对照、倒影折射当场出现；逐像素反向光线求交弹射；深度滑杆与逐行渲染进度) ✅ **ray-tracing/**
+- [x] 电冰箱(压缩-冷凝-节流-蒸发四件套制冷剂变色变相；COP=T_c/(T_h−T_c) 温差读数；开门热浪与压缩机占空比) ✅ **refrigerator/**
+- [x] 自动门(10.5 GHz 多普勒频移判移动、静止不开门对照；电机-同步带-吊轮开门与保持时间倒数；光幕遮挡当场反转) ✅ **automatic-door/**
+- [x] 二维码(三回字定位与掩膜、黑白格数据；遮挡滑杆消耗纠错预算、预算内照扫超线失败；L/M/Q/H 四档容量对照) ✅ **qr-code/**
+
 ### Phase 46 · 跨家族补缺第十七批(24/24 收官)
 
 - [x] 陀飞轮(金色笼架绕水平轴慢转、笼内摆轮-游丝-擒纵轮全时序；普通机芯误差随方位按 cos 摆动 vs 陀飞轮围圈平均趋零双读数；倍速/摆幅滑杆与对照机芯开关) ✅ **tourbillon/**
@@ -2617,6 +2644,30 @@ ventilator/           呼吸机:正压通气力学、PEEP 肺泡复张与肺保�
 journal-bearing/      滑动轴承与油膜:轴颈被油楔托起、压力环带与涡动轨迹（Three.js，CDN 引入）
 pantograph/           缩放仪与平行连杆:相似三角形的模拟计算机，描星实时同位复制（Three.js，CDN 引入）
 wood-joinery/         榫卯与木构互锁:燕尾自锁与直榫拉脱对照，含伸缩缝（Three.js，CDN 引入）
+excavator-hydraulics/  挖掘机液压:流量定速度、负载定压力,溢流阀泄油保系统(Three.js，CDN 引入)
+music-box/            八音盒:音钉拨齿,悬臂梁的长度就是音高(Three.js，CDN 引入)
+vacuum-pump/          旋片真空泵:变容积月牙腔把气体搬出真空罩(Three.js，CDN 引入)
+activated-carbon/     活性炭:孔洞里的范德华力与推进的吸附带(Three.js，CDN 引入)
+freeze-drying/        冻干:三相点以下冰直接跑,蜂窝不塌(Three.js，CDN 引入)
+chemiluminescence/    荧光棒:断键放能激发染料,能隙定颜色(Three.js，CDN 引入)
+natural-selection/    自然选择:背景一换,种群频率整体迁移(Three.js，CDN 引入)
+pollination/          传粉与受精:花雇快递,双精子双受精(Three.js，CDN 引入)
+stem-cells/           干细胞与分化:Waddington 斜坡上滚出命运(Three.js，CDN 引入)
+acoustic-levitation/  声悬浮:驻波节点托住水滴(Three.js，CDN 引入)
+bose-einstein-condensate/ 玻色–爱因斯坦凝聚:170 nK 冻成一个波(Three.js，CDN 引入)
+pair-production/      电子对产生与湮灭:1.022 MeV 分身,511 keV 背靠背(Three.js，CDN 引入)
+solar-sail/           太阳帆:光子动量推镜子,β>1 逃逸(Three.js，CDN 引入)
+tidal-heating/        潮汐加热:偏心揉捏点亮木卫一火山(Three.js，CDN 引入)
+meteor-shower/        流星雨:撞进彗星尘带,辐射点透视汇聚(Three.js，CDN 引入)
+hailstone/            冰雹:上升气流电梯滚出冰洋葱(Three.js，CDN 引入)
+teapot-effect/        茶壶效应:液丝绕过壶嘴挂壁滴落(Three.js，CDN 引入)
+turbulence-cascade/   湍流级串:大涡掰小涡,−5/3 能谱到黏性耗散(Three.js，CDN 引入)
+bloom-filter/         布隆过滤器:k 个哈希位说「肯定没有」(Three.js，CDN 引入)
+floating-point/       浮点数:1+11+52 的舍入人生,0.1+0.2≠0.3(Three.js，CDN 引入)
+ray-tracing/          光线追踪:像素发光求交弹射,倒影折射免费送(Three.js，CDN 引入)
+refrigerator/         电冰箱:压缩循环把热量从冷处搬上热处(Three.js，CDN 引入)
+automatic-door/       自动门:多普勒频移判移动,光幕反转保安全(Three.js，CDN 引入)
+qr-code/              二维码:回字定位+里德-所罗门,擦三成照样扫(Three.js，CDN 引入)
 tourbillon/         陀飞轮:笼架每分钟一圈，把重力位差逐位平均掉（Three.js，CDN 引入）
 archimedes-screw/   阿基米德螺旋泵:小斗接力把水抬上斜管（Three.js，CDN 引入）
 roberval-balance/   罗伯瓦尔天平:平行四边形约束下偏载不偏读（Three.js，CDN 引入）
