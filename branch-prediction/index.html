@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>分支预测 · 一道 if 与整个 CPU 的直觉</title>
+<style>
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;--acc:#ffd43b;
+    --bg:#0f1113;--panel:rgba(15,17,19,.86);--panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;
+    --hover:rgba(255,255,255,.05);--shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,17,19,.78);--tool-border:rgba(255,255,255,.12);--cv-pill:rgba(15,17,19,.8);
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;--acc:#b8860b;
+    --bg:#f1efec;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+    --text:#16202c;--text2:#5b6b7d;--text3:#33414f;
+    --hover:rgba(15,25,40,.05);--shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);--cv-pill:rgba(255,255,255,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s}
+  #app{position:fixed;inset:0}#app canvas{display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+  .lbl{background:var(--cv-pill);border:1px solid var(--tool-border);color:var(--text3);font-size:12px;
+    line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);transition:opacity .25s}
+  :root[data-theme="light"] .lbl{text-shadow:none}
+  .lbl.o{border-color:rgba(255,169,77,.9);color:#ffe0c2}.lbl.r{border-color:rgba(255,107,107,.9);color:#ffc2c2}
+  .lbl.g{border-color:rgba(116,220,132,.9);color:#c8f5d0}.lbl.b{border-color:rgba(116,192,252,.9);color:#bde9ff}
+  .lbl.y{border-color:rgba(252,196,25,.9);color:#ffe9a8}
+  :root[data-theme="light"] .lbl.o{color:#a34e00}:root[data-theme="light"] .lbl.r{color:#c92a2a}
+  :root[data-theme="light"] .lbl.g{color:#2b8a3e}:root[data-theme="light"] .lbl.b{color:#1864ab}
+  :root[data-theme="light"] .lbl.y{color:#b8860b}
+  #tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px}
+  .tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);
+    color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;
+    padding:0 12px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;text-decoration:none;backdrop-filter:blur(6px);
+    transition:border-color .15s,color .15s,transform .15s}
+  .tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px)}
+  #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px)}
+  #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  #stats{position:fixed;right:18px;bottom:18px;z-index:4;background:var(--panel);
+    border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+    backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px}
+  #stats .k{font-size:12px;color:var(--text2);align-self:center}
+  #stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  #stats .v small{font-size:11px;color:var(--text2);font-weight:400}
+  #stats .v.warn{color:#ff6b6b}#stats .v.ok{color:#8ce99a}
+  #panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;padding:14px 16px 12px;backdrop-filter:blur(6px);
+    box-shadow:var(--shadow);max-height:calc(100vh - 160px);overflow:auto}
+  #actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 30%;
+    background:var(--hover);color:var(--text2);border:1px solid var(--tool-border);
+    border-radius:9px;padding:7px 10px;font-size:12.5px;font-weight:600;
+    transition:border-color .15s,color .15s,background .15s}
+  .abtn:hover{border-color:var(--acc);color:var(--text)}
+  .abtn.on{border-color:rgba(255,169,77,.6);background:rgba(255,169,77,.12);color:var(--text)}
+  :root[data-theme="light"] .abtn.on{border-color:rgba(232,89,12,.55);background:rgba(232,89,12,.10)}
+  .row{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .row label{font-size:12px;color:var(--text2);flex:0 0 92px}
+  .row .val{font-size:11.5px;color:var(--text3);flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc);height:18px}
+  #steps{list-style:none;margin-top:8px}
+  #steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;align-items:flex-start}
+  #steps li:hover{background:var(--hover)}
+  #steps li.on{background:rgba(255,169,77,.10);border-color:rgba(255,169,77,.45)}
+  :root[data-theme="light"] #steps li.on{background:rgba(232,89,12,.08);border-color:rgba(232,89,12,.4)}
+  #steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;display:flex;
+    align-items:center;justify-content:center;margin-top:1px;
+    background:rgba(255,255,255,.12);color:var(--text3)}
+  :root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10)}
+  #steps li.on .n{background:var(--acc);color:#fff}
+  #steps .t{font-size:12px;color:var(--text3);line-height:1.45}
+  #steps .t b{color:var(--text);font-size:12px}
+  #steps li.on .t b{color:#ffe0c2}
+  :root[data-theme="light"] #steps li.on .t b{color:var(--acc)}
+  #ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border)}
+  #play{grid-row:1/3;grid-column:1;padding:10px 14px;font-size:14px;font-weight:600;
+    background:var(--acc);color:#fff;border:0;border-radius:10px;cursor:pointer}
+  #play:hover{filter:brightness(1.12)}
+  #toggles{display:flex;gap:12px;flex-wrap:wrap}
+  #toggles label{font-size:12px;color:var(--text2);display:flex;gap:5px;align-items:center;cursor:pointer}
+  #toggles input{accent-color:var(--acc)}
+  #rel{margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-border);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #rel span{font-size:11.5px;color:var(--text2)}
+  #rel a{font-size:11.5px;color:var(--text3);text-decoration:none;border:1px solid var(--tool-border);
+    border-radius:999px;padding:3px 10px;transition:color .15s,border-color .15s}
+  #rel a:hover{color:var(--acc);border-color:var(--acc)}
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; }
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+  @media(max-width:900px){#stats{display:none}}
+  @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
+    #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="分支预测" data-en="Branch Prediction">分支预测</h1>
+  <div class="sub" data-zh="流水线每拍出一条指令,遇到 if 就要赌一把下一拍取哪条路:赌对零损失,赌错整段作废、流水清空十几拍;两位饱和计数器把「大概率跳」练成肌肉记忆,排序数组的命中率能到 99%——一道 if,一整个 CPU 的直觉 · 拖动旋转 / 空格运行/暂停" data-en="The pipeline wants to retire one instruction per cycle; every if forces a gamble on which path to fetch next: a correct bet costs nothing, a wrong one voids the young instructions and flushes a dozen cycles; a two-bit saturating counter drills 'mostly taken' into muscle memory, and a sorted array can hit 99% — one if, and the whole CPU's intuition · drag to orbit / Space = run/pause">流水线每拍出一条指令,遇到 if 就要赌一把下一拍取哪条路:赌对零损失,赌错整段作废、流水清空十几拍;两位饱和计数器把「大概率跳」练成肌肉记忆,排序数组的命中率能到 99%——一道 if,一整个 CPU 的直觉 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="周期数" data-en="Cycles">周期数</span><span class="v" id="stCyc">0</span>
+  <span class="k" data-zh="预测命中率" data-en="Hit rate">预测命中率</span><span class="v" id="stHit">—</span>
+  <span class="k" data-zh="冲刷次数" data-en="Flushes">冲刷次数</span><span class="v" id="stFlush">0</span>
+  <span class="k" data-zh="节省拍数(vs 无预测)" data-en="Saved cycles (vs none)">节省拍数(vs 无预测)</span><span class="v" id="stSave">0</span>
+</div>
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="actions">
+    <button class="abtn on" id="bBias" data-zh="强偏置分支" data-en="Strong bias">强偏置分支</button>
+    <button class="abtn" id="bAlt" data-zh="交替分支" data-en="Alternating">交替分支</button>
+    <button class="abtn" id="bRand" data-zh="随机分支" data-en="Random">随机分支</button>
+  </div>
+  <div class="row">
+    <label data-zh="预测器位数" data-en="Counter bits">预测器位数</label>
+    <input id="sBits" type="range" min="1" max="2" step="1" value="2">
+    <span class="val" id="sBitsVal">2 位</span>
+  </div>
+  <div class="row">
+    <label data-zh="发射间隔" data-en="Issue interval">发射间隔</label>
+    <input id="sIss" type="range" min="0.12" max="0.6" step="0.02" value="0.25">
+    <span class="val" id="sIssVal">0.25 s</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" data-zh="运行" data-en="Run">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglSlow" type="checkbox"> <span data-zh="慢放 ×0.3" data-en="Slow-mo ×0.3">慢放 ×0.3</span></label>
+      <label><input id="tglTable" type="checkbox" checked> <span data-zh="预测表" data-en="Predictor">预测表</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../cpu-pipeline/" data-zh="CPU 流水线" data-en="CPU Pipeline">CPU 流水线</a>
+    <a href="../cpu-cache/" data-zh="CPU 缓存" data-en="CPU Cache">CPU 缓存</a>
+    <a href="../sorting-race/" data-zh="排序竞赛" data-en="Sorting Race">排序竞赛</a>
+    <a href="../transistor-adder/" data-zh="晶体管加法器" data-en="Transistor Adder">晶体管加法器</a>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const htmlEl=document.documentElement;
+let THEME=localStorage.getItem('htw-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+let LANG=localStorage.getItem('htw-lang')||'zh';
+const L=(zh,en)=>LANG==='en'?en:zh;
+
+/* ---- 渲染器与场景 ---- */
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:3';
+document.body.appendChild(labelRenderer.domElement);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x101418,24,72);
+const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,0.1,200);
+camera.position.set(3.2,5.6,12.6);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0.4,1.6,0);controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=4;controls.maxDistance=50;
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
+scene.add(new THREE.HemisphereLight(0xdfe8f2,0x1a1c22,0.55));
+const key=new THREE.DirectionalLight(0xfff2dd,1.05);key.position.set(6,10,8);scene.add(key);
+const fill=new THREE.DirectionalLight(0x9ab8ff,0.3);fill.position.set(-8,5,-6);scene.add(fill);
+
+const m4=new THREE.Matrix4(),tmpV=new THREE.Vector3(),tmpC=new THREE.Color();
+
+/* ---- 地面 ---- */
+const groundM=new THREE.MeshStandardMaterial({color:0x1c2027,roughness:0.95});
+const ground=new THREE.Mesh(new THREE.CircleGeometry(26,48),groundM);
+ground.rotation.x=-Math.PI/2;scene.add(ground);
+
+/* ---- 五级流水线:五条并行轨道(蛇形传送)+ 级间弧形滑道 ---- */
+const LX=6.0,LY=1.62,LGAP=1.2,FLUSH=12;
+const laneZ=k=>(k-2)*LGAP;
+const railM=new THREE.MeshStandardMaterial({color:0x2b313c,roughness:0.55,metalness:0.35});
+for(let k=0;k<5;k++){
+  const rail=new THREE.Mesh(new THREE.BoxGeometry(LX*2+0.8,0.1,0.62),railM);
+  rail.position.set(0,LY-0.26,laneZ(k));scene.add(rail);
+  for(const sx of[-5.4,0,5.4]){
+    const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,LY-0.36,8),railM);
+    leg.position.set(sx,(LY-0.36)/2+0.05,laneZ(k));scene.add(leg);
+  }
+}
+for(let k=0;k<4;k++){
+  const xEnd=k%2===0?LX:-LX;
+  const arc=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+    new THREE.Vector3(xEnd,LY-0.2,laneZ(k)),
+    new THREE.Vector3(xEnd*1.09,LY+0.5,(laneZ(k)+laneZ(k+1))/2),
+    new THREE.Vector3(xEnd,LY-0.2,laneZ(k+1))]),24,0.05,8),railM);
+  scene.add(arc);
+}
+
+/* ---- 指令方块(InstancedMesh)---- */
+const NB2=46;
+const blocksIM=new THREE.InstancedMesh(new THREE.BoxGeometry(0.85,0.44,0.72),
+  new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.4,metalness:0.1,emissive:0x10131a,emissiveIntensity:0.5}),NB2);
+blocksIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);scene.add(blocksIM);
+const blocks=[];
+for(let i=0;i<NB2;i++){
+  blocks.push({idx:i,on:false,stage:0,dying:0,resolved:false,branch:false,pred:false,slot:0,flash:0});
+  blocksIM.setColorAt(i,tmpC.setHex(0x4dabf7));
+}
+blocksIM.instanceColor.needsUpdate=true;
+
+/* ---- 预测箭头:绿=赌跳转,红=赌直行 ---- */
+const arrM=new THREE.MeshStandardMaterial({color:0x8ce99a,roughness:0.3,emissive:0x2b8a3e,emissiveIntensity:0.85});
+const arrowGrp=new THREE.Group();
+const shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.5,8),arrM);
+shaft.rotation.z=Math.PI/2;shaft.position.x=0.25;
+const tip=new THREE.Mesh(new THREE.ConeGeometry(0.1,0.26,10),arrM);
+tip.rotation.z=-Math.PI/2;tip.position.x=0.63;
+arrowGrp.add(shaft,tip);arrowGrp.visible=false;scene.add(arrowGrp);
+const arrowPos=new THREE.Vector3(),lblBranchPos=new THREE.Vector3();
+let arrowPred=false;
+
+/* ---- 预测表:4 项两位饱和计数器(状态格 00/01/10/11)---- */
+let tglTableOn=true;
+const tblGrp=new THREE.Group();tblGrp.position.set(8.3,2.15,0.4);tblGrp.rotation.y=-0.45;scene.add(tblGrp);
+const tblPanel=new THREE.Mesh(new THREE.BoxGeometry(2.0,2.7,0.14),
+  new THREE.MeshStandardMaterial({color:0x1d2430,roughness:0.5,metalness:0.3}));
+tblGrp.add(tblPanel);
+for(const sx of[-0.7,0.7]){
+  const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.8,8),railM);
+  leg.position.set(sx,-1.75,0);tblGrp.add(leg);
+}
+const cells=new THREE.InstancedMesh(new THREE.BoxGeometry(1.5,0.44,0.07),
+  new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.35}),4);
+tblGrp.add(cells);
+const hl=new THREE.Mesh(new THREE.BoxGeometry(1.68,0.56,0.02),
+  new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.28}));
+tblGrp.add(hl);
+
+/* ---- 状态与物理 ---- */
+let playing=true,labelsOn=true,simT=0,speedMul=1,slowMo=false;
+let cycTime=0.25,cyclePhase=0,cycles=0,penalty=0;
+let bits=2,mode='bias',branches=0,hits=0,wrongs=0,lastWrongT=-9;
+let nextBranchIn=3,branchSeq=0,lastSlot=0,colorDirty=true;
+const table=new Uint8Array(4),slotExec=new Uint8Array(4);
+const qs=new URLSearchParams(location.search);
+if(qs.get('pause')==='1')playing=false;
+if(qs.get('labels')==='0')labelsOn=false;
+if(qs.get('speed')!==null){speedMul=clamp(parseFloat(qs.get('speed'))||1,0.3,2.5);}
+let t0=-1;if(qs.get('t')!==null){t0=parseInt(qs.get('t'))||0;}
+/* ---- 标签 ---- */
+const labelReg=[];
+function addLabel(textFn,pos,cls='',visFn=()=>true){
+  const div=document.createElement('div');div.className='lbl '+cls;
+  const o=new CSS2DObject(div);o.position.copy(pos);scene.add(o);
+  labelReg.push({o,text:textFn,vis:visFn});div.textContent=textFn();return o;
+}
+const stageNames=[['取指 IF','Fetch'],['译码 ID','Decode'],['执行 EX','Execute'],['访存 MEM','Memory'],['写回 WB','Write-back']];
+stageNames.forEach((s,k)=>addLabel(()=>L(s[0],s[1]),new THREE.Vector3(0,LY+0.75,laneZ(k)),''));
+const lblBranch=addLabel(()=>L('分支指令','Branch'),new THREE.Vector3(0,-99,0),'y',()=>arrowGrp.visible);
+const lblPath=addLabel(()=>arrowPred?L('预测:跳转','predict: taken'):L('预测:直行','predict: not-taken'),
+  new THREE.Vector3(0,-99,0),'g',()=>arrowGrp.visible);
+const lblFlush=addLabel(()=>L('冲刷作废:整段清空','Flush: pipeline voided'),
+  new THREE.Vector3(5.1,LY+1.5,laneZ(2)),'r',()=>simT-lastWrongT<1.6);
+const lblTable=addLabel(()=>L('预测表:4 项饱和计数器','Prediction table: 4 saturating counters'),
+  new THREE.Vector3(5.7,4.15,0.4),'b',()=>tglTableOn);
+
+function updTable(){
+  const cols=[0xc92a2a,0xe8590c,0x8ce99a,0x2f9e44];
+  for(let i=0;i<4;i++){
+    const s=table[i];
+    cells.setColorAt(i,tmpC.setHex(bits===1?(s>=1?0x2f9e44:0xc92a2a):cols[s]));
+    m4.makeScale(1,1,1);m4.setPosition(0,0.99-i*0.66,0.1);
+    cells.setMatrixAt(i,m4);
+  }
+  cells.instanceMatrix.needsUpdate=true;cells.instanceColor.needsUpdate=true;
+  hl.position.set(0,0.99-lastSlot*0.66,0.13);
+}
+function freeBlock(){for(const b of blocks)if(!b.on)return b;return null;}
+function blockPos(b,out){
+  const p=cyclePhase,dir=b.stage%2===0?1:-1;
+  const x=dir>0?-LX+2*LX*p:LX-2*LX*p;
+  return out.set(x,LY,laneZ(b.stage));
+}
+function fetchBlock(){
+  const b=freeBlock();if(!b)return;
+  b.on=true;b.stage=0;b.dying=0;b.resolved=false;b.branch=false;b.flash=0;
+  nextBranchIn--;
+  if(nextBranchIn<=0){
+    b.branch=true;
+    nextBranchIn=4+Math.floor(Math.random()*3);
+    b.slot=branchSeq&3;branchSeq++;
+    b.pred=bits===2?table[b.slot]>=2:table[b.slot]>=1;
+    lastSlot=b.slot;
+  }
+  blocksIM.setColorAt(b.idx,tmpC.setHex(b.branch?0xffd43b:0x4dabf7));
+  colorDirty=true;updTable();
+}
+function resolveBranch(b){
+  b.resolved=true;branches++;
+  let taken;
+  if(mode==='alt')taken=(slotExec[b.slot]++&1)===1;
+  else if(mode==='bias')taken=Math.random()<0.01;
+  else taken=Math.random()<0.5;
+  const ok=taken===b.pred;
+  if(bits===2)table[b.slot]=clamp(table[b.slot]+(taken?1:-1),0,3);
+  else table[b.slot]=taken?1:0;
+  if(ok)hits++;
+  else{
+    wrongs++;lastWrongT=simT;penalty=FLUSH;
+    for(const q of blocks)if(q.on&&q.dying<=0&&q!==b&&q.stage<3){
+      q.dying=0.5;blocksIM.setColorAt(q.idx,tmpC.setHex(0xff6b6b));
+    }
+  }
+  b.flash=0.55;
+  blocksIM.setColorAt(b.idx,tmpC.setHex(ok?0x8ce99a:0xff6b6b));
+  colorDirty=true;updTable();
+}
+function doCycle(){
+  cycles++;
+  for(const b of blocks){
+    if(!b.on||b.dying>0)continue;
+    if(b.stage===4){b.on=false;continue;}
+    b.stage++;
+  }
+  for(const b of blocks)if(b.on&&b.branch&&!b.resolved&&b.stage>=3)resolveBranch(b);
+  if(penalty>0)penalty--;
+  else fetchBlock();
+}
+function setMode(m){
+  mode=m;branches=0;hits=0;wrongs=0;lastWrongT=-9;penalty=0;
+  table.fill(0);slotExec.fill(0);updTable();
+  markBtn(m==='bias'?'bBias':m==='alt'?'bAlt':'bRand');
+}
+function setBits(v){
+  bits=clamp(Math.round(v),1,2);
+  document.getElementById('sBits').value=bits;
+  document.getElementById('sBitsVal').textContent=bits+L(' 位','-bit');
+  table.fill(0);slotExec.fill(0);branches=0;hits=0;wrongs=0;lastWrongT=-9;penalty=0;
+  updTable();
+}
+function setIss(v){
+  cycTime=clamp(v,0.12,0.6);
+  document.getElementById('sIss').value=cycTime;
+  document.getElementById('sIssVal').textContent=cycTime.toFixed(2)+' s';
+}
+
+/* ---- 步骤 ---- */
+function markBtn(id){for(const b of['bBias','bAlt','bRand'])
+  document.getElementById(b).classList.toggle('on',b===id);}
+const STEPS=[
+ {zh:'流水线满载:五个阶段并行,理想每拍吐出一条指令',en:'Pipeline full: five stages in parallel — ideally one instruction retires every cycle',
+  act(){setMode('bias');setBits(2);setIss(0.25);}},
+ {zh:'分支到来:下一拍取哪条路?预测器先下注',en:'A branch arrives: which way does the next fetch go? The predictor bets first',
+  act(){setIss(0.45);}},
+ {zh:'一次次赌错:整段作废、流水排空,十几拍白白烧掉',en:'Miss after miss: younger instructions are voided, the pipe drains — a dozen cycles burned',
+  act(){setMode('alt');setBits(1);setIss(0.3);}},
+ {zh:'两位饱和计数器:连错两次才改口,偶发意外不再引发冲刷',en:'Two-bit saturating counter: two misses in a row to flip its mind — one-off surprises no longer flush',
+  act(){setBits(2);setMode('alt');}},
+ {zh:'强偏置分支:99% 不跳,命中率像白捡',en:'Strongly biased branch: 99% not-taken — the hit rate is nearly free money',
+  act(){setMode('bias');setIss(0.25);}},
+ {zh:'随机分支:对手是一枚公平硬币,再聪明也只拿到 50%',en:'Random branch: the opponent is a fair coin — however clever, you only get 50%',
+  act(){setMode('rand');}},
+];
+let activeStep=0;
+function buildSteps(){
+  const el=document.getElementById('steps');el.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="n">${i+1}</span><span class="t"><b>${LANG==='en'?s.en:s.zh}</b></span>`;
+    li.addEventListener('click',()=>{applyPhase(i);});
+    el.appendChild(li);
+  });
+  syncSteps();
+}
+function syncSteps(){document.querySelectorAll('#steps li').forEach((li,i)=>li.classList.toggle('on',i===activeStep));}
+function applyPhase(i){activeStep=i;STEPS[i].act();syncSteps();}
+
+/* ---- 读数 ---- */
+function updateStats(){
+  document.getElementById('stCyc').textContent=cycles;
+  const h=document.getElementById('stHit');
+  h.textContent=branches?(100*hits/branches).toFixed(1)+'%':'—';
+  h.className='v '+(branches?(hits/branches>=0.9?'ok':hits/branches<0.5?'warn':''):'');
+  document.getElementById('stFlush').textContent=wrongs;
+  document.getElementById('stSave').innerHTML=(hits*FLUSH)+'<small> '+L('拍','cycles')+'</small>';
+}
+
+/* ---- 控件 ---- */
+document.getElementById('play').addEventListener('click',()=>{playing=!playing;syncPlayBtn();});
+function syncPlayBtn(){document.getElementById('play').textContent=playing?L('暂停','Pause'):L('运行','Run');}
+document.getElementById('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+document.getElementById('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();document.getElementById('play').click();}});
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);
+});
+document.getElementById('bBias').addEventListener('click',()=>setMode('bias'));
+document.getElementById('bAlt').addEventListener('click',()=>setMode('alt'));
+document.getElementById('bRand').addEventListener('click',()=>setMode('rand'));
+document.getElementById('sBits').addEventListener('input',e=>setBits(+e.target.value));
+document.getElementById('sIss').addEventListener('input',e=>setIss(+e.target.value));
+document.getElementById('tglSlow').addEventListener('change',e=>{slowMo=e.target.checked;});
+document.getElementById('tglTable').addEventListener('change',e=>{tglTableOn=e.target.checked;tblGrp.visible=tglTableOn;});
+document.getElementById('tglLabels').addEventListener('change',e=>{labelsOn=e.target.checked;});
+
+/* ---- 主题/语言 ---- */
+function applyTheme(){
+  htmlEl.dataset.theme=THEME;
+  document.getElementById('themeBtn').textContent=THEME==='dark'?'☀':'☾';
+  const dark=THEME==='dark';
+  scene.background=new THREE.Color(dark?0x101418:0xe9e4dc);
+  scene.fog.color.setHex(dark?0x101418:0xe9e4dc);
+  groundM.color.setHex(dark?0x1c2027:0xc9c2b6);
+  railM.color.setHex(dark?0x2b313c:0xa3abb5);
+}
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el=>{
+    if(el.tagName==='INPUT')return;
+    el.textContent=LANG==='en'?(el.dataset.en||el.dataset.zh):el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent=LANG==='en'?'ZH':'EN';
+  buildSteps();
+}
+
+/* ---- 主循环 ---- */
+const clock=new THREE.Clock();
+let raf=null;
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const dt=clamp(clock.getDelta(),0,0.05);
+  const dts=dt*speedMul*(playing?1:0)*(slowMo?0.3:1);
+  simT+=dts;
+  cyclePhase+=dts/cycTime;
+  let g=0;while(cyclePhase>=1&&g++<4){cyclePhase-=1;doCycle();}
+  /* 指令方块矩阵与生死 */
+  for(let i=0;i<NB2;i++){
+    const b=blocks[i];
+    if(!b.on){m4.makeScale(0.001,0.001,0.001);m4.setPosition(0,-99,0);blocksIM.setMatrixAt(i,m4);continue;}
+    blockPos(b,tmpV);
+    let s=1;
+    if(b.dying>0){
+      b.dying-=dts;
+      if(b.dying<=0){b.dying=0;b.on=false;}
+      s=Math.max(0.1,Math.max(0,b.dying)/0.5);
+      tmpV.y+=(0.5-Math.max(0,b.dying))*1.3;
+    }
+    if(b.flash>0){
+      b.flash-=dts;
+      if(b.flash<=0){blocksIM.setColorAt(i,tmpC.setHex(0xffd43b));colorDirty=true;}
+    }
+    m4.makeScale(s,s,s);m4.setPosition(tmpV.x,tmpV.y,tmpV.z);
+    blocksIM.setMatrixAt(i,m4);
+  }
+  blocksIM.instanceMatrix.needsUpdate=true;
+  if(colorDirty){blocksIM.instanceColor.needsUpdate=true;colorDirty=false;}
+  /* 预测箭头跟随最接近决策的未决分支 */
+  let tgt=null;
+  for(const b of blocks)if(b.on&&b.branch&&!b.resolved&&b.dying<=0&&(!tgt||b.stage>tgt.stage))tgt=b;
+  if(tgt){
+    blockPos(tgt,tmpV);
+    arrowPred=tgt.pred;
+    arrowPos.set(tmpV.x+0.62,tmpV.y+0.62+0.06*Math.sin(simT*5),tmpV.z);
+    arrowGrp.visible=true;
+    arrowGrp.position.copy(arrowPos);
+    arrowGrp.rotation.z=arrowPred?0.55:0;
+    arrM.color.setHex(arrowPred?0x8ce99a:0xff8787);
+    arrM.emissive.setHex(arrowPred?0x2b8a3e:0x8c1f1f);
+    lblBranchPos.copy(tmpV);
+    lblBranch.position.set(lblBranchPos.x,lblBranchPos.y+0.34,lblBranchPos.z);
+    lblPath.position.set(arrowPos.x,arrowPos.y+0.52,arrowPos.z);
+  }else arrowGrp.visible=false;
+  /* 读数节流 */
+  frame.acc=(frame.acc||0)+dt;
+  if(frame.acc>0.15){frame.acc=0;updateStats();}
+  for(const r of labelReg){r.o.visible=labelsOn&&r.vis();if(r.o.visible)r.o.element.textContent=r.text();}
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+function start(){if(raf===null){clock.getDelta();raf=requestAnimationFrame(frame);}}
+function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+
+/* ---- 初始化 ---- */
+labelsOn=!(qs.get('labels')==='0');
+document.getElementById('tglLabels').checked=labelsOn;
+applyTheme();buildSteps();
+setMode('bias');setBits(2);setIss(0.25);
+for(let s=0;s<5;s++){
+  const b=freeBlock();
+  if(b){b.on=true;b.stage=s;b.dying=0;b.resolved=false;b.branch=false;b.flash=0;}
+}
+if(qs.get('t')!==null&&t0>=0&&t0<STEPS.length){applyPhase(t0);}
+else applyPhase(0);
+updateStats();syncPlayBtn();start();
+
+</script>
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div');
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

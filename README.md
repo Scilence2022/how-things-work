@@ -1028,6 +1028,33 @@
 - [x] 扫地机器人与 SLAM(点云按估计位姿落图,漂移滑块越大墙越糊、匹配开启立即锁回；弓字形热图与覆盖率-时间曲线,随机碰撞灰线对照；悬崖急转、虚拟墙、18% 回充断点续扫) ✅ **robot-vacuum/**
 - [x] 快充与 USB-PD(握手日志三步滚动,功率柱从 10W 跳上 45W,山寨头对照趴窝；CC 恒流到 4.45V 当场切 CV、电流指数收尾；环境温度滑块触发热限流降档,PPS 连续调压对照) ✅ **usb-fast-charging/**
 
+### Phase 48 · 跨家族补缺第十九批(24/24 收官)
+
+- [x] 剪叉式升降机构(液压缸推中点销、相似三角形放大 n 倍行程；平台竖直导轨约束、臂内纯轴力扛载；载重加大缸压按杠杆比实时抬高) ✅ **scissor-lift/**
+- [x] 桁架与节点法(节点平衡把外载荷一格格分进杆件；上弦压/下弦拉按轴力实时着色；高跨比滑杆与欧拉失稳提示) ✅ **truss-forces/**
+- [x] 张拉整体结构(三杆棱柱互不接触悬浮于连续索网；预张力滑杆撑开形状；断一根索当场瘫倒重组对照) ✅ **tensegrity/**
+- [x] BZ 振荡反应(Br⁻ 闸门与 Ce³⁺/Ce⁴⁺ 信使的自催化振荡；搅拌均匀呼吸、关搅拌出螺旋波；温度滑杆改周期) ✅ **bz-oscillator/**
+- [x] 气体离心机与同位素分离(重甩壁轻聚轴的径向分层；轴向逆流把径向差搬成上下差；单级 α≈1.1 与级联接力爬丰度) ✅ **isotope-separation/**
+- [x] 胶体与丁达尔效应(激光过胶体亮出光路、过真溶液无痕；布朗运动顶住重力；加盐压薄双电层当场聚沉) ✅ **tyndall-effect/**
+- [x] RNA 干扰(Dicer 把 dsRNA 剪成 21 nt 通缉令；装载 RISC 丢弃乘客链；完全互补当场剪切/部分互补扣住翻译双模式) ✅ **rna-interference/**
+- [x] 候鸟磁导航(隐花色素自由基对随磁场进动；产率差画成视网膜明暗图案；倾角罗盘翻转当场掉头) ✅ **magnetoreception/**
+- [x] 肠道菌群与宿主共生(发酵纤维产 SCFA 喂上皮、训练免疫；多样性=稳定性；抗生素冲击塌方与梯队重建对照) ✅ **gut-microbiome/**
+- [x] 质能等价 E=mc²(结合能=质量亏损×c²；比结合能曲线在 Fe-56 登顶；轻聚/重裂都往铁爬与湮灭 100% 兑付) ✅ **mass-energy/**
+- [x] 阿贝衍射极限(d=λ/2NA 划下分辨红线；艾里斑粘连当场糊掉；油浸 NA 1.4 与紫外对照) ✅ **abbe-limit/**
+- [x] 克拉德尼图形(扫频命中固有频率沙粒汇入节线；方板/圆板振型切换；波腹抖、波节静的驻波沙画) ✅ **chladni-patterns/**
+- [x] 太阳风与日冕加热(光球之上反而上百万度；磁重联与波耗散把能量倒进等离子体；帕克螺旋与彗尾/极光签名) ✅ **solar-wind/**
+- [x] 双星与食变星(侧视掩食、光变曲线深谷/浅谷；开普勒第三定律当场出质量；谱线多普勒反相摆动) ✅ **binary-stars/**
+- [x] 赫罗图与主序(光度-温度撒点浮现对角主序带；质量定位置定寿命 M^−2.5；太阳一生的演化轨迹爬行) ✅ **hr-diagram/**
+- [x] 风洞与相似准则(收缩-试验-扩压三段;Re=ρvL/μ 缩比换风速;烟流线当场现形分离/失速/涡街) ✅ **wind-tunnel/**
+- [x] 直升机自旋降落(熄火后上升气流驱动内圈桨叶;驱动区/失速区/桨尖区分工;高度存进旋翼、接地前一次兑换) ✅ **autorotation/**
+- [x] 喷雾与雾化(液柱→表面波→液丝→液滴四阶段;We=ρv²d/σ 定 SMD;横流二次破碎对照) ✅ **atomization/**
+- [x] 中心极限定理(骰子 1/2/5 枚从平坦到钟形;σ 按 √n 收拢;偏斜分布求和照样正态) ✅ **central-limit-theorem/**
+- [x] 牛顿迭代法(画切线落到横轴再重来;x−f/f′ 二次收敛;坏初值振荡与分形盆地染色) ✅ **newton-method/**
+- [x] 分支预测(流水线赌分支路径;赌错冲刷清空十几拍;两位饱和计数器与强偏置/交替/随机命中率对照) ✅ **branch-prediction/**
+- [x] 圆珠笔(钢珠既是阀门又是碾墨机;粘度账:稠到不渗、稀到跟笔;倒写对照与压力洇墨) ✅ **ballpoint-pen/**
+- [x] 头盔与吸能(EPS 逐层压溃换时间;峰值加速度腰斩再腰斩;无盔对照与一次冲击一次代价) ✅ **helmet/**
+- [x] 交通绿波(偏移=距离/车速对表;车队一路遇绿;时空图斜带与速度偏离当场脱节) ✅ **traffic-green-wave/**
+
 ### Phase 47 · 跨家族补缺第十八批(24/24 收官)
 
 - [x] 挖掘机液压(泵送流量、负载定压力；小活塞×高压=大推力、三级杠杆放大；挖到硬石压力冲顶看溢流阀当场泄油憋住) ✅ **excavator-hydraulics/**
@@ -2668,6 +2695,30 @@ ray-tracing/          光线追踪:像素发光求交弹射,倒影折射免费�
 refrigerator/         电冰箱:压缩循环把热量从冷处搬上热处(Three.js，CDN 引入)
 automatic-door/       自动门:多普勒频移判移动,光幕反转保安全(Three.js，CDN 引入)
 qr-code/              二维码:回字定位+里德-所罗门,擦三成照样扫(Three.js，CDN 引入)
+scissor-lift/         剪叉式升降机构:相似三角形把缸的推程放大成平台的行程(Three.js，CDN 引入)
+truss-forces/         桁架与节点法:节点平衡把载荷一格格分进杆件,上弦压下弦拉(Three.js，CDN 引入)
+tensegrity/           张拉整体结构:压杆悬浮在连续张拉的索网里(Three.js，CDN 引入)
+bz-oscillator/        BZ 振荡反应:自催化把一杯溶液变成化学时钟(Three.js，CDN 引入)
+isotope-separation/   气体离心机:差 1.3% 的质量,上万台级联来埋单(Three.js，CDN 引入)
+tyndall-effect/       丁达尔效应:颗粒逼近波长,光路自己亮起来(Three.js，CDN 引入)
+rna-interference/     RNA 干扰:半路拆掉信使的基因静音(Three.js，CDN 引入)
+magnetoreception/     候鸟磁导航:眼里的量子倾角罗盘(Three.js，CDN 引入)
+gut-microbiome/       肠道菌群:一公斤共生者的发酵与免疫课(Three.js，CDN 引入)
+mass-energy/          质能等价 E=mc²:结合能就是消失的质量(Three.js，CDN 引入)
+abbe-limit/           阿贝衍射极限:d=λ/2NA 划下显微分辨红线(Three.js，CDN 引入)
+chladni-patterns/     克拉德尼图形:沙子替驻波画出节线(Three.js，CDN 引入)
+solar-wind/           太阳风与日冕加热:上百万度的反常与 450 km/s 的风(Three.js，CDN 引入)
+binary-stars/         双星与食变星:光变曲线与谱线摆动把质量交出来(Three.js，CDN 引入)
+hr-diagram/           赫罗图与主序:一条对角带就是恒星的户口本(Three.js，CDN 引入)
+wind-tunnel/          风洞与相似准则:Re 相等,两个流场互为镜像(Three.js，CDN 引入)
+autorotation/         直升机自旋降落:把高度存进旋翼当油箱(Three.js，CDN 引入)
+atomization/          喷雾与雾化:We 定输赢,液滴是谈判结果(Three.js，CDN 引入)
+central-limit-theorem/ 中心极限定理:加得够多,总是钟形(Three.js，CDN 引入)
+newton-method/        牛顿迭代法:切线落横轴,误差平方消失(Three.js，CDN 引入)
+branch-prediction/    分支预测:两位饱和计数器练成流水线的直觉(Three.js，CDN 引入)
+ballpoint-pen/        圆珠笔:一颗钢珠既是阀门又是碾墨机(Three.js，CDN 引入)
+helmet/               头盔与吸能:EPS 压溃换时间,峰值加速度腰斩(Three.js，CDN 引入)
+traffic-green-wave/   交通绿波:绿波是空间在时间里的投影(Three.js，CDN 引入)
 tourbillon/         陀飞轮:笼架每分钟一圈，把重力位差逐位平均掉（Three.js，CDN 引入）
 archimedes-screw/   阿基米德螺旋泵:小斗接力把水抬上斜管（Three.js，CDN 引入）
 roberval-balance/   罗伯瓦尔天平:平行四边形约束下偏载不偏读（Three.js，CDN 引入）
