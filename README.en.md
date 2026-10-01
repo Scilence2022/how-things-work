@@ -600,6 +600,33 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] Robot Vacuum & SLAM (point clouds land via the estimated pose — more drift, blurrier walls, scan-match snaps it back; boustrophedon heatmap and coverage-time curves against the random-bounce gray line; cliff turns, virtual wall, 18% dock & resume) ✅ **robot-vacuum/**
 - [x] Fast Charging & USB-PD (handshake log scrolls as the power bar leaps 10W→45W, dumb-charger mode crawls; CC holds until the terminal hits 4.45V, then CV tapers live; ambient-temp slider triggers thermal downshifting, PPS for contrast) ✅ **usb-fast-charging/**
 
+### Phase 48 · Cross-Family Gap-Fill Batch 19 (24/24 complete)
+
+- [x] The Scissor Lift (one cylinder pushes the mid-pin; similar triangles multiply its stroke n-fold; the platform only translates vertically while the links carry pure axial force) ✅ **scissor-lift/**
+- [x] Trusses & The Method of Joints (nodal equilibrium distributes the load member by member; top chord in compression, bottom in tension, colored live; rise-ratio slider and Euler buckling note) ✅ **truss-forces/**
+- [x] Tensegrity (three struts never touch, floating in a continuous tension net; the preload slider inflates the shape; cut a cable and the shape re-forms or collapses) ✅ **tensegrity/**
+- [x] The Belousov–Zhabotinsky Reaction (Br⁻ gate and Ce³⁺/Ce⁴⁺ relay drive an autocatalytic clock; stirred the dish breathes in unison, unstirred spirals take over; temperature sets the period) ✅ **bz-oscillator/**
+- [x] Gas Centrifuges & Isotope Separation (heavy to the wall, light to the axis; an axial countercurrent turns radial into vertical separation; α≈1.1 per stage, thousands of machines cascade to 3–5%) ✅ **isotope-separation/**
+- [x] Colloids & The Tyndall Effect (a laser draws a bright path through colloid, vanishes in true solution; Brownian motion beats gravity; a pinch of salt collapses the double layers on the spot) ✅ **tyndall-effect/**
+- [x] RNA Interference (Dicer cuts dsRNA into 21-nt wanted posters; RISC loads the guide and drops the passenger; perfect pairing slices the target, partial pairing stalls translation) ✅ **rna-interference/**
+- [x] Magnetoreception in Migrating Birds (cryptochrome radical pairs precess in Earth's field; the yield difference paints the retina; flip the inclination and the heading flips) ✅ **magnetoreception/**
+- [x] The Gut Microbiome (fiber fermented into SCFAs that feed the wall and train immunity; diversity = stability; one antibiotic blowout collapses it and recovery is staged) ✅ **gut-microbiome/**
+- [x] Mass–Energy Equivalence (binding energy = mass defect × c²; binding per nucleon peaks at Fe-56; fusion and fission both climb toward iron, annihilation alone pays 100%) ✅ **mass-energy/**
+- [x] The Abbe Diffraction Limit (d=λ/2NA draws the resolution line; the moment two Airy disks touch, detail blurs; oil immersion NA 1.4 and the UV comparison) ✅ **abbe-limit/**
+- [x] Chladni Patterns (sweep to a natural frequency and the sand gathers on the nodal lines; square and circular plate modes; antinodes shake, nodes hold still) ✅ **chladni-patterns/**
+- [x] Solar Wind & The Hot Corona (a million-degree corona over a 5500 °C photosphere; reconnection and wave dissipation heat it; the Parker spiral, comet tails and auroras) ✅ **solar-wind/**
+- [x] Binary Stars & Eclipsing Binaries (edge-on orbits eclipse and cut the light curve; Kepler III hands over the masses; the spectral lines sway in antiphase) ✅ **binary-stars/**
+- [x] The Hertzsprung–Russell Diagram (scatter luminosity vs temperature and the main sequence appears; position = mass = lifetime M^−2.5; the Sun's evolutionary track crawls off the band) ✅ **hr-diagram/**
+- [x] Wind Tunnels & Dynamic Similarity (contraction, test section, diffuser; Re=ρvL/μ sets the scaled wind; smoke lines expose separation, stall and vortex streets) ✅ **wind-tunnel/**
+- [x] Autorotation (engine dead, upflow drives the inner blades; driven, stall and tip regions split the work; altitude banked as rotor rpm and cashed in at the pull) ✅ **autorotation/**
+- [x] Atomization & Sprays (jet → surface waves → ligaments → drops; We=ρv²d/σ sets the SMD; crossflow shreds the drops a second time) ✅ **atomization/**
+- [x] The Central Limit Theorem (one die flat, two make an arc, five ring like a bell; σ shrinks by the √n stair; skewed sources still sum normal) ✅ **central-limit-theorem/**
+- [x] Newton's Method (tangent, drop to the axis, repeat; x−f/f′ squares the error away; bad seeds oscillate and the basin fractal blooms) ✅ **newton-method/**
+- [x] Branch Prediction (the pipeline bets at every if; a miss flushes a dozen slots; two-bit saturating counters vs biased/alternating/random streams) ✅ **branch-prediction/**
+- [x] The Ballpoint Pen (a ball that is valve and ink mill at once; the viscosity ledger — thick enough not to leak, thin enough to follow; upside-down writing and pressure blotting) ✅ **ballpoint-pen/**
+- [x] Helmets & Impact Absorption (EPS crushes layer by layer to buy time; peak acceleration halved again and again; the no-helmet control and one-crash-one-cost) ✅ **helmet/**
+- [x] The Traffic Green Wave (offset = distance over speed; the platoon rides green all the way; the space-time diagram's diagonal band falls apart off-speed) ✅ **traffic-green-wave/**
+
 ### Phase 47 · Cross-Family Gap-Fill Batch 18 (24/24 complete)
 
 - [x] Excavator Hydraulics (the pump delivers flow while the load sets the pressure; small piston × high pressure = huge force through three lever stages; hit a rock and pressure spikes until the relief valve dumps oil and stalls the cylinder) ✅ **excavator-hydraulics/**
@@ -1987,6 +2014,30 @@ ray-tracing/          Ray Tracing: one ray per pixel, bounces give reflections f
 refrigerator/         Refrigerator: the compression cycle pumps heat uphill (Three.js, CDN)
 automatic-door/       Automatic Door: Doppler judges motion, the light curtain reverses (Three.js, CDN)
 qr-code/              QR Code: finder squares + Reed–Solomon, scan with a third torn away (Three.js, CDN)
+scissor-lift/         Scissor Lift: similar triangles trade cylinder stroke for platform height (Three.js, CDN)
+truss-forces/         Trusses & Method of Joints: nodal equilibrium sends every member pure tension or compression (Three.js, CDN)
+tensegrity/           Tensegrity: struts float in a continuous tension net (Three.js, CDN)
+bz-oscillator/        Belousov–Zhabotinsky Reaction: autocatalysis turns a dish into a chemical clock (Three.js, CDN)
+isotope-separation/   Gas Centrifuges: a 1.3% mass gap paid for by ten thousand cascaded machines (Three.js, CDN)
+tyndall-effect/       Tyndall Effect: near-wavelength particles light up the beam's path (Three.js, CDN)
+rna-interference/     RNA Interference: silencing a gene by intercepting the messenger (Three.js, CDN)
+magnetoreception/     Magnetoreception: a quantum inclination compass in the bird's eye (Three.js, CDN)
+gut-microbiome/       Gut Microbiome: a kilogram of symbionts teaching immunity (Three.js, CDN)
+mass-energy/          Mass–Energy Equivalence: binding energy is the missing mass (Three.js, CDN)
+abbe-limit/           Abbe Diffraction Limit: d=λ/2NA pins microscope resolution (Three.js, CDN)
+chladni-patterns/     Chladni Patterns: sand draws the nodal lines of standing waves (Three.js, CDN)
+solar-wind/           Solar Wind: a million-degree corona and a 450 km/s breeze (Three.js, CDN)
+binary-stars/         Eclipsing Binaries: light curves and swaying lines hand over the masses (Three.js, CDN)
+hr-diagram/           H–R Diagram: one diagonal band is the stellar registry (Three.js, CDN)
+wind-tunnel/          Wind Tunnels: equal Reynolds numbers make two flows mirror images (Three.js, CDN)
+autorotation/         Autorotation: banking altitude as rotor rpm (Three.js, CDN)
+atomization/          Atomization: the Weber number referees the droplet size (Three.js, CDN)
+central-limit-theorem/ Central Limit Theorem: sum enough of anything and it rings normal (Three.js, CDN)
+newton-method/        Newton's Method: tangent drops square the error away (Three.js, CDN)
+branch-prediction/    Branch Prediction: two-bit counters build the pipeline's instinct (Three.js, CDN)
+ballpoint-pen/        Ballpoint Pen: one ball as valve and ink mill (Three.js, CDN)
+helmet/               Helmets: EPS crush buys time and the peak g is halved (Three.js, CDN)
+traffic-green-wave/   Traffic Green Wave: space projected into time as a diagonal band (Three.js, CDN)
 tourbillon/          Tourbillon: a cage rotating once a minute averages positional error (Three.js, CDN)
 archimedes-screw/    Archimedes Screw: pockets of water relayed up the incline (Three.js, CDN)
 roberval-balance/    Roberval Balance: parallelogram links ignore off-center loads (Three.js, CDN)
