@@ -1028,6 +1028,33 @@
 - [x] 扫地机器人与 SLAM(点云按估计位姿落图,漂移滑块越大墙越糊、匹配开启立即锁回；弓字形热图与覆盖率-时间曲线,随机碰撞灰线对照；悬崖急转、虚拟墙、18% 回充断点续扫) ✅ **robot-vacuum/**
 - [x] 快充与 USB-PD(握手日志三步滚动,功率柱从 10W 跳上 45W,山寨头对照趴窝；CC 恒流到 4.45V 当场切 CV、电流指数收尾；环境温度滑块触发热限流降档,PPS 连续调压对照) ✅ **usb-fast-charging/**
 
+
+### Phase 49 · 跨家族补缺第二十批(24/24 收官)
+- [x] 拱与推力线(楔块拱逐块拼装、推力线随荷载实时弯曲；出带安全裕度与三铰垮塌慢放；系杆收走侧推与悬链镜像对照) ✅ **arch-thrust-line/**
+- [x] 绞盘与缆绳摩擦(张力沿绳按 e^{μθ} 指数衰减彩色剖面；圈数/μ滑块与湿缆打滑对照；松手当场整圈滑移) ✅ **capstan-winch/**
+- [x] 双螺杆压缩机(阴阳转子 4/6 齿按速比啮合旋转；追踪齿槽吸气-压缩-排气全程压力爬升；内容积比三档看过/欠压缩) ✅ **twin-screw-compressor/**
+- [x] 碘钟反应(I₂慢生成与硫代硫酸盐陷阱快拆；陷阱清零瞬间淀粉蓝紫闪现；浓度改周期与升温提速对照) ✅ **iodine-clock/**
+- [x] 离子交换与硬水软化(Na⁺/Ca²⁺珠面置换与耗尽带推进；穿透曲线抬头与出水硬度转红；盐水逆流再生与水垢对照) ✅ **ion-exchange-softening/**
+- [x] 环氧树脂与胺固化(开环加成与一胺两链的交联；凝胶点黏度跳崖网络贯通；配比失衡残网与放热Tg对照) ✅ **epoxy-curing/**
+- [x] 青霉素与细胞壁(转肽酶切尾缝合肽聚糖网；青霉素假底物共价锁酶交联停摆；膨压鼓泡胀破与β-内酰胺酶耐药对照) ✅ **penicillin-wall/**
+- [x] 转座子与跳跃基因(转座酶认反向重复切贴基因组；剪切/复制粘贴双模式与拷贝数账本；插入突变当场在玉米粒显斑) ✅ **transposons/**
+- [x] 蚂蚁信息素与群体寻路(沉积+蒸发的随机强化；双桥短径正反馈收敛；关信息素对照与障碍改道) ✅ **ant-pheromone/**
+- [x] 摩擦起电与静电(界面双电层电荷转移；分开瞬间电压飙升与放电火花；起电序列与湿度对照) ✅ **triboelectricity/**
+- [x] 电感与LC回路(反电动势与磁场储能；LC振荡电场⇄磁场秋千；RLC阻尼与谐振选频) ✅ **lc-circuit/**
+- [x] 中微子与味振荡(味态=质量本征态叠加；传播中相位轮旋三味概率变色；混合角/距离改振荡长度与太阳中微子失踪对照) ✅ **neutrino-oscillation/**
+- [x] 白矮星与电子简并压(费米海随压缩逐级填高；简并压与温度无关地顶住引力；质量↑半径↓与1.4 M☉失守内爆) ✅ **white-dwarf-degeneracy/**
+- [x] 冰卫星与地下海洋(偏心轨道潮汐揉捏产热；冰壳裂痕混沌地形与羽流；磁感应探测导电海洋) ✅ **icy-moon-ocean/**
+- [x] 行星形成与原行星盘(尘埃→鹅卵石→星子→行星核四级生长；寡头吸积与气巨抢气倒计时；盘消散间隙与残骸带) ✅ **planet-formation/**
+- [x] 开尔文尾迹与船行波(横波/散波羽毛图样与19.47°楔角；船速↑波长↑楔角不变；Froude数与hull speed爬坡) ✅ **kelvin-wake/**
+- [x] 襟翼与增升装置(后缘襟翼加大弯度CL↑；缝翼射流补能分离推迟；富勒面积增益与失速速度账本) ✅ **high-lift-flaps/**
+- [x] 地面效应与地效飞行器(贴地飞翼尖涡被压扁；诱导阻力骤降升阻比翻倍；掠海巡航与波浪代价对照) ✅ **ground-effect/**
+- [x] 采样定理与混叠(频谱周期复制与折叠线；fs越过2f高频伪装假低频；车轮倒转与抗混叠滤波对照) ✅ **sampling-aliasing/**
+- [x] 泊松分布与稀有事件(小格小概率累积计数直方图；方差=均值与λ滑大滑向正态；等待时间指数分布对照) ✅ **poisson-distribution/**
+- [x] TCP拥塞控制(慢启动指数试探过阈线性爬；丢包砍回/减半的AIMD锯齿；多流公平分享与队列占满演示) ✅ **tcp-congestion/**
+- [x] 验孕棒与免疫层析(毛细前沿自驱爬行；金标抗体T线夹心显色浓度定深浅；C线对照与无效样本判废) ✅ **lateral-flow-test/**
+- [x] 金属探测器与涡流(交变磁场感生涡流反磁场；接收线圈失衡当场报警；铁/非铁相位分家与灵敏度调节) ✅ **metal-detector/**
+- [x] MEMS加速度计(质量块悬臂梁与梳齿差分电容；重力定倾角加速度滞后偏移；振动带宽与手机转屏演示) ✅ **mems-accelerometer/**
+
 ### Phase 48 · 跨家族补缺第十九批(24/24 收官)
 
 - [x] 剪叉式升降机构(液压缸推中点销、相似三角形放大 n 倍行程；平台竖直导轨约束、臂内纯轴力扛载；载重加大缸压按杠杆比实时抬高) ✅ **scissor-lift/**
@@ -2719,6 +2746,30 @@ branch-prediction/    分支预测:两位饱和计数器练成流水线的直觉
 ballpoint-pen/        圆珠笔:一颗钢珠既是阀门又是碾墨机(Three.js，CDN 引入)
 helmet/               头盔与吸能:EPS 压溃换时间,峰值加速度腰斩(Three.js，CDN 引入)
 traffic-green-wave/   交通绿波:绿波是空间在时间里的投影(Three.js，CDN 引入)
+arch-thrust-line/     拱与推力线:拱与推力线:一条看不见的压力合力线决定拱的生死(Three.js，CDN 引入)
+capstan-winch/        绞盘与缆绳摩擦:绞盘与缆绳摩擦:e^{μθ} 让几公斤握力扛住几吨(Three.js，CDN 引入)
+twin-screw-compressor/ 双螺杆压缩机:双螺杆压缩机:齿槽被螺杆背着压缩到排气口(Three.js，CDN 引入)
+iodine-clock/         碘钟反应:碘钟反应:陷阱一空,整杯液体瞬间蓝紫(Three.js，CDN 引入)
+ion-exchange-softening/ 离子交换与硬水软化:离子交换与软化:树脂珠用 Na⁺ 换下 Ca²⁺,盐水再世(Three.js，CDN 引入)
+epoxy-curing/         环氧树脂与胺固化:环氧树脂与胺固化:凝胶点一到,游离链牵成整网(Three.js，CDN 引入)
+penicillin-wall/      青霉素与细胞壁:青霉素与细胞壁:假底物锁死缝纫工,细胞自己胀破(Three.js，CDN 引入)
+transposons/          转座子与跳跃基因:转座子与跳跃基因:剪贴 DNA 写满半张基因组(Three.js，CDN 引入)
+ant-pheromone/        蚂蚁信息素与群体寻路:蚂蚁信息素:沉积加蒸发,群体走出最短路(Three.js，CDN 引入)
+triboelectricity/     摩擦起电与静电:摩擦起电与静电:接触挪走电荷,一粒火花结账(Three.js，CDN 引入)
+lc-circuit/           电感与LC回路:电感与LC回路:电场⇄磁场以 ω=1/√(LC) 荡秋千(Three.js，CDN 引入)
+neutrino-oscillation/ 中微子与味振荡:中微子味振荡:一路飞行三味轮转,失踪案告破(Three.js，CDN 引入)
+white-dwarf-degeneracy/ 白矮星与电子简并压:白矮星与简并压:泡利之墙撑到 1.4 个太阳(Three.js，CDN 引入)
+icy-moon-ocean/       冰卫星与地下海洋:冰卫星与地下海洋:潮汐揉捏焐热冰下的海(Three.js，CDN 引入)
+planet-formation/     行星形成与原行星盘:行星形成与原行星盘:尘埃在盘里滚成行星(Three.js，CDN 引入)
+kelvin-wake/          开尔文尾迹与船行波:开尔文尾迹:两根 19.47° 楔收尽船的波(Three.js，CDN 引入)
+high-lift-flaps/      襟翼与增升装置:襟翼与增升装置:弯度、缝与面积换来低速升力(Three.js，CDN 引入)
+ground-effect/        地面效应与地效飞行器:地面效应:地面压扁涡,升阻比翻倍(Three.js，CDN 引入)
+sampling-aliasing/    采样定理与混叠:采样与混叠:越过 Nyquist,高频伪装成低频(Three.js，CDN 引入)
+poisson-distribution/ 泊松分布与稀有事件:泊松分布:方差即均值,稀有事件的脸(Three.js，CDN 引入)
+tcp-congestion/       TCP拥塞控制:TCP拥塞控制:AIMD 锯齿讨价还价(Three.js，CDN 引入)
+lateral-flow-test/    验孕棒与免疫层析:验孕棒与免疫层析:毛细自驱,T线按浓度显色(Three.js，CDN 引入)
+metal-detector/       金属探测器与涡流:金属探测器:涡流应答,电桥报警(Three.js，CDN 引入)
+mems-accelerometer/   MEMS加速度计:MEMS加速度计:质量块与梳齿电容知天下之倾(Three.js，CDN 引入)
 tourbillon/         陀飞轮:笼架每分钟一圈，把重力位差逐位平均掉（Three.js，CDN 引入）
 archimedes-screw/   阿基米德螺旋泵:小斗接力把水抬上斜管（Three.js，CDN 引入）
 roberval-balance/   罗伯瓦尔天平:平行四边形约束下偏载不偏读（Three.js，CDN 引入）

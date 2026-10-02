@@ -627,6 +627,33 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] Helmets & Impact Absorption (EPS crushes layer by layer to buy time; peak acceleration halved again and again; the no-helmet control and one-crash-one-cost) ✅ **helmet/**
 - [x] The Traffic Green Wave (offset = distance over speed; the platoon rides green all the way; the space-time diagram's diagonal band falls apart off-speed) ✅ **traffic-green-wave/**
 
+
+### Phase 49 · Cross-Family Gap-Fill Batch 20 (24/24 complete)
+- [x] The Arch & The Thrust Line (voussoirs assemble block by block while the thrust line bends live under loads; safety margin and the three-hinge collapse in slow motion; a tie rod absorbs the thrust and the hanging-chain mirror closes the loop) ✅ **arch-thrust-line/**
+- [x] The Capstan & Rope Friction (tension decays e^{μθ}-style along the rope as a color profile; wrap-count and μ sliders with a wet-rope comparison; release the hand and the whole coil slips on the spot) ✅ **capstan-winch/**
+- [x] The Twin-Screw Compressor (male 4-lobe and female 6-lobe rotors mesh at the exact ratio; one tracked pocket rides suction→compression→discharge with the gauge climbing; three built-in volume ratios stage over- and under-compression) ✅ **twin-screw-compressor/**
+- [x] The Iodine Clock (iodate slowly makes iodine while the thiosulfate trap undoes it; the instant the trap empties the starch complex flashes blue-violet; concentration retimes the period and heat speeds both steps) ✅ **iodine-clock/**
+- [x] Ion Exchange & Water Softening (Na⁺/Ca²⁺ swap on the beads while an exhaustion front advances; the breakthrough curve lifts and outlet hardness turns red; brine regeneration and the kettle-scale comparison) ✅ **ion-exchange-softening/**
+- [x] Epoxy & Amine Curing (ring-opening addition, one amine stitching two chains; the gel point where viscosity falls off a cliff and the network spans; off-ratio defects plus the exotherm and Tg) ✅ **epoxy-curing/**
+- [x] Penicillin & the Cell Wall (transpeptidase stitches the peptidoglycan mesh; penicillin wedges in as a false substrate and locks the enzyme; turgor bulges burst the cell while β-lactamase runs the resistance control) ✅ **penicillin-wall/**
+- [x] Transposons & Jumping Genes (transposase reads the inverted repeats and cuts/pastes through the genome; cut-and-paste vs copy-and-paste with a copy-count ledger; an insertion silences a gene and paints a spot on the kernel) ✅ **transposons/**
+- [x] Ant Pheromones & Swarm Pathfinding (deposit + evaporation = stochastic reinforcement; the short bridge wins by positive feedback; the no-pheromone control and detour around a fresh obstacle) ✅ **ant-pheromone/**
+- [x] Triboelectricity & Static Charge (charge shuffles across the contact interface; separating the pair spikes the voltage and one spark settles it; the triboelectric series and the humidity control) ✅ **triboelectricity/**
+- [x] The Inductor & LC Tank (back-EMF and energy in the magnetic field; the LC swing between electric and magnetic storage; RLC damping and the resonance peak that picks the station) ✅ **lc-circuit/**
+- [x] Neutrino Oscillation (flavor = superposition of mass states; phases rotate in flight as the three-flavor mix cycles; mixing angle and distance set the length, and the solar-neutrino mystery closes) ✅ **neutrino-oscillation/**
+- [x] White Dwarfs & Degeneracy (the Fermi sea fills rung by rung under compression; degeneracy pressure holds regardless of temperature; more mass means less radius until 1.4 M☉ fails and it implodes) ✅ **white-dwarf-degeneracy/**
+- [x] Icy Moons & Hidden Oceans (eccentric-orbit tides knead the shell and friction warms the deep; fractures, chaos terrain and plumes vent the hidden sea; magnetic induction finds the conducting ocean) ✅ **icy-moon-ocean/**
+- [x] Planet Formation & the Disk (dust→pebbles→planetesimals→cores in four growing stages; oligarchic accretion and the gas giants' race against disk dissipation; gaps and debris belts after the gas clears) ✅ **planet-formation/**
+- [x] The Kelvin Wake (transverse and divergent wave systems in a 19.47° wedge; more speed lengthens the waves but never widens the angle; Froude number and the hull-speed wall) ✅ **kelvin-wake/**
+- [x] Flaps & High-Lift Devices (trailing-edge flaps add camber and CL; slots feed the boundary layer and delay separation; Fowler area gain and the stall-speed ledger) ✅ **high-lift-flaps/**
+- [x] Ground Effect & Ekranoplans (flying low squashes the tip vortices; induced drag collapses and lift-to-drag doubles; the sea-skim cruise and what waves cost) ✅ **ground-effect/**
+- [x] Sampling & Aliasing (the spectrum copies itself every f_s with folding lines; past fs/2 a high tone masquerades as a low one; the backward wagon wheel and the anti-aliasing filter) ✅ **sampling-aliasing/**
+- [x] Poisson & Rare Events (tiny independent slots accumulate into a Poisson histogram; variance equals the mean and large λ leans normal; exponential waiting times close the loop) ✅ **poisson-distribution/**
+- [x] TCP Congestion Control (slow start doubles every RTT until threshold goes linear; loss cuts the window back or halves it — the AIMD sawtooth; fairness across competing flows) ✅ **tcp-congestion/**
+- [x] Lateral-Flow Immunoassay (the capillary front crawls on its own; gold-labeled antibodies build the T-line sandwich with color set by concentration; the C-line control voids an invalid test) ✅ **lateral-flow-test/**
+- [x] Metal Detectors & Eddy Currents (an alternating field induces eddy currents that answer with their own field; the receiver unbalances and the bridge alarms; ferrous vs non-ferrous phase sorting and sensitivity) ✅ **metal-detector/**
+- [x] The MEMS Accelerometer (a proof mass on etched springs reads comb-capacitor differentials; gravity sets the tilt, acceleration shifts the mass; bandwidth under vibration and the phone's auto-rotate) ✅ **mems-accelerometer/**
+
 ### Phase 47 · Cross-Family Gap-Fill Batch 18 (24/24 complete)
 
 - [x] Excavator Hydraulics (the pump delivers flow while the load sets the pressure; small piston × high pressure = huge force through three lever stages; hit a rock and pressure spikes until the relief valve dumps oil and stalls the cylinder) ✅ **excavator-hydraulics/**
@@ -2038,6 +2065,30 @@ branch-prediction/    Branch Prediction: two-bit counters build the pipeline's i
 ballpoint-pen/        Ballpoint Pen: one ball as valve and ink mill (Three.js, CDN)
 helmet/               Helmets: EPS crush buys time and the peak g is halved (Three.js, CDN)
 traffic-green-wave/   Traffic Green Wave: space projected into time as a diagonal band (Three.js, CDN)
+arch-thrust-line/     The Arch & The Thrust Line: Arch & Thrust Line: the hidden pressure line that decides the arch's fate (Three.js, CDN)
+capstan-winch/        The Capstan & Rope Friction: Capstan & Rope Friction: e^{μθ} turns a few kilograms into tons of holding power (Three.js, CDN)
+twin-screw-compressor/ The Twin-Screw Compressor: Twin-Screw Compressor: gas pockets carried and squeezed to the discharge port (Three.js, CDN)
+iodine-clock/         The Iodine Clock: Iodine Clock: the trap empties and the beaker snaps blue-violet (Three.js, CDN)
+ion-exchange-softening/ Ion Exchange & Water Softening: Ion Exchange & Softening: beads trade Na⁺ for Ca²⁺ until brine sets them right (Three.js, CDN)
+epoxy-curing/         Epoxy & Amine Curing: Epoxy & Amine Curing: the gel point ties free chains into one network (Three.js, CDN)
+penicillin-wall/      Penicillin & the Cell Wall: Penicillin & the Cell Wall: a false substrate jams the stitcher and the cell bursts (Three.js, CDN)
+transposons/          Transposons & Jumping Genes: Transposons & Jumping Genes: cut-and-paste DNA wrote half the genome (Three.js, CDN)
+ant-pheromone/        Ant Pheromones & Pathfinding: Ant Pheromones: deposit plus evaporation finds the shortest path (Three.js, CDN)
+triboelectricity/     Triboelectricity & Static Charge: Triboelectricity & Static: contact shuffles charge, one spark settles the account (Three.js, CDN)
+lc-circuit/           The Inductor & LC Tank: The Inductor & LC Tank: field energy swings at ω=1/√(LC) (Three.js, CDN)
+neutrino-oscillation/ Neutrino Oscillation: Neutrino Oscillation: flavors rotate in flight, solar neutrinos come home (Three.js, CDN)
+white-dwarf-degeneracy/ White Dwarfs & Degeneracy: White Dwarfs & Degeneracy: Pauli pressure holds until 1.4 solar masses (Three.js, CDN)
+icy-moon-ocean/       Icy Moons & Hidden Oceans: Icy Moons & Hidden Oceans: tidal kneading warms an ocean under the ice (Three.js, CDN)
+planet-formation/     Planet Formation & the Disk: Planet Formation: dust to planetesimals in a racing disk (Three.js, CDN)
+kelvin-wake/          The Kelvin Wake: The Kelvin Wake: two 19.47° wedges carry every wave the ship makes (Three.js, CDN)
+high-lift-flaps/      Flaps & High-Lift Devices: Flaps & High-Lift Devices: camber, slots and area buy low-speed lift (Three.js, CDN)
+ground-effect/        Ground Effect & Ekranoplans: Ground Effect: the surface squashes the vortices and doubles L/D (Three.js, CDN)
+sampling-aliasing/    Sampling & Aliasing: Sampling & Aliasing: past Nyquist, high frequencies dress up as low ones (Three.js, CDN)
+poisson-distribution/ Poisson & Rare Events: Poisson & Rare Events: variance equals mean in a flood of tiny chances (Three.js, CDN)
+tcp-congestion/       TCP Congestion Control: TCP Congestion Control: the AIMD sawtooth haggles between speed and fairness (Three.js, CDN)
+lateral-flow-test/    Lateral-Flow Immunoassay: Lateral-Flow Immunoassay: capillary flow paints the T line by concentration (Three.js, CDN)
+metal-detector/       Metal Detectors & Eddy Currents: Metal Detectors: eddy currents answer the coil and tip the bridge (Three.js, CDN)
+mems-accelerometer/   The MEMS Accelerometer: The MEMS Accelerometer: a proof mass and comb capacitors know which way is down (Three.js, CDN)
 tourbillon/          Tourbillon: a cage rotating once a minute averages positional error (Three.js, CDN)
 archimedes-screw/    Archimedes Screw: pockets of water relayed up the incline (Three.js, CDN)
 roberval-balance/    Roberval Balance: parallelogram links ignore off-center loads (Three.js, CDN)
