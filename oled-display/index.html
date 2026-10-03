@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>OLED · 每个像素自己发光</title>
+<style>
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;--acc:#ffa8a8;--acc-rgb:255,168,168;
+    --bg:#0f1113;--panel:rgba(15,17,19,.86);--panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;
+    --hover:rgba(255,255,255,.05);--shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,17,19,.78);--tool-border:rgba(255,255,255,.12);--cv-pill:rgba(15,17,19,.8);
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;--acc:#e03131;--acc-rgb:224,49,49;
+    --bg:#f1efec;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+    --text:#16202c;--text2:#5b6b7d;--text3:#33414f;
+    --hover:rgba(15,25,40,.05);--shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);--cv-pill:rgba(255,255,255,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s}
+  #app{position:fixed;inset:0}#app canvas{display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+  .lbl{background:var(--cv-pill);border:1px solid var(--tool-border);color:var(--text3);font-size:12px;
+    line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);transition:opacity .25s}
+  :root[data-theme="light"] .lbl{text-shadow:none}
+  .lbl.o{border-color:rgba(255,169,77,.9);color:#ffe0c2}.lbl.r{border-color:rgba(255,107,107,.9);color:#ffc2c2}
+  .lbl.g{border-color:rgba(116,220,132,.9);color:#c8f5d0}.lbl.b{border-color:rgba(116,192,252,.9);color:#bde9ff}
+  .lbl.y{border-color:rgba(252,196,25,.9);color:#ffe9a8}
+  :root[data-theme="light"] .lbl.o{color:#a34e00}:root[data-theme="light"] .lbl.r{color:#c92a2a}
+  :root[data-theme="light"] .lbl.g{color:#2b8a3e}:root[data-theme="light"] .lbl.b{color:#1864ab}
+  :root[data-theme="light"] .lbl.y{color:#b8860b}
+  #tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px}
+  .tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);
+    color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;
+    padding:0 12px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;text-decoration:none;backdrop-filter:blur(6px);
+    transition:border-color .15s,color .15s,transform .15s}
+  .tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px)}
+  #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px)}
+  #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  #stats{position:fixed;right:18px;bottom:18px;z-index:4;background:var(--panel);
+    border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+    backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px}
+  #stats .k{font-size:12px;color:var(--text2);align-self:center}
+  #stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  #stats .v small{font-size:11px;color:var(--text2);font-weight:400}
+  #stats .v.warn{color:#ff6b6b}#stats .v.ok{color:#8ce99a}
+  #panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;padding:14px 16px 12px;backdrop-filter:blur(6px);
+    box-shadow:var(--shadow);max-height:calc(100vh - 160px);overflow:auto}
+  #actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 30%;
+    background:var(--hover);color:var(--text2);border:1px solid var(--tool-border);
+    border-radius:9px;padding:7px 10px;font-size:12.5px;font-weight:600;
+    transition:border-color .15s,color .15s,background .15s}
+  .abtn:hover{border-color:var(--acc);color:var(--text)}
+  .abtn.on{border-color:rgba(var(--acc-rgb),.6);background:rgba(var(--acc-rgb),.12);color:var(--text)}
+  .row{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .row label{font-size:12px;color:var(--text2);flex:0 0 92px}
+  .row .val{font-size:11.5px;color:var(--text3);flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc);height:18px}
+  #steps{list-style:none;margin-top:8px}
+  #steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;align-items:flex-start}
+  #steps li:hover{background:var(--hover)}
+  #steps li.on{background:rgba(var(--acc-rgb),.10);border-color:rgba(var(--acc-rgb),.45)}
+  #steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;display:flex;
+    align-items:center;justify-content:center;margin-top:1px;
+    background:rgba(255,255,255,.12);color:var(--text3)}
+  :root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10)}
+  #steps li.on .n{background:var(--acc);color:#fff}
+  #steps .t{font-size:12px;color:var(--text3);line-height:1.45}
+  #steps .t b{color:var(--text);font-size:12px}
+  #steps li.on .t b{color:var(--acc)}
+  #ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border)}
+  #play{grid-row:1/3;grid-column:1;padding:10px 14px;font-size:14px;font-weight:600;
+    background:var(--acc);color:#fff;border:0;border-radius:10px;cursor:pointer}
+  #play:hover{filter:brightness(1.12)}
+  #toggles{display:flex;gap:12px;flex-wrap:wrap}
+  #toggles label{font-size:12px;color:var(--text2);display:flex;gap:5px;align-items:center;cursor:pointer}
+  #toggles input{accent-color:var(--acc)}
+  #rel{margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-border);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #rel span{font-size:11.5px;color:var(--text2)}
+  #rel a{font-size:11.5px;color:var(--text3);text-decoration:none;border:1px solid var(--tool-border);
+    border-radius:999px;padding:3px 10px;transition:color .15s,border-color .15s}
+  #rel a:hover{color:var(--acc);border-color:var(--acc)}
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; }
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+  @media(max-width:900px){#stats{display:none}}
+  @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
+    #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="OLED与自发光像素" data-en="OLED &amp; Self-Emitting Pixels">OLED与自发光像素</h1>
+  <div class="sub" data-zh="LCD 靠背光硬挡、黑仍漏光;OLED 把光源拆到每个像素:空穴与电子在发光层复合成激子、落回能隙发出光子——选材即选色,TFT 独立开关让黑屏零发光,代价是蓝光先老 · 拖动旋转 / 空格运行/暂停" data-en="An LCD fights its always-on backlight and leaks gray into black; OLED breaks light into every pixel — holes and electrons recombine into excitons that fall across the emitter's gap as photons. Black truly draws zero, until blue ages · drag to orbit / Space = run/pause">LCD 靠背光硬挡、黑仍漏光;OLED 把光源拆到每个像素:空穴与电子在发光层复合成激子、落回能隙发出光子——选材即选色,TFT 独立开关让黑屏零发光,代价是蓝光先老 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="功耗" data-en="Power draw">功耗</span><span class="v" id="stPwr">—</span>
+  <span class="k" data-zh="黑电平" data-en="Black level">黑电平</span><span class="v" id="stBlack">—</span>
+  <span class="k" data-zh="蓝光余量" data-en="Blue budget">蓝光余量</span><span class="v" id="stBlue">—</span>
+  <span class="k" data-zh="复合事件" data-en="Recombinations">复合事件</span><span class="v" id="stRec">—</span>
+</div>
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="actions">
+    <button class="abtn" id="bText" data-zh="🔤 黑底白字" data-en="🔤 Black/white">🔤 黑底白字</button>
+    <button class="abtn" id="bWhite" data-zh="⬜ 全白画面" data-en="⬜ All white">⬜ 全白画面</button>
+    <button class="abtn" id="bRGB" data-zh="🎨 三原色" data-en="🎨 RGB bars">🎨 三原色</button>
+    <button class="abtn" id="bCross" data-zh="🔬 像素剖面" data-en="🔬 Cross-section">🔬 像素剖面</button>
+  </div>
+  <div class="row">
+    <label data-zh="亮度 %" data-en="Brightness %">亮度 %</label>
+    <input id="sBright" type="range" min="10" max="100" step="5" value="70">
+    <span class="val" id="sBrightVal">70</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" data-zh="运行" data-en="Run">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglSlow" type="checkbox"> <span data-zh="慢放 ×0.3" data-en="Slow-mo ×0.3">慢放 ×0.3</span></label>
+      <label><input id="tglAging" type="checkbox"> <span data-zh="老化模拟" data-en="Aging sim">老化模拟</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../incandescent-led/" data-zh="白炽灯与LED" data-en="Incandescent &amp; LED">白炽灯与LED</a>
+    <a href="../led-display/" data-zh="LED 显示屏" data-en="LED Displays">LED 显示屏</a>
+    <a href="../liquid-crystal/" data-zh="液晶" data-en="Liquid Crystals">液晶</a>
+    <a href="../pn-junction/" data-zh="PN 结" data-en="The PN Junction">PN 结</a>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const m4=new THREE.Matrix4();
+const htmlEl=document.documentElement;
+let THEME=localStorage.getItem('htw-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+let LANG=localStorage.getItem('htw-lang')||'zh';
+const L=(zh,en)=>LANG==='en'?en:zh;
+const qs=new URLSearchParams(location.search);
+
+/* ---- 渲染器与场景 ---- */
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:3';
+document.body.appendChild(labelRenderer.domElement);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x101418,26,70);
+const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,0.1,400);
+camera.position.set(-7,6,12);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,1.2,0);controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=3;controls.maxDistance=120;
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
+scene.add(new THREE.HemisphereLight(0xdfe8f2,0x1a1c22,0.55));
+const keyLight=new THREE.DirectionalLight(0xfff2dd,1.05);keyLight.position.set(6,10,8);scene.add(keyLight);
+const fillLight=new THREE.DirectionalLight(0x9ab8ff,0.3);fillLight.position.set(-8,5,-6);scene.add(fillLight);
+
+/* ---- 页面独特代码(定义 BG_DARK/BG_LIGHT/applyPageTheme/STEPS/updateStats/tick/pageInit) ---- */
+const BG_DARK=0x101418,BG_LIGHT=0xe9e4dc;
+let scene3Mode='text',bright=70,aging=false,blueBudget=1,recCount=0;
+/* ---- 双屏 ---- */
+function makeScreen(x,label){
+  const g=new THREE.Group();g.position.set(x,2.2,0);scene.add(g);
+  const bezel=new THREE.Mesh(new THREE.BoxGeometry(4.6,3.0,0.18),
+    new THREE.MeshStandardMaterial({color:0x2a3140,roughness:0.5,metalness:0.4}));
+  g.add(bezel);
+  const NPX=16*10;
+  const pxM=new THREE.MeshBasicMaterial({color:0xffffff});
+  const px=new THREE.InstancedMesh(new THREE.PlaneGeometry(0.24,0.24),pxM,NPX);
+  px.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  px.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(NPX*3),3);
+  g.add(px);
+  g.userData={px,NPX};
+  return g;
+}
+const lcd=makeScreen(-3.6);
+const oled=makeScreen(3.6);
+function setPixels(scr,pattern){
+  const {px,NPX}=scr.userData;
+  const c=new THREE.Color();
+  for(let i=0;i<NPX;i++){
+    const gx=i%16,gy=(i/16|0);
+    let on=1;
+    if(pattern==='text')on=(gy>=3&&gy<=6&&gx>=3&&gx<=12&&!(gx%4===0))||0;
+    else if(pattern==='rgb')on=1;
+    else on=1;
+    if(pattern==='text')c.setScalar(on*0.12);
+    else if(pattern==='white')c.setScalar(1);
+    else{
+      const hue=gx<6?0:gx<10?0.33:0.66;
+      c.setHSL(hue,0.9,0.5);
+    }
+    if(scr===lcd&&pattern==='text'&&on===0)c.setScalar(0.12);
+    px.setColorAt(i,c);
+  }
+  px.instanceColor.needsUpdate=true;
+}
+/* ---- OLED 像素剖面(前移展示) ---- */
+const secG=new THREE.Group();secG.position.set(3.6,2.2,1.6);secG.visible=false;scene.add(secG);
+const layerDefs=[
+  {c:0x868e96,z:0,h:0.12,n:'阴极'},       /* cathode */
+  {c:0x74c0fc,z:0.25,h:0.14,n:'电子传输层'},
+  {c:0xffa8a8,z:0.5,h:0.18,n:'发光层 RGB'},
+  {c:0xff922b,z:0.75,h:0.14,n:'空穴传输层'},
+  {c:0xadb5bd,z:1.0,h:0.12,n:'阳极 ITO'},
+];
+layerDefs.forEach(L2=>{
+  const m=new THREE.Mesh(new THREE.BoxGeometry(2.8,L2.h,0.1),
+    new THREE.MeshStandardMaterial({color:L2.c,roughness:0.4,metalness:0.3,transparent:true,opacity:0.92}));
+  m.position.set(0,-0.6+L2.z*1.2,0);
+  secG.add(m);
+});
+/* 载流子:空穴(红)向上/电子(蓝)向下,在发光层相遇 */
+const NH=26;
+const holeM=new THREE.MeshStandardMaterial({color:0xff6b6b,emissive:0xff6b6b,emissiveIntensity:0.6});
+const holes=new THREE.InstancedMesh(new THREE.SphereGeometry(0.045,6,5),holeM,NH);
+holes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);scene.add(holes);
+const elecM=new THREE.MeshStandardMaterial({color:0x74c0fc,emissive:0x74c0fc,emissiveIntensity:0.6});
+const elecs=new THREE.InstancedMesh(new THREE.SphereGeometry(0.045,6,5),elecM,NH);
+elecs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);scene.add(holes);scene.add(elecs);
+const hP=[],eP=[];
+for(let i=0;i<NH;i++){hP.push({s:Math.random()});eP.push({s:Math.random()});}
+const photonM=new THREE.MeshStandardMaterial({color:0xffe066,emissive:0xffe066,emissiveIntensity:0.9});
+const photons=new THREE.InstancedMesh(new THREE.SphereGeometry(0.05,8,6),photonM,30);
+photons.instanceMatrix.setUsage(THREE.DynamicDrawUsage);scene.add(photons);
+const phArr=[];for(let i=0;i<30;i++)phArr.push({s:99,x:0});
+/* ---- 功耗柱 ---- */
+const barLcd=new THREE.Mesh(new THREE.BoxGeometry(0.6,1,0.3),
+  new THREE.MeshStandardMaterial({color:0x868e96,roughness:0.5}));
+barLcd.geometry.translate(0,0.5,0);barLcd.position.set(-4.6,-1.6,0);scene.add(barLcd);
+const barOled=barLcd.clone();barOled.material=new THREE.MeshStandardMaterial({color:0xff6b6b,roughness:0.5});
+barOled.position.set(4.6,-1.6,0);scene.add(barOled);
+const baseY=-1.6;
+/* ---- 步骤 ---- */
+const STEPS=[
+ {zh:'LCD 对照:背光常开、黑仍漏光',en:'LCD: backlight always on, black leaks',
+  act(){setBoth('text');secOff();}},
+ {zh:'像素分层:五明治结构',en:'The pixel sandwich: five layers',
+  act(){secOn();}},
+ {zh:'载流子复合:激子落回发光',en:'Carriers recombine: excitons emit',
+  act(){secOn();}},
+ {zh:'选材即选色:能隙定波长',en:'Pick the molecule, pick the color',
+  act(){setBoth('rgb');}},
+ {zh:'TFT 独立开关:黑=零发光',en:'TFT switches: black draws zero',
+  act(){setBoth('text');}},
+ {zh:'烧屏:蓝光先老、残影留影',en:'Burn-in: blue ages first',
+  act(){aging=true;document.getElementById('tglAging').checked=true;setBoth('text');}},
+];
+function secOn(){secG.visible=true;}
+function secOff(){secG.visible=false;}
+function setBoth(p){scene3Mode=p;setPixels(lcd,p);setPixels(oled,p);}
+/* ---- 读数 ---- */
+function updateStats(){
+  const pLcd=(0.6+0.4*bright/100)*3.2;
+  const whiteFrac=scene3Mode==='white'?1:scene3Mode==='rgb'?0.6:0.28;
+  const pOled=(whiteFrac*bright/100)*3.2;
+  barLcd.scale.y=pLcd;barOled.scale.y=Math.max(0.02,pOled);
+  document.getElementById('stPwr').innerHTML='LCD '+pLcd.toFixed(1)+' / OLED '+pOled.toFixed(1)+' <small>W</small>';
+  const b=document.getElementById('stBlack');
+  b.innerHTML='LCD 0.12 / OLED 0.00';
+  b.className='v ok';
+  document.getElementById('stBlue').innerHTML=(blueBudget*100).toFixed(0)+'<small>%</small>';
+  document.getElementById('stRec').textContent=recCount;
+}
+function applyPageTheme(dark){}
+/* ---- 控件 ---- */
+function pageInit(){
+  const $=id=>document.getElementById(id);
+  $('sBright').addEventListener('input',e=>{bright=+e.target.value;document.getElementById('sBrightVal').textContent=bright.toFixed(0);updateStats();});
+  $('bText').addEventListener('click',()=>{setBoth('text');secOff();actBtn('bText');});
+  $('bWhite').addEventListener('click',()=>{setBoth('white');secOff();actBtn('bWhite');});
+  $('bRGB').addEventListener('click',()=>{setBoth('rgb');secOff();actBtn('bRGB');});
+  $('bCross').addEventListener('click',()=>{secOn();actBtn('bCross');});
+  $('tglAging').addEventListener('change',e=>{aging=e.target.checked;});
+  function actBtn(id){['bText','bWhite','bRGB','bCross'].forEach(b=>$(b).classList.toggle('on',b===id));}
+  setBoth('text');
+  addLabel(()=>L('背光常开:黑=拼命挡光','Always-on backlight: black is a fight'),new THREE.Vector3(-3.6,4.4,0),'r');
+  addLabel(()=>L('每个像素自己发光','Every pixel lights itself'),new THREE.Vector3(3.6,4.4,0),'g');
+  addLabel(()=>L('空穴+电子→激子→光子','Hole + electron → exciton → photon'),new THREE.Vector3(6.4,3.6,1.6),'y',()=>secG.visible);
+  addLabel(()=>L('蓝光余量:烧屏的账本','Blue budget: the burn-in ledger'),new THREE.Vector3(4.6,-0.6,0),'b',()=>aging);
+}
+/* ---- 主循环 ---- */
+function tick(dt,dts){
+  /* 载流子在剖面中迁移(可见时) */
+  if(secG.visible){
+    for(let i=0;i<NH;i++){
+      hP[i].s+=dts*0.5;if(hP[i].s>1){hP[i].s=0;recCount++;}
+      eP[i].s+=dts*0.5;if(eP[i].s>1)eP[i].s=0;
+      const x=-1.2+(i%13)/13*2.4;
+      m4.makeTranslation(x,0.55-hP[i].s*0.8,0.1);
+      holes.setMatrixAt(i,m4);
+      m4.makeTranslation(x,0.55-eP[i].s*0.8,0.1);
+      elecs.setMatrixAt(i,m4);
+    }
+    holes.instanceMatrix.needsUpdate=true;
+    elecs.instanceMatrix.needsUpdate=true;
+    /* 光子飞出 */
+    for(let i=0;i<30;i++){
+      const p=phArr[i];
+      if(p.s<1){p.s+=dts*1.4;}
+      else if(Math.random()<dts*3){
+        p.s=0;p.x=-1.2+Math.random()*2.4;
+        const hue=scene3Mode==='rgb'?[-0,0.33,0.66][Math.floor(Math.random()*3)]:0.15;
+        photonM.color.setHSL(hue,0.9,0.6);photonM.emissive.setHSL(hue,0.9,0.6);
+      }
+      const on=p.s<1;
+      m4.makeTranslation(on?p.x:0,on?0.5-p.s*0.4:0,on?0.2+p.s*1.2:-99);
+      photons.setMatrixAt(i,m4);
+    }
+    photons.instanceMatrix.needsUpdate=true;
+  }else{
+    for(let i=0;i<30;i++){m4.makeTranslation(0,-99,0);photons.setMatrixAt(i,m4);}
+    photons.instanceMatrix.needsUpdate=true;
+  }
+  /* 老化:蓝色子像素衰减 → 白画面偏黄、残影 */
+  if(aging&&dts>0){
+    blueBudget=Math.max(0.55,blueBudget-dts*0.012);
+    if(scene3Mode!=='text')setPixels(oled,scene3Mode);
+  }
+}
+
+/* ---- 共享运行时 ---- */
+let playing=qs.get('pause')!=='1';
+let labelsOn=qs.get('labels')!=='0';
+let slowMo=false;
+const labelReg=[];
+function addLabel(textFn,pos,cls='',visFn=()=>true){
+  const div=document.createElement('div');div.className='lbl '+cls;
+  const o=new CSS2DObject(div);o.position.copy(pos);scene.add(o);
+  labelReg.push({o,text:textFn,vis:visFn});div.textContent=textFn();return o;
+}
+let activeStep=0;
+function syncSteps(){document.querySelectorAll('#steps li').forEach((li,i)=>li.classList.toggle('on',i===activeStep));}
+function applyPhase(i){activeStep=clamp(i,0,STEPS.length-1);STEPS[activeStep].act();syncSteps();}
+function buildSteps(){
+  const el=document.getElementById('steps');el.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="n">${i+1}</span><span class="t"><b>${LANG==='en'?s.en:s.zh}</b></span>`;
+    li.addEventListener('click',()=>applyPhase(i));
+    el.appendChild(li);
+  });
+  syncSteps();
+}
+function syncPlayBtn(){document.getElementById('play').textContent=playing?L('暂停','Pause'):L('运行','Run');}
+document.getElementById('play').addEventListener('click',()=>{playing=!playing;syncPlayBtn();if(typeof onPlayToggle==='function')onPlayToggle(playing);});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();document.getElementById('play').click();}});
+document.getElementById('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+document.getElementById('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);
+});
+document.getElementById('tglLabels').addEventListener('change',e=>{labelsOn=e.target.checked;});
+document.getElementById('tglSlow').addEventListener('change',e=>{slowMo=e.target.checked;});
+function applyTheme(){
+  htmlEl.dataset.theme=THEME;
+  document.getElementById('themeBtn').textContent=THEME==='dark'?'☀':'☾';
+  const dark=THEME==='dark';
+  scene.background=new THREE.Color(dark?BG_DARK:BG_LIGHT);
+  scene.fog.color.setHex(dark?BG_DARK:BG_LIGHT);
+  if(typeof applyPageTheme==='function')applyPageTheme(dark);
+}
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el=>{
+    if(el.tagName==='INPUT')return;
+    el.textContent=LANG==='en'?(el.dataset.en||el.dataset.zh):el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent=LANG==='en'?'ZH':'EN';
+  buildSteps();
+}
+/* ---- 主循环 ---- */
+const clock=new THREE.Clock();
+let raf=null;
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const dt=clamp(clock.getDelta(),0,0.05);
+  const dts=dt*(playing?1:0)*(slowMo?0.3:1);
+  tick(dt,dts);
+  frame.acc=(frame.acc||0)+dt;
+  if(frame.acc>0.2){frame.acc=0;if(typeof updateStats==='function')updateStats();}
+  for(const r of labelReg){r.o.visible=labelsOn&&r.vis();if(r.o.visible)r.o.element.textContent=r.text();}
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+function start(){if(raf===null){clock.getDelta();raf=requestAnimationFrame(frame);}}
+function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+/* ---- 初始化 ---- */
+document.getElementById('tglLabels').checked=labelsOn;
+applyTheme();
+buildSteps();
+if(typeof pageInit==='function')pageInit();
+{const t=qs.get('t');if(t!==null){const i=parseInt(t)||0;if(i>=0&&i<STEPS.length)applyPhase(i);}else applyPhase(0);}
+if(typeof updateStats==='function')updateStats();
+syncPlayBtn();start();
+</script>
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div');
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

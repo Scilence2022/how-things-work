@@ -1029,6 +1029,33 @@
 - [x] 快充与 USB-PD(握手日志三步滚动,功率柱从 10W 跳上 45W,山寨头对照趴窝；CC 恒流到 4.45V 当场切 CV、电流指数收尾；环境温度滑块触发热限流降档,PPS 连续调压对照) ✅ **usb-fast-charging/**
 
 
+
+### Phase 50 · 跨家族补缺第二十一批(24/24 收官)
+- [x] 投石机与配重抛射(绞盘蓄势-释放-鞭击三段交接；配重比/臂比/释放角三滑杆扫射程；无 sling 纯杠杆对照) ✅ **trebuchet/**
+- [x] 克兰连杆与步行机构(曲柄匀速输入八杆开合如掌；脚端 D 形轨迹两段分工；双腿相位差 180° 与六腿平台过台阶) ✅ **klann-linkage/**
+- [x] 发条与宝塔轮(发条力矩随上链度衰减；链条满链绕细端/松链绕粗端对调搬家；均力前后力矩曲线与日误差对照) ✅ **mainspring-fusee/**
+- [x] 重结晶与纯化(陡/平溶解度曲线选溶剂；工作点跌破饱和线晶体台阶生长；杂质被晶面挡回与熔距对照) ✅ **recrystallization/**
+- [x] 辛烷值与爆震(单火焰面正常扫缸；末端混合气被压热自燃双火对撞；高辛烷值推迟自燃与标定对照) ✅ **octane-knock/**
+- [x] 超临界CO₂萃取(相图临界点液面当场消失；密度似液体扩散似气体；穿过豆床溶解-泄压析出闭环) ✅ **supercritical-co2/**
+- [x] 生物膜与群体感应(浮游附着分泌 EPS 筑城；信号分子过阈全城同步荧光；抗生素表层死城里活与机械清除对照) ✅ **biofilm/**
+- [x] 冬眠与代谢抑制(内分泌闸门与 Q10 台阶；心跳个位数能耗悬崖；间歇复温清废物与不冬眠对照) ✅ **hibernation/**
+- [x] 遗传漂变与奠基者效应(逐代二项抽样随机走步；种群越小抖幅越大 fixation 敲钟；瓶颈/奠基重置与选择对照) ✅ **genetic-drift/**
+- [x] 塞曼效应与谱线分裂(能级按 m_j 劈成梯；一条线裂 π 与 σ± 三重；偏振分观察方向与裂距反推磁场) ✅ **zeeman-effect/**
+- [x] 拉曼散射与分子指纹(千万分之一光子交出振动量子红移；Stokes/反 Stokes 与温度账；换分子峰搬家换波长峰不动) ✅ **raman-scattering/**
+- [x] 等效原理与自由落体(密闭电梯分不清引力与加速度；剪断缆绳秤读数当场归零；光路同弯与潮汐差边界) ✅ **equivalence-principle/**
+- [x] 小行星带与柯克伍德空隙(木星共振同方向踹一脚；偏心率被泵高轨道闯入内太阳系；3:1/5:2/7:3/2:1 空隙与无木星对照) ✅ **kirkwood-gaps/**
+- [x] 宇宙线与空气簇射(初级质子撞入核级联倍增；π⁰ 电磁枝与 μ 穿透枝；粒子毯扫过地面阵列反推能量方向) ✅ **cosmic-ray-shower/**
+- [x] 近日点进动与广义相对论(牛顿闭合椭圆的 43" 缺口；−1/r³ 修正把椭圆画成花瓣；574=531+43 对账与行星序列) ✅ **perihelion-precession/**
+- [x] 科恩达效应(射流被黏性钉在曲面；外侧低压按住转弯；曲率过急当场分离与吹气增升应用) ✅ **coanda-effect/**
+- [x] 背风波与荚状云(稳定层结过山过冲回摆；驻波列原地站立波长标度；荚状云狂风不动与滑翔爬升) ✅ **lee-waves/**
+- [x] 超临界翼型与跨音速阻力(吸力峰长出局部超声速泡；激波封口波阻跳崖；平顶设计推迟发散马赫数) ✅ **supercritical-airfoil/**
+- [x] 小波变换与时频分析(傅里叶丢时刻的困境；母波伸缩平移高频窄窗低频宽窗；chirp 斜线与断点竖线显形) ✅ **wavelet-transform/**
+- [x] 排队论与等待爆炸(泊松到达随机服务；ρ 0.9 队长翻倍 0.99 爆炸；加一窗 vs 提速十倍与利特尔定律对账) ✅ **queueing-theory/**
+- [x] B树与磁盘索引(一页一节点扇出≈100；树高 4–5 层每层一次 IO；就地分裂中键上浮与叶子链范围扫) ✅ **b-tree/**
+- [x] OLED与自发光像素(LCD 背光漏光对照；空穴电子复合成激子发光；选材即选色与烧屏蓝光先老) ✅ **oled-display/**
+- [x] 血糖仪与电化学试纸(虹吸收样 GOx 专一氧化；介体摆渡电子恒电位安培读数；标定曲线与干扰物假高对照) ✅ **glucose-meter/**
+- [x] 电蚊拍与倍压整流(二极管电容倍压梯每级踩肩；输出≈2N·V 峰值；蚊网短路火花与带载纹波对照) ✅ **voltage-multiplier/**
+
 ### Phase 49 · 跨家族补缺第二十批(24/24 收官)
 - [x] 拱与推力线(楔块拱逐块拼装、推力线随荷载实时弯曲；出带安全裕度与三铰垮塌慢放；系杆收走侧推与悬链镜像对照) ✅ **arch-thrust-line/**
 - [x] 绞盘与缆绳摩擦(张力沿绳按 e^{μθ} 指数衰减彩色剖面；圈数/μ滑块与湿缆打滑对照；松手当场整圈滑移) ✅ **capstan-winch/**
@@ -2770,6 +2797,30 @@ tcp-congestion/       TCP拥塞控制:TCP拥塞控制:AIMD 锯齿讨价还价(Th
 lateral-flow-test/    验孕棒与免疫层析:验孕棒与免疫层析:毛细自驱,T线按浓度显色(Three.js，CDN 引入)
 metal-detector/       金属探测器与涡流:金属探测器:涡流应答,电桥报警(Three.js，CDN 引入)
 mems-accelerometer/   MEMS加速度计:MEMS加速度计:质量块与梳齿电容知天下之倾(Three.js，CDN 引入)
+trebuchet/          投石机与配重抛射:投石机:配重势能半秒易手,鞭击补速定射程(Three.js，CDN 引入)
+klann-linkage/      克兰连杆与步行机构:克兰连杆:一根曲轴,八根杆,走出一步(Three.js，CDN 引入)
+mainspring-fusee/   发条与宝塔轮:发条与宝塔轮:链条搬家,力矩拉平(Three.js，CDN 引入)
+recrystallization/  重结晶与纯化:重结晶:热时全溶,冷时归晶(Three.js，CDN 引入)
+octane-knock/       辛烷值与爆震:辛烷值与爆震:一缸不容两把火(Three.js，CDN 引入)
+supercritical-co2/  超临界CO₂萃取:超临界CO₂:液气不分,溶解又钻缝(Three.js，CDN 引入)
+biofilm/            生物膜与群体感应:生物膜:细菌筑城,满城一个口令(Three.js，CDN 引入)
+hibernation/        冬眠与代谢抑制:冬眠:代谢的悬崖,不是斜坡(Three.js，CDN 引入)
+genetic-drift/      遗传漂变与奠基者效应:遗传漂变:没有选择,骰子也能定生死(Three.js，CDN 引入)
+zeeman-effect/      塞曼效应与谱线分裂:塞曼效应:磁场一推,谱线裂三(Three.js，CDN 引入)
+raman-scattering/   拉曼散射与分子指纹:拉曼散射:千万分之一的红移,问出分子指纹(Three.js，CDN 引入)
+equivalence-principle/  等效原理与自由落体:等效原理:自由落体就是惯性系(Three.js，CDN 引入)
+kirkwood-gaps/      小行星带与柯克伍德空隙:柯克伍德空隙:木星按共振清场(Three.js，CDN 引入)
+cosmic-ray-shower/  宇宙线与空气簇射:空气簇射:一颗粒子,一场粒子雨(Three.js，CDN 引入)
+perihelion-precession/  近日点进动与广义相对论:近日点进动:多出的 43 角秒(Three.js，CDN 引入)
+coanda-effect/      科恩达效应:科恩达效应:射流认壁,贴着拐弯(Three.js，CDN 引入)
+lee-waves/          背风波与荚状云:背风波:山后的驻波,云的证件照(Three.js，CDN 引入)
+supercritical-airfoil/  超临界翼型与跨音速阻力:超临界翼型:把激波抚平在翼上(Three.js，CDN 引入)
+wavelet-transform/  小波变换与时频分析:小波变换:时频两开的可缩窗口(Three.js，CDN 引入)
+queueing-theory/    排队论与等待爆炸:排队论:等待在 ρ→1 处爆炸(Three.js，CDN 引入)
+b-tree/             B树与磁盘索引:B树:把树摊平成磁盘的形状(Three.js，CDN 引入)
+oled-display/       OLED与自发光像素:OLED:每个像素自己发光(Three.js，CDN 引入)
+glucose-meter/      血糖仪与电化学试纸:血糖仪:酶认糖,电流报数(Three.js，CDN 引入)
+voltage-multiplier/  电蚊拍与倍压整流:倍压整流:三伏电池,千伏电网(Three.js，CDN 引入)
 tourbillon/         陀飞轮:笼架每分钟一圈，把重力位差逐位平均掉（Three.js，CDN 引入）
 archimedes-screw/   阿基米德螺旋泵:小斗接力把水抬上斜管（Three.js，CDN 引入）
 roberval-balance/   罗伯瓦尔天平:平行四边形约束下偏载不偏读（Three.js，CDN 引入）
