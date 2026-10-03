@@ -628,6 +628,33 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] The Traffic Green Wave (offset = distance over speed; the platoon rides green all the way; the space-time diagram's diagonal band falls apart off-speed) ✅ **traffic-green-wave/**
 
 
+
+### Phase 50 · Cross-Family Gap-Fill Batch 21 (24/24 complete)
+- [x] The Trebuchet (winch-cocked counterweight, then beam-sling whip hand-off in half a second; mass/arm-ratio/release-angle sweeps with a no-sling plain-lever comparison) ✅ **trebuchet/**
+- [x] The Klann Linkage (one constant-speed crank opens and closes eight fixed links like a hand; the foot's D-shaped print splits duty flat-stance vs arc-swing; 180° phasing and a six-leg platform over steps) ✅ **klann-linkage/**
+- [x] The Mainspring & Fusee (spring torque decays as the coil unwinds; the chain swaps ends — small radius full, large radius empty — flattening torque × arm; before/after curves with the daily-error ledger) ✅ **mainspring-fusee/**
+- [x] Recrystallization & Purification (steep vs flat solubility curves pick the solvent; the working point dives below saturation and crystal steps advance; faces turn impurities away and the melting range closes) ✅ **recrystallization/**
+- [x] Octane Rating & Knock (one flame front sweeps clean; over-compressed end-gas self-ignites and two fronts collide in sawtooth pressure; high octane delays autoignition against the iso-octane/heptane scale) ✅ **octane-knock/**
+- [x] Supercritical CO₂ Extraction (past the critical point the meniscus vanishes on the spot; liquid-like density dissolves while gas-like diffusion percolates; through the bed, out on depressurization, closed-loop recycle) ✅ **supercritical-co2/**
+- [x] Biofilms & Quorum Sensing (planktonic cells land and glue a matrix city of towers and channels; signal molecules cross threshold and the city fluoresces in unison; antibiotics kill the surface, scraping ends the story) ✅ **biofilm/**
+- [x] Hibernation & Metabolic Suppression (an endocrine gate drops and Q10 halves metabolism step by step; single-digit heartbeats on an energy cliff; intermittent rewarmings clear wastes against a no-hibernation control) ✅ **hibernation/**
+- [x] Genetic Drift & Founder Effect (binomial sampling every generation walks frequencies by pure chance; small populations shake hardest until fixation rings the bell; bottlenecks and founders restake the odds vs selection) ✅ **genetic-drift/**
+- [x] The Zeeman Effect (a field splits levels into an m_j ladder; one line cracks into a π and σ± triplet; polarization depends on the viewing axis and the splitting weighs sunspot fields) ✅ **zeeman-effect/**
+- [x] Raman Scattering & Fingerprints (one photon in ten million leaves a vibrational quantum and returns red-shifted; Stokes/anti-Stokes prices in temperature; swap molecule and peaks move, swap laser and they hold) ✅ **raman-scattering/**
+- [x] The Equivalence Principle (a sealed cabin cannot tell gravity from acceleration; cut the cable and the scale zeroes on the spot; light bends the same way and only tidal differences give the field away) ✅ **equivalence-principle/**
+- [x] The Kirkwood Gaps (Jupiter kicks resonant asteroids the same direction every few orbits; eccentricity pumps until orbits cross Mars; the 3:1/5:2/7:3/2:1 gaps and a no-Jupiter control) ✅ **kirkwood-gaps/**
+- [x] Cosmic Rays & Air Showers (a primary proton lands and the nuclear cascade doubles generation by generation; the π⁰ electromagnetic branch and the muon punch-through; a particle carpet sweeps the array to read back energy) ✅ **cosmic-ray-shower/**
+- [x] Perihelion Precession (Newton closes the ellipse yet 43″ per century goes missing; a −1/r³ spacetime term petals the orbit open; 574 = 531 + 43 settled the first GR victory) ✅ **perihelion-precession/**
+- [x] The Coandă Effect (viscosity pins the jet's boundary layer to a curved wall; outside pressure drops and holds the turn; overdone curvature throws the flow off and blown lift uses the same trick) ✅ **coanda-effect/**
+- [x] Lee Waves & Lenticular Clouds (stably stratified air overshoots the ridge and buoyancy springs it back; a standing wave-train stands still downwind; lenticulars pose motionless in gales while sailplanes climb) ✅ **lee-waves/**
+- [x] The Supercritical Airfoil (the suction peak grows a local supersonic pocket capped by a shock; wave drag falls off a cliff at divergence; the flat roof tames the pocket and pushes Mach dd up) ✅ **supercritical-airfoil/**
+- [x] The Wavelet Transform (Fourier lists frequencies but loses the when; one mother wave stretches and shifts — narrow windows up high, wide ones down low; chirp ramps and breakpoints light up) ✅ **wavelet-transform/**
+- [x] Queueing Theory (Poisson arrivals and random service; ρ=0.9 doubles the line and 0.99 explodes it like 1/(1−ρ); one extra server beats tenfold speedup and Little's law closes the books) ✅ **queueing-theory/**
+- [x] B-Trees & Disk Indexing (one page per node with fanout ≈100; four to five levels, one IO each; full nodes split and lift a middle key while range scans ride the leaf chain) ✅ **b-tree/**
+- [x] OLED & Self-Emitting Pixels (the LCD leaks gray into black from an always-on backlight; holes and electrons recombine into emitting excitons; pick the molecule, pick the color — and blue ages first) ✅ **oled-display/**
+- [x] The Glucose Meter (capillary wicking fills the chamber and GOx grips only glucose; mediators ferry electrons to a fixed-potential electrode; the calibration curve prices interferent false highs) ✅ **glucose-meter/**
+- [x] Bug Zappers & Voltage Multipliers (diode-capacitor ladder stages ride each other's shoulders; output ≈ 2N·V peak; a mosquito shorts the grid in one spark with load sag and ripple to match) ✅ **voltage-multiplier/**
+
 ### Phase 49 · Cross-Family Gap-Fill Batch 20 (24/24 complete)
 - [x] The Arch & The Thrust Line (voussoirs assemble block by block while the thrust line bends live under loads; safety margin and the three-hinge collapse in slow motion; a tie rod absorbs the thrust and the hanging-chain mirror closes the loop) ✅ **arch-thrust-line/**
 - [x] The Capstan & Rope Friction (tension decays e^{μθ}-style along the rope as a color profile; wrap-count and μ sliders with a wet-rope comparison; release the hand and the whole coil slips on the spot) ✅ **capstan-winch/**
@@ -2088,6 +2115,30 @@ poisson-distribution/ Poisson & Rare Events: Poisson & Rare Events: variance equ
 tcp-congestion/       TCP Congestion Control: TCP Congestion Control: the AIMD sawtooth haggles between speed and fairness (Three.js, CDN)
 lateral-flow-test/    Lateral-Flow Immunoassay: Lateral-Flow Immunoassay: capillary flow paints the T line by concentration (Three.js, CDN)
 metal-detector/       Metal Detectors & Eddy Currents: Metal Detectors: eddy currents answer the coil and tip the bridge (Three.js, CDN)
+trebuchet/          The Trebuchet: potential energy changes hands in half a second (Three.js, CDN)
+klann-linkage/      The Klann Linkage: one crank, eight links, one step (Three.js, CDN)
+mainspring-fusee/   The Mainspring & Fusee: a chain that moves house flattens torque (Three.js, CDN)
+recrystallization/  Recrystallization: hot dissolves, cold crystallizes (Three.js, CDN)
+octane-knock/       Octane Rating & Knock: one cylinder will not hold two fires (Three.js, CDN)
+supercritical-co2/  Supercritical CO₂: neither liquid nor gas, it dissolves and percolates (Three.js, CDN)
+biofilm/            Biofilms & Quorum Sensing: bacteria build a city with one command (Three.js, CDN)
+hibernation/        Hibernation: a cliff of metabolism, not a slope (Three.js, CDN)
+genetic-drift/      Genetic Drift: dice decide with no selector in sight (Three.js, CDN)
+zeeman-effect/      The Zeeman Effect: push with a field, the line splits in three (Three.js, CDN)
+raman-scattering/   Raman Scattering: one photon in ten million names the molecule (Three.js, CDN)
+equivalence-principle/  The Equivalence Principle: free fall is an inertial frame (Three.js, CDN)
+kirkwood-gaps/      The Kirkwood Gaps: Jupiter sweeps the floor by resonance (Three.js, CDN)
+cosmic-ray-shower/  Cosmic Rays & Air Showers: one particle, one rain of particles (Three.js, CDN)
+perihelion-precession/  Perihelion Precession: the extra 43 arcseconds (Three.js, CDN)
+coanda-effect/      The Coandă Effect: the jet trusts the wall and hugs the bend (Three.js, CDN)
+lee-waves/          Lee Waves & Lenticular Clouds: standing waves behind the hill (Three.js, CDN)
+supercritical-airfoil/  The Supercritical Airfoil: ironing the shock into the wing (Three.js, CDN)
+wavelet-transform/  The Wavelet Transform: a scalable window open in time and frequency (Three.js, CDN)
+queueing-theory/    Queueing Theory: waiting explodes as ρ→1 (Three.js, CDN)
+b-tree/             B-Trees: flattening the tree into the disk's shape (Three.js, CDN)
+oled-display/       OLED & Self-Emitting Pixels: every pixel lights itself (Three.js, CDN)
+glucose-meter/      The Glucose Meter: the enzyme knows sugar, current tells the number (Three.js, CDN)
+voltage-multiplier/  Bug Zappers & Voltage Multipliers: a 3 V cell, a kilovolt grid (Three.js, CDN)
 mems-accelerometer/   The MEMS Accelerometer: The MEMS Accelerometer: a proof mass and comb capacitors know which way is down (Three.js, CDN)
 tourbillon/          Tourbillon: a cage rotating once a minute averages positional error (Three.js, CDN)
 archimedes-screw/    Archimedes Screw: pockets of water relayed up the incline (Three.js, CDN)

@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>B树 · 把树摊平成磁盘的形状</title>
+<style>
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;--acc:#b2f2bb;--acc-rgb:178,242,187;
+    --bg:#0f1113;--panel:rgba(15,17,19,.86);--panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;
+    --hover:rgba(255,255,255,.05);--shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,17,19,.78);--tool-border:rgba(255,255,255,.12);--cv-pill:rgba(15,17,19,.8);
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;--acc:#2f9e44;--acc-rgb:47,158,68;
+    --bg:#f1efec;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+    --text:#16202c;--text2:#5b6b7d;--text3:#33414f;
+    --hover:rgba(15,25,40,.05);--shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);--cv-pill:rgba(255,255,255,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s}
+  #app{position:fixed;inset:0}#app canvas{display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+  .lbl{background:var(--cv-pill);border:1px solid var(--tool-border);color:var(--text3);font-size:12px;
+    line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);transition:opacity .25s}
+  :root[data-theme="light"] .lbl{text-shadow:none}
+  .lbl.o{border-color:rgba(255,169,77,.9);color:#ffe0c2}.lbl.r{border-color:rgba(255,107,107,.9);color:#ffc2c2}
+  .lbl.g{border-color:rgba(116,220,132,.9);color:#c8f5d0}.lbl.b{border-color:rgba(116,192,252,.9);color:#bde9ff}
+  .lbl.y{border-color:rgba(252,196,25,.9);color:#ffe9a8}
+  :root[data-theme="light"] .lbl.o{color:#a34e00}:root[data-theme="light"] .lbl.r{color:#c92a2a}
+  :root[data-theme="light"] .lbl.g{color:#2b8a3e}:root[data-theme="light"] .lbl.b{color:#1864ab}
+  :root[data-theme="light"] .lbl.y{color:#b8860b}
+  #tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px}
+  .tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);
+    color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;
+    padding:0 12px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;text-decoration:none;backdrop-filter:blur(6px);
+    transition:border-color .15s,color .15s,transform .15s}
+  .tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px)}
+  #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px)}
+  #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  #stats{position:fixed;right:18px;bottom:18px;z-index:4;background:var(--panel);
+    border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+    backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px}
+  #stats .k{font-size:12px;color:var(--text2);align-self:center}
+  #stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  #stats .v small{font-size:11px;color:var(--text2);font-weight:400}
+  #stats .v.warn{color:#ff6b6b}#stats .v.ok{color:#8ce99a}
+  #panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;padding:14px 16px 12px;backdrop-filter:blur(6px);
+    box-shadow:var(--shadow);max-height:calc(100vh - 160px);overflow:auto}
+  #actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 30%;
+    background:var(--hover);color:var(--text2);border:1px solid var(--tool-border);
+    border-radius:9px;padding:7px 10px;font-size:12.5px;font-weight:600;
+    transition:border-color .15s,color .15s,background .15s}
+  .abtn:hover{border-color:var(--acc);color:var(--text)}
+  .abtn.on{border-color:rgba(var(--acc-rgb),.6);background:rgba(var(--acc-rgb),.12);color:var(--text)}
+  .row{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .row label{font-size:12px;color:var(--text2);flex:0 0 92px}
+  .row .val{font-size:11.5px;color:var(--text3);flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc);height:18px}
+  #steps{list-style:none;margin-top:8px}
+  #steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;align-items:flex-start}
+  #steps li:hover{background:var(--hover)}
+  #steps li.on{background:rgba(var(--acc-rgb),.10);border-color:rgba(var(--acc-rgb),.45)}
+  #steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;display:flex;
+    align-items:center;justify-content:center;margin-top:1px;
+    background:rgba(255,255,255,.12);color:var(--text3)}
+  :root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10)}
+  #steps li.on .n{background:var(--acc);color:#fff}
+  #steps .t{font-size:12px;color:var(--text3);line-height:1.45}
+  #steps .t b{color:var(--text);font-size:12px}
+  #steps li.on .t b{color:var(--acc)}
+  #ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border)}
+  #play{grid-row:1/3;grid-column:1;padding:10px 14px;font-size:14px;font-weight:600;
+    background:var(--acc);color:#fff;border:0;border-radius:10px;cursor:pointer}
+  #play:hover{filter:brightness(1.12)}
+  #toggles{display:flex;gap:12px;flex-wrap:wrap}
+  #toggles label{font-size:12px;color:var(--text2);display:flex;gap:5px;align-items:center;cursor:pointer}
+  #toggles input{accent-color:var(--acc)}
+  #rel{margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-border);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #rel span{font-size:11.5px;color:var(--text2)}
+  #rel a{font-size:11.5px;color:var(--text3);text-decoration:none;border:1px solid var(--tool-border);
+    border-radius:999px;padding:3px 10px;transition:color .15s,border-color .15s}
+  #rel a:hover{color:var(--acc);border-color:var(--acc)}
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; }
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+  @media(max-width:900px){#stats{display:none}}
+  @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
+    #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="B树与磁盘索引" data-en="B-Trees &amp; Disk Indexing">B树与磁盘索引</h1>
+  <div class="sub" data-zh="磁盘一次读一页,二叉树十亿行要 30 次随机 IO;B 树把节点摊平成页、扇出≈100,树高 4–5 层、根常驻内存:满了就地分裂中键上浮,范围查询沿叶子链顺序扫 · 拖动旋转 / 空格运行/暂停" data-en="Disks read a page at a time; a billion-row BST costs 30 random I/Os. B-trees flatten nodes into pages with fanout ≈100: 4–5 levels, root in RAM — full nodes split, range scans ride the leaf chain · drag to orbit / Space = run/pause">磁盘一次读一页,二叉树十亿行要 30 次随机 IO;B 树把节点摊平成页、扇出≈100,树高 4–5 层、根常驻内存:满了就地分裂中键上浮,范围查询沿叶子链顺序扫 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="树高" data-en="Height">树高</span><span class="v" id="stH">—</span>
+  <span class="k" data-zh="本次 IO" data-en="This query IO">本次 IO</span><span class="v" id="stIO">—</span>
+  <span class="k" data-zh="节点填充率" data-en="Node fill">节点填充率</span><span class="v" id="stFill">—</span>
+  <span class="k" data-zh="键总数" data-en="Total keys">键总数</span><span class="v" id="stN">—</span>
+</div>
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="actions">
+    <button class="abtn" id="bFind" data-zh="🔍 查找" data-en="🔍 Find">🔍 查找</button>
+    <button class="abtn" id="bInsert" data-zh="➕ 插入(看分裂)" data-en="➕ Insert (split)">➕ 插入(看分裂)</button>
+    <button class="abtn" id="bRange" data-zh="📋 范围查询" data-en="📋 Range scan">📋 范围查询</button>
+    <button class="abtn" id="bBST" data-zh="🌳 BST 对照" data-en="🌳 BST view">🌳 BST 对照</button>
+  </div>
+  <div class="row">
+    <label data-zh="示意扇出 log₁₀" data-en="Fanout (log₁₀)">示意扇出 log₁₀</label>
+    <input id="sFan" type="range" min="1" max="3" step="0.5" value="2.0">
+    <span class="val" id="sFanVal">2.0</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" data-zh="运行" data-en="Run">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglSlow" type="checkbox"> <span data-zh="慢放 ×0.3" data-en="Slow-mo ×0.3">慢放 ×0.3</span></label>
+      <label><input id="tglBst" type="checkbox" checked> <span data-zh="对照面板" data-en="Comparison panel">对照面板</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../binary-search-tree/" data-zh="二叉搜索树" data-en="Binary Search Trees">二叉搜索树</a>
+    <a href="../hash-table/" data-zh="哈希表" data-en="Hash Tables">哈希表</a>
+    <a href="../cpu-cache/" data-zh="CPU 缓存" data-en="CPU Caches">CPU 缓存</a>
+    <a href="../consistent-hashing/" data-zh="一致性哈希" data-en="Consistent Hashing">一致性哈希</a>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const m4=new THREE.Matrix4();
+const htmlEl=document.documentElement;
+let THEME=localStorage.getItem('htw-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+let LANG=localStorage.getItem('htw-lang')||'zh';
+const L=(zh,en)=>LANG==='en'?en:zh;
+const qs=new URLSearchParams(location.search);
+
+/* ---- 渲染器与场景 ---- */
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:3';
+document.body.appendChild(labelRenderer.domElement);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x101418,26,70);
+const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,0.1,400);
+camera.position.set(-7,6,12);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,1.2,0);controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=3;controls.maxDistance=120;
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
+scene.add(new THREE.HemisphereLight(0xdfe8f2,0x1a1c22,0.55));
+const keyLight=new THREE.DirectionalLight(0xfff2dd,1.05);keyLight.position.set(6,10,8);scene.add(keyLight);
+const fillLight=new THREE.DirectionalLight(0x9ab8ff,0.3);fillLight.position.set(-8,5,-6);scene.add(fillLight);
+
+/* ---- 页面独特代码(定义 BG_DARK/BG_LIGHT/applyPageTheme/STEPS/updateStats/tick/pageInit) ---- */
+const BG_DARK=0x101418,BG_LIGHT=0xe9e4dc;
+/* ---- B 树(阶 4:节点最多 3 键) ---- */
+const ORDER=4;
+let root={keys:[],kids:[],leaf:true};
+let total=0,ioCount=0;
+function splitChild(node,i){
+  const y=node.kids[i];
+  const mid=y.keys[1];
+  const z={keys:[y.keys[2]],kids:y.leaf?[]:y.kids.slice(2),leaf:y.leaf};
+  y.keys=[y.keys[0]];if(!y.leaf)y.kids=y.kids.slice(0,2);
+  node.kids.splice(i+1,0,z);
+  node.keys.splice(i,0,mid);
+  node.leaf=false;
+}
+function insert(node,key){
+  if(node.keys.includes(key))return false;
+  if(node.leaf){
+    node.keys.push(key);node.keys.sort((a,b)=>a-b);total++;
+    return true;
+  }
+  let i=0;while(i<node.keys.length&&key>node.keys[i])i++;
+  if(node.kids[i].keys.length===ORDER-1){
+    splitChild(node,i);
+    if(key>node.keys[i])i++;
+  }
+  return insert(node.kids[i],key);
+}
+function addKey(key){
+  if(root.keys.length>=ORDER-1){
+    const s={keys:[],kids:[root],leaf:false};
+    splitChild(s,0);
+    root=s;
+  }
+  const ok=insert(root,key);
+  if(ok)rebuild();
+  return ok;
+}
+function findPath(key){
+  const path=[];let node=root;ioCount=0;
+  while(node){
+    ioCount++;
+    path.push(node);
+    let i=0;while(i<node.keys.length&&key>node.keys[i])i++;
+    if(i<node.keys.length&&node.keys[i]===key)break;
+    node=node.leaf?null:node.kids[i];
+  }
+  return path;
+}
+function leafChain(){
+  const out=[];
+  (function walk(n){if(n.leaf){out.push(n);return;}n.kids.forEach(walk);})(root);
+  return out;
+}
+/* ---- 渲染节点 ---- */
+const pageM=new THREE.MeshStandardMaterial({color:0x2f9e44,roughness:0.4,metalness:0.25});
+const pageMHit=new THREE.MeshStandardMaterial({color:0xffd43b,roughness:0.35,metalness:0.3,emissive:0xffd43b,emissiveIntensity:0.25});
+const keyM=new THREE.MeshStandardMaterial({color:0xb2f2bb,roughness:0.35,emissive:0x2f9e44,emissiveIntensity:0.15});
+const keyMHit=new THREE.MeshStandardMaterial({color:0xffd43b,emissive:0xff922b,emissiveIntensity:0.6});
+let nodeMeshes=[];
+function clearNodes(){nodeMeshes.forEach(m=>scene.remove(m.g));nodeMeshes=[];}
+function buildNodeMesh(node,x,y,pathSet){
+  const g=new THREE.Group();
+  const isHit=pathSet.has(node);
+  const pg=new THREE.Mesh(new THREE.BoxGeometry(1.15,0.5,0.55),isHit?pageMHit:pageM.clone());
+  g.add(pg);
+  const nK=node.keys.length;
+  node.keys.forEach((k,i)=>{
+    const km=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.2,0.06),keyM.clone());
+    km.position.set((i-(nK-1)/2)*0.26,0,0.3);
+    g.add(km);
+  });
+  g.position.set(x,y,0);
+  scene.add(g);
+  nodeMeshes.push({g,node,pg});
+  return g;
+}
+function rebuild(hitPath){
+  clearNodes();
+  const pathSet=new Set(hitPath||[]);
+  /* 按层布局 */
+  const levels=[];
+  (function walk(n,d){if(!levels[d])levels[d]=[];levels[d].push(n);if(!n.leaf)n.kids.forEach(k=>walk(k,d+1));})(root,0);
+  const H=levels.length;
+  levels.forEach((lv,d)=>{
+    const n=lv.length;
+    lv.forEach((node,i)=>{
+      const x=(i-(n-1)/2)*2.2;
+      const y=H*1.35-d*1.35;
+      buildNodeMesh(node,x,y,pathSet);
+    });
+  });
+  document.getElementById('stH').textContent=H;
+  document.getElementById('stN').textContent=total;
+  const fill=nodeMeshes.reduce((s,m)=>s+m.node.keys.length,0)/(nodeMeshes.length*(ORDER-1));
+  document.getElementById('stFill').innerHTML=(fill*100).toFixed(0)+'<small>%</small>';
+  if(typeof updateStats==='function')updateStats();
+}
+/* ---- BST 对照(抽象高矮柱) ---- */
+const cmpG=new THREE.Group();cmpG.position.set(-7.8,2.0,-2.4);scene.add(cmpG);
+const cmpBg=new THREE.Mesh(new THREE.PlaneGeometry(4.6,3.6),
+  new THREE.MeshStandardMaterial({color:0x151b25,roughness:0.9,transparent:true,opacity:0.85}));
+cmpG.add(cmpBg);
+function cmpBar(color,x,hFrac,label){
+  const g=new THREE.Group();
+  const bar=new THREE.Mesh(new THREE.BoxGeometry(0.5,2.6,0.06),
+    new THREE.MeshStandardMaterial({color,roughness:0.5}));
+  bar.geometry.translate(0,1.3,0);bar.scale.y=hFrac;g.add(bar);
+  g.position.set(x,-1.4,0.05);cmpG.add(g);return g;
+}
+const barBst=cmpBar(0xff6b6b,-0.9,0.96);
+const barB=cmpBar(0xb2f2bb,0.9,0.16);
+/* ---- 步骤 ---- */
+const STEPS=[
+ {zh:'BST 困境:十亿行 30 次 IO',en:'BST trouble: 30 I/Os for a billion rows',
+  act(){cmpG.visible=true;}},
+ {zh:'摊平:一页塞几十个键',en:'Flatten: dozens of keys per page',
+  act(){cmpG.visible=true;}},
+ {zh:'查找:每层读一页',en:'Search: one page per level',
+  act(){doFind();}},
+ {zh:'插入:节点满了就地分裂',en:'Insert: full nodes split in place',
+  act(){doInsert();}},
+ {zh:'范围查询:沿叶子链顺序扫',en:'Range scan: ride the leaf chain',
+  act(){doRange();}},
+ {zh:'BST / B树 / 哈希对表',en:'BST vs B-tree vs hash',
+  act(){cmpG.visible=true;}},
+];
+/* ---- 操作 ---- */
+let lastPath=[],lastKey=0,rangeHi=[];
+function doFind(){
+  const all=[];(function walk(n){n.keys.forEach(k=>all.push(k));if(!n.leaf)n.kids.forEach(walk);})(root);
+  if(!all.length)return;
+  lastKey=all[Math.floor(Math.random()*all.length)];
+  lastPath=findPath(lastKey);
+  rebuild(lastPath);
+  document.getElementById('stIO').textContent=ioCount;
+}
+function doInsert(){
+  const exists=k=>{
+    let n=root;
+    while(n){if(n.keys.includes(k))return true;
+      let i=0;while(i<n.keys.length&&k>n.keys[i])i++;
+      n=n.leaf?null:n.kids[i];}
+    return false;
+  };
+  let key;
+  do{key=10+Math.floor(Math.random()*890);}while(exists(key));
+  lastKey=key;
+  addKey(key);
+  lastPath=findPath(key);
+  rebuild(lastPath);
+  document.getElementById('stIO').textContent=ioCount;
+}
+function doRange(){
+  const leaves=leafChain();
+  rangeHi=leaves.slice(0,Math.max(1,Math.floor(leaves.length*0.4)));
+  rangeHi.forEach(n=>n.keys.length&&n);
+  rebuild(rangeHi);
+  document.getElementById('stIO').textContent=leaves.length;
+}
+/* ---- 读数 ---- */
+function updateStats(){}
+function applyPageTheme(dark){
+  cmpBg.material.color.setHex(dark?0x151b25:0xded7cb);
+}
+/* ---- 控件 ---- */
+function pageInit(){
+  const $=id=>document.getElementById(id);
+  $('bFind').addEventListener('click',doFind);
+  $('bInsert').addEventListener('click',doInsert);
+  $('bRange').addEventListener('click',doRange);
+  $('bBST').addEventListener('click',()=>{cmpG.visible=!cmpG.visible;$('bBST').classList.toggle('on',cmpG.visible);});
+  $('tglBst').addEventListener('change',e=>{cmpG.visible=e.target.checked;});
+  $('sFan').addEventListener('input',e=>{document.getElementById('sFanVal').textContent=(+e.target.value).toFixed(1);});
+  /* 预置一棵树 */
+  [50,20,80,10,30,70,90,5,15,25,35,65,75,85,95,12,28,32,40,60,68,78,88,98].forEach(k=>addKey(k));
+  lastPath=[];rebuild();
+  camera.position.set(-3.2,4.2,9.8);controls.target.set(0,2.2,0);
+  document.getElementById('stIO').textContent='—';
+  addLabel(()=>L('一页一节点:扇出≈100','One page per node: fanout ≈100'),new THREE.Vector3(0,6.6,0),'g');
+  addLabel(()=>L('查找路径:每层一次 IO','The search path: one IO per level'),new THREE.Vector3(-5.4,4.6,0),'y',()=>lastPath.length>0);
+  addLabel(()=>L('BST:细高树 IO 多','BST: tall & thin, IO-heavy'),new THREE.Vector3(-8.6,1.2,-2.3),'r',()=>cmpG.visible);
+  addLabel(()=>L('叶子链:范围扫描的高速路','The leaf chain: range-scan highway'),new THREE.Vector3(4.4,0.6,0),'b',()=>rangeHi.length>0);
+}
+/* ---- 主循环 ---- */
+let pulseT=0;
+function tick(dt,dts){
+  pulseT+=dt;
+  const p=(Math.sin(pulseT*3)+1)/2;
+  nodeMeshes.forEach(m=>{
+    if(m.pg.material===pageMHit){m.pg.material.emissiveIntensity=0.15+0.3*p;}
+  });
+  barBst.scale.y=0.96+0.02*Math.sin(pulseT*2);
+}
+
+/* ---- 共享运行时 ---- */
+let playing=qs.get('pause')!=='1';
+let labelsOn=qs.get('labels')!=='0';
+let slowMo=false;
+const labelReg=[];
+function addLabel(textFn,pos,cls='',visFn=()=>true){
+  const div=document.createElement('div');div.className='lbl '+cls;
+  const o=new CSS2DObject(div);o.position.copy(pos);scene.add(o);
+  labelReg.push({o,text:textFn,vis:visFn});div.textContent=textFn();return o;
+}
+let activeStep=0;
+function syncSteps(){document.querySelectorAll('#steps li').forEach((li,i)=>li.classList.toggle('on',i===activeStep));}
+function applyPhase(i){activeStep=clamp(i,0,STEPS.length-1);STEPS[activeStep].act();syncSteps();}
+function buildSteps(){
+  const el=document.getElementById('steps');el.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="n">${i+1}</span><span class="t"><b>${LANG==='en'?s.en:s.zh}</b></span>`;
+    li.addEventListener('click',()=>applyPhase(i));
+    el.appendChild(li);
+  });
+  syncSteps();
+}
+function syncPlayBtn(){document.getElementById('play').textContent=playing?L('暂停','Pause'):L('运行','Run');}
+document.getElementById('play').addEventListener('click',()=>{playing=!playing;syncPlayBtn();if(typeof onPlayToggle==='function')onPlayToggle(playing);});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();document.getElementById('play').click();}});
+document.getElementById('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+document.getElementById('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);
+});
+document.getElementById('tglLabels').addEventListener('change',e=>{labelsOn=e.target.checked;});
+document.getElementById('tglSlow').addEventListener('change',e=>{slowMo=e.target.checked;});
+function applyTheme(){
+  htmlEl.dataset.theme=THEME;
+  document.getElementById('themeBtn').textContent=THEME==='dark'?'☀':'☾';
+  const dark=THEME==='dark';
+  scene.background=new THREE.Color(dark?BG_DARK:BG_LIGHT);
+  scene.fog.color.setHex(dark?BG_DARK:BG_LIGHT);
+  if(typeof applyPageTheme==='function')applyPageTheme(dark);
+}
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el=>{
+    if(el.tagName==='INPUT')return;
+    el.textContent=LANG==='en'?(el.dataset.en||el.dataset.zh):el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent=LANG==='en'?'ZH':'EN';
+  buildSteps();
+}
+/* ---- 主循环 ---- */
+const clock=new THREE.Clock();
+let raf=null;
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const dt=clamp(clock.getDelta(),0,0.05);
+  const dts=dt*(playing?1:0)*(slowMo?0.3:1);
+  tick(dt,dts);
+  frame.acc=(frame.acc||0)+dt;
+  if(frame.acc>0.2){frame.acc=0;if(typeof updateStats==='function')updateStats();}
+  for(const r of labelReg){r.o.visible=labelsOn&&r.vis();if(r.o.visible)r.o.element.textContent=r.text();}
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+function start(){if(raf===null){clock.getDelta();raf=requestAnimationFrame(frame);}}
+function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+/* ---- 初始化 ---- */
+document.getElementById('tglLabels').checked=labelsOn;
+applyTheme();
+buildSteps();
+if(typeof pageInit==='function')pageInit();
+{const t=qs.get('t');if(t!==null){const i=parseInt(t)||0;if(i>=0&&i<STEPS.length)applyPhase(i);}else applyPhase(0);}
+if(typeof updateStats==='function')updateStats();
+syncPlayBtn();start();
+</script>
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div');
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
