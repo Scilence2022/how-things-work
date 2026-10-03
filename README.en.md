@@ -630,6 +630,33 @@ A collection of animated explanations. We use animation to make "invisible princ
 
 
 
+
+### Phase 52 · Cross-Family Gap-Fill Batch 23 (24/24 complete)
+- [x] The Shear Pin & Torque Limiter (a deliberately weak pin snaps on overload and saves the chain; the shear version is one-shot while the friction limiter slips and resets; fuse logic built into steel) ✅ **shear-pin/**
+- [x] Thrust Bearings & Tilting Pads (a fixed pad kills the film, a tilting pad self-forms the wedge; load shifts re-trim the tilt and the pressure shoe; how big hydro shafts float) ✅ **thrust-bearing/**
+- [x] Wheel Taper & Self-Steering (drift one way and the larger radius pushes back; the rigid axle self-centers by taper and hunts in waves; on curves the radius difference does the steering) ✅ **rail-wheelset/**
+- [x] Quenching & Martensite (a quench traps carbon in a supersaturated lattice — hardness leaps; tempering buys back toughness at chosen temperature; the heat recipe behind blades, springs and bearing steel) ✅ **quench-hardening/**
+- [x] Precipitation Hardening (solution-quench, then nanoprecipitates pin the dislocations and strength doubles; natural vs artificial aging curves; over-aging coarsens the pins and the gain melts away) ✅ **age-hardening/**
+- [x] Supercapacitors & the EDLC (counter-ions layer up against the electrode; energy stored by adsorption — seconds to charge, a million cycles; the power-versus-energy division of labor with batteries) ✅ **supercapacitor/**
+- [x] DNA Repair & Proofreading (the polymerase proofreads in stride, mismatch repair fills the gaps; excision repair cuts out damage and rewrites; when repair loses the race, aging and cancer start) ✅ **dna-repair/**
+- [x] Lichen Symbiosis (the fungus shelters and waters, the photobiont pays in sugar; pioneers of bare rock, survivors of space exposure; a bond so tight they share one name) ✅ **lichen/**
+- [x] Electroreception & Electric Fish (gel-filled tubes sense billionth-of-a-volt fields; buried prey cannot hide a heartbeat; the electric eel runs it in reverse — active discharge as radar and weapon) ✅ **electroreception/**
+- [x] Thermoacoustic Engines (sound compresses-and-heats, rarefies-and-cools; heat exchangers couple the phases; a temperature difference sings itself into sound that drives an alternator — a heat engine with no pistons) ✅ **thermoacoustic/**
+- [x] Metamaterials & Negative Refraction (sub-wavelength structure sets the index; μ and ε both negative — light bends the wrong way; the perfect lens and a cloak that routes waves around) ✅ **metamaterials/**
+- [x] The Cavendish Experiment (lead spheres twist the fiber less than 0.01°; an optical lever magnifies the sliver; the first weighing of Earth's density and G) ✅ **cavendish/**
+- [x] Spiral Arms & Density Waves (arms are traffic jams, not clubs; the wave turns slowly, stars fast — the pattern never winds up; the compression lights up stellar nurseries) ✅ **spiral-arms/**
+- [x] Titan's Methane Cycle (at −179 °C methane plays water's role; clouds, rain, rivers, lakes and evaporation in one loop; low gravity and thick air — flap your arms and fly) ✅ **titan-methane/**
+- [x] Lunar Laser Ranging (Apollo's reflectors still serve; a 2.5-second laser round trip good to millimeters; the Moon recedes 3.8 cm per year as Earth's spin slows — the tides keep the books) ✅ **lunar-receding/**
+- [x] The Ekman Spiral (Coriolis turns each layer a little more than the one above; the flow direction winds a full circle with depth; net transport ends up crosswind — the atmosphere does it too) ✅ **ekman-spiral/**
+- [x] The Jet Stream (geostrophic wind from temperature gradients; 400 km/h along air-mass fronts; WWII bombers met it first — and when it wobbles, the weather below is rewritten) ✅ **jet-stream/**
+- [x] The Tiltrotor (nacelles rotate 90° between helicopter and turboprop identities; hover and cruise in one airframe; the transition envelope is the hard part) ✅ **tiltrotor/**
+- [x] The Skip List (coin flips build layers over a sorted list; a search skis downhill from the top — expected O(log n), randomness standing in for rotations) ✅ **skip-list/**
+- [x] K-Means Clustering (claim-nearest, move-to-mean, repeat; structure without labels; K and the seed decide which local optimum you get) ✅ **k-means/**
+- [x] The Particle Filter (a thousand hypothesis-carrying particles; predict, weight by observation, resample — winners breed; tracking nonlinear, non-Gaussian worlds with a thinking cloud) ✅ **particle-filter/**
+- [x] The Pulse Oximeter (two wavelengths tell oxy- from deoxyhemoglobin apart; the pulse surge isolates arterial blood from tissue; SpO₂ from two LEDs and a photodiode) ✅ **pulse-oximeter/**
+- [x] The Cochlear Implant (bypassing dead hair cells; electrodes along the spiral encode pitch by place; a processor splits bands and drives the nerve — the brain relearns hearing) ✅ **cochlear-implant/**
+- [x] Structured-Light 3D Scanning (project known stripes; their geometric warp encodes depth; each point triangulates from two rays; an infrared grid dots your face thirty thousand times a second) ✅ **structured-light/**
+
 ### Phase 51 · Cross-Family Gap-Fill Batch 22 (24/24 complete)
 - [x] The Centrifugal Clutch (shoe force ∝ ω² overcomes the spring preload and grabs the drum; slipping below the engagement speed, locked above; overload slips on the spot and spring stiffness moves the threshold) ✅ **centrifugal-clutch/**
 - [x] The Safety Relief Valve (thrust past spring preload pops the disc and vents; reseating hysteresis prevents chatter — watch the pop/reseat gap; turn the spring to move the setpoint, with back-pressure effects) ✅ **relief-valve/**
@@ -2190,6 +2217,30 @@ decision-tree/        Decision Trees & Information Gain: Decision Trees: take th
 mask-filtration/      Masks & Electret Filtration: Electret Filtration: electrostatics guards 0.3 µm (Three.js, CDN)
 load-cell/            Load Cells & Strain Gauges: Load Cells: weighing how much the beam bends (Three.js, CDN)
 gfci/                 Grounding & the GFCI: The GFCI: 30 mA of mismatch, 25 ms to trip (Three.js, CDN)
+shear-pin/            The Shear Pin & Torque Limiter: Shear Pin: break me first, spare the drivetrain (Three.js, CDN)
+thrust-bearing/       Thrust Bearings & Tilting Pads: Thrust Bearings: the pad that tilts keeps the wedge alive (Three.js, CDN)
+rail-wheelset/        Wheel Taper & Self-Steering: Wheel Taper: drift, get pushed back, self-centered (Three.js, CDN)
+quench-hardening/     Quenching & Martensite: Quenching: the carbon never makes it out — the steel turns hard (Three.js, CDN)
+age-hardening/        Precipitation Hardening: Age Hardening: nanopins that snag dislocations (Three.js, CDN)
+supercapacitor/       Supercapacitors & the EDLC: Supercapacitor: double-layer storage, seconds and a million cycles (Three.js, CDN)
+dna-repair/           DNA Repair & Proofreading: DNA Repair: a hundred thousand hits a day, all repaired (Three.js, CDN)
+lichen/               Lichen Symbiosis: Lichen: the fungus houses, the alga pays, one name (Three.js, CDN)
+electroreception/     Electroreception & Electric Fish: Electroreception: even a heartbeat under the sand shows (Three.js, CDN)
+thermoacoustic/       Thermoacoustic Engines: Thermoacoustics: the temperature gradient sings, the sound generates (Three.js, CDN)
+metamaterials/        Metamaterials & Negative Refraction: Metamaterials: structure decides the index, light breaks the rule (Three.js, CDN)
+cavendish/            The Cavendish Experiment: Cavendish: 0.01 degrees to weigh the Earth (Three.js, CDN)
+spiral-arms/          Spiral Arms & Density Waves: Spiral Arms: a traffic jam that never disperses (Three.js, CDN)
+titan-methane/        Titan's Methane Cycle: Titan: methane runs the weather there (Three.js, CDN)
+lunar-receding/       Lunar Laser Ranging: Lunar Ranging: 3.8 cm a year, the tides keep books (Three.js, CDN)
+ekman-spiral/         The Ekman Spiral: The Ekman Spiral: deeper is deflected, a full turn down (Three.js, CDN)
+jet-stream/           The Jet Stream: The Jet Stream: the atmosphere's river and its chief editor (Three.js, CDN)
+tiltrotor/            The Tiltrotor: Tiltrotor: rotate the rotors, have it both ways (Three.js, CDN)
+skip-list/            The Skip List: Skip List: coin flips that mint O(log n) (Three.js, CDN)
+k-means/              K-Means Clustering: k-means: a two-step dance into clusters (Three.js, CDN)
+particle-filter/      The Particle Filter: Particle Filter: a thinking cloud of hypotheses (Three.js, CDN)
+pulse-oximeter/       The Pulse Oximeter: Pulse Oximeter: two beams read the blood's oxygen (Three.js, CDN)
+cochlear-implant/     The Cochlear Implant: Cochlear Implant: electrics for acoustics, the brain relearns (Three.js, CDN)
+structured-light/     Structured-Light 3D Scanning: Structured Light: the warp of stripes is depth (Three.js, CDN)
 mems-accelerometer/   The MEMS Accelerometer: The MEMS Accelerometer: a proof mass and comb capacitors know which way is down (Three.js, CDN)
 tourbillon/          Tourbillon: a cage rotating once a minute averages positional error (Three.js, CDN)
 archimedes-screw/    Archimedes Screw: pockets of water relayed up the incline (Three.js, CDN)
