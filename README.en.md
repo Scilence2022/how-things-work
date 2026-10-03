@@ -629,6 +629,33 @@ A collection of animated explanations. We use animation to make "invisible princ
 
 
 
+
+### Phase 51 · Cross-Family Gap-Fill Batch 22 (24/24 complete)
+- [x] The Centrifugal Clutch (shoe force ∝ ω² overcomes the spring preload and grabs the drum; slipping below the engagement speed, locked above; overload slips on the spot and spring stiffness moves the threshold) ✅ **centrifugal-clutch/**
+- [x] The Safety Relief Valve (thrust past spring preload pops the disc and vents; reseating hysteresis prevents chatter — watch the pop/reseat gap; turn the spring to move the setpoint, with back-pressure effects) ✅ **relief-valve/**
+- [x] Prestressed Concrete (pretension, release — the beam is born compressed; load tension eats the precompression first, the no-prestress control cracks on the spot; shrinkage creep eats the margin, post-tension grouts and anchors) ✅ **prestressed-concrete/**
+- [x] The Phosphorus Cycle (no gas phase: weathering, turnover, burial for eons; fertilizer speeds the chain and runoff delivers the surplus; blooms explode while oxygen collapses) ✅ **phosphorus-cycle/**
+- [x] Anodizing & Passivation (the anode grows its own oxide, porous and dyeable, sealed in hot water; plating grows on the cathode — the direction reversed; a scratch re-passivates, voltage sets the thickness) ✅ **anodizing/**
+- [x] Biodiesel & Transesterification (a base catalyst swaps glycerol for methyl groups in three steps; esters rise, glycerol settles, viscosity collapses — conversion and methanol excess on the dials) ✅ **biodiesel/**
+- [x] Inflammation & Phagocytosis (histamine dilates and leaks — redness and heat are the price; neutrophils squeeze through the wall and follow the gradient; engulfment, digestion and resolution, end to end) ✅ **inflammation/**
+- [x] Seed Germination & Gibberellin (imbibition wakes the embryo; GA makes the aleurone pour out α-amylase; starch becomes sugar and the radicle breaks free — ABA dormancy and light controls compared) ✅ **seed-germination/**
+- [x] Chromatophores & Squid Skin (radial muscles flare the sacs on a direct neural line; background matching and threat flashes; how a color-blind animal still matches — polarization vision) ✅ **chromatophores/**
+- [x] Coupled Pendulums & Normal Modes (every start is a sum of the in-phase and antiphase modes; pluck one and watch energy ferry at the beat frequency; coupling stiffness sets the split) ✅ **normal-modes/**
+- [x] Bragg Diffraction & Crystallography (path difference 2d·sinθ between layers; whole wavelengths light up the detector; sweep peaks to read spacings, invert an unknown lattice, and Photo 51 closes the story) ✅ **bragg-diffraction/**
+- [x] Soap Films & Minimal Surfaces (any frame snaps to least area; three films meet at 120°, four lines at the tetrahedral angle; tilt the frame, pop one film and the whole sheet re-plans) ✅ **soap-film/**
+- [x] CMEs & Space Weather (a twisted flux rope erupts, a billion tonnes inbound; reconnection opens the magnetopause; geomagnetic storm — grid GICs, satellite drag, auroras at low latitudes) ✅ **cme-space-weather/**
+- [x] Novae & Accreting White Dwarfs (the companion overflows, the disk feeds the dwarf; the shell hits ten million K and detonates in a runaway; luminosity soars, fades, and returns on schedule) ✅ **nova/**
+- [x] Atmospheric Escape & Habitability (the hot tail drips over escape velocity, molecule by molecule; shield-less Mars stripped by the wind; Venus's deuterium testimony versus Earth's magnetic umbrella) ✅ **atmospheric-escape/**
+- [x] Water-Jet Propulsion (intake, impeller, converging nozzle — thrust = ṁΔv; vector nozzle steering and the shallow-water edge; low-speed efficiency versus the propeller) ✅ **waterjet-propulsion/**
+- [x] Wind-Farm Wakes (harvesting leaves a slow turbulent wake and the next row pays; active yaw steers the deficit aside; wakes merge — spacing versus yield on the dial) ✅ **wind-farm-wake/**
+- [x] The Microburst (a downdraft splashes into an outflow ring; headwind lift first, then the core flips it to tailwind and lift vanishes; the shear alert and the full-throttle escape) ✅ **microburst/**
+- [x] PRNGs & Seeds (the LCG recurrence and perfect replay from one seed; a flat histogram versus lattice correlations in 3D; periods and the xorshift comparison) ✅ **prng/**
+- [x] Matrices as Transformations (the grid bends live under a,b,c,d; det = area exchange rate, negative flips space; composition is multiplication and eigenvectors hold still) ✅ **matrix-transform/**
+- [x] Decision Trees & Information Gain (each split takes the biggest entropy drop and grows greedily; leaf purity and depth limits; live overfitting, then pruning and the forest's vote) ✅ **decision-tree/**
+- [x] Masks & Electret Filtration (impaction, interception and diffusion split the spectrum with 0.3 µm the hardest catch; electret charge grabs that band at a breathing-resistance price; soak it and the charge quits) ✅ **mask-filtration/**
+- [x] Load Cells & Strain Gauges (beam bend → strain → ΔR/R = GF·ε; four gauges in a Wheatstone bridge, drift self-canceling; the calibration slope and creep compared) ✅ **load-cell/**
+- [x] Grounding & the GFCI (live must equal neutral; the differential coil smells a 30 mA mismatch and trips in 25 ms; the ground wire's bypass route and a body-resistance dial for danger) ✅ **gfci/**
+
 ### Phase 50 · Cross-Family Gap-Fill Batch 21 (24/24 complete)
 - [x] The Trebuchet (winch-cocked counterweight, then beam-sling whip hand-off in half a second; mass/arm-ratio/release-angle sweeps with a no-sling plain-lever comparison) ✅ **trebuchet/**
 - [x] The Klann Linkage (one constant-speed crank opens and closes eight fixed links like a hand; the foot's D-shaped print splits duty flat-stance vs arc-swing; 180° phasing and a six-leg platform over steps) ✅ **klann-linkage/**
@@ -2139,6 +2166,30 @@ b-tree/             B-Trees: flattening the tree into the disk's shape (Three.js
 oled-display/       OLED & Self-Emitting Pixels: every pixel lights itself (Three.js, CDN)
 glucose-meter/      The Glucose Meter: the enzyme knows sugar, current tells the number (Three.js, CDN)
 voltage-multiplier/  Bug Zappers & Voltage Multipliers: a 3 V cell, a kilovolt grid (Three.js, CDN)
+centrifugal-clutch/   The Centrifugal Clutch: Centrifugal Clutch: past the crossing speed, the shoes bite (Three.js, CDN)
+relief-valve/         The Safety Relief Valve: Relief Valve: pop past preload, reseat with hysteresis (Three.js, CDN)
+prestressed-concrete/ Prestressed Concrete: Prestressed Concrete: cracks pre-paid in compression (Three.js, CDN)
+phosphorus-cycle/     The Phosphorus Cycle: The Phosphorus Cycle: fertilizer fast-forwards a slow chain (Three.js, CDN)
+anodizing/            Anodizing & Passivation: Anodizing: the oxide grows on itself (Three.js, CDN)
+biodiesel/            Biodiesel & Transesterification: Biodiesel: methanol swaps the glycerol, viscosity dives (Three.js, CDN)
+inflammation/         Inflammation & Phagocytosis: Inflammation: redness and heat are the repair bill (Three.js, CDN)
+seed-germination/     Seed Germination & Gibberellin: Seed Germination: GA knocks, starch opens, the radicle breaks out (Three.js, CDN)
+chromatophores/       Chromatophores & Squid Skin: Chromatophores: a million sacs, a dedicated line (Three.js, CDN)
+normal-modes/         Coupled Pendulums & Normal Modes: Coupled Pendulums: two modes account for every opening (Three.js, CDN)
+bragg-diffraction/    Bragg Diffraction & Crystallography: Bragg Diffraction: 2d·sinθ makes crystals confess (Three.js, CDN)
+soap-film/            Soap Films & Minimal Surfaces: Soap Films: tension wastes nothing, area goes minimal (Three.js, CDN)
+cme-space-weather/    CMEs & Space Weather: CMEs & Space Weather: the Sun sneezes, Earth catches cold (Three.js, CDN)
+nova/                 Novae & Accreting White Dwarfs: Novae: bank a shell, blow it off, keep the star (Three.js, CDN)
+atmospheric-escape/   Atmospheric Escape & Habitability: Atmospheric Escape: the Gaussian tail leaks a planet (Three.js, CDN)
+waterjet-propulsion/  Water-Jet Propulsion: Water-Jet Propulsion: thrust is flow times velocity change (Three.js, CDN)
+wind-farm-wake/       Wind-Farm Wakes: Wind-Farm Wakes: the second row pays for the first (Three.js, CDN)
+microburst/           The Microburst: The Microburst: cross the core and lift evaporates (Three.js, CDN)
+prng/                 PRNGs & Seeds: PRNGs: determinism in costume (Three.js, CDN)
+matrix-transform/     Matrices as Transformations: Matrices: two hands that bend the grid (Three.js, CDN)
+decision-tree/        Decision Trees & Information Gain: Decision Trees: take the cut with the biggest entropy drop (Three.js, CDN)
+mask-filtration/      Masks & Electret Filtration: Electret Filtration: electrostatics guards 0.3 µm (Three.js, CDN)
+load-cell/            Load Cells & Strain Gauges: Load Cells: weighing how much the beam bends (Three.js, CDN)
+gfci/                 Grounding & the GFCI: The GFCI: 30 mA of mismatch, 25 ms to trip (Three.js, CDN)
 mems-accelerometer/   The MEMS Accelerometer: The MEMS Accelerometer: a proof mass and comb capacitors know which way is down (Three.js, CDN)
 tourbillon/          Tourbillon: a cage rotating once a minute averages positional error (Three.js, CDN)
 archimedes-screw/    Archimedes Screw: pockets of water relayed up the incline (Three.js, CDN)
