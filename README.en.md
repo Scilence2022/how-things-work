@@ -631,6 +631,32 @@ A collection of animated explanations. We use animation to make "invisible princ
 
 
 
+### Phase 53 · Cross-Family Gap-Fill Batch 24 (24/24 complete)
+- [x] The Vane Pump (an eccentric rotor and sliding vanes make volume breathe; displacement set by eccentricity, pressure by the load; centrifugal seating and tip leakage) ✅ **vane-pump/**
+- [x] The Roots Blower (two lobed rotors ferry air pocket by pocket; external compression pays the backflow tax; big flow with zero lag versus turbo lag) ✅ **roots-blower/**
+- [x] The Check Valve (forward pressure lifts, reverse pressure seats; swing checks lag, spring lifts close fast; pump-stop slam and the spring fix) ✅ **check-valve/**
+- [x] Ionic Bonds & Lattice Energy (an electron transfer completes two shells; directionless pull packs six neighbors; one slip, like meets like, it splits) ✅ **ionic-bond/**
+- [x] The Ideal Gas Laws (pressure is the bill molecules hand the walls; three fixed-variable readings of one ledger; PV=nRT and where real gases stray) ✅ **gas-laws/**
+- [x] Deflagration & Detonation (a subsonic flame crawl versus a supersonic self-sustaining shock; obstacles crumple the flame into DDT; engines prevent it, demolition buys it) ✅ **detonation/**
+- [x] Hematopoiesis & Blood Lineages (the marrow stem cell restocks itself daily; EPO and G-CSF ring the dispatch bell; megakaryocytes shred into platelets) ✅ **hematopoiesis/**
+- [x] Ethylene & Fruit Ripening (one fruit starts and speaks in gas; the feedback wakes the whole box; climacteric listeners and deaf oranges) ✅ **ethylene-ripening/**
+- [x] The Placenta (two bloodstreams trade across one wall, never mixing; the villus tree spreads tens of square meters; hCG takes over the mother's schedule) ✅ **placenta/**
+- [x] Beam Bending & Section Modulus (one side stretches, one shortens, one layer neither; stress climbs away from the neutral axis; I-beams move material to the far fibers) ✅ **beam-bending/**
+- [x] Ohm's Law & Circuits (voltage pushes, resistance blocks, current flows; series splits voltage, parallel splits current; the total smaller than the smallest branch) ✅ **ohms-law/**
+- [x] The Lotus Effect (micron papillae plus nanowax double roughness; the Cassie air cushion and 150° contact angles; rolling self-cleaning and the Wenzel soak) ✅ **lotus-effect/**
+- [x] Jupiter & the Great Red Spot (no ground, only wind; zonal jets comb the clouds into bands; a 350-year anticyclone lives friction-free and is shrinking) ✅ **jupiter-red-spot/**
+- [x] The Kuiper Belt & Dwarf Planets (an icy ring 30–50 AU out, the comet deep-freeze; Pluto and the 2:3 resonance with Neptune; demoted for never clearing the neighborhood) ✅ **kuiper-belt/**
+- [x] The Galactic Center & Sgr A* (stars sprint around a hidden mass; S2's 16-year orbit weighs 4 million suns; pericenter precession and the 2020 Nobel) ✅ **galactic-center/**
+- [x] Weather Fronts (warm fronts climb and drizzle; cold fronts wedge and squall; wind, temperature and pressure flip three cards at passage) ✅ **weather-fronts/**
+- [x] Bird Formations & Vortex Energy (the wingtip vortex's outer rim is updraft; tuck half a wingspan aside and ride the elevator; leaders take turns up front) ✅ **v-formation/**
+- [x] Compressor Stall & Surge (blade rows add pressure stair by stair; over-incidence breeds the patrolling stall cell; whole-machine oscillation and the three anti-surge moves) ✅ **compressor-surge/**
+- [x] Max-Flow & Min-Cut (push along any path with slack; reverse edges keep the right to regret; the bottleneck cut equals the total flow) ✅ **max-flow/**
+- [x] Period Doubling & the Road to Chaos (the fixed point splits in two, then four; Feigenbaum's 4.669 pacing; past 3.57, chaos with a period-3 window) ✅ **bifurcation/**
+- [x] Virtual Memory & Page Tables (the MMU translates page numbers through tables; the TLB caches the hot translations; page faults, LRU victims and the thrashing bill) ✅ **virtual-memory/**
+- [x] The Vacuum Flask (a vacuum jacket starves conduction and convection; silvered walls bounce radiation back; the stopper narrows the last door) ✅ **vacuum-flask/**
+- [x] Hydraulic Brakes & the Brake Circuit (the pedal shoves fluid and Pascal delivers; the X-split keeps half when one loop fails; vacuum boost and the boiling-fluid fade) ✅ **hydraulic-brakes/**
+- [x] IR Remotes & Carrier Codes (a 940 nm messenger the eye can't see; a 38 kHz carrier above the noise floor; NEC lead bits, gap lengths and the 110 ms repeat) ✅ **ir-remote/**
+
 ### Phase 52 · Cross-Family Gap-Fill Batch 23 (24/24 complete)
 - [x] The Shear Pin & Torque Limiter (a deliberately weak pin snaps on overload and saves the chain; the shear version is one-shot while the friction limiter slips and resets; fuse logic built into steel) ✅ **shear-pin/**
 - [x] Thrust Bearings & Tilting Pads (a fixed pad kills the film, a tilting pad self-forms the wedge; load shifts re-trim the tilt and the pressure shoe; how big hydro shafts float) ✅ **thrust-bearing/**
@@ -2241,6 +2267,30 @@ particle-filter/      The Particle Filter: Particle Filter: a thinking cloud of 
 pulse-oximeter/       The Pulse Oximeter: Pulse Oximeter: two beams read the blood's oxygen (Three.js, CDN)
 cochlear-implant/     The Cochlear Implant: Cochlear Implant: electrics for acoustics, the brain relearns (Three.js, CDN)
 structured-light/     Structured-Light 3D Scanning: Structured Light: the warp of stripes is depth (Three.js, CDN)
+vane-pump/            The Vane Pump: Vane Pump: displacement listens to eccentricity (Three.js, CDN)
+roots-blower/         The Roots Blower: Roots Blower: pocket ferry with a backflow tax (Three.js, CDN)
+check-valve/          The Check Valve: Check Valve: one way only, late closers slam (Three.js, CDN)
+ionic-bond/           Ionic Bonds & Lattice Energy: Ionic Bond: six neighbors, no favorites (Three.js, CDN)
+gas-laws/             The Ideal Gas Laws: Gas Laws: the wall-collision ledger, three ways (Three.js, CDN)
+detonation/           Deflagration & Detonation: Detonation: the flame catches its own shock (Three.js, CDN)
+hematopoiesis/        Hematopoiesis & Blood Lineages: Hematopoiesis: the marrow works three shifts (Three.js, CDN)
+ethylene-ripening/    Ethylene & Fruit Ripening: Ethylene: one speaks, the box answers (Three.js, CDN)
+placenta/             The Placenta: Placenta: two bloodstreams, one trading wall (Three.js, CDN)
+beam-bending/         Beam Bending & Section Modulus: Beam Bending: far fibers do the lifting (Three.js, CDN)
+ohms-law/             Ohm's Law & Circuits: Ohm's Law: one rule for series and parallel (Three.js, CDN)
+lotus-effect/         The Lotus Effect: Lotus Effect: an air cushion refuses to make the bed (Three.js, CDN)
+jupiter-red-spot/     Jupiter & the Great Red Spot: Great Red Spot: no ground, storms live long (Three.js, CDN)
+kuiper-belt/          The Kuiper Belt & Dwarf Planets: Kuiper Belt: residents who never cleared the block (Three.js, CDN)
+galactic-center/      The Galactic Center & Sgr A*: Galactic Center: stellar orbits weigh the black hole (Three.js, CDN)
+weather-fronts/       Weather Fronts: Fronts: density arranges the weather (Three.js, CDN)
+v-formation/          Bird Formations & Vortex Energy: V Formation: riding the vortex elevator (Three.js, CDN)
+compressor-surge/     Compressor Stall & Surge: Surge: the stall cell patrols, the machine chokes (Three.js, CDN)
+max-flow/             Max-Flow & Min-Cut: Max-Flow: push until the cut shows itself (Three.js, CDN)
+bifurcation/          Period Doubling & the Road to Chaos: Bifurcation: 4.669 beats to chaos (Three.js, CDN)
+virtual-memory/       Virtual Memory & Page Tables: Virtual Memory: table lookups and page ferries (Three.js, CDN)
+vacuum-flask/         The Vacuum Flask: Vacuum Flask: three escape routes, three gates (Three.js, CDN)
+hydraulic-brakes/     Hydraulic Brakes & the Brake Circuit: Hydraulic Brakes: Pascal all the way down (Three.js, CDN)
+ir-remote/            IR Remotes & Carrier Codes: IR Remote: passwords on a 38 kHz carrier (Three.js, CDN)
 mems-accelerometer/   The MEMS Accelerometer: The MEMS Accelerometer: a proof mass and comb capacitors know which way is down (Three.js, CDN)
 tourbillon/          Tourbillon: a cage rotating once a minute averages positional error (Three.js, CDN)
 archimedes-screw/    Archimedes Screw: pockets of water relayed up the incline (Three.js, CDN)
