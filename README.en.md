@@ -657,6 +657,32 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] Hydraulic Brakes & the Brake Circuit (the pedal shoves fluid and Pascal delivers; the X-split keeps half when one loop fails; vacuum boost and the boiling-fluid fade) ✅ **hydraulic-brakes/**
 - [x] IR Remotes & Carrier Codes (a 940 nm messenger the eye can't see; a 38 kHz carrier above the noise floor; NEC lead bits, gap lengths and the 110 ms repeat) ✅ **ir-remote/**
 
+### Phase 54 · Cross-Family Gap-Fill Batch 25 (24/24 complete)
+- [x] Helical Gears & Axial Thrust (spur contact lines pop in and out across the whole face; helical lines sweep diagonally past overlap 2; the tanβ thrust bill and the herringbone cancel) ✅ **helical-gears/**
+- [x] Piston Rings & Blow-by (combustion pressure packs each ring onto the wall; end gaps staggered 120° as three gauntlets; worn gaps blow gas down and burn oil blue) ✅ **piston-rings/**
+- [x] Balance Shafts & Shaking Forces (rotating shake cancels, reciprocating points along the bore; counter-rotating shafts bite the first order; the inline-four and its twin-shaft second-order fix) ✅ **balance-shaft/**
+- [x] Hess’s Law & Calorimetry (enthalpy is a state function, path irrelevant; C to CO₂ equals the two-step sum via CO; calorimeter Q=mcΔT and back-solving the unmeasurable) ✅ **hess-law/**
+- [x] Eutectic Point & Phase Diagrams (pure metals freeze on a plateau, alloys drag a pasty range; the 61.9% Sn / 183 °C valley and the L→α+β lamellae; lever rule and why solder picks eutectic) ✅ **eutectic-alloy/**
+- [x] Chelation & Coordination Bonds (lone pairs into empty orbitals, labile monodentates; EDTA’s six-claw octahedral cage and entropy’s jackpot, log K 18.8; acid rips it apart) ✅ **chelation/**
+- [x] Gel Electrophoresis & DNA Fingerprinting (negative phosphates drive the swim; the gel sieves, distance scaling with log length; ladder ruler and band-matched fingerprints) ✅ **gel-electrophoresis/**
+- [x] The Chemical Drive to Breathe (CO₂/H⁺, not hypoxia, drives breathing; the medullary pH feedback pins 40 mmHg; hyperventilation apnea and the carotid sentinels) ✅ **breathing-control/**
+- [x] Bacteriophage: Lytic & Lysogenic (tail fibers find the receptor, the sheath injects; lysis mass-produces and pocks the lawn; lysogeny splices in and rides host divisions until UV) ✅ **bacteriophage/**
+- [x] Projectile Motion (independent horizontal drift and vertical acceleration sum to a parabola; R=v²sin2θ/g, 45° and complementary angles; Moon arcs and drag-folded plunges) ✅ **projectile-motion/**
+- [x] Moment of Inertia & the Rolling Race (k=I/mr² is shape alone: sphere 0.4 < cylinder 0.5 < hoop 1.0; rotation is a hidden tax, a=g·sinθ/(1+k); the non-rolling block pays none and wins) ✅ **rolling-race/**
+- [x] The Maxwell–Boltzmann Distribution (collisions shuffle any start into one bell, peak at the most probable speed; heating stretches the tail exponentially; the over-Ea tail runs chemistry, light molecules escape) ✅ **maxwell-boltzmann/**
+- [x] The Geostationary Orbit (altitude sets period; only 35,786 km matches Earth’s spin; low orbits flee east, high lag west; inclined figure-8s and station-keeping on the golden ring) ✅ **geostationary-orbit/**
+- [x] Neptune, Found on Paper (Uranus piled up residuals; Le Verrier turned them into a mass and position; verified within 1° the same night, and the Vulcan lesson) ✅ **neptune-discovery/**
+- [x] Axial Precession & the Pole Stars (the equatorial bulge under solar-lunar torque draws a 25,772-year cone; the pole star is a temporary tenant; tropical years run 20 minutes short) ✅ **axial-precession/**
+- [x] Thrust Vector Control (thrust through the CG makes no torque; a few gimbal degrees buy a lever arm; the closed loop answers gyros and landings ride those degrees) ✅ **thrust-vectoring/**
+- [x] Ship Roll & Stabilizers (roll resonance when the swell matches the hull’s period; bilge keels damp passively; active fins lean on ship speed and die at anchor) ✅ **ship-stabilization/**
+- [x] The Polar Vortex (polar night spins a cold low fenced by the jet; planetary waves and stratospheric warmings bend the fence; a split vortex pours cold south) ✅ **polar-vortex/**
+- [x] Linear Programming & the Simplex (half-planes carve the feasible polygon; sliding iso-lines last touch a vertex; simplex hops edges and slack prices the shadows) ✅ **linear-programming/**
+- [x] Garbage Collection & Tri-color Marking (reachability, not counts, decides life; the grey-black-white wave and the sweep; write barriers versus the immortality of cycles) ✅ **garbage-collection/**
+- [x] Topological Sort & the Critical Path (Kahn pops zero in-degree and deletes edges; the longest chain is the schedule; a cycle kills the order and side tasks compress for free) ✅ **topological-sort/**
+- [x] The Electric Kettle (2000 W into water, pinned at 100 °C making steam; a wisp trips the bimetal switch; dry boils fall back to the base thermostat) ✅ **electric-kettle/**
+- [x] Bluetooth Frequency Hopping (79 alleys on a shared pseudo-random sequence, 625 µs a hop; one interferer ruins one slot; AFH blacklists and rewires around Wi-Fi) ✅ **bluetooth-hopping/**
+- [x] Thermal Printing (leuco dye and developer flipped by 200 °C flashes; one resistor row prints a line as paper steps; pulse-time grayscale on paper that fades) ✅ **thermal-printer/**
+
 ### Phase 52 · Cross-Family Gap-Fill Batch 23 (24/24 complete)
 - [x] The Shear Pin & Torque Limiter (a deliberately weak pin snaps on overload and saves the chain; the shear version is one-shot while the friction limiter slips and resets; fuse logic built into steel) ✅ **shear-pin/**
 - [x] Thrust Bearings & Tilting Pads (a fixed pad kills the film, a tilting pad self-forms the wedge; load shifts re-trim the tilt and the pressure shoe; how big hydro shafts float) ✅ **thrust-bearing/**
@@ -2292,6 +2318,30 @@ vacuum-flask/         The Vacuum Flask: Vacuum Flask: three escape routes, three
 hydraulic-brakes/     Hydraulic Brakes & the Brake Circuit: Hydraulic Brakes: Pascal all the way down (Three.js, CDN)
 ir-remote/            IR Remotes & Carrier Codes: IR Remote: passwords on a 38 kHz carrier (Three.js, CDN)
 mems-accelerometer/   The MEMS Accelerometer: The MEMS Accelerometer: a proof mass and comb capacitors know which way is down (Three.js, CDN)
+helical-gears/        Helical Gears & Axial Thrust: Helical Gears: sweeping contact, thrust on the bill (Three.js, CDN)
+piston-rings/         Piston Rings & Blow-by: Piston Rings: pressure-packed, three gauntlets (Three.js, CDN)
+balance-shaft/        Balance Shafts & Shaking Forces: Balance Shafts: counter-rotating first order (Three.js, CDN)
+hess-law/             Hess’s Law & Calorimetry: Hess’s Law: only the endpoints count (Three.js, CDN)
+eutectic-alloy/       Eutectic Point & Phase Diagrams: Eutectic: one temperature at the valley floor (Three.js, CDN)
+chelation/            Chelation & Coordination Bonds: Chelation: six claws, entropy’s jackpot (Three.js, CDN)
+gel-electrophoresis/  Gel Electrophoresis & DNA Fingerprinting: Gel Electrophoresis: sieved by length (Three.js, CDN)
+breathing-control/    The Chemical Drive to Breathe: Breathing Drive: CO₂ in command (Three.js, CDN)
+bacteriophage/        Bacteriophage: Lytic & Lysogenic: Bacteriophage: lytic or lysogenic (Three.js, CDN)
+projectile-motion/    Projectile Motion: Projectile Motion: two independent ledgers (Three.js, CDN)
+rolling-race/         Moment of Inertia & the Rolling Race: Rolling Race: shape decides (Three.js, CDN)
+maxwell-boltzmann/    The Maxwell–Boltzmann Distribution: Maxwell–Boltzmann: reactions live in the tail (Three.js, CDN)
+geostationary-orbit/  The Geostationary Orbit: Geostationary: the one synchronous ring (Three.js, CDN)
+neptune-discovery/    Neptune, Found on Paper: Neptune: found on paper overnight (Three.js, CDN)
+axial-precession/     Axial Precession & the Pole Stars: Axial Precession: a temporary pole star (Three.js, CDN)
+thrust-vectoring/     Thrust Vector Control: Thrust Vectoring: degrees that steer rockets (Three.js, CDN)
+ship-stabilization/   Ship Roll & Stabilizers: Ship Stabilizers: leaning on speed (Three.js, CDN)
+polar-vortex/         The Polar Vortex: Polar Vortex: when the fence bends (Three.js, CDN)
+linear-programming/   Linear Programming & the Simplex: Linear Programming: optima live at vertices (Three.js, CDN)
+garbage-collection/   Garbage Collection & Tri-color Marking: Garbage Collection: the tri-color wave (Three.js, CDN)
+topological-sort/     Topological Sort & the Critical Path: Topological Sort: no cycle, no order (Three.js, CDN)
+electric-kettle/      The Electric Kettle: Electric Kettle: steam is the switch (Three.js, CDN)
+bluetooth-hopping/    Bluetooth Frequency Hopping: Bluetooth Hopping: 79 crowded alleys (Three.js, CDN)
+thermal-printer/      Thermal Printing: Thermal Printing: one resistor row per line (Three.js, CDN)
 tourbillon/          Tourbillon: a cage rotating once a minute averages positional error (Three.js, CDN)
 archimedes-screw/    Archimedes Screw: pockets of water relayed up the incline (Three.js, CDN)
 roberval-balance/    Roberval Balance: parallelogram links ignore off-center loads (Three.js, CDN)

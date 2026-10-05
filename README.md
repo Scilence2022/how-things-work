@@ -1058,6 +1058,32 @@
 - [x] 液压刹车与制动回路(踏板推总泵帕斯卡传压;X 型双回路断一剩半;真空助力与油沸腾气阻警示) ✅ **hydraulic-brakes/**
 - [x] 红外遥控与载波编码(940 nm 不可见信使;38 kHz 载波抗本底噪声;NEC 引导码、0/1 间隔与长按重复码) ✅ **ir-remote/**
 
+### Phase 54 · 跨家族补缺第二十五批(24/24 收官)
+- [x] 斜齿轮与轴向力(直齿的接触线横跨整个齿宽、同时进同时出;斜齿接触线斜跨齿面渐进扫过、重合度冲破 2;轴向力 F_t·tanβ 与人字齿对消) ✅ **helical-gears/**
+- [x] 活塞环与窜气(燃烧压力钻进环背缝隙把环压向缸壁的自密封;端隙错开 120° 三道关;磨损窜气与机油上行烧蓝烟) ✅ **piston-rings/**
+- [x] 平衡轴与往复惯性(旋转惯性配重好消、往复惯性只指缸轴;两根对转平衡轴咬掉一阶分量;直列四缸天然对消一阶、双平衡轴收二阶抖动) ✅ **balance-shaft/**
+- [x] 盖斯定律与量热(焓是状态函数只认起点终点;C→CO₂ 与经 CO 两步账本相加分毫不差;量热计 Q=mcΔT 实测与反推难测反应) ✅ **hess-law/**
+- [x] 共晶与合金相图(纯金属单温平台凝固、合金拖出糊状区;61.9% 锡/183 °C 共晶谷底与 L→α+β 片层反应;杠杆定律算 α/β 与焊锡选共晶) ✅ **eutectic-alloy/**
+- [x] 螯合物与配位键(配位键=孤对进空轨、单齿松散可逆;EDTA 六爪环抱八面体笼、一个分子换下六个水的熵赚;log K 冲到 18.8 与加酸解离) ✅ **chelation/**
+- [x] 凝胶电泳与 DNA 指纹(磷酸基负电驱动泳向正极;凝胶分子筛、泳程对数于长度;梯带标尺与条带比对读出同一份指纹) ✅ **gel-electrophoresis/**
+- [x] 呼吸的化学驱动(主驱动是 CO₂/H⁺ 而非缺氧;延髓读脑脊液 pH 的负反馈稳住 40 mmHg;过度通气暂停与低氧前哨颈动脉体) ✅ **breathing-control/**
+- [x] 噬菌体与溶原循环(尾腿认受体、尾鞘如注射器注入 DNA;裂解路线量产百枚留下噬斑;溶原整合潜伏随宿主遗传、UV 诱导切换) ✅ **bacteriophage/**
+- [x] 抛体运动(水平匀速与竖直匀加速互不干扰合成抛物线;R=v²sin2θ/g 的 45° 与互补角;月球弹道与空气阻力坠弧) ✅ **projectile-motion/**
+- [x] 转动惯量与滚动竞赛(k=I/mr² 只看形状:球 0.4<柱 0.5<环 1.0、质量半径全无关;转动是能量隐形税 a=g·sinθ/(1+k);不滚的滑块不交税先冲线) ✅ **rolling-race/**
+- [x] 麦克斯韦–玻尔兹曼分布(碰撞洗牌把任意开局洗成唯一钟形、峰=最概然速度;升温右移展宽尾巴指数拉长;超 Ea 尾巴决定反应速率、轻分子逃逸) ✅ **maxwell-boltzmann/**
+- [x] 地球静止轨道(高度定周期、与自转同步只有 35786 km 一条;低轨东逃高轨西退;倾角画 8 字与位置保持、赤道黄金圈) ✅ **geostationary-orbit/**
+- [x] 海王星的笔尖预言(天王星轨迹累积残差;勒维耶用残差反推未知行星质量方位;1846 年当夜验证偏差不到 1° 与火神星教训) ✅ **neptune-discovery/**
+- [x] 地轴岁差与北极星轮换(赤道隆起受日月引力差拽出 25772 年进动圆锥;北极星只是暂时租客、右枢-勾陈一-织女星轮换;回归年短 20 分钟) ✅ **axial-precession/**
+- [x] 推力矢量控制(推力线过质心无力矩、喷管偏几度造力臂;闭环读陀螺实时回喷管角;阵风先歪再扶正与垂直回收) ✅ **thrust-vectoring/**
+- [x] 船舶减摇与横摇(横摇固有周期与波浪合拍的共振;舭龙骨被动阻尼;减摇鳍反打攻角、航速就是力量与停航失效) ✅ **ship-stabilization/**
+- [x] 极地涡旋(极夜冷却拧出绕极冷涡、西风急流是围栏;行星波放大与平流层增温削弱围栏;涡旋分裂冷潮南下) ✅ **polar-vortex/**
+- [x] 线性规划与单纯形(约束半平面交出可行域;等值线沿梯度滑动最后接触点在顶点;单纯形沿边跳顶点与松弛量读影子价格) ✅ **linear-programming/**
+- [x] 垃圾回收与三色标记(可达性而非引用数决定生死;灰-黑-白标记波与清扫;写屏障保新引用、循环引用组的永生对照) ✅ **garbage-collection/**
+- [x] 拓扑排序与关键路径(Kahn 入度法弹出零入度拆边推进;最长链是关键路径、长度即工期;有环当场无解与压缩支路白忙) ✅ **topological-sort/**
+- [x] 电水壶与蒸汽断电(2000 W 灌进水、100 °C 平台全在造蒸汽;蒸汽信道冲上双金属片跳断;空烧无蒸汽由底座温控兜底) ✅ **electric-kettle/**
+- [x] 蓝牙跳频(79 条小巷按伪随机序列每 625 µs 换巷;单个干扰最多毁一个时隙;AFH 黑名单重排图样绕开 Wi-Fi) ✅ **bluetooth-hopping/**
+- [x] 热敏打印(无色染料与显色剂被一排微电阻烤到 200 °C 现字;一排点打一行、走纸一行行;灰度由脉冲与功率决定、纸会自己褪色) ✅ **thermal-printer/**
+
 ### Phase 52 · 跨家族补缺第二十三批(24/24 收官)
 - [x] 剪断销与扭矩限制器(故意做弱的销过载即断、保护传动链；剪断式一步到位与摩擦式打滑复位对照；保险丝逻辑搬进机械) ✅ **shear-pin/**
 - [x] 推力轴承与摆动瓦(固定瓦挤死油膜、摆动瓦自动张出楔形油楔；载荷变化倾角自调与油膜压力分布；水电站大轴的浮动秘密) ✅ **thrust-bearing/**
@@ -2973,6 +2999,30 @@ virtual-memory/       虚拟内存与页表:虚拟内存:查表翻译与缺页�
 vacuum-flask/         保温瓶与热的三道闸:保温瓶:三条逃路,三道闸(Three.js，CDN 引入)
 hydraulic-brakes/     液压刹车与制动回路:液压刹车:帕斯卡管到底(Three.js，CDN 引入)
 ir-remote/            红外遥控与载波编码:红外遥控:38 kHz 载波说暗号(Three.js，CDN 引入)
+helical-gears/        斜齿轮与轴向力:斜齿轮:扫着走,轴向力记账(Three.js，CDN 引入)
+piston-rings/         活塞环与窜气:活塞环:背压自紧,端隙三关(Three.js，CDN 引入)
+balance-shaft/        平衡轴与往复惯性:平衡轴:一阶对转咬合,二阶双轴(Three.js，CDN 引入)
+hess-law/             盖斯定律与量热:盖斯定律:落差只看两头(Three.js，CDN 引入)
+eutectic-alloy/       共晶与合金相图:共晶:相图谷底的一炉一温(Three.js，CDN 引入)
+chelation/            螯合物与配位键:螯合物:六爪一收,熵赚大胜(Three.js，CDN 引入)
+gel-electrophoresis/  凝胶电泳与 DNA 指纹:凝胶电泳:分子筛里比长短(Three.js，CDN 引入)
+breathing-control/    呼吸的化学驱动:呼吸驱动:CO₂ 才是司令(Three.js，CDN 引入)
+bacteriophage/        噬菌体与溶原循环:噬菌体:裂解与溶原的岔路(Three.js，CDN 引入)
+projectile-motion/    抛体运动:抛体运动:两条互不打扰的账(Three.js，CDN 引入)
+rolling-race/         转动惯量与滚动竞赛:滚动竞赛:谁先到底只看形状(Three.js，CDN 引入)
+maxwell-boltzmann/    麦克斯韦–玻尔兹曼分布:麦氏分布:碰撞洗出钟形,反应全靠尾巴(Three.js，CDN 引入)
+geostationary-orbit/  地球静止轨道:静止轨道:只有一条同步带(Three.js，CDN 引入)
+neptune-discovery/    海王星的笔尖预言:海王星:笔尖预言,当夜应验(Three.js，CDN 引入)
+axial-precession/     地轴岁差与北极星轮换:地轴岁差:北极星只是租客(Three.js，CDN 引入)
+thrust-vectoring/     推力矢量控制:推力矢量:几度喷管定姿态(Three.js，CDN 引入)
+ship-stabilization/   船舶减摇与横摇:船舶减摇:借航速顶住波浪(Three.js，CDN 引入)
+polar-vortex/         极地涡旋:极地涡旋:围栏一松,寒潮南下(Three.js，CDN 引入)
+linear-programming/   线性规划与单纯形:线性规划:最优住在顶点(Three.js，CDN 引入)
+garbage-collection/   垃圾回收与三色标记:垃圾回收:可达性三色波(Three.js，CDN 引入)
+topological-sort/     拓扑排序与关键路径:拓扑排序:无环才有顺序(Three.js，CDN 引入)
+electric-kettle/      电水壶与蒸汽断电:电水壶:蒸汽就是开关(Three.js，CDN 引入)
+bluetooth-hopping/    蓝牙跳频:蓝牙跳频:79 条小巷躲干扰(Three.js，CDN 引入)
+thermal-printer/      热敏打印:热敏打印:一排电阻一行字(Three.js，CDN 引入)
 tourbillon/         陀飞轮:笼架每分钟一圈，把重力位差逐位平均掉（Three.js，CDN 引入）
 archimedes-screw/   阿基米德螺旋泵:小斗接力把水抬上斜管（Three.js，CDN 引入）
 roberval-balance/   罗伯瓦尔天平:平行四边形约束下偏载不偏读（Three.js，CDN 引入）
