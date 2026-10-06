@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AES 加密 · 16 字节状态,10 轮搅拌</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#6a4dc9;
+    --bg:#10141b; --panel:rgba(13,17,24,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,24,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,24,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#543ca1;
+    --bg:#eef1f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .2s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o  { border-color: rgba(255,160,80,.9);  color: #ffd9b0; }
+  .lbl.r  { border-color: rgba(255,93,93,.9);   color: #ffc2c2; }
+  .lbl.g  { border-color: rgba(67,209,124,.9);  color: #c9f3da; }
+  .lbl.b  { border-color: rgba(96,165,250,.9);  color: #bde0ff; }
+  .lbl.y  { border-color: rgba(255,209,102,.9); color: #ffe9a8; }
+  .lbl.p  { border-color: rgba(154,120,240,.9); color: #d4c6ff; }
+  .lbl.big { font-size: 14px; font-weight: 700; padding: 6px 12px; }
+  :root[data-theme="light"] .lbl.o  { border-color: rgba(178,102,26,.9);  color: #9c5a10; }
+  :root[data-theme="light"] .lbl.r  { border-color: rgba(200,60,60,.9);   color: #b83232; }
+  :root[data-theme="light"] .lbl.g  { border-color: rgba(20,138,92,.9);   color: #148a5c; }
+  :root[data-theme="light"] .lbl.b  { border-color: rgba(12,103,186,.9);  color: #0c67ba; }
+  :root[data-theme="light"] .lbl.y  { border-color: rgba(178,128,20,.9);  color: #9c6f00; }
+  :root[data-theme="light"] .lbl.p  { border-color: rgba(84,60,161,.9);   color: #543ca1; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 460px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 5;
+    display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  #stats .stat { background: var(--cv-pill); border: 1px solid var(--tool-border); border-radius: 999px;
+    padding: 5px 12px; font-size: 11.5px; color: var(--text2); display: flex; gap: 6px; align-items: baseline;
+    backdrop-filter: blur(6px); white-space: nowrap; }
+  #stats .stat b { color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  @media (max-width: 1180px) { #stats { display: none; } }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 380px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 150px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.c { color: #cfc0ff; border-color: rgba(154,120,240,.7); }
+  .chip.x { color: #c3cdd9; border-color: rgba(160,175,195,.55); }
+  .chip.l { color: #7ee2ae; border-color: rgba(67,209,124,.6); }
+  :root[data-theme="light"] .chip.c { color: #543ca1; border-color: rgba(84,60,161,.7); }
+  :root[data-theme="light"] .chip.x { color: #5b6b7d; border-color: rgba(90,105,125,.6); }
+  :root[data-theme="light"] .chip.l { color: #148a5c; border-color: rgba(20,138,92,.6); }
+  #actions { display: flex; gap: 8px; margin: 2px 0; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1;
+    background: rgba(106,77,201,.14); color: var(--text); border: 1px solid rgba(106,77,201,.5);
+    border-radius: 9px; padding: 7px 8px; font-size: 12.5px; font-weight: 600;
+    transition: filter .15s; }
+  .abtn:hover { filter: brightness(1.15); }
+  :root[data-theme="light"] .abtn { background: rgba(84,60,161,.10); border-color: rgba(84,60,161,.5); }
+  #steps { list-style: none; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(106,77,201,.10); border-color: rgba(106,77,201,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(84,60,161,.10); border-color: rgba(84,60,161,.45); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(128,140,155,.25); color: var(--text3); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12.5px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12.5px; }
+  #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 4; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 106px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 46px; text-align: right; }
+  #seg { display: flex; gap: 6px; margin-top: 9px; align-items: center; flex-wrap: wrap; }
+  #seg .segk { font-size: 12px; color: var(--text2); }
+  #seg button { appearance: none; font: inherit; font-size: 12px; font-weight: 600; color: var(--text3);
+    background: var(--hover); border: 1px solid var(--tool-border); border-radius: 999px;
+    padding: 4px 11px; cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+  #seg button:hover { border-color: var(--acc); color: var(--acc); }
+  #seg button.on { background: var(--acc); border-color: var(--acc); color: #fff; }
+  #toggles { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 340px; height: 215px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    padding: 10px 12px; backdrop-filter: blur(6px); }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+  #note { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 4;
+    background: var(--cv-pill); border: 1px solid var(--tool-border); color: #e2d8ff;
+    font-size: 14px; font-weight: 700; padding: 8px 16px; border-radius: 999px;
+    pointer-events: none; opacity: 0; transition: opacity .3s; white-space: nowrap; }
+  :root[data-theme="light"] #note { color: #543ca1; }
+  @media (max-width: 1150px) { #plot { display: none; } }
+  @media (max-width: 900px) { #note { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="AES 加密:16 字节状态,10 轮搅拌" data-en="AES: a 16-byte state, churned for 10 rounds">AES 加密:16 字节状态,10 轮搅拌</h1>
+  <div class="sub" data-zh="明文 16 字节 → SubBytes 查 S 盒(唯一非线性,混淆) → ShiftRows + MixColumns 在 GF(2⁸) 上扩散 → AddRoundKey 白化 ×10 轮;翻 1 位 ≈ 64/128 位翻转;ECB 泄结构、CBC 链式抹平;HTTPS 里 RSA/DH 只递钥匙,AES 干重活 · 拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="16-byte block → SubBytes S-box (only non-linearity, confusion) → ShiftRows + MixColumns diffuse over GF(2⁸) → AddRoundKey whitening ×10 rounds; flip 1 bit ≈ 64/128 bits flip; ECB leaks structure, CBC chains it away; in HTTPS RSA/DH only hands over the key · drag to orbit / scroll to zoom · Space = play/pause">明文 16 字节 → SubBytes 查 S 盒(唯一非线性,混淆) → ShiftRows + MixColumns 在 GF(2⁸) 上扩散 → AddRoundKey 白化 ×10 轮;翻 1 位 ≈ 64/128 位翻转;ECB 泄结构、CBC 链式抹平;HTTPS 里 RSA/DH 只递钥匙,AES 干重活 · 拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="stats">
+  <div class="stat"><span data-zh="轮数" data-en="round">轮数</span><b id="stR">0/10</b></div>
+  <div class="stat"><span data-zh="雪崩位差" data-en="bits flipped">雪崩位差</span><b id="stA">–</b></div>
+  <div class="stat"><span data-zh="重复密文块" data-en="repeated blocks">重复密文块</span><b id="stD">–</b></div>
+  <div class="stat"><span data-zh="单块耗时(实测)" data-en="per-block time (measured)">单块耗时(实测)</span><b id="stT">–</b></div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip c" data-zh="状态块:16 字节 = 128 位" data-en="state block: 16 bytes = 128 bits">状态块:16 字节 = 128 位</span>
+    <span class="chip x" data-zh="密钥 128 位:绝不外传" data-en="128-bit key: never shared">密钥 128 位:绝不外传</span>
+    <span class="chip l" data-zh="CBC:链式随机化" data-en="CBC: chained randomization">CBC:链式随机化</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnKey" data-zh="换一把密钥(全场景重加密)" data-en="New key (re-encrypt all)">换一把密钥(全场景重加密)</button>
+    <button class="abtn" id="btnAval" data-zh="只翻 1 位 → 看雪崩" data-en="Flip 1 bit → avalanche">只翻 1 位 → 看雪崩</button>
+  </div>
+  <div class="row"><label data-zh="翻转位(0–127)" data-en="flip bit (0–127)">翻转位(0–127)</label><input id="bit" type="range" min="0" max="127" step="1" value="63"><span class="val" id="bitVal">b63</span></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div class="row"><label data-zh="速度" data-en="Speed">速度</label><input id="speed" type="range" min="0.1" max="3" step="0.05" value="1"><span class="val" id="speedVal">1.0×</span></div>
+    <div class="row"><label data-zh="相位" data-en="Phase">相位</label><input id="scrub" type="range" min="0" max="1000" step="1" value="0"><span class="val" id="scrubVal">0%</span></div>
+  </div>
+  <div id="seg">
+    <span class="segk" data-zh="图像加密模式:" data-en="Image mode:">图像加密模式:</span>
+    <button data-m="0" data-zh="明文" data-en="plain">明文</button>
+    <button data-m="1" class="on" data-zh="ECB" data-en="ECB">ECB</button>
+    <button data-m="2" data-zh="CBC" data-en="CBC">CBC</button>
+  </div>
+  <div id="toggles">
+    <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+    <label><input id="tglKey" type="checkbox"> <span data-zh="改翻密钥位" data-en="flip key bit">改翻密钥位</span></label>
+    <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="Auto-orbit">自动环绕</span></label>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../rsa-crypto/" data-zh="RSA:非对称,负责递钥匙" data-en="RSA: asymmetric, the key courier">RSA:非对称,负责递钥匙</a>
+    <a href="../diffie-hellman/" data-zh="Diffie–Hellman:公开协商密钥" data-en="Diffie–Hellman: agree on a key in the open">Diffie–Hellman:公开协商密钥</a>
+    <a href="../zero-knowledge/" data-zh="零知识证明:不泄密的验证" data-en="Zero-knowledge: prove without revealing">零知识证明:不泄密的验证</a>
+  </div>
+</div>
+
+<div id="plot">
+  <h3 data-zh="雪崩曲线:孪生密文与基准的每轮汉明距(位)" data-en="Avalanche: Hamming distance per round (bits)">雪崩曲线:孪生密文与基准的每轮汉明距(位)</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+<div id="note"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+function ss(a, b, x) { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+const mod4 = x => ((x % 4) + 4) % 4;
+const HEXC = '0123456789abcdef';
+function hex(a) { let s = ''; for (let i = 0; i < a.length; i++) s += HEXC[a[i] >> 4] + HEXC[a[i] & 15]; return s; }
+
+/* ---------------- 主题 / 语言(全站共享模式) ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme')
+  || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const PAL = {};
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  PAL.acc = getComputedStyle(htmlEl).getPropertyValue('--acc').trim() || '#6a4dc9';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeef1f6 : 0x10141b);
+  M.floor.color.set(THEME === 'light' ? 0xd6dce6 : 0x232a36);
+  M.base.color.set(THEME === 'light' ? 0xc6cdd9 : 0x3a414d);
+  M.back.color.set(THEME === 'light' ? 0xf5f6fa : 0x1a2029);
+  M.railOn.color.set(PAL.acc);
+  M.colHi.color.set(PAL.acc);
+  M.keyMesh.color.set(PAL.acc);
+  drawPlot();
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('AES 加密 · 16 字节状态,10 轮搅拌', 'AES · a 16-byte state churned for ten rounds');
+  for (const r of labelRegistry) r.o.element.textContent = r.text();
+  buildSteps();
+  setPlayLabel();
+  noteState = ''; elNote.style.opacity = 0;
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(-0.4, 2.3, 7.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(-0.4, 1.45, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 15;
+controls.autoRotateSpeed = 0.55;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.7));
+const key1 = new THREE.DirectionalLight(0xffffff, 2.0);
+key1.position.set(5, 9, 5);
+scene.add(key1);
+const fill = new THREE.DirectionalLight(0xa08cff, 0.5);
+fill.position.set(-6, 3, -5);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.1, ...opts });
+}
+const M = {
+  floor: mat(0x232a36, { roughness: 0.9 }),
+  base: mat(0x3a414d, { roughness: 0.7 }),
+  cube: mat(0xffffff, { roughness: 0.4, metalness: 0.06 }),
+  wall: mat(0xffffff, { roughness: 0.6, metalness: 0.02 }),
+  back: mat(0x1a2029, { roughness: 0.85 }),
+  railOn: new THREE.MeshBasicMaterial({ color: 0x6a4dc9 }),
+  railOff: mat(0x39424e, { roughness: 0.7 }),
+  colHi: new THREE.MeshBasicMaterial({ color: 0x6a4dc9, transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false }),
+  keyMesh: new THREE.MeshStandardMaterial({ color: 0x6a4dc9, roughness: 0.3, metalness: 0.4,
+    emissive: 0x6a4dc9, emissiveIntensity: 0.5 }),
+  dark: mat(0x1c2129, { roughness: 0.6 }),
+};
+
+/* ================= AES-CORE-BEGIN · 真实 AES-128(FIPS-197) ================= */
+const SBOX = new Uint8Array(256);
+const rotl8 = (x, k) => ((x << k) | (x >>> (8 - k))) & 255;
+{
+  const alog = new Uint8Array(256), logt = new Uint8Array(256);
+  let v = 1;
+  for (let i = 0; i < 255; i++) {
+    alog[i] = v; logt[v] = i;
+    v = ((((v << 1) & 255) ^ (v & 128 ? 0x1b : 0)) ^ v) & 255;   // v *= 3 (GF(2^8) 生成元)
+  }
+  for (let i = 0; i < 256; i++) {
+    const inv = i ? alog[(255 - logt[i]) % 255] : 0;             // 乘法逆(log=0 时回绕)
+    SBOX[i] = (inv ^ rotl8(inv, 1) ^ rotl8(inv, 2) ^ rotl8(inv, 3) ^ rotl8(inv, 4) ^ 0x63) & 255; // 仿射
+  }
+}
+const RCON = [1, 2, 4, 8, 16, 32, 64, 128, 0x1b, 0x36];
+function expandKey(key16) {
+  const w = new Uint8Array(176);
+  w.set(key16);
+  for (let i = 16; i < 176; i += 4) {
+    let t0 = w[i - 4], t1 = w[i - 3], t2 = w[i - 2], t3 = w[i - 1];
+    if (i % 16 === 0) {
+      const tmp = t0;
+      t0 = SBOX[t1] ^ RCON[i / 16 - 1]; t1 = SBOX[t2]; t2 = SBOX[t3]; t3 = SBOX[tmp];
+    }
+    w[i] = w[i - 16] ^ t0; w[i + 1] = w[i - 15] ^ t1; w[i + 2] = w[i - 14] ^ t2; w[i + 3] = w[i - 13] ^ t3;
+  }
+  return w;
+}
+const xt = x => ((x << 1) & 255) ^ (x & 128 ? 0x1b : 0);
+/* 加密一个块并记录每步状态(41 个快照);s[r + 4c] = 状态第 r 行第 c 列 */
+function encryptTrace(pt, w) {
+  const snaps = [];
+  const s = new Uint8Array(pt);
+  const push = () => snaps.push(new Uint8Array(s));
+  push();                                     // 0:初始明文
+  for (let i = 0; i < 16; i++) s[i] ^= w[i];
+  push();                                     // 1:初始 AddRoundKey
+  for (let r = 1; r <= 10; r++) {
+    for (let i = 0; i < 16; i++) s[i] = SBOX[s[i]];              // SubBytes
+    push();
+    const d = new Uint8Array(16);                                // ShiftRows:第 r 行左移 r
+    for (let rr = 0; rr < 4; rr++) for (let c = 0; c < 4; c++) d[rr + 4 * c] = s[rr + 4 * ((c + rr) & 3)];
+    s.set(d); push();
+    if (r < 10) {                                                // MixColumns:固定矩阵 · GF(2^8)
+      const m = new Uint8Array(16);
+      for (let c = 0; c < 4; c++) {
+        const a0 = s[4 * c], a1 = s[4 * c + 1], a2 = s[4 * c + 2], a3 = s[4 * c + 3];
+        m[4 * c] = xt(a0) ^ a1 ^ xt(a1) ^ a2 ^ a3;
+        m[4 * c + 1] = a0 ^ xt(a1) ^ a2 ^ xt(a2) ^ a3;
+        m[4 * c + 2] = a0 ^ a1 ^ xt(a2) ^ a3 ^ xt(a3);
+        m[4 * c + 3] = xt(a0) ^ a0 ^ a1 ^ a2 ^ xt(a3);
+      }
+      s.set(m); push();
+    }
+    for (let i = 0; i < 16; i++) s[i] ^= w[16 * r + i];          // AddRoundKey
+    push();
+  }
+  return snaps;   // 41 个
+}
+function encryptBlock(pt, w) {
+  const s = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) s[i] = pt[i] ^ w[i];
+  for (let r = 1; r <= 10; r++) {
+    for (let i = 0; i < 16; i++) s[i] = SBOX[s[i]];
+    const d = new Uint8Array(16);
+    for (let rr = 0; rr < 4; rr++) for (let c = 0; c < 4; c++) d[rr + 4 * c] = s[rr + 4 * ((c + rr) & 3)];
+    if (r < 10) {
+      const m = new Uint8Array(16);
+      for (let c = 0; c < 4; c++) {
+        const a0 = d[4 * c], a1 = d[4 * c + 1], a2 = d[4 * c + 2], a3 = d[4 * c + 3];
+        m[4 * c] = xt(a0) ^ a1 ^ xt(a1) ^ a2 ^ a3;
+        m[4 * c + 1] = a0 ^ xt(a1) ^ a2 ^ xt(a2) ^ a3;
+        m[4 * c + 2] = a0 ^ a1 ^ xt(a2) ^ a3 ^ xt(a3);
+        m[4 * c + 3] = xt(a0) ^ a0 ^ a1 ^ a2 ^ xt(a3);
+      }
+      for (let i = 0; i < 16; i++) s[i] = m[i] ^ w[16 * r + i];
+    } else for (let i = 0; i < 16; i++) s[i] = d[i] ^ w[16 * r + i];
+  }
+  return s;
+}
+/* ================= AES-CORE-END ================= */
+
+const PC8 = new Uint8Array(256);
+for (let i = 1; i < 256; i++) PC8[i] = PC8[i >> 1] + (i & 1);
+function opOf(k) {
+  if (k === 1 || k === 40) return 'ark';
+  const m = k % 4;
+  return m === 1 ? 'ark' : m === 2 ? 'sb' : m === 3 ? 'sr' : 'mc';
+}
+function roundOfSnap(k) { return k <= 1 ? 0 : Math.ceil((k - 1) / 4); }
+
+/* ---------------- 演示数据 ---------------- */
+const ptBytes = Uint8Array.from([0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+  0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);              // FIPS-197 附录 C.1 明文
+let keyBytes = Uint8Array.from([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+  0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]);              // 同上密钥
+let wA = null, traceA = null, traceB = null;
+const hamArr = new Int32Array(41);
+let bitIdx = 63, flipTarget = false;      // 翻转对象:false=明文 / true=密钥
+let cipherHex = '', usPer = 0;
+let snapF = 0;                            // 状态机播放头(快照 0..40 连续)
+
+/* 32×20 像素企鵝图(大块均匀色区 → ECB 必然泄漏) */
+function drawPenguin() {
+  const W = 32, H = 20, img = new Uint8Array(W * H); img.fill(168);
+  const rect = (x0, y0, x1, y1, v) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++)
+      if (x >= 0 && x < W && y >= 0 && y < H) img[y * W + x] = v;
+  };
+  rect(10, 1, 21, 6, 38);     // 头
+  rect(7, 7, 24, 17, 38);     // 身体
+  rect(11, 10, 20, 15, 238);  // 白肚
+  rect(12, 3, 13, 4, 255);    // 左眼
+  rect(18, 3, 19, 4, 255);    // 右眼
+  rect(14, 5, 17, 6, 122);    // 喙
+  rect(8, 18, 12, 18, 150);   // 左脚
+  rect(19, 18, 23, 18, 150);  // 右脚
+  return img;
+}
+const IW = 32, IH = 20, NB = 40;   // 640 像素 = 40 个 16 字节块
+const imgPlain = drawPenguin();
+let ecbArr = new Uint8Array(640), cbcArr = new Uint8Array(640);
+let dupP = 0, dupE = 0, dupC = 0;
+let mode = 1, modeLocked = false;  // 0 明文 / 1 ECB / 2 CBC
+function dupOf(a) {
+  const seen = new Set(); let dup = 0;
+  for (let b = 0; b < a.length; b += 16) {
+    const k = hex(a.slice(b, b + 16));
+    if (seen.has(k)) dup++; else seen.add(k);
+  }
+  return dup;
+}
+function flipRecompute() {
+  const base = flipTarget ? keyBytes : ptBytes;
+  const mod = Uint8Array.from(base);
+  mod[bitIdx >> 3] ^= 0x80 >> (bitIdx & 7);
+  traceB = flipTarget ? encryptTrace(ptBytes, expandKey(mod)) : encryptTrace(mod, wA);
+  for (let k = 0; k <= 40; k++) {
+    let h = 0;
+    for (let i = 0; i < 16; i++) h += PC8[traceA[k][i] ^ traceB[k][i]];
+    hamArr[k] = h;
+  }
+  drawPlot();
+}
+function recomputeAll() {
+  wA = expandKey(keyBytes);
+  traceA = encryptTrace(ptBytes, wA);
+  cipherHex = hex(traceA[40]);
+  flipRecompute();
+  for (let b = 0; b < NB; b++) ecbArr.set(encryptBlock(imgPlain.subarray(b * 16, b * 16 + 16), wA), b * 16);
+  const iv = crypto.getRandomValues(new Uint8Array(16));
+  let prev = iv;
+  for (let b = 0; b < NB; b++) {
+    const blk = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) blk[i] = imgPlain[b * 16 + i] ^ prev[i];
+    const c = encryptBlock(blk, wA);
+    cbcArr.set(c, b * 16); prev = c;
+  }
+  dupP = dupOf(imgPlain); dupE = dupOf(ecbArr); dupC = dupOf(cbcArr);
+  setMode(mode);
+  drawPlot();
+}
+function measure() {
+  const w = expandKey(keyBytes), blk = new Uint8Array(16);
+  for (let i = 0; i < 64; i++) encryptBlock(blk, w);
+  const t0 = performance.now(), N = 400;
+  for (let i = 0; i < N; i++) { blk[0] = i; encryptBlock(blk, w); }
+  usPer = (performance.now() - t0) * 1000 / N;
+}
+
+/* 字节值 → 颜色 LUT(色相铺开,字节差异一目了然) */
+const byteLUT = new Float32Array(256 * 3);
+{
+  const c = new THREE.Color();
+  for (let v = 0; v < 256; v++) {
+    c.setHSL((v / 255) * 0.82, 0.62, 0.56);
+    byteLUT[v * 3] = c.r; byteLUT[v * 3 + 1] = c.g; byteLUT[v * 3 + 2] = c.b;
+  }
+}
+
+/* ---------------- 布局常量 / 静态场景 ---------------- */
+const GRID_X = -2.75, GRID_Y = 1.9, SP = 0.36;
+const TWIN_X = -1.15;
+const KEY_X = -2.75, KEY_Y = 1.12, KEY_SP = 0.097;
+const RAIL_Y = 0.42, RAIL_SP = 0.135, RAIL_X = -2.75;
+const WALL_X = 1.95, WALL_Y = 1.55, CELL = 0.105;
+const dummy = new THREE.Object3D(), C1 = new THREE.Color();
+
+const floorM = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.1, 4.8), M.floor);
+floorM.position.set(-0.4, -0.05, 0);
+scene.add(floorM);
+const wallBack = new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.24, 0.04), M.back);
+wallBack.position.set(WALL_X, WALL_Y, -0.06);
+scene.add(wallBack);
+const standL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.1, 0.1), M.base);
+standL.position.set(-4.35, 1.5, -0.25); scene.add(standL);
+const standR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.3, 0.1), M.base);
+standR.position.set(3.62, 1.1, -0.25); scene.add(standR);
+
+const cubeGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+const mainG = new THREE.InstancedMesh(cubeGeo, M.cube, 16);
+mainG.frustumCulled = false; scene.add(mainG);
+const twinG = new THREE.InstancedMesh(cubeGeo, M.cube, 16);
+twinG.frustumCulled = false; scene.add(twinG);
+
+const keyGeo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
+const keyG = new THREE.InstancedMesh(keyGeo, M.cube, 16);
+keyG.frustumCulled = false; scene.add(keyG);
+
+const railGeo = new THREE.BoxGeometry(0.11, 0.11, 0.11);
+const railG = new THREE.InstancedMesh(railGeo, M.cube, 10);
+railG.frustumCulled = false; scene.add(railG);
+
+const partGeo = new THREE.SphereGeometry(0.045, 8, 6);
+const partG = new THREE.InstancedMesh(partGeo, M.cube, 16);
+partG.frustumCulled = false; scene.add(partG);
+
+const cellGeo = new THREE.BoxGeometry(0.093, 0.093, 0.05);
+const wallG = new THREE.InstancedMesh(cellGeo, M.wall, IW * IH);
+wallG.frustumCulled = false;
+for (let r = 0; r < IH; r++) for (let c = 0; c < IW; c++) {
+  dummy.position.set(WALL_X + (c - (IW - 1) / 2) * CELL, WALL_Y + ((IH - 1) / 2 - r) * CELL, 0);
+  dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix();
+  wallG.setMatrixAt(r * IW + c, dummy.matrix);
+}
+scene.add(wallG);
+const wallCur = new Float32Array(640 * 3), wallTarget = new Float32Array(640 * 3);
+let wallFirst = true;
+function pushWallColors() {
+  for (let i = 0; i < 640; i++) {
+    C1.setRGB(wallCur[i * 3], wallCur[i * 3 + 1], wallCur[i * 3 + 2]);
+    wallG.setColorAt(i, C1);
+  }
+  wallG.instanceColor.needsUpdate = true;
+}
+
+/* MixColumns 列高亮 */
+const colHi = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.5, 0.02), M.colHi);
+colHi.position.set(0, GRID_Y, -0.12); scene.add(colHi);
+
+/* 第 7 步:握手锁 + 飞行的会话密钥 */
+const lockG = new THREE.Group();
+const lockRing = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.05, 10, 24), M.keyMesh);
+lockRing.position.y = 0.1; lockG.add(lockRing);
+const lockBody = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.2, 0.1), M.keyMesh);
+lockBody.position.y = -0.06; lockG.add(lockBody);
+lockG.position.set(3.55, 3.0, 0.2); scene.add(lockG);
+const chipG = new THREE.Group();
+const chipBody = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.05), M.keyMesh);
+chipG.add(chipBody);
+const chipRing = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.02, 8, 16), M.keyMesh);
+chipRing.position.x = -0.12; chipG.add(chipRing);
+scene.add(chipG);
+const BP0 = new THREE.Vector3(3.55, 3.0, 0.2), BP1 = new THREE.Vector3(0.5, 3.9, 1.3),
+  BP2 = new THREE.Vector3(KEY_X, KEY_Y + 0.15, 0.4), BPT = new THREE.Vector3();
+let chipT = 0;
+
+/* ---------------- 标签 ---------------- */
+const labelRegistry = [];
+function addLabel(textFn, pos, cls = '', target = scene) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  target.add(o);
+  labelRegistry.push({ o, text: textFn });
+  div.textContent = textFn();
+  return o;
+}
+let rNow = 0;
+const lblStatus = addLabel(() => L(`状态矩阵 · 第 ${rNow}/10 轮`, `state matrix · round ${rNow}/10`),
+  new THREE.Vector3(GRID_X, 2.62, 0), 'p');
+const lblSB = addLabel(() => L('SubBytes · S 盒查表混淆', 'SubBytes · S-box table confusion'),
+  new THREE.Vector3(-4.35, 2.45, 0), 'o');
+const lblSR = addLabel(() => L('ShiftRows · 第 r 行左移 r', 'ShiftRows · row r shifts left by r'),
+  new THREE.Vector3(-4.35, 2.05, 0), 'b');
+const lblMC = addLabel(() => L('MixColumns · GF(2⁸) 列混合', 'MixColumns · GF(2⁸) column mixing'),
+  new THREE.Vector3(-4.35, 1.65, 0), 'g');
+const lblARK = addLabel(() => L('AddRoundKey · 轮密钥白化', 'AddRoundKey · round-key whitening'),
+  new THREE.Vector3(-4.35, 1.25, 0), 'y');
+addLabel(() => L(`轮密钥 K${rNow} · 16 字节`, `round key K${rNow} · 16 bytes`),
+  new THREE.Vector3(KEY_X, 0.82, 0), 'y');
+addLabel(() => L('AES-128 · 10 轮', 'AES-128 · 10 rounds'),
+  new THREE.Vector3(-1.7, RAIL_Y, 0), 'p');
+const lblTwin = addLabel(() => L(`孪生块:只翻第 ${bitIdx} 位${flipTarget ? '(密钥)' : '(明文)'}`,
+  `twin block: only bit ${bitIdx} flipped${flipTarget ? ' (key)' : ' (plain)'}`),
+  new THREE.Vector3(TWIN_X, 2.62, 0), 'g');
+const lblDiff = addLabel(() => {
+  const h = hamArr[Math.min(40, Math.ceil(snapF))];
+  return L(`与基准差 ${h}/128 位`, `${h}/128 bits differ`);
+}, new THREE.Vector3(TWIN_X, 1.2, 0), 'r');
+const lblMode = addLabel(() => mode === 0
+  ? L('明文:32×20 像素原始图像', 'plaintext: raw 32×20 px image')
+  : mode === 1
+    ? L('ECB:相同明文块 → 相同密文块,企鹅当场显形!', 'ECB: identical blocks → identical ciphertext — the penguin appears!')
+    : L('CBC:前块密文 ⊕ 入下一块 → 只剩雪花', 'CBC: each block chained with the last → pure snow'),
+  new THREE.Vector3(WALL_X, 2.78, 0), 'r');
+addLabel(() => L(`密文 C = ${cipherHex.slice(0, 16)}…`, `ciphertext C = ${cipherHex.slice(0, 16)}…`),
+  new THREE.Vector3(WALL_X, 0.26, 0), 'p');
+const lblHand = addLabel(() => L('HTTPS:RSA/DH 只递会话密钥 → AES 加密全部流量',
+  'HTTPS: RSA/DH only hands over the session key → AES encrypts everything'),
+  new THREE.Vector3(WALL_X, 3.32, 0), 'p big');
+addLabel(() => L('RSA/DH 握手', 'RSA/DH handshake'), new THREE.Vector3(3.55, 2.6, 0), 'r');
+
+/* ---------------- 相位讲解 ---------------- */
+const STEPS = [
+  { b: '16 字节一块,同一把钥匙', be: '16 bytes per block, one shared key', dur: 5, rate: 0,
+    d: 'AES-128 把明文切成 16 字节,排成 4×4 状态矩阵;加密解密用同一把 128 位密钥,单块不到 1 µs——但钥匙怎么送到对方手里,是它自己的死结。',
+    de: 'AES-128 cuts plaintext into 16 bytes laid out as a 4×4 state; the same 128-bit key encrypts and decrypts, under a microsecond per block — but how the key reaches the other side is its own deadlock.' },
+  { b: 'SubBytes:S 盒,唯一非线性', be: 'SubBytes: the only non-linearity', dur: 7, rate: 1.4,
+    d: '每个字节查 16×16 的 S 盒换成另一个字节。这是 AES 唯一的非线性层,负责「混淆」——没有它,整个加密可以被解成一组线性方程直接解掉。',
+    de: 'Each byte is swapped through the 16×16 S-box — the only non-linear layer, providing confusion: without it the whole cipher could be solved as a set of linear equations.' },
+  { b: 'ShiftRows + MixColumns:扩散', be: 'ShiftRows + MixColumns: diffusion', dur: 7, rate: 1.4,
+    d: '第 r 行循环左移 r 位,再用 GF(2⁸) 上的固定矩阵混合每一列:1 个字节的变化先撒满一列,几轮后撒满整块。',
+    de: 'Row r rotates left by r positions, then a fixed GF(2⁸) matrix mixes each column: one changed byte spreads through its column, then across the whole block within a few rounds.' },
+  { b: '十轮 SPN:每轮动全部 16 字节', be: 'Ten SPN rounds: all 16 bytes every round', dur: 14, rate: 3.4,
+    d: '加轮密钥 → S 盒 → 移行 → 混列,重复 10 轮(末轮省去混列)。这是 SPN 结构而非 Feistel:没有「一半保留」的偷懒,每轮都搅动全部 16 字节。',
+    de: 'AddRoundKey → S-box → shift rows → mix columns, ten times (the last round skips mixing). This is an SPN, not a Feistel: no half is spared — every round churns all 16 bytes.' },
+  { b: '雪崩:翻 1 位,炸半块', be: 'Avalanche: flip 1 bit, half the block erupts', dur: 9, rate: 2.4,
+    d: '明文或密钥只翻 1 位:第 1 轮末约 10 位受染,第 2 轮起冲到约 61–64/128 并一直保持——密文面目全非,攻击者无法逐位追踪改动。',
+    de: 'Flip 1 bit of plaintext or key: ~10 bits are tainted after round 1, ~61–64 of 128 from round 2 on, staying near half — the ciphertext becomes unrecognizable, bit-by-bit tracking impossible.' },
+  { b: 'ECB 企鹅现形 vs CBC 雪花', be: 'ECB penguin vs CBC snowfall', dur: 11, rate: 0,
+    d: 'ECB 逐块独立加密:相同明文块 → 相同密文块,企鹅的轮廓直接从密文里显形;CBC 把前一块密文 ⊕ 进下一块再加密,链式随机化,只剩雪花噪点。',
+    de: 'ECB encrypts blocks independently: identical plaintext blocks give identical ciphertext — the penguin ghosts right through. CBC XORs the previous ciphertext block into the next: chained randomization, pure snow.' },
+  { b: '混合加密:RSA/DH 递钥匙', be: 'Hybrid: RSA/DH hands over the key', dur: 9, rate: 0,
+    d: '对称加密的死结由非对称加密解开:HTTPS 握手用 RSA 或 Diffie–Hellman 递来 128 位会话密钥,之后的全部流量都交给 AES 干重活。',
+    de: 'Asymmetric crypto breaks the key-delivery deadlock: the HTTPS handshake passes a 128-bit session key via RSA or Diffie–Hellman, and AES does all the bulk work after that.' },
+];
+const NOTES = [
+  () => L('同一把 128 位密钥加密又解密——快,但钥匙怎么送到对方手里?', 'one 128-bit key encrypts and decrypts — fast, but how does the key get there?'),
+  () => L('每个字节查一次 S 盒:AES 唯一的非线性层,负责混淆', 'every byte goes through the S-box: the only non-linear layer — confusion'),
+  () => L('行移位 + GF(2⁸) 列混合:1 字节的变化被撒满整块', 'shift rows + mix columns: one changed byte spreads across the whole block'),
+  () => L('10 轮全跑一遍:SPN 不是 Feistel,每轮动全部 16 字节', 'ten full rounds: SPN, not Feistel — all 16 bytes every round'),
+  () => L('翻 1 位:两轮内冲到约 64/128 位翻转 = 雪崩效应', 'flip 1 bit: ~64/128 bits flip within two rounds — the avalanche'),
+  () => L('ECB 泄结构,CBC 链式随机化——看右边那堵墙', 'ECB leaks structure, CBC chains it away — watch the wall'),
+  () => L('HTTPS:握手用 RSA/DH 递会话密钥,之后全部流量 AES', 'HTTPS: RSA/DH hands over the session key, then AES takes over'),
+];
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => gotoStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 步骤驱动 ---------------- */
+let step = 0, stepTimer = 0, frozenStep = true;
+let playing = !qsBool('pause', false);
+let speed = clamp(qsFloat('speed', 1), 0.1, 3);
+const elNote = document.getElementById('note');
+let noteState = '';
+function gotoStep(n) {
+  step = clamp(n, 0, 6); stepTimer = 0;
+  [...elSteps.children].forEach((li, i) => li.classList.toggle('on', i === step));
+  frozenStep = step === 0 || step >= 5;
+  if (step === 0) snapF = 0;
+  if (step >= 5) snapF = 40;
+  if (step === 5 && !modeLocked) setMode(1);
+  if (step === 6 && !modeLocked) setMode(2);
+  twinG.visible = step === 4;
+  lockG.visible = chipG.visible = step === 6;
+  lblHand.element.style.opacity = step === 6 ? 1 : 0;
+  lblTwin.element.style.opacity = step === 4 ? 1 : 0;
+  lblDiff.element.style.opacity = step === 4 ? 1 : 0;
+  noteState = '';
+  elNote.style.opacity = 0;
+}
+
+/* ---------------- 雪崩曲线 HUD ---------------- */
+const plotCv = document.getElementById('plotCv');
+const END_IDX = [1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 40];
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  if (!ctx || !plotCv.clientWidth) return;
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const acc = css.getPropertyValue('--acc').trim() || '#6a4dc9';
+  const txt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const pad = 34, padR = 14;
+  const xOf = r => pad + (W - pad - padR) * r / 10;
+  const yOf = h => H - pad - (H - pad - 14) * (h / 128);
+  ctx.strokeStyle = txt; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(pad, 12); ctx.lineTo(pad, H - pad); ctx.lineTo(W - padR, H - pad); ctx.stroke();
+  ctx.setLineDash([6, 6]); ctx.strokeStyle = 'rgba(255,209,102,.85)';
+  ctx.beginPath(); ctx.moveTo(pad, yOf(64)); ctx.lineTo(W - padR, yOf(64)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = '16px system-ui'; ctx.fillStyle = txt;
+  ctx.fillText(L('理想 50% = 64/128', 'ideal 50% = 64/128'), pad + 10, yOf(64) - 8);
+  ctx.strokeStyle = acc; ctx.lineWidth = 3.4; ctx.beginPath();
+  END_IDX.forEach((idx, r) => {
+    const X = xOf(r), Y = yOf(hamArr[idx]);
+    r === 0 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y);
+  });
+  ctx.stroke();
+  END_IDX.forEach((idx, r) => {
+    const cur = Math.abs(rNow - r) < 0.5;
+    ctx.fillStyle = acc;
+    ctx.beginPath(); ctx.arc(xOf(r), yOf(hamArr[idx]), cur ? 7 : 4.5, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.fillStyle = txt;
+  ctx.fillText(L('第 0 轮', 'round 0'), pad - 6, H - 8);
+  ctx.fillText(L('第 10 轮', 'round 10'), W - padR - 70, H - 8);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elSpeed = document.getElementById('speed');
+const elSpeedVal = document.getElementById('speedVal');
+const elScrub = document.getElementById('scrub');
+const elScrubVal = document.getElementById('scrubVal');
+const elBit = document.getElementById('bit');
+const elBitVal = document.getElementById('bitVal');
+const elSteps = document.getElementById('steps');
+const tglLabels = document.getElementById('tglLabels');
+const tglKey = document.getElementById('tglKey');
+const tglRotate = document.getElementById('tglRotate');
+const segBtns = [...document.querySelectorAll('#seg button')];
+const stR = document.getElementById('stR'), stA = document.getElementById('stA');
+const stD = document.getElementById('stD'), stT = document.getElementById('stT');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function setMode(m) {
+  mode = m;
+  const src = m === 0 ? imgPlain : m === 1 ? ecbArr : cbcArr;
+  for (let i = 0; i < 640; i++) {
+    const v = src[i] / 255;
+    wallTarget[i * 3] = wallTarget[i * 3 + 1] = wallTarget[i * 3 + 2] = v;
+  }
+  segBtns.forEach(b => b.classList.toggle('on', +b.dataset.m === m));
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elSpeed.value = speed;
+elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×';
+elSpeed.addEventListener('input', () => {
+  speed = parseFloat(elSpeed.value);
+  elSpeedVal.textContent = speed.toFixed(2).replace(/0$/, '') + '×';
+});
+elScrub.addEventListener('input', () => {
+  const p = parseInt(elScrub.value, 10) / 1000;
+  if (step <= 4) snapF = p * 40;
+  else stepTimer = p * STEPS[step].dur;
+});
+elBit.addEventListener('input', () => {
+  bitIdx = parseInt(elBit.value, 10);
+  elBitVal.textContent = 'b' + bitIdx;
+  flipRecompute();
+});
+tglKey.addEventListener('change', () => { flipTarget = tglKey.checked; flipRecompute(); });
+document.getElementById('btnKey').addEventListener('click', () => {
+  keyBytes = crypto.getRandomValues(new Uint8Array(16));
+  recomputeAll();
+});
+document.getElementById('btnAval').addEventListener('click', () => gotoStep(4));
+segBtns.forEach(b => b.addEventListener('click', () => { modeLocked = true; setMode(+b.dataset.m); }));
+tglLabels.addEventListener('change', () => {
+  for (const r of labelRegistry) r.o.element.style.display = tglLabels.checked ? '' : 'none';
+});
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { tglLabels.checked = false; tglLabels.dispatchEvent(new Event('change')); }
+controls.autoRotate = qsBool('spin', true) && tglRotate.checked;
+addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    e.preventDefault(); playing = !playing; setPlayLabel();
+  }
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ---------------- 每帧更新 ---------------- */
+const opLbls = { sb: lblSB, sr: lblSR, mc: lblMC, ark: lblARK };
+function updateGrid(inst, trace, X, isTwin, dt) {
+  const i0 = Math.min(40, Math.floor(snapF));
+  const i1 = Math.min(40, i0 + 1);
+  const u = clamp(snapF - i0, 0, 1);
+  const op = i0 >= 40 ? 'end' : opOf(i1);
+  const e = ss(0, 1, u);
+  const kCol = op === 'sr' ? 0 : e;
+  const di = op === 'sr' ? i0 : i1;
+  for (let i = 0; i < 16; i++) {
+    const r2 = i & 3, c = i >> 2;
+    let x = (c - 1.5) * SP, sc = 1;
+    if (op === 'sr') x = (mod4(c - r2 * u) - 1.5) * SP;
+    else if (op === 'sb') sc = 1 + 0.22 * Math.sin(Math.PI * u);
+    else if (op === 'mc') sc = 1 + 0.08 * Math.sin(Math.PI * u);
+    dummy.position.set(X + x, GRID_Y + (1.5 - r2) * SP, 0);
+    dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(sc); dummy.updateMatrix();
+    inst.setMatrixAt(i, dummy.matrix);
+    const va = trace[i0][i], vb = trace[i1][i];
+    let cr = lerp(byteLUT[va * 3], byteLUT[vb * 3], kCol);
+    let cg = lerp(byteLUT[va * 3 + 1], byteLUT[vb * 3 + 1], kCol);
+    let cb = lerp(byteLUT[va * 3 + 2], byteLUT[vb * 3 + 2], kCol);
+    if (isTwin && traceA[di][i] !== traceB[di][i]) {
+      const w = 0.5 + 0.18 * Math.sin(performance.now() * 0.006);
+      cr = lerp(cr, 1, w); cg = lerp(cg, 1, w); cb = lerp(cb, 1, w);
+    }
+    C1.setRGB(cr, cg, cb);
+    inst.setColorAt(i, C1);
+  }
+  inst.instanceMatrix.needsUpdate = true;
+  if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+  return op;
+}
+let statTick = 1;
+const clock = new THREE.Clock();
+let rafId = 0, hidden = false;
+function frame() {
+  rafId = requestAnimationFrame(frame);
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const dts = playing ? dt * speed : 0;
+  if (playing) {
+    stepTimer += dts;
+    if (!frozenStep) {
+      snapF += dts * STEPS[step].rate;
+      if (snapF >= 40) snapF -= 40;
+    }
+    if (step === 6) chipT += dts;
+    if (stepTimer >= STEPS[step].dur) gotoStep((step + 1) % 7);
+  }
+  /* 状态矩阵 */
+  const op = updateGrid(mainG, traceA, GRID_X, false, dt);
+  if (step === 4) updateGrid(twinG, traceB, TWIN_X, true, dt);
+  rNow = roundOfSnap(Math.min(40, Math.ceil(snapF)));
+  for (const n of ['sb', 'sr', 'mc', 'ark'])
+    opLbls[n].element.style.opacity = (!frozenStep && op === n) ? 1 : 0.3;
+  /* 轮密钥条 */
+  for (let i = 0; i < 16; i++) {
+    const v = wA[16 * rNow + i];
+    dummy.position.set(KEY_X + (i - 7.5) * KEY_SP, KEY_Y, 0);
+    dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix();
+    keyG.setMatrixAt(i, dummy.matrix);
+    C1.setRGB(byteLUT[v * 3], byteLUT[v * 3 + 1], byteLUT[v * 3 + 2]);
+    keyG.setColorAt(i, C1);
+  }
+  keyG.instanceMatrix.needsUpdate = true;
+  keyG.instanceColor.needsUpdate = true;
+  /* 轮数轨道 */
+  for (let p = 0; p < 10; p++) {
+    const on = p < rNow;
+    dummy.position.set(RAIL_X + (p - 4.5) * RAIL_SP, RAIL_Y, 0);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.setScalar(p === rNow - 1 ? 1 + 0.28 * Math.sin(performance.now() * 0.005) : 1);
+    dummy.updateMatrix();
+    railG.setMatrixAt(p, dummy.matrix);
+    C1.copy(on ? M.railOn.color : M.railOff.color);
+    railG.setColorAt(p, C1);
+  }
+  railG.instanceMatrix.needsUpdate = true;
+  railG.instanceColor.needsUpdate = true;
+  /* AddRoundKey 粒子:轮密钥飞向状态矩阵 */
+  const arkActive = !frozenStep && op === 'ark' && snapF < 40;
+  partG.visible = arkActive;
+  colHi.visible = !frozenStep && op === 'mc';
+  if (colHi.visible) {
+    const u = clamp(snapF - Math.floor(snapF), 0, 1);
+    colHi.position.x = GRID_X + (Math.min(3, u * 4 | 0) - 1.5) * SP;
+    M.colHi.opacity = 0.12 + 0.3 * Math.sin(Math.PI * u);
+  }
+  if (arkActive) {
+    const u = ss(0, 1, clamp(snapF - Math.floor(snapF), 0, 1));
+    for (let i = 0; i < 16; i++) {
+      const r2 = i & 3, c = i >> 2;
+      dummy.position.set(lerp(KEY_X + (i - 7.5) * KEY_SP, GRID_X + (c - 1.5) * SP, u),
+        lerp(KEY_Y + 0.06, GRID_Y + (1.5 - r2) * SP, u), 0.05);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(0.4 + 0.6 * Math.sin(Math.PI * u));
+      dummy.updateMatrix();
+      partG.setMatrixAt(i, dummy.matrix);
+      const v = wA[16 * rNow + i];
+      C1.setRGB(byteLUT[v * 3], byteLUT[v * 3 + 1], byteLUT[v * 3 + 2]);
+      partG.setColorAt(i, C1);
+    }
+    partG.instanceMatrix.needsUpdate = true;
+    partG.instanceColor.needsUpdate = true;
+  }
+  /* 会话密钥飞行(第 7 步) */
+  if (chipG.visible) {
+    const t = (chipT % 2.6) / 2.6, e = ss(0, 1, t);
+    BPT.set(
+      (1 - e) * (1 - e) * BP0.x + 2 * (1 - e) * e * BP1.x + e * e * BP2.x,
+      (1 - e) * (1 - e) * BP0.y + 2 * (1 - e) * e * BP1.y + e * e * BP2.y,
+      (1 - e) * (1 - e) * BP0.z + 2 * (1 - e) * e * BP1.z + e * e * BP2.z);
+    chipG.position.copy(BPT);
+    chipG.rotation.y += dt * 4;
+    chipG.scale.setScalar(Math.max(0.15, Math.sin(Math.PI * t)));
+  }
+  /* 图像墙颜色趋近目标 */
+  let wallDirty = wallFirst;
+  const lk = 1 - Math.exp(-dt * 6);
+  for (let i = 0; i < 1920; i++) {
+    const d = wallTarget[i] - wallCur[i];
+    if (d !== 0) { wallCur[i] += d * lk; wallDirty = true; }
+  }
+  if (wallDirty) { pushWallColors(); wallFirst = false; }
+  /* 底部提示 */
+  const msg = NOTES[step]();
+  if (msg !== noteState) { noteState = msg; elNote.textContent = msg; elNote.style.opacity = 1; }
+  /* stats */
+  statTick += dt;
+  if (statTick > 0.15) {
+    statTick = 0;
+    stR.textContent = `${rNow}/10`;
+    stA.textContent = `${hamArr[Math.min(40, Math.ceil(snapF))]}/128`;
+    stD.textContent = mode === 0 ? `${dupP}/${NB}` : mode === 1 ? `${dupE}/${NB}` : `${dupC}/${NB}`;
+    stT.textContent = `≈${usPer.toFixed(1)} µs`;
+    elScrub.value = Math.round((frozenStep ? stepTimer / STEPS[step].dur : snapF / 40) * 1000);
+    elScrubVal.textContent = Math.round((frozenStep ? stepTimer / STEPS[step].dur : snapF / 40) * 100) + '%';
+    drawPlot();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hidden = true; cancelAnimationFrame(rafId); }
+  else if (hidden) { hidden = false; clock.getDelta(); rafId = requestAnimationFrame(frame); }
+});
+
+/* ---------------- 初始化 ---------------- */
+measure();
+recomputeAll();
+wallCur.set(wallTarget);
+pushWallColors();
+applyTheme();
+applyLang();
+setPlayLabel();
+const t0 = Math.round(qsFloat('t', 0));
+gotoStep(t0 >= 1 && t0 <= 7 ? t0 - 1 : 0);
+rafId = requestAnimationFrame(frame);
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
