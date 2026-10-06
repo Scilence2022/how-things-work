@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Raft 共识与领导者选举 · 任期、多数票与日志复制</title>
+<style>
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;--acc:#12b886;
+    --bg:#0f1113;--panel:rgba(15,17,19,.86);--panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;
+    --hover:rgba(255,255,255,.05);--shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,17,19,.78);--tool-border:rgba(255,255,255,.12);--cv-pill:rgba(15,17,19,.8);
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;--acc:#0ca678;
+    --bg:#f1efec;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+    --text:#16202c;--text2:#5b6b7d;--text3:#33414f;
+    --hover:rgba(15,25,40,.05);--shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);--cv-pill:rgba(255,255,255,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s}
+  #app{position:fixed;inset:0}#app canvas{display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+  .lbl{background:var(--cv-pill);border:1px solid var(--tool-border);color:var(--text3);font-size:12px;
+    line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);transition:opacity .25s}
+  :root[data-theme="light"] .lbl{text-shadow:none}
+  .lbl.o{border-color:rgba(255,169,77,.9);color:#ffe0c2}.lbl.r{border-color:rgba(255,107,107,.9);color:#ffc2c2}
+  .lbl.g{border-color:rgba(116,220,132,.9);color:#c8f5d0}.lbl.b{border-color:rgba(116,192,252,.9);color:#bde9ff}
+  .lbl.y{border-color:rgba(252,196,25,.9);color:#ffe9a8}
+  :root[data-theme="light"] .lbl.o{color:#a34e00}:root[data-theme="light"] .lbl.r{color:#c92a2a}
+  :root[data-theme="light"] .lbl.g{color:#2b8a3e}:root[data-theme="light"] .lbl.b{color:#1864ab}
+  :root[data-theme="light"] .lbl.y{color:#b8860b}
+  #tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px}
+  .tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);
+    color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;
+    padding:0 12px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;text-decoration:none;backdrop-filter:blur(6px);
+    transition:border-color .15s,color .15s,transform .15s}
+  .tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px)}
+  #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px)}
+  #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  #stats{position:fixed;right:18px;bottom:18px;z-index:4;background:var(--panel);
+    border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+    backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px}
+  #stats .k{font-size:12px;color:var(--text2);align-self:center}
+  #stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  #stats .v small{font-size:11px;color:var(--text2);font-weight:400}
+  #stats .v.warn{color:#ffa94d}#stats .v.ok{color:#8ce99a}
+  #panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;padding:14px 16px 12px;backdrop-filter:blur(6px);
+    box-shadow:var(--shadow);max-height:calc(100vh - 160px);overflow:auto}
+  #actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 40%;
+    background:var(--hover);color:var(--text2);border:1px solid var(--tool-border);
+    border-radius:9px;padding:7px 10px;font-size:12.5px;font-weight:600;
+    transition:border-color .15s,color .15s,background .15s}
+  .abtn:hover{border-color:var(--acc);color:var(--text)}
+  .abtn.on{border-color:rgba(18,184,134,.6);background:rgba(18,184,134,.12);color:var(--text)}
+  :root[data-theme="light"] .abtn.on{border-color:rgba(12,166,120,.55);background:rgba(12,166,120,.10)}
+  .row{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .row label{font-size:12px;color:var(--text2);flex:0 0 92px}
+  .row .val{font-size:11.5px;color:var(--text3);flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc);height:18px}
+  #steps{list-style:none;margin-top:8px}
+  #steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;align-items:flex-start}
+  #steps li:hover{background:var(--hover)}
+  #steps li.on{background:rgba(18,184,134,.10);border-color:rgba(18,184,134,.45)}
+  :root[data-theme="light"] #steps li.on{background:rgba(12,166,120,.08);border-color:rgba(12,166,120,.4)}
+  #steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;display:flex;
+    align-items:center;justify-content:center;margin-top:1px;
+    background:rgba(255,255,255,.12);color:var(--text3)}
+  :root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10)}
+  #steps li.on .n{background:var(--acc);color:#fff}
+  #steps .t{font-size:12px;color:var(--text3);line-height:1.45}
+  #steps .t b{color:var(--text);font-size:12px}
+  #steps li.on .t b{color:#c3f5e4}
+  :root[data-theme="light"] #steps li.on .t b{color:var(--acc)}
+  #ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border)}
+  #play{grid-row:1/3;grid-column:1;padding:10px 14px;font-size:14px;font-weight:600;
+    background:var(--acc);color:#fff;border:0;border-radius:10px;cursor:pointer}
+  #play:hover{filter:brightness(1.12)}
+  #toggles{display:flex;gap:12px;flex-wrap:wrap}
+  #toggles label{font-size:12px;color:var(--text2);display:flex;gap:5px;align-items:center;cursor:pointer}
+  #toggles input{accent-color:var(--acc)}
+  #rel{margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-border);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #rel span{font-size:11.5px;color:var(--text2)}
+  #rel a{font-size:11.5px;color:var(--text3);text-decoration:none;border:1px solid var(--tool-border);
+    border-radius:999px;padding:3px 10px;transition:color .15s,border-color .15s}
+  #rel a:hover{color:var(--acc);border-color:var(--acc)}
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; }
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+  @media(max-width:900px){#stats{display:none}}
+  @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
+    #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="Raft 共识与领导者选举" data-en="Raft Consensus &amp; Leader Election">Raft 共识与领导者选举</h1>
+  <div class="sub" data-zh="5 个节点怕脑裂:任期 term 单调递增 + 随机化选举超时,谁先拿到多数票谁当主 → 写请求只进主:日志条目并行发给从属,多数确认才提交(apply)→ 主宕机:任期 +1 重选,投票前先查「你的日志不比我新就不投」→ 已提交的数据永不丢 → 少数派分区不停服但提交不了,网络愈合后高任期获胜、未提交条目被截断 · 拖动旋转 / 空格运行/暂停" data-en="Five nodes fear split-brain: monotonically increasing terms + randomized election timeouts; majority of votes wins the leader seat → writes go only through the leader: log entries fan out to followers in parallel, committed once a majority acks → leader dies: term +1, re-vote, but 'if your log isn't at least as new as mine, I won't vote for you' → committed data is never lost → a minority partition stays up but cannot commit; on heal the higher term wins and uncommitted entries get truncated · drag to orbit / Space = run/pause">5 个节点怕脑裂:任期 term 单调递增 + 随机化选举超时,谁先拿到多数票谁当主 → 写请求只进主:日志条目并行发给从属,多数确认才提交(apply)→ 主宕机:任期 +1 重选,投票前先查「你的日志不比我新就不投」→ 已提交的数据永不丢 → 少数派分区不停服但提交不了,网络愈合后高任期获胜、未提交条目被截断 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="当前任期" data-en="Term">当前任期</span><span class="v" id="stTerm">—</span>
+  <span class="k" data-zh="已提交索引" data-en="Commit index">已提交索引</span><span class="v" id="stCI">—</span>
+  <span class="k" data-zh="在线节点" data-en="Nodes online">在线节点</span><span class="v" id="stOn">—</span>
+  <span class="k" data-zh="选举轮数" data-en="Elections">选举轮数</span><span class="v" id="stEl">—</span>
+</div>
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="actions">
+    <button class="abtn" id="bWrite" data-zh="写入日志" data-en="Write entry">写入日志</button>
+    <button class="abtn" id="bKill" data-zh="杀主重选" data-en="Kill leader">杀主重选</button>
+    <button class="abtn" id="bPart" data-zh="分区脑裂" data-en="Partition">分区脑裂</button>
+    <button class="abtn" id="bHeal" data-zh="恢复网络" data-en="Heal">恢复网络</button>
+  </div>
+  <div class="row">
+    <label data-zh="选举超时抖动" data-en="Timeout jitter">选举超时抖动</label>
+    <input id="sJ" type="range" min="0" max="100" step="5" value="60">
+    <span class="val" id="sJVal">60 %</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" data-zh="运行" data-en="Run">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglSlow" type="checkbox"> <span data-zh="慢放 ×0.3" data-en="Slow-mo ×0.3">慢放 ×0.3</span></label>
+      <label><input id="tglLog" type="checkbox" checked> <span data-zh="日志条目" data-en="Log entries">日志条目</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../consistent-hashing/" data-zh="一致性哈希" data-en="Consistent Hashing">一致性哈希</a>
+    <a href="../blockchain/" data-zh="区块链" data-en="Blockchain">区块链</a>
+    <a href="../error-correction/" data-zh="纠错编码" data-en="Error Correction">纠错编码</a>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const smooth=x=>{x=clamp(x,0,1);return x*x*(3-2*x);};
+const htmlEl=document.documentElement;
+let THEME=localStorage.getItem('htw-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+let LANG=localStorage.getItem('htw-lang')||'zh';
+const L=(zh,en)=>LANG==='en'?en:zh;
+
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:3';
+document.body.appendChild(labelRenderer.domElement);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x0f1412,22,70);
+const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,0.1,300);
+camera.position.set(0.5,8.5,13.5);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,1.0,0);controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=5;controls.maxDistance=32;
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
+scene.add(new THREE.HemisphereLight(0xdfe8f2,0x141a17,0.6));
+const key=new THREE.DirectionalLight(0xfff2dd,1.0);key.position.set(6,12,8);scene.add(key);
+const fill=new THREE.DirectionalLight(0x9ab8ff,0.3);fill.position.set(-8,6,-8);scene.add(fill);
+const groundM=new THREE.MeshStandardMaterial({color:0x161b18,roughness:0.95});
+const ground=new THREE.Mesh(new THREE.CircleGeometry(22,48),groundM);
+ground.rotation.x=-Math.PI/2;ground.position.y=-0.32;scene.add(ground);
+const ringMk=new THREE.MeshBasicMaterial({color:0x2f4a3e,transparent:true,opacity:0.5});
+const ringGuide=new THREE.Mesh(new THREE.RingGeometry(4.05,4.2,64),ringMk);
+ringGuide.rotation.x=-Math.PI/2;ringGuide.position.y=-0.30;scene.add(ringGuide);
+
+/* ── 5 节点环 ── */
+const R_POS=4.2;
+const nodePos=i=>{
+  const a=-Math.PI/2+i*(Math.PI*2/5);
+  return new THREE.Vector3(Math.cos(a)*R_POS,0,Math.sin(a)*R_POS);
+};
+const stateCol={follower:0x8a96a8,candidate:0xffd43b,leader:0x51cf66,offline:0x3a3f46};
+const pedM=new THREE.MeshStandardMaterial({color:0x2a3138,roughness:0.7});
+const baseM=new THREE.MeshStandardMaterial({color:0x354049,roughness:0.5,metalness:0.5});
+const nodes=[];
+for(let i=0;i<5;i++){
+  const pos=nodePos(i);
+  const grp=new THREE.Group();grp.position.copy(pos);grp.position.y=0;scene.add(grp);
+  const ped=new THREE.Mesh(new THREE.CylinderGeometry(0.85,0.98,0.22,28),pedM);
+  ped.position.y=0.11;grp.add(ped);
+  const domeM=new THREE.MeshStandardMaterial({color:0x8a96a8,roughness:0.35,metalness:0.4,
+    emissive:0x000000,emissiveIntensity:0.25,transparent:true,opacity:0.92});
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(0.6,26,18),domeM);
+  dome.position.y=0.78;grp.add(dome);
+  const coreM=new THREE.MeshStandardMaterial({color:0x151a1e,roughness:0.4,
+    emissive:0x8a96a8,emissiveIntensity:0.5});
+  const core=new THREE.Mesh(new THREE.SphereGeometry(0.34,18,14),coreM);
+  core.position.y=0.76;grp.add(core);
+  const ringM=new THREE.MeshStandardMaterial({color:0x8a96a8,emissive:0x8a96a8,
+    emissiveIntensity:0.8,roughness:0.4});
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(0.72,0.05,10,36),ringM);
+  ring.rotation.x=Math.PI/2;ring.position.y=0.34;grp.add(ring);
+  /* 日志条:最多 8 格 */
+  const slots=[];
+  for(let k=0;k<8;k++){
+    const bm=new THREE.MeshStandardMaterial({color:0x3a4148,roughness:0.6,
+      emissive:0x000000,emissiveIntensity:0.6});
+    const b=new THREE.Mesh(new THREE.BoxGeometry(0.17,0.12,0.12),bm);
+    b.position.set((k-3.5)*0.21,1.52,0);grp.add(b);slots.push({mesh:b,mat:bm});
+  }
+  nodes.push({i,grp,domeM,coreM,ringM,slots,pos:pos.clone(),
+    state:'follower',term:1,log:[],commit:0,votedFor:-1,
+    timer:1+Math.random()*1.5,heat:0,votes:new Set(),reviveT:0,hbT:0.3});
+}
+/* 分区墙:弦线隔开 {S1,S2} 与 {S3,S4,S5} */
+const partM=new THREE.MeshStandardMaterial({color:0xe03131,transparent:true,opacity:0.14,
+  side:THREE.DoubleSide,depthWrite:false});
+const partWall=new THREE.Mesh(new THREE.BoxGeometry(0.06,4.6,6.6),partM);
+{
+  const A=new THREE.Vector3(3.4*Math.cos(18*Math.PI/180),0,3.4*Math.sin(18*Math.PI/180));
+  const B=new THREE.Vector3(3.4*Math.cos(234*Math.PI/180),0,3.4*Math.sin(234*Math.PI/180));
+  partWall.position.copy(A).add(B).multiplyScalar(0.5);partWall.position.y=1.9;
+  partWall.rotation.y=Math.atan2(B.x-A.x,B.z-A.z);
+}
+partWall.visible=false;scene.add(partWall);
+/* 消息池 */
+const msgGeo=new THREE.SphereGeometry(0.09,10,8);
+const msgs=[];
+for(let i=0;i<28;i++){
+  const m=new THREE.Mesh(msgGeo,new THREE.MeshBasicMaterial({color:0xffd43b}));
+  m.visible=false;scene.add(m);
+  msgs.push({on:false,mesh:m,t:0,T:0.25,from:0,to:0,kind:'rv',ok:true,data:null});
+}
+function send(from,to,kind,ok=true,data=null){
+  if(!reachable(from,to))return;
+  const q=msgs.find(q=>!q.on);if(!q)return;
+  q.on=true;q.t=0;q.T=0.22+Math.random()*0.1;q.from=from;q.to=to;q.kind=kind;q.ok=ok;q.data=data;
+  q.mesh.material.color.setHex(kind==='rv'?(ok?0xffd43b:0xff6b6b):ok?0x74c0fc:0xff6b6b);
+}
+const arcMid=(a,b)=>{
+  const va=nodes[a].pos,vb=nodes[b].pos;
+  return va.clone().add(vb).multiplyScalar(0.5).setY(1.15+va.distanceTo(vb)*0.08);
+};
+function msgPos(q,out){
+  const va=nodes[q.from].pos,vb=nodes[q.to].pos,mid=arcMid(q.from,q.to);
+  const t=q.t/q.T;
+  out.copy(va).multiplyScalar((1-t)*(1-t)).addScaledVector(mid,2*(1-t)*t).addScaledVector(vb,t*t);
+  out.y+=0.55;
+}
+
+/* ── Raft 状态机 ── */
+let jitter=0.6,partition=false,playing=true,labelsOn=true,slowMo=false,logsOn=true;
+let simT=0,seq=1,commitIndex=0,elections=0,consecFails=0,autoWriteT=2.2;
+const qs=new URLSearchParams(location.search);
+if(qs.get('pause')==='1')playing=false;
+if(qs.get('labels')==='0')labelsOn=false;
+let t0=-1;if(qs.get('t')!==null){t0=parseInt(qs.get('t'))||0;}
+const grpOf=i=>i<2?0:1;
+const reachable=(a,b)=>!partition||grpOf(a)===grpOf(b);
+const aliveAll=()=>nodes.filter(n=>n.state!=='offline');
+const MAJ=3;                              /* 5 节点多数 = 3 */
+const effJitter=()=>0.06+jitter*0.94+Math.min(0.45,consecFails*0.12);
+const newTimeout=n=>2.6*(1+Math.random()*effJitter())*(n?0.5+0.5*Math.random():1);
+const lastTerm=n=>n.log.length?n.log[n.log.length-1].term:0;
+
+function become(n,st){n.state=st;n.heat=1;}
+function stepDown(n,term){if(term>n.term){n.term=term;n.votedFor=-1;
+  if(n.state==='leader'||n.state==='candidate')become(n,'follower');}}
+function startElection(n){
+  become(n,'candidate');n.term++;n.votedFor=n.i;n.votes=new Set([n.i]);elections++;
+  n.timer=newTimeout(true);
+  for(const o of nodes)if(o.i!==n.i&&o.state!=='offline')send(n.i,o.i,'rv');
+}
+function nodeLogFlash(n,red){
+  n.slots.forEach(s=>{s.mat.emissive.setHex(red?0xe03131:0x12b886);s.mat.emissiveIntensity=1.2;});
+  setTimeout(()=>{n.slots.forEach(s=>{s.mat.emissive.setHex(0x000000);});},240);
+}
+function adoptLog(n,entries,leaderCommit){
+  /* 以主日志为准:截断多余(红闪),补齐缺失 */
+  let truncated=false;
+  for(let k=0;k<n.log.length&&k<entries.length;k++){
+    if(n.log[k].id!==entries[k].id){n.log.length=k;truncated=true;break;}
+  }
+  if(n.log.length>entries.length){n.log.length=entries.length;truncated=true;}
+  for(let k=n.log.length;k<entries.length;k++)
+    n.log.push({id:entries[k].id,term:entries[k].term});
+  const cc=Math.min(leaderCommit,n.log.length);
+  n.commit=Math.max(Math.min(n.commit,n.log.length),cc);
+  commitIndex=Math.max(commitIndex,n.commit);
+  nodeLogFlash(n,truncated);
+}
+function handleMsg(q){
+  const n=nodes[q.to],s=nodes[q.from],d=q.data||{};
+  if(q.kind==='rv'){
+    stepDown(n,d.term);
+    if(d.term<n.term||n.state==='offline')return send(n.i,s.i,'rvo',false,{term:n.term});
+    let ok=n.votedFor===-1||n.votedFor===s.i;
+    /* 「日志不比我新的不投」 */
+    if(ok&&d.lt<lastTerm(n))ok=false;
+    else if(ok&&d.lt===lastTerm(n)&&d.ll<n.log.length)ok=false;
+    if(ok&&n.state!=='candidate'){n.votedFor=s.i;become(n,'follower');n.timer=newTimeout(true);}
+    else if(ok&&n.votedFor===s.i)ok=true;
+    else ok=false;
+    send(n.i,s.i,'rvo',ok,{term:n.term});
+  }
+  else if(q.kind==='rvo'){
+    if(n.state!=='candidate'||d.term<n.term)return;
+    stepDown(n,d.term);
+    if(q.ok){n.votes.add(s.i);
+      if(n.votes.size>=MAJ){become(n,'leader');consecFails=0;n.hbT=0;
+        for(const o of nodes)if(o.i!==n.i&&o.state!=='offline')send(n.i,o.i,'ap');}}
+  }
+  else if(q.kind==='ap'){
+    if(n.state==='offline')return;
+    stepDown(n,d.term);
+    if(d.term<n.term)return send(n.i,s.i,'ack',false,{term:n.term,idx:n.log.length-1});
+    if(n.state!=='follower'){become(n,'follower');}
+    n.votedFor=s.i;n.timer=newTimeout(true);
+    adoptLog(n,d.log,d.commit);
+    send(n.i,s.i,'ack',true,{term:n.term,idx:n.log.length-1});
+  }
+  else if(q.kind==='ack'){
+    if(n.state!=='leader')return;
+    if(!q.ok){stepDown(n,d.term);return;}
+    const idx=d.idx;
+    n.acks=nodes[n.i].acks||new Map();
+    const set=n.acks.get(idx)||new Set();set.add(s.i);n.acks.set(idx,set);
+    /* 统计含自己的确认数,达多数则提交该条及其之前 */
+    if(set.size+1>=MAJ&&idx+1>n.commit&&idx<n.log.length){
+      n.commit=idx+1;commitIndex=Math.max(commitIndex,n.commit);
+      n.log.forEach((e,k)=>{if(k<n.commit)e.committed=true;});
+      for(const o of nodes)if(o.i!==n.i&&o.state!=='offline')send(n.i,o.i,'ap');
+    }
+  }
+}
+function leaderAppend(n){
+  if(n.state!=='leader'||n.state==='offline')return;
+  if(n.log.length>=8)n.log.shift();     /* 演示窗口:仅保留最近 8 条 */
+  n.log.push({id:seq++,term:n.term,committed:false});
+  n.acks=new Map();
+  nodeLogFlash(n,false);
+  for(const o of nodes)if(o.i!==n.i&&o.state!=='offline')send(n.i,o.i,'ap');
+}
+function killLeader(){
+  const l=nodes.find(n=>n.state==='leader');
+  if(!l)return;
+  become(l,'offline');l.reviveT=7;
+}
+function tick(dts){
+  autoWriteT-=dts;
+  const l0=nodes.find(n=>n.state==='leader');
+  if(autoWriteT<=0){autoWriteT=2.6+Math.random()*1.6;
+    if(l0&&!partition)leaderAppend(l0);}
+  for(const n of nodes){
+    n.heat=Math.max(0,n.heat-dts*2.4);
+    if(n.state==='offline'){
+      n.reviveT-=dts;
+      if(n.reviveT<=0){become(n,'follower');n.timer=newTimeout(true);nodeLogFlash(n,false);}
+      continue;
+    }
+    if(n.state==='leader'){
+      n.hbT-=dts;
+      if(n.hbT<=0){n.hbT=0.6;
+        const snap=n.log.map(e=>({id:e.id,term:e.term}));
+        for(const o of nodes)if(o.i!==n.i&&o.state!=='offline')
+          send(n.i,o.i,'ap',true,{term:n.term,log:snap,commit:n.commit});}
+    }else{
+      n.timer-=dts;
+      if(n.timer<=0){
+        if(n.state==='candidate')consecFails++;
+        startElection(n);
+      }
+    }
+  }
+  /* 消息推进 */
+  for(const q of msgs){
+    if(!q.on)continue;
+    q.t+=dts;
+    if(q.t>=q.T){q.on=false;q.mesh.visible=false;
+      if(reachable(q.to,q.from)||true)handleMsg(q);}
+  }
+}
+/* 分区时少数派永远凑不齐多数:candidate 保持自旋,term 爬升 */
+
+const labelReg=[];
+function addLabel(textFn,pos,cls='',visFn=()=>true){
+  const div=document.createElement('div');div.className='lbl '+(typeof cls==='function'?'':cls);
+  const o=new CSS2DObject(div);o.position.copy(pos);scene.add(o);
+  labelReg.push({o,text:textFn,vis:visFn,clsFn:typeof cls==='function'?cls:null});
+  div.textContent=textFn();return o;
+}
+function roleName(n){
+  if(n.state==='offline')return L('离线','offline');
+  return n.state==='leader'?L('主','LEADER'):n.state==='candidate'?L('候选人','candidate'):L('从属','follower');
+}
+nodes.forEach(n=>{
+  n.lbl=addLabel(()=>`${L('节点','node')} S${n.i+1} · ${roleName(n)} · T${n.term}`,
+    new THREE.Vector3(0,2.15,0).add(n.pos),
+    ()=>n.state==='leader'?'g':n.state==='candidate'?'y':n.state==='offline'?'r':'b');
+});
+const lblWall=addLabel(()=>L('网络分区:左右两组消息全部丢弃','network partition: all cross traffic dropped'),
+  new THREE.Vector3(0,4.7,0),'r',()=>partition);
+const lblSplit=addLabel(()=>consecFails>0
+    ?L(`选票瓜分 ×${consecFails}:超时太同步 → 退避加大随机性`,`split votes ×${consecFails}: synchronized timeouts → backing off`)
+    :L('随机化超时:谁先醒来谁竞选','randomized timeouts: first awake wins the race'),
+  new THREE.Vector3(0,-0.75,0),()=>consecFails>0?'r':'g');
+
+function setJ(vv){jitter=clamp(vv,0,100)/100;
+  document.getElementById('sJ').value=clamp(vv,0,100);
+  document.getElementById('sJVal').textContent=clamp(vv,0,100)+' %';}
+
+const STEPS=[
+ {b:'写请求只进主',be:'Writes flow only through the leader',
+  d:'客户端的每一次写都先落到主节点:主把命令包成日志条目,再并行发给所有从属——数据路径单点、复制路径并行,这是 Raft 简化共识的关键取舍。',
+  de:'Every client write lands on the leader first: it wraps the command into a log entry and fans it out to all followers in parallel — a single write path with parallel replication, the key simplification Raft makes.',
+  act(){healAll();setJ(60);}},
+ {b:'日志复制与提交',be:'Replicate, then commit',
+  d:'条目(黄块)飞向各从属;从属落盘后回 ack(蓝点),主数票:连同自己达到 3/5 就提交——条目变绿、应用到状态机,再借下一次心跳把提交位置广播出去。',
+  de:'Entries (yellow blocks) fly to followers; each acks (blue dot) once durable, and the leader counts: at 3 of 5 including itself the entry commits — turns green, is applied, and the commit index rides the next heartbeat.',
+  act(){healAll();const l=nodes.find(n=>n.state==='leader')||electSoon();if(l)leaderAppend(l);}},
+ {b:'随机超时避免瓜分选票',be:'Randomized timeouts avoid split votes',
+  d:'所有从属都盯着心跳;一旦超时就自荐竞选。若超时完全同步,五人同时举手、互不相让、轮轮流局——把抖动调到 0 看选票怎么被瓜分,再调回来恢复秩序。',
+  de:'Every follower watches heartbeats and self-nominates on timeout. If timeouts are perfectly synchronized, all five raise hands at once and every round fails — set jitter to 0 to watch votes split, then restore order.',
+  act(){healAll();killLeader();setJ(0);}},
+ {b:'多数票当选,任期 +1',be:'Majority wins, term increments',
+  d:'候选人把任期加一并发起拉票(黄点);每个节点一个任期只投一票,先到先得。拿到 3 票立即当主、给所有人补发心跳——旧主若还活着,见到更高任期立刻退位。',
+  de:'The candidate bumps its term and canvasses (yellow dots); each node votes at most once per term, first come first served. Three votes and it becomes leader instantly, flushing heartbeats — a stale old leader steps down on sight of the higher term.',
+  act(){healAll();killLeader();setJ(60);}},
+ {b:'日志不比我新的不投',be:'Won\'t vote for a stale log',
+  d:'投票前先比较日志新旧(最后条目的任期,再比长度):候选人的日志不如自己新就拒投。这条规则保证:凡是已提交(多数确认)的数据,一定存在于任何能当选的新主上——已提交的数据永不丢。',
+  de:'Before granting a vote, compare log recency (last entry\'s term, then length): a stale candidate is refused. This single rule guarantees every committed entry lives on any electable leader — committed data is never lost.',
+  act(){healAll();const l=nodes.find(n=>n.state==='leader');if(l)leaderAppend(l);setTimeout(()=>{if(playing)killLeader();},600);setJ(70);}},
+ {b:'分区脑裂:少数派提交不了',be:'Partition: the minority cannot commit',
+  d:'网络一刀切两半:3 节点侧选出新主、照常提交;2 节点侧就算有旧主也只能空转——凑不齐 3 票,写入全部失败、任期一路爬升。多数派继续服务,这正是 quorum 的意义。',
+  de:'Cut the network in two: the 3-node side elects a fresh leader and keeps committing; the 2-node side, old leader included, spins its wheels — no way to reach 3 votes, writes fail, terms climb. The majority serves on: that is what quorum means.',
+  act(){setJ(70);partition=true;partWall.visible=true;const l=nodes.find(n=>n.state==='leader');if(l&&grpOf(l.i)===0)killLeader();}},
+ {b:'愈合:高任期获胜,截断未提交',be:'Heal: higher term wins, uncommitted truncated',
+  d:'网络恢复,两边重新互通:任期落后的旧主秒变从属,未提交的孤儿条目被新主的日志覆盖截断(红闪)——而已经变绿的已提交条目安然无恙。',
+  de:'On heal, traffic resumes: the stale-side leader instantly demotes at the sight of a higher term, and its orphaned uncommitted entries are truncated (red flash) under the new leader\'s log — while everything already green survives untouched.',
+  act(){setJ(70);partition=false;partWall.visible=false;}},
+];
+function electSoon(){
+  const f=nodes.find(n=>n.state==='follower'&&n.state!=='offline');
+  if(f){f.timer=0.01;}
+  return null;
+}
+function healAll(){
+  partition=false;partWall.visible=false;
+  const l=nodes.find(n=>n.state==='leader');
+  if(!l){const f=nodes.find(n=>n.state==='follower');if(f)f.timer=0.01;}
+}
+
+let activeStep=0;
+function buildSteps(){
+  const el=document.getElementById('steps');el.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="n">${i+1}</span><span class="t"><b>${L(s.b,s.be)}</b>　${L(s.d,s.de)}</span>`;
+    li.addEventListener('click',()=>{applyPhase(i);});
+    el.appendChild(li);
+  });
+  syncSteps();
+}
+function syncSteps(){document.querySelectorAll('#steps li').forEach((li,i)=>li.classList.toggle('on',i===activeStep));}
+function applyPhase(i){activeStep=i;healAll();STEPS[i].act();syncSteps();}
+
+function updateStats(){
+  const lead=nodes.find(n=>n.state==='leader');
+  const term=Math.max(...nodes.map(n=>n.term));
+  const on=aliveAll().length;
+  document.getElementById('stTerm').innerHTML=term;
+  const ci=document.getElementById('stCI');
+  ci.innerHTML=commitIndex;
+  ci.className='v '+(partition?'warn':'ok');
+  document.getElementById('stOn').innerHTML=on+'<small> / 5</small>';
+  document.getElementById('stEl').innerHTML=elections;
+}
+
+document.getElementById('play').addEventListener('click',()=>{playing=!playing;syncPlayBtn();});
+function syncPlayBtn(){document.getElementById('play').textContent=playing?L('暂停','Pause'):L('运行','Run');}
+document.getElementById('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+document.getElementById('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();document.getElementById('play').click();}});
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);
+});
+document.getElementById('bWrite').addEventListener('click',()=>{
+  const l=nodes.find(n=>n.state==='leader');if(l)leaderAppend(l);});
+document.getElementById('bKill').addEventListener('click',()=>killLeader());
+document.getElementById('bPart').addEventListener('click',()=>{
+  partition=true;partWall.visible=true;
+  const l=nodes.find(n=>n.state==='leader');
+  if(l&&grpOf(l.i)===0)killLeader();});
+document.getElementById('bHeal').addEventListener('click',()=>{
+  partition=false;partWall.visible=false;});
+document.getElementById('sJ').addEventListener('input',e=>setJ(+e.target.value));
+document.getElementById('tglSlow').addEventListener('change',e=>{slowMo=e.target.checked;});
+document.getElementById('tglLabels').addEventListener('change',e=>{labelsOn=e.target.checked;});
+document.getElementById('tglLog').addEventListener('change',e=>{logsOn=e.target.checked;});
+
+function applyTheme(){
+  htmlEl.dataset.theme=THEME;
+  document.getElementById('themeBtn').textContent=THEME==='dark'?'☀':'☾';
+  const dark=THEME==='dark';
+  scene.background=new THREE.Color(dark?0x0f1412:0xe5e9e2);
+  scene.fog.color.setHex(dark?0x0f1412:0xe5e9e2);
+  groundM.color.setHex(dark?0x161b18:0xc6ccc2);
+  pedM.color.setHex(dark?0x2a3138:0x9aa2a8);
+}
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el=>{
+    if(el.tagName==='INPUT')return;
+    el.textContent=LANG==='en'?(el.dataset.en||el.dataset.zh):el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent=LANG==='en'?'ZH':'EN';
+  buildSteps();
+}
+
+const clock=new THREE.Clock();
+let raf=null;
+const tmpV=new THREE.Vector3();
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const dt=clamp(clock.getDelta(),0,0.05);
+  const dts=dt*(playing?1:0)*(slowMo?0.3:1);
+  simT+=dts;
+  tick(dts);
+  /* ── 可视化 ── */
+  for(const n of nodes){
+    const c=stateCol[n.state];
+    n.ringM.color.setHex(c);n.ringM.emissive.setHex(c);
+    n.ringM.emissiveIntensity=0.8+n.heat*1.4;
+    n.coreM.emissive.setHex(c);
+    n.coreM.emissiveIntensity=(n.state==='leader'?0.9:n.state==='offline'?0.15:0.5)+n.heat;
+    n.domeM.color.setHex(n.state==='offline'?0x3a3f46:0x8a96a8);
+    n.grp.rotation.y+=dts*(n.state==='candidate'?1.6:n.state==='leader'?0.4:0.12);
+    /* 日志条 */
+    n.slots.forEach((s,k)=>{
+      const e=n.log[k];
+      s.mesh.visible=logsOn&&!!e;
+      if(e){
+        const cm=e.committed||k<n.commit;
+        s.mat.color.setHex(cm?0x2f9e44:0xb08968);
+        s.mat.emissive.setHex(cm?0x51cf66:0xffd43b);
+        s.mat.emissiveIntensity=cm?0.35:0.8;
+      }
+    });
+  }
+  /* 消息 */
+  for(const q of msgs){
+    q.mesh.visible=q.on;
+    if(q.on){msgPos(q,tmpV);q.mesh.position.copy(tmpV);
+      q.mesh.scale.setScalar(1+0.3*Math.sin(simT*14+q.from));}
+  }
+  /* 分区墙呼吸 */
+  if(partWall.visible)partM.opacity=0.10+0.05*Math.sin(simT*2.2);
+  /* 读数节流 */
+  frame.acc=(frame.acc||0)+dt;
+  if(frame.acc>0.15){frame.acc=0;updateStats();}
+  for(const r of labelReg){
+    const on=labelsOn&&(typeof r.vis==='function'?r.vis():true);
+    r.o.visible=on;
+    if(on){
+      r.o.element.textContent=typeof r.text==='function'?r.text():r.text;
+      if(r.clsFn)r.o.element.className='lbl '+r.clsFn();
+    }
+  }
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+function start(){if(raf===null){clock.getDelta();raf=requestAnimationFrame(frame);}}
+function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+
+labelsOn=!(qs.get('labels')==='0');
+document.getElementById('tglLabels').checked=labelsOn;
+applyTheme();buildSteps();
+setJ(60);
+/* 开局:让 S2 先赢一轮选举,立即就有一个主 */
+nodes.forEach(n=>{n.term=1;});
+{const f=nodes[1];f.timer=0.05;f.votedFor=-1;}
+if(qs.get('t')!==null&&t0>=0&&t0<STEPS.length){applyPhase(t0);}
+else{applyPhase(0);}
+updateStats();syncPlayBtn();start();
+
+</script>
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div');
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
