@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>群体免疫 · 把 R_eff 压回 1 以下</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#2b8aa8;
+    --bg:#0f1013; --panel:rgba(15,16,20,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,16,20,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(15,16,20,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#216e86;
+    --bg:#eef2f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.y { border-color: rgba(255,212,79,.9); color: #ffefb8; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+  :root[data-theme="light"] .lbl.y { color:#a07900; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 214px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 244px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.y { color: #ffefb8; border-color: rgba(255,212,79,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  :root[data-theme="light"] .chip.y { color:#a07900; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 30%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(43,138,168,.6); background: rgba(43,138,168,.12); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(33,110,134,.55); background: rgba(33,110,134,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 72px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(43,138,168,.10); border-color: rgba(43,138,168,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(33,110,134,.08); border-color: rgba(33,110,134,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #c3ecf5; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="群体免疫 · 把 R_eff 压回 1 以下" data-en="Herd Immunity · Push R_eff Back Under 1">群体免疫 · 把 R_eff 压回 1 以下</h1>
+  <div class="sub" data-zh="R_eff=R₀×易感占比,≤1 即熄;把免疫占比推过临界线 p_c=1−1/R₀(流感→约 20–23%、德尔塔→80–85%、麻疹→92–95%),疫情从燎原变点不着;免疫墙间接保护无法接种的婴儿与免疫缺陷者;接种洼地局部 R_eff>1,火从缺口烧穿 · 拖动旋转 / 空格运行/暂停" data-en="R_eff = R₀ × susceptible share, ≤1 and it dies out; push immune share past the critical line p_c = 1−1/R₀ (flu → ~20–23%, Delta → 80–85%, measles → 92–95%) and wildfire becomes a match that will not light; the immune wall indirectly shields unvaccinatable infants and the immunocompromised; clustered pockets keep local R_eff>1 — fire burns through the gap · drag to orbit / Space = run/pause">群体免疫 · 把 R_eff 压回 1 以下</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="有效再生数 R_eff" data-en="Effective R_eff">有效再生数 R_eff</span><span class="v" id="stRe">—</span>
+  <span class="k" data-zh="感染(现在/本波)" data-en="Infected (now/wave)">感染(现在/本波)</span><span class="v" id="stInf">—</span>
+  <span class="k" data-zh="免疫占比" data-en="Immune share">免疫占比</span><span class="v" id="stImm">—</span>
+  <span class="k" data-zh="临界线 p_c" data-en="Critical p_c">临界线 p_c</span><span class="v" id="stPc">—</span>
+  <span class="k" data-zh="状态" data-en="Status">状态</span><span class="v" id="stSt">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="感染数-时间(滚动 ~29 s):燎原=高峰浪,熄灭=贴地小突起;竖虚线=新病例撒入,灰虚线=1 例线" data-en="Infected vs time (~29 s window): wildfire = tall wave, extinction = ground-hugging blips; dashed vertical = a new case seeded, gray dashed = the 1-case line">感染数-时间(滚动 ~29 s):燎原=高峰浪,熄灭=贴地小突起;竖虚线=新病例撒入,灰虚线=1 例线</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip" data-zh="灰 = 易感者" data-en="gray = susceptible">灰 = 易感者</span>
+    <span class="chip.b" data-zh="青 = 被接种 · 免疫墙" data-en="teal = vaccinated · the wall">青 = 被接种 · 免疫墙</span>
+    <span class="chip.r" data-zh="红 = 感染中" data-en="red = infected">红 = 感染中</span>
+    <span class="chip.g" data-zh="绿 = 康复免疫" data-en="green = recovered-immune">绿 = 康复免疫</span>
+    <span class="chip.y" data-zh="金 = 无法接种者" data-en="gold = unvaccinatable">金 = 无法接种者</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnS0" data-zh="易感燎原" data-en="Wildfire">易感燎原</button>
+    <button class="abtn" id="btnS1" data-zh="R_eff 门槛" data-en="The gate">R_eff 门槛</button>
+    <button class="abtn" id="btnS2" data-zh="推过 p_c" data-en="Past p_c">推过 p_c</button>
+    <button class="abtn" id="btnS3" data-zh="间接保护" data-en="Indirect shield">间接保护</button>
+    <button class="abtn" id="btnS4" data-zh="接种洼地" data-en="Pockets">接种洼地</button>
+    <button class="abtn brk" id="btnS5" data-zh="变异逃逸" data-en="Escape variant">变异逃逸</button>
+  </div>
+  <div class="row"><label data-zh="相位(步骤)" data-en="Phase (step)">相位(步骤)</label><input id="sStep" type="range" min="0" max="5" step="1" value="0"><span class="val" id="sStepVal">1/6</span></div>
+  <div class="row"><label data-zh="接种率 p" data-en="Coverage p">接种率 p</label><input id="sCov" type="range" min="0" max="100" step="1" value="0"><span class="val" id="sCovVal">0 %</span></div>
+  <div class="row"><label data-zh="基本再生数 R₀" data-en="Basic R₀">基本再生数 R₀</label><input id="sR0" type="range" min="1.1" max="18" step="0.1" value="4"><span class="val" id="sR0Val">4.0</span></div>
+  <div class="row"><label data-zh="疫苗效力 VE" data-en="Efficacy VE">疫苗效力 VE</label><input id="sVE" type="range" min="40" max="100" step="1" value="95"><span class="val" id="sVEVal">95 %</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglAuto" type="checkbox" checked> <span data-zh="自动重撒病例" data-en="Auto re-seed">自动重撒病例</span></label>
+      <label><input id="tglPk" type="checkbox"> <span data-zh="接种洼地" data-en="Pockets">接种洼地</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../mrna-vaccine/" data-zh="疫苗:个体免疫怎么练成" data-en="vaccine: how individual immunity is built">疫苗:个体免疫怎么练成</a>
+    <a href="../virus-lifecycle/" data-zh="病毒生活史:传播的底层" data-en="virus lifecycle: the mechanics of spread">病毒生活史:传播的底层</a>
+    <a href="../antibiotic-resistance/" data-zh="耐药性:选择压力下的演化" data-en="resistance: evolution under selection pressure">耐药性:选择压力下的演化</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const smooth = u => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+/* ================= 状态 ================= */
+let SPD = clamp(qsFloat('speed', 1), 0.25, 3);
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let labelsOn = qsBool('labels', true);
+let autoOn = true;
+let phaseIdx = 0, notifyT = 0, notifyZ = '', notifyE = '', time = 0;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x10141b, 18, 52);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x10141b : 0xdde5ec);
+  scene.fog.color = new THREE.Color(dark ? 0x10141b : 0xdde5ec);
+  groundM.color.setHex(dark ? 0x181b21 : 0xb4bfca);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('群体免疫 · 把 R_eff 压回 1 以下', 'Herd Immunity · Push R_eff Back Under 1');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  syncSliders();
+  syncBtns();
+  updateStats();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+} catch (e) {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;z-index:99;display:flex;align-items:center;justify-content:center;background:#0f1013;color:#f2f5f9;font:15px system-ui;text-align:center;padding:30px';
+  d.textContent = L('WebGL 初始化失败:当前浏览器不支持或已禁用 3D,无法显示本页演示。', 'WebGL failed to initialize: this browser does not support or has disabled 3D, so the demo cannot run.');
+  document.body.appendChild(d);
+  throw e;
+}
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 140);
+camera.position.set(0, 11.5, 10.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 45;
+controls.autoRotateSpeed = 0.3;
+
+const hemi = new THREE.HemisphereLight(0xdfe8f2, 0x1a1c22, 0.55);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff2dd, 1.0);
+key.position.set(6, 9, 7);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9adfff, 0.3);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ================= SIR 人群模型 ================= */
+const GRID = 24, N = GRID * GRID, SP = 0.42, HALF = (GRID - 1) / 2, NB = 8, D_INF = 3, NV = 12, DPS = 4;
+const P = { r0: 4, p: 0, ve: 0.95, pk: 0 };
+const posArr = new Float32Array(N * 2), rnd = new Float32Array(N), inPk = new Uint8Array(N);
+const vacA = new Uint8Array(N), protA = new Uint8Array(N), vulnA = new Uint8Array(N);
+const stA = new Uint8Array(N), infT = new Float32Array(N);
+const nbArr = [];
+let infCnt = 0, cumWave = 0, lastSize = 0, seedT = 0, dirty = true, lastSeed = -1;
+
+function mulberry32(a) {
+  return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+const rng = mulberry32(20260428);
+const PKC = [[6, 6], [17, 15]], PKR = 3.1;
+for (let gz = 0; gz < GRID; gz++) for (let gx = 0; gx < GRID; gx++) {
+  const i = gx + gz * GRID;
+  posArr[i * 2] = (gx - HALF) * SP; posArr[i * 2 + 1] = (gz - HALF) * SP;
+  rnd[i] = rng();
+  for (const c of PKC) if (Math.hypot(gx - c[0], gz - c[1]) <= PKR) inPk[i] = 1;
+  const nbs = [];
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+    if (!dx && !dz) continue;
+    const x = gx + dx, z = gz + dz;
+    if (x >= 0 && x < GRID && z >= 0 && z < GRID) nbs.push(x + z * GRID);
+  }
+  nbArr.push(nbs);
+}
+for (const v of [[11, 11], [12, 11], [11, 12], [12, 12], [10, 11], [11, 10], [10, 10], [13, 12], [4, 19], [19, 4], [20, 20], [3, 3]]) vulnA[v[0] + v[1] * GRID] = 1;
+const ordAll = [], ordNp = [], ordPkt = [];
+for (let i = 0; i < N; i++) if (!vulnA[i]) (inPk[i] ? ordPkt : ordNp).push(i);
+ordAll.push(...ordNp, ...ordPkt);
+const shuf = a => { for (let i = a.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0; const t = a[i]; a[i] = a[j]; a[j] = t; } return a; };
+shuf(ordAll); shuf(ordNp); shuf(ordPkt);
+const ordPk = [...ordNp, ...ordPkt];
+
+function updateProt() {
+  for (let i = 0; i < N; i++) if (stA[i] === 0) protA[i] = (vacA[i] && rnd[i] < P.ve) ? 1 : 0;
+  dirty = true;
+}
+function applyCoverage() {
+  vacA.fill(0);
+  const target = Math.round(P.p * (N - NV));
+  const ord = P.pk ? ordPk : ordAll;
+  let c = 0;
+  for (let k = 0; k < ord.length && c < target; k++) { vacA[ord[k]] = 1; c++; }
+  updateProt();
+}
+function seedCase() {
+  if (infCnt > 0) return;
+  let sum = 0; const el = [];
+  for (let i = 0; i < N; i++) if (stA[i] === 0 && !protA[i]) { el.push(i); sum += (P.pk && inPk[i] && !vulnA[i]) ? 12 : 1; }
+  if (!el.length) return;
+  let r = Math.random() * sum, pick = el[0];
+  for (const i of el) { r -= (P.pk && inPk[i] && !vulnA[i]) ? 12 : 1; if (r <= 0) { pick = i; break; } }
+  stA[pick] = 1; infT[pick] = 0; infCnt = 1; cumWave = 1; lastSeed = pick;
+  marks.push(0); dirty = true; seedT = 0;
+}
+function resetPop() {
+  stA.fill(0); infT.fill(0); infCnt = 0; cumWave = 0; lastSize = 0; seedT = 0;
+  dirty = true; seedCase();
+}
+function simStep(dtD, dtR) {
+  const pInf = 1 - Math.exp(-(P.r0 / (NB * D_INF)) * dtD);
+  for (let i = 0; i < N; i++) if (stA[i] === 1) {
+    const nbs = nbArr[i];
+    for (let k = 0; k < nbs.length; k++) {
+      const j = nbs[k];
+      if (stA[j] === 0 && !protA[j] && Math.random() < pInf) infectNode(i, j);
+    }
+  }
+  for (let i = 0; i < N; i++) if (stA[i] === 1) {
+    infT[i] += dtD;
+    if (infT[i] >= D_INF) { stA[i] = 2; infCnt--; dirty = true; }
+  }
+  if (infCnt === 0) {
+    if (cumWave > 0) { lastSize = cumWave; cumWave = 0; }
+    seedT += dtR;
+    if (autoOn && playing && seedT > 1.15) seedCase();
+  } else seedT = 0;
+}
+
+/* ---------------- 材质 / 场景搭建 ---------------- */
+const groundM = new THREE.MeshStandardMaterial({ color: 0x181b21, roughness: 0.95 });
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(7.6, 7.6, 0.3, 48), groundM);
+ground.position.y = -0.32;
+scene.add(ground);
+
+const nodeI = new THREE.InstancedMesh(new THREE.SphereGeometry(0.15, 10, 8),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45 }), N);
+nodeI.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+nodeI.frustumCulled = false;
+scene.add(nodeI);
+const C_S = new THREE.Color(0x8a97a8), C_V = new THREE.Color(0x2fa9cc), C_R = new THREE.Color(0x55c877),
+  C_I = new THREE.Color(0xff4d38), C_U = new THREE.Color(0xffcf3f), _C = new THREE.Color();
+function refreshColors() {
+  for (let i = 0; i < N; i++) {
+    _C.copy(stA[i] === 1 ? C_I : stA[i] === 2 ? C_R : protA[i] ? C_V : vulnA[i] ? C_U : C_S);
+    nodeI.setColorAt(i, _C);
+  }
+  nodeI.instanceColor.needsUpdate = true;
+}
+
+/* 传播火花池 */
+const SPN = 90;
+const sparkI = new THREE.InstancedMesh(new THREE.SphereGeometry(0.06, 8, 6),
+  new THREE.MeshBasicMaterial({ color: 0xffffff }), SPN);
+sparkI.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+sparkI.frustumCulled = false;
+scene.add(sparkI);
+const spOn = new Uint8Array(SPN), spBlk = new Uint8Array(SPN), spA = new Int16Array(SPN), spB = new Int16Array(SPN), spT = new Float32Array(SPN);
+const spFree = [];
+for (let k = SPN - 1; k >= 0; k--) spFree.push(k);
+function spawnSpark(a, b, blk) {
+  if (!spFree.length) return;
+  const k = spFree.pop();
+  spOn[k] = 1; spBlk[k] = blk ? 1 : 0; spA[k] = a; spB[k] = b; spT[k] = 0;
+  _C.setHex(blk ? 0x39c9de : 0xff6a3d);
+  sparkI.setColorAt(k, _C);
+  sparkI.instanceColor.needsUpdate = true;
+}
+function infectNode(i, j) {
+  stA[j] = 1; infT[j] = 0; infCnt++; cumWave++; dirty = true;
+  if (spFree.length > 30) spawnSpark(i, j, false);
+}
+
+/* 临界线仪表:青柱=当前免疫占比,橙线=p_c */
+const GH = 3.2, GX = 6.15, GY0 = -0.17;
+const gaugeBase = new THREE.Mesh(new THREE.BoxGeometry(0.2, GH, 0.2),
+  new THREE.MeshStandardMaterial({ color: 0x39424d, roughness: 0.6, transparent: true, opacity: 0.55 }));
+gaugeBase.position.set(GX, GY0 + GH / 2, 0);
+scene.add(gaugeBase);
+const gaugeFill = new THREE.Mesh(new THREE.BoxGeometry(0.26, GH, 0.26),
+  new THREE.MeshStandardMaterial({ color: 0x2fa9cc, emissive: 0x1d7a99, emissiveIntensity: 0.7, roughness: 0.4 }));
+gaugeFill.position.set(GX, GY0, 0);
+gaugeFill.scale.y = 0.001;
+scene.add(gaugeFill);
+const pcLine = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.05, 0.32),
+  new THREE.MeshStandardMaterial({ color: 0xffa94d, emissive: 0xcc6f1d, emissiveIntensity: 0.8 }));
+scene.add(pcLine);
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '', vis = () => true, parent = null) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, vis });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && r.vis();
+}
+const lblLegend = addLabel(() => L('人群网格:一球=一人', 'population grid: one sphere = one person'), new THREE.Vector3(-5.4, 0.75, -5.4), 'o');
+const lblSeed = addLabel(() => L('零号病例:燎原的起点', 'index case: where wildfire starts'), new THREE.Vector3(0, 0.8, 0), 'r', () => infCnt > 0 && cumWave <= 10 && lastSeed >= 0);
+const lblReff = addLabel(() => L('R_eff = R₀ × 易感占比', 'R_eff = R₀ × susceptible share'), new THREE.Vector3(GX, 3.05, 0), 'b');
+const lblPc = addLabel(() => L('临界线 p_c = 1−1/R₀', 'critical line p_c = 1−1/R₀'), new THREE.Vector3(GX, 2.4, 0), 'g');
+const lblFire = addLabel(() => L('燎原:R_eff>1,每例平均感染 >1 人', 'wildfire: R_eff>1, each case infects >1 on average'), new THREE.Vector3(0, 3.4, 0), 'r', () => infCnt > 25);
+const lblShield = addLabel(() => L('免疫墙合拢:R_eff≤1,链式传播断', 'wall closed: R_eff≤1, chains break'), new THREE.Vector3(0, 3.4, 0), 'g', () => infCnt === 0 && cumWave === 0 && immuneFrac >= pcVal());
+const lblVuln = addLabel(() => L('金色=无法接种者:只能靠四周免疫墙', 'gold = unvaccinatable: shielded only by the wall around them'), new THREE.Vector3(0, 1.6, 0.7), 'y');
+const lblPocket = addLabel(() => L('接种洼地:未接种扎堆,火从这里烧穿', 'coverage pocket: the unvaccinated cluster — fire breaks through here'), new THREE.Vector3(-2.31, 1.25, -2.31), 'r', () => !!P.pk);
+const lblVe = addLabel(() => L('有效免疫=接种率×效力:效力掉线,防线塌', 'effective immunity = coverage × efficacy: efficacy drops, the wall sags'), new THREE.Vector3(GX, -0.55, 0), 'b', () => P.ve < 0.8);
+const lblNotify = addLabel(() => notifyT > 0 ? L(notifyZ, notifyE) : '', new THREE.Vector3(0, 4.0, 0), 'r');
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]), t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+function notify(z, e) { notifyT = 4.6; notifyZ = z; notifyE = e; }
+const STEPS = [
+  { b: '全员易感:一个病例燎原', be: 'Everyone susceptible: one case, wildfire',
+    d: '网格里每个球是一个人:灰=易感,红=感染,绿=康复免疫,青=被接种。此刻无人免疫,R₀=4——一个零号病例平均传染 4 人,4 传 16、16 传 64,燎原只是时间问题。',
+    de: 'Each sphere is one person: gray = susceptible, red = infected, green = recovered-immune, teal = vaccinated. With nobody immune, R₀=4 — one index case infects 4 on average, 4→16→64, and wildfire is only a matter of time.',
+    act: () => { setParams(4, 0, 0.95, 0); applyCoverage(); resetPop(); flyTo([0, 11.5, 10.5], [0, 0.3, 0]); notify('全员易感:R_eff=R₀=4,一个病例点燃全群', 'all susceptible: R_eff=R₀=4 — one case ignites the crowd'); } },
+  { b: '门槛:R_eff = R₀ × 易感占比', be: 'The gate: R_eff = R₀ × susceptible share',
+    d: '起不起势只看 R_eff:R₀ 乘上当前易感占比。燎原烧掉易感者,占比下降,R_eff 随之跌落——跌破 1 时峰值已过,疫情自行转灭。门槛不是 0,是 1。',
+    de: 'Take-off comes down to R_eff: R₀ times the current susceptible fraction. Burning susceptibles lowers that fraction and R_eff falls with it — once under 1 the peak is past and the outbreak dies on its own. The gate is not zero, it is one.',
+    act: () => { setParams(4, 0, 0.95, 0); applyCoverage(); resetPop(); flyTo([5.5, 4.2, 8.0], [1.0, 0.2, 0.5]); notify('盯住焰头:烧过之处 R_eff 一路下坠,跌破 1 就停', 'watch the front: R_eff falls as susceptibles burn — under 1, it stops'); } },
+  { b: '撒疫苗:推接种率过 p_c', be: 'Vaccinate: push coverage past p_c',
+    d: '免疫占比跨过临界线 p_c=1−1/R₀(此处 75%)的瞬间,燎原变点不着:零号病例凑不齐易感者,链式传播断掉。拖动接种率滑块来回穿过 p_c,当场看疫情开与关。',
+    de: 'The instant immune share crosses the critical line p_c=1−1/R₀ (75% here), wildfire turns into a match that will not light: the index case cannot gather enough susceptibles and the chain breaks. Drag the coverage slider back and forth across p_c and watch the epidemic switch off and on.',
+    act: () => { setParams(4, 0.85, 0.95, 0); applyCoverage(); resetPop(); flyTo([0, 12.5, 9.0], [0, 0.2, 0]); notify('85%×95%=81%>p_c 75%:点不着——把滑块拉回线下看燎原', '85%×95%=81%>p_c 75%: it will not light — drag the slider back under and watch'); } },
+  { b: '间接保护:免疫墙里的易感者', be: 'Indirect protection: sheltered by the wall',
+    d: '金色球是无法接种者——婴儿、免疫缺陷者。他们自己没有免疫力,但周围被接种者挡住了传播路径:火到墙边就熄。墙越厚(接种率越高于 p_c)他们越安全;麻疹 p_c 高达 92–95%,墙薄一寸都危险。',
+    de: 'Gold spheres cannot be vaccinated — infants, the immunocompromised. They have no immunity of their own, yet the vaccinated around them block every path: the fire dies at the wall. The thicker the wall (coverage well above p_c), the safer they are; with measles p_c at 92–95%, even a thin spot is dangerous.',
+    act: () => { setParams(4, 0.9, 0.95, 0); applyCoverage(); resetPop(); flyTo([3.4, 3.8, 5.6], [0.5, 0.2, 0.4]); notify('金球没有盾,墙替它们挡:青火花撞墙熄灭', 'gold has no shield of its own — the wall blocks for them: teal sparks die on it'); } },
+  { b: '接种洼地:火从缺口烧穿', be: 'Coverage pockets: fire burns through the gap',
+    d: '平均接种率达标≠安全:未接种者扎堆的社区就是洼地,洼地内易感占比高、局部 R_eff>1——火从那里烧穿,再冲进全群。麻疹在接种率 90%+ 的国家复燃,烧的正是这样的洼地。',
+    de: 'A passable average is not safety: communities where the unvaccinated cluster are pockets with a high local susceptible share and local R_eff>1 — fire burns through there first, then breaks into the whole population. Measles resurgences in 90%+ coverage countries ignite exactly in such pockets.',
+    act: () => { setParams(4, 0.85, 0.95, 1); applyCoverage(); resetPop(); flyTo([0.6, 4.6, 4.6], [-2.3, 0.1, -2.3]); notify('总免疫占比仍在线上,但洼地局部 R_eff>1:火从缺口烧穿', 'overall immunity is on-side, yet inside the pocket R_eff>1: fire burns through the gap'); } },
+  { b: '变异逃逸:效力掉线', be: 'Escape variants: efficacy drops',
+    d: '疫苗不是 100% 保护,病毒变异还能逃逸:效力 95%→60%,有效免疫=85%×60%=51%,远低于 p_c 75%——同样的接种率,燎原回来了。对策:更新疫苗与加强针,把 p×VE 重新推回线上。',
+    de: 'Vaccines are not 100% protective, and variants can escape: drop efficacy from 95% to 60% and effective immunity = 85%×60% = 51%, far below p_c 75% — at the same coverage, wildfire returns. The countermove: updated vaccines and boosters that push p×VE back above the line.',
+    act: () => { setParams(4, 0.85, 0.6, 0); applyCoverage(); resetPop(); flyTo([0, 11.5, 10.5], [0, 0.3, 0]); notify('效力 95%→60%:免疫柱够不着 p_c 线,燎原复燃', 'efficacy 95%→60%: the immune column no longer reaches the p_c line — wildfire returns'); } },
+];
+function setParams(r0, p, ve, pk) {
+  P.r0 = r0; P.p = p; P.ve = ve; P.pk = pk;
+  tglPk.checked = !!pk;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { phaseIdx = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= 绘图:感染数-时间 ================= */
+const plotCv = document.getElementById('plotCv');
+const hist = [], marks = [], HN = 240;
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  if (!W || !H) return;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#9fb0c3';
+  const padL = 34, padR = 10, padT = 12, padB = 20;
+  const yMax = Math.max(16, ...hist);
+  const xOf = idx => padL + (idx + (HN - hist.length)) / (HN - 1) * (W - padL - padR);
+  const yOf = v => (H - padB) - clamp(v, 0, yMax) / yMax * (H - padT - padB);
+  ctx.font = '13px system-ui';
+  ctx.fillStyle = cTxt;
+  ctx.strokeStyle = 'rgba(128,150,170,.22)';
+  ctx.beginPath(); ctx.moveTo(padL, yOf(0)); ctx.lineTo(W - padR, yOf(0)); ctx.stroke();
+  ctx.fillText(String(yMax), padL - 30, yOf(yMax) + 5);
+  ctx.strokeStyle = 'rgba(128,150,170,.4)';
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath(); ctx.moveTo(padL, yOf(1)); ctx.lineTo(W - padR, yOf(1)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillText(L('1 例', '1'), padL - 30, yOf(1) + 5);
+  /* 新病例标记 */
+  ctx.strokeStyle = 'rgba(47,169,204,.8)';
+  ctx.setLineDash([4, 4]);
+  for (const age of marks) {
+    const x = W - padR - age / (HN - 1) * (W - padL - padR);
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  /* 感染曲线 */
+  if (hist.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(xOf(0), yOf(hist[0]));
+    for (let k = 1; k < hist.length; k++) ctx.lineTo(xOf(k), yOf(hist[k]));
+    ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 2.6; ctx.stroke();
+    ctx.lineTo(xOf(hist.length - 1), yOf(0)); ctx.lineTo(xOf(0), yOf(0)); ctx.closePath();
+    ctx.fillStyle = 'rgba(255,77,61,.2)'; ctx.fill();
+  }
+  const cv = hist.length ? hist[hist.length - 1] : infCnt;
+  const cx = xOf(hist.length ? hist.length - 1 : HN - 1);
+  ctx.fillStyle = '#ff8787'; ctx.strokeStyle = '#f2f5f9'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, yOf(cv), 5, 0, 6.29); ctx.stroke(); ctx.fill();
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const sStep = document.getElementById('sStep'), sStepVal = document.getElementById('sStepVal');
+const sCov = document.getElementById('sCov'), sCovVal = document.getElementById('sCovVal');
+const sR0 = document.getElementById('sR0'), sR0Val = document.getElementById('sR0Val');
+const sVE = document.getElementById('sVE'), sVEVal = document.getElementById('sVEVal');
+const stRe = document.getElementById('stRe'), stInf = document.getElementById('stInf'),
+  stImm = document.getElementById('stImm'), stPc = document.getElementById('stPc'), stSt = document.getElementById('stSt');
+const formulaEl = document.getElementById('formula');
+const tglAuto = document.getElementById('tglAuto'), tglPk = document.getElementById('tglPk');
+const btnS = [0, 1, 2, 3, 4, 5].map(i => document.getElementById('btnS' + i));
+const pcVal = () => 1 - 1 / P.r0;
+let immuneFrac = 0, susFrac = 1;
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function syncSliders() {
+  if (document.activeElement !== sStep) sStep.value = phaseIdx;
+  sStepVal.textContent = (phaseIdx + 1) + '/6';
+  if (document.activeElement !== sCov) sCov.value = Math.round(P.p * 100);
+  sCovVal.textContent = Math.round(P.p * 100) + ' %';
+  if (document.activeElement !== sR0) sR0.value = P.r0;
+  sR0Val.textContent = P.r0.toFixed(1);
+  if (document.activeElement !== sVE) sVE.value = Math.round(P.ve * 100);
+  sVEVal.textContent = Math.round(P.ve * 100) + ' %';
+}
+function syncBtns() {
+  tglAuto.checked = autoOn; tglPk.checked = !!P.pk;
+  btnS.forEach((b, i) => b.classList.toggle('on', i === phaseIdx));
+}
+function updateStats() {
+  let s = 0, r = 0, pv = 0;
+  for (let i = 0; i < N; i++) {
+    if (stA[i] === 1) continue;
+    if (stA[i] === 2) r++;
+    else { s++; if (protA[i]) pv++; }
+  }
+  susFrac = (s - pv) / N; immuneFrac = (pv + r) / N;
+  const reff = P.r0 * susFrac, pc = pcVal();
+  stRe.textContent = reff.toFixed(2);
+  stRe.className = 'v ' + (reff <= 1 ? 'ok' : reff <= 1.6 ? 'warn' : 'bad');
+  stInf.innerHTML = infCnt + '<small>/' + cumWave + '</small>';
+  stInf.className = 'v ' + (infCnt > 0 ? 'bad' : '');
+  stImm.textContent = Math.round(immuneFrac * 100) + ' %';
+  stImm.className = 'v ' + (immuneFrac >= pc ? 'ok' : 'warn');
+  stPc.innerHTML = Math.round(pc * 100) + '%<small>' + L(' 需接种 ', ' need ') + Math.round(pc / P.ve * 100) + '%</small>';
+  stPc.className = 'v';
+  if (infCnt > 0 && reff > 1) { stSt.textContent = L('疫情燎原', 'wildfire'); stSt.className = 'v bad'; }
+  else if (infCnt > 0) { stSt.textContent = L('焰头受挫,趋于熄灭', 'front faltering, dying out'); stSt.className = 'v warn'; }
+  else if (lastSize > 12) { stSt.textContent = L('一波烧过(群体免疫达成)', 'a wave burned through (herd immunity the hard way)'); stSt.className = 'v warn'; }
+  else { stSt.textContent = L('星火自熄', 'sparks die out'); stSt.className = 'v ok'; }
+  gaugeFill.scale.y = Math.max(0.001, immuneFrac);
+  gaugeFill.position.y = GY0 + GH * immuneFrac / 2;
+  pcLine.position.y = GY0 + GH * pc;
+  lblPc.position.y = GY0 + GH * pc + 0.28;
+  syncSliders();
+}
+function updateFormula() {
+  const reff = P.r0 * susFrac, pc = pcVal();
+  const verdict = reff <= 1 ? L('≤1 → 熄灭', '≤1 → dies out') : L('>1 → 燎原', '>1 → wildfire');
+  formulaEl.innerHTML = L(
+    `<b>门槛</b>:R_eff = R₀×易感占比 = ${P.r0.toFixed(1)}×${Math.round(susFrac * 100)}% = ${reff.toFixed(2)} ${verdict}<br>` +
+    `<b>临界</b>:p_c = 1−1/R₀ = ${Math.round(pc * 100)}% · 有效免疫 = 接种率×效力 = ${Math.round(P.p * 100)}%×${Math.round(P.ve * 100)}% = ${Math.round(P.p * P.ve * 100)}%<br>` +
+    `<b>参照</b>:流感 R₀≈1.3→p_c≈20–23% · 德尔塔 5–7→80–85% · 麻疹 12–18→92–95%<br>` +
+    `<b>漏洞</b>:效力<100% 与逃逸变异打折;接种洼地让局部 R_eff>1,火从缺口烧穿`,
+    `<b>Gate</b>: R_eff = R₀ × susceptible share = ${P.r0.toFixed(1)}×${Math.round(susFrac * 100)}% = ${reff.toFixed(2)} ${verdict}<br>` +
+    `<b>Critical</b>: p_c = 1−1/R₀ = ${Math.round(pc * 100)}% · effective immunity = coverage×efficacy = ${Math.round(P.p * 100)}%×${Math.round(P.ve * 100)}% = ${Math.round(P.p * P.ve * 100)}%<br>` +
+    `<b>Reference</b>: flu R₀≈1.3→p_c≈20–23% · Delta 5–7→80–85% · measles 12–18→92–95%<br>` +
+    `<b>Loopholes</b>: efficacy <100% and escape variants shave it down; clustered pockets push local R_eff>1 and the fire breaks through`);
+}
+function syncAll() {
+  syncSliders(); syncBtns(); updateStats(); updateFormula(); drawPlot();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === phaseIdx));
+}
+function gotoStep(i) { phaseIdx = clamp(i, 0, 5); STEPS[phaseIdx].act(); syncAll(); }
+btnS.forEach((b, i) => b.addEventListener('click', () => gotoStep(i)));
+sStep.addEventListener('input', () => gotoStep(+sStep.value));
+sCov.addEventListener('input', () => { P.p = +sCov.value / 100; applyCoverage(); updateStats(); updateFormula(); });
+sR0.addEventListener('input', () => { P.r0 = +sR0.value; updateStats(); updateFormula(); });
+sVE.addEventListener('input', () => { P.ve = +sVE.value / 100; updateProt(); updateStats(); updateFormula(); });
+tglAuto.addEventListener('change', () => { autoOn = tglAuto.checked; syncBtns(); });
+tglPk.addEventListener('change', () => { P.pk = tglPk.checked ? 1 : 0; applyCoverage(); resetPop(); syncAll(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let raf = null, acc = 0, accPlot = 0, sampAcc = 0, sparkAcc = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+const _M4 = new THREE.Matrix4(), _Q = new THREE.Quaternion(), _S = new THREE.Vector3(), _V = new THREE.Vector3();
+
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * SPD * (playing ? 1 : 0);
+  time += dt0;
+  if (notifyT > 0) notifyT -= dt0;
+  if (dt > 0) simStep(dt * DPS, dt0);
+  /* 人群网格渲染 */
+  if (dirty) { refreshColors(); dirty = false; }
+  for (let i = 0; i < N; i++) {
+    let sx = 1, sy = 1;
+    if (stA[i] === 1) {
+      const pl = 1 + 0.22 * Math.sin(time * 7 + i * 1.3);
+      const pop = infT[i] < 0.25 ? 1 + (0.25 - infT[i]) * 2.2 : 1;
+      sx = sy = pl * pop;
+    } else if (protA[i]) sy = 1.6;
+    _V.set(posArr[i * 2], -0.02, posArr[i * 2 + 1]);
+    _M4.compose(_V, _Q.identity(), _S.set(sx, sy, sx));
+    nodeI.setMatrixAt(i, _M4);
+  }
+  nodeI.instanceMatrix.needsUpdate = true;
+  /* 火花 */
+  sparkAcc += dt0;
+  if (sparkAcc > 0.07 && infCnt > 0) {
+    sparkAcc = 0;
+    for (let a = 0; a < 4; a++) {
+      const i = (Math.random() * N) | 0;
+      if (stA[i] !== 1) continue;
+      const nbs = nbArr[i], j = nbs[(Math.random() * nbs.length) | 0];
+      if (protA[j] || stA[j] === 2) { spawnSpark(i, j, true); break; }
+    }
+  }
+  for (let k = 0; k < SPN; k++) {
+    if (!spOn[k]) continue;
+    spT[k] += dt0 * 2.6;
+    const t = spT[k];
+    if (t >= 1) { spOn[k] = 0; spFree.push(k); _S.set(0.001, 0.001, 0.001); _V.set(0, -9, 0); }
+    else {
+      const a = spA[k], b = spB[k];
+      _V.set(posArr[a * 2] + (posArr[b * 2] - posArr[a * 2]) * t, Math.sin(Math.PI * t) * 0.55 - 0.02,
+        posArr[a * 2 + 1] + (posArr[b * 2 + 1] - posArr[a * 2 + 1]) * t);
+      const sc = (1 - 0.45 * t) * (spBlk[k] && t > 0.75 ? 0.001 : 1);
+      _S.set(sc, sc, sc);
+    }
+    _M4.compose(_V, _Q.identity(), _S);
+    sparkI.setMatrixAt(k, _M4);
+  }
+  sparkI.instanceMatrix.needsUpdate = true;
+  /* 零号病例标签跟随 */
+  if (lastSeed >= 0) lblSeed.position.set(posArr[lastSeed * 2], 0.62, posArr[lastSeed * 2 + 1]);
+  /* 相机飞行 */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  acc += dt0;
+  if (acc > 0.14) { acc = 0; updateStats(); updateFormula(); }
+  accPlot += dt0;
+  if (accPlot > 0.08) { accPlot = 0; drawPlot(); }
+  sampAcc += dt0;
+  if (sampAcc > 0.12) {
+    sampAcc = 0;
+    hist.push(infCnt);
+    if (hist.length > HN) hist.shift();
+    for (let i = marks.length - 1; i >= 0; i--) if (++marks[i] > HN) marks.splice(i, 1);
+  }
+  for (const r of labelReg) {
+    const on = labelsOn && r.vis();
+    r.o.visible = on && r.text() !== '';
+    if (on) r.o.element.textContent = r.text();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+buildSteps();
+applyLang();
+applyCoverage();
+for (let k = 0; k < HN; k++) hist.push(0); /* 预填窗口,曲线始终有数据线 */
+const t0 = Math.round(qsFloat('t', 0));
+gotoStep(qs.get('t') !== null && t0 >= 0 && t0 < STEPS.length ? t0 : 0);
+start();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

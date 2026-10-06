@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>同步器与换挡 · 先拖齐转速再咬合</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#c2447c;
+    --bg:#10141b; --panel:rgba(13,17,24,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,24,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,24,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#9c3462;
+    --bg:#eef1f6; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(56,217,169,.9); color: #b8f5e4; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(25,113,194,.9); color: #1971c2; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 11px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 19px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11.5px; color: var(--text2); font-weight: 400; }
+  #stats .v.hot { color: #ff8787; }
+  #stats .v.g { color: #38d9a9; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 388px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #gearRow { display: flex; align-items: stretch; gap: 8px; margin-bottom: 10px; }
+  .gbtn { appearance: none; font: inherit; cursor: pointer; flex: 1;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 6px 8px; text-align: center; font-size: 13px; font-weight: 700;
+    transition: border-color .15s, color .15s, background .15s; }
+  .gbtn:hover { border-color: var(--acc); }
+  .gbtn.on { border-color: var(--acc); color: var(--text); background: rgba(194,68,124,.14); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 104px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 62px; text-align: right; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(194,68,124,.10); border-color: rgba(194,68,124,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(156,52,98,.08); border-color: rgba(156,52,98,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12.5px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12.5px; }
+  #steps li.on .t b { color: #f2b9d2; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="同步器与换挡:先拖齐转速,再让齿咬合" data-en="Synchromesh: match speeds first, then mesh">同步器与换挡:先拖齐转速,再让齿咬合</h1>
+  <div class="sub" data-zh="降挡时齿圈与接合套差着数百 r/min:硬推=打齿冒火花;拨叉先经滑块把锁环压上同步锥,7° 锥面把推力放大 8 倍、约 0.25 s 拖齐转速;~35° 锁止角同步前挡门、同步后让开,接合套直插齿圈扭矩接通 · 拖动旋转 / 空格运行/暂停" data-en="Downshifts leave hundreds of rpm between sleeve and ring: pushing hard grinds the teeth; the fork first presses the lock ring onto the cone — the 7° taper amplifies force ~8x, friction syncs speeds in ~0.25 s; the ~35° lock angle blocks until synced, then yields and the sleeve bites the ring, torque flows · drag to orbit / space = play/pause">降挡时齿圈与接合套差着数百 r/min:硬推=打齿冒火花;拨叉先经滑块把锁环压上同步锥,7° 锥面把推力放大 8 倍、约 0.25 s 拖齐转速;~35° 锁止角同步前挡门、同步后让开,接合套直插齿圈扭矩接通 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="接合套转速" data-en="sleeve rpm">接合套转速</span><span class="v" id="stS">—</span>
+  <span class="k" data-zh="齿圈转速" data-en="ring rpm">齿圈转速</span><span class="v" id="stR">—</span>
+  <span class="k" data-zh="转速差" data-en="speed gap">转速差</span><span class="v hot" id="stD">—</span>
+  <span class="k" id="stK4">同步进度</span><span class="v g" id="stP">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="gearRow">
+    <button class="gbtn" id="btnRev" data-zh="两脚离合·补油" data-en="Double-clutch blip">两脚离合·补油</button>
+    <button class="gbtn" id="btnReset" data-zh="重置换挡" data-en="Reset shift">重置换挡</button>
+  </div>
+  <div class="row"><label data-zh="拨叉行程" data-en="fork travel">拨叉行程</label><input id="fork" type="range" min="0" max="100" step="1" value="0"><span class="val" id="forkVal">0%</span></div>
+  <div class="row"><label data-zh="拨叉推力" data-en="shift force">拨叉推力</label><input id="force" type="range" min="30" max="200" step="10" value="100"><span class="val" id="forceVal">100 N</span></div>
+  <div class="row"><label data-zh="目标速差" data-en="speed gap">目标速差</label><input id="dn" type="range" min="100" max="800" step="50" value="400"><span class="val" id="dnVal">400 r/min</span></div>
+  <div class="row"><label data-zh="演示速度" data-en="sim speed">演示速度</label><input id="spd" type="range" min="0.2" max="3" step="0.1" value="1"><span class="val" id="spdVal">1.0×</span></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="toggles" style="margin-top:0">
+      <label><input id="tglSync" type="checkbox" checked> <span data-zh="同步器(对照)" data-en="synchronizer">同步器(对照)</span></label>
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../clutch-gearbox/" data-zh="上游:离合器与变速箱" data-en="upstream: clutch &amp; gearbox">上游:离合器与变速箱</a>
+    <a href="../helical-gears/" data-zh="家族:斜齿啮合" data-en="family: helical gears">家族:斜齿啮合</a>
+    <a href="../cvt/" data-zh="对照:CVT 无级变速" data-en="compare: CVT">对照:CVT 无级变速</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeef1f6 : 0x10141b);
+  M.frame.color.set(THEME === 'light' ? 0x9aa4b2 : 0x39424f);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('同步器与换挡', 'Synchromesh');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(2.7, 2.9, 4.7);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.15, 1.55, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.2;
+controls.maxDistance = 16;
+controls.autoRotateSpeed = 0.55;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.7));
+const key = new THREE.DirectionalLight(0xffffff, 2.0);
+key.position.set(5, 9, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.45);
+fill.position.set(-6, 3, -5);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.35,
+    emissive: color, emissiveIntensity: 0.06, transparent: true, ...opts });
+}
+const M = {
+  frame: mat(0x39424f, { roughness: 0.7 }),
+  shaft: mat(0xd8dee8, { metalness: 0.85, roughness: 0.25 }),
+  hub: mat(0x76829a, { metalness: 0.7, roughness: 0.35 }),
+  spline: mat(0x9aa6b8, { metalness: 0.7, roughness: 0.35 }),
+  sleeve: mat(0xaeb9c9, { metalness: 0.65, roughness: 0.32 }),
+  tooth: mat(0xc9d2de, { metalness: 0.7, roughness: 0.3 }),
+  ring: mat(0xd9b26a, { metalness: 0.55, roughness: 0.4, emissiveIntensity: 0.12, side: THREE.DoubleSide }),
+  cone: mat(0x5f6b7c, { metalness: 0.3, roughness: 0.78 }),
+  gear: mat(0x8a94a4, { metalness: 0.7, roughness: 0.35 }),
+  slider: mat(0xe8b04c, { metalness: 0.5, roughness: 0.45 }),
+  floor: mat(0x1b212c, { roughness: 0.9, emissive: 0x000000 }),
+};
+
+/* ============ 场景:拨叉 → 接合套/齿毂 → 锁环 → 同步锥+目标齿圈(轴向 X) ============ */
+const CY = 1.35, VISK = 0.006;
+const floorSlab = new THREE.Mesh(new THREE.BoxGeometry(11, 0.25, 4.6), M.floor);
+floorSlab.position.set(0.2, 0.28, 0);
+scene.add(floorSlab);
+const pedGeo = new THREE.BoxGeometry(0.36, 0.92, 0.36);
+for (const px of [-1.2, 1.55]) { const p = new THREE.Mesh(pedGeo, M.frame); p.position.set(px, 0.86, 0); scene.add(p); }
+const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 3.3, 16), M.shaft);
+shaft.rotation.z = Math.PI / 2; shaft.position.set(0.1, CY, 0); scene.add(shaft);
+const bushing = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.105, 0.44, 14), M.hub);
+bushing.rotation.z = Math.PI / 2; bushing.position.set(0.50, CY, 0); scene.add(bushing);
+
+/* 齿毂(花键固连输出轴) */
+const hubGrp = new THREE.Group(); hubGrp.position.set(0, CY, 0); scene.add(hubGrp);
+const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.66, 28), M.hub);
+hub.rotation.z = Math.PI / 2; hub.position.x = 0.11; hubGrp.add(hub);
+const splineN = 12;
+const splines = new THREE.InstancedMesh(new THREE.BoxGeometry(0.60, 0.035, 0.07), M.spline, splineN);
+splines.frustumCulled = false;
+{
+  const d = new THREE.Object3D();
+  for (let i = 0; i < splineN; i++) {
+    const a = i / splineN * 2 * Math.PI;
+    d.position.set(0.11, 0.283 * Math.cos(a), 0.283 * Math.sin(a));
+    d.rotation.x = a; d.updateMatrix(); splines.setMatrixAt(i, d.matrix);
+  }
+  splines.instanceMatrix.needsUpdate = true;
+}
+hubGrp.add(splines);
+
+/* 接合套(随输出轴转 + 轴向滑动),右缘外齿 */
+const sleeveGrp = new THREE.Group(); sleeveGrp.position.set(-0.14, CY, 0); scene.add(sleeveGrp);
+const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.345, 0.345, 0.16, 32), M.sleeve);
+sleeve.rotation.z = Math.PI / 2; sleeveGrp.add(sleeve);
+const sleeveTeeth = new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.05, 0.088), M.tooth, 14);
+sleeveTeeth.frustumCulled = false;
+{
+  const d = new THREE.Object3D(), pitch = 2 * Math.PI / 14;
+  for (let i = 0; i < 14; i++) {
+    const a = i * pitch + pitch / 2;   /* 半个周节偏置,咬合时与齿圈齿互相错开 */
+    d.position.set(0.10, 0.365 * Math.cos(a), 0.365 * Math.sin(a));
+    d.rotation.x = a; d.updateMatrix(); sleeveTeeth.setMatrixAt(i, d.matrix);
+  }
+  sleeveTeeth.instanceMatrix.needsUpdate = true;
+}
+sleeveGrp.add(sleeveTeeth);
+
+/* 滑块×3(随接合套,右端顶住锁环) */
+const sliderGrp = new THREE.Group(); sliderGrp.position.set(-0.02, CY, 0); scene.add(sliderGrp);
+const sliders = new THREE.InstancedMesh(new THREE.BoxGeometry(0.10, 0.05, 0.07), M.slider, 3);
+sliders.frustumCulled = false;
+{
+  const d = new THREE.Object3D();
+  for (let i = 0; i < 3; i++) {
+    const a = Math.PI / 2 + i * 2 * Math.PI / 3;
+    d.position.set(0, 0.35 * Math.cos(a), 0.35 * Math.sin(a));
+    d.rotation.x = a; d.updateMatrix(); sliders.setMatrixAt(i, d.matrix);
+  }
+  sliders.instanceMatrix.needsUpdate = true;
+}
+sliderGrp.add(sliders);
+
+/* 锁环(黄铜):外圈带 3 个锁止凸爪 + 内摩擦锥面 */
+const ringGrp = new THREE.Group(); ringGrp.position.set(0.30, CY, 0); scene.add(ringGrp);
+const band = new THREE.Mesh(new THREE.CylinderGeometry(0.40, 0.40, 0.12, 36, 1, true), M.ring);
+band.rotation.z = Math.PI / 2; ringGrp.add(band);
+const rimGeo = new THREE.CylinderGeometry(0.40, 0.40, 0.026, 36);
+for (const rx of [-0.047, 0.047]) { const r = new THREE.Mesh(rimGeo, M.ring); r.rotation.z = Math.PI / 2; r.position.x = rx; ringGrp.add(r); }
+const ringCone = new THREE.Mesh(new THREE.CylinderGeometry(0.336, 0.264, 0.12, 36, 1, true), M.ring);
+ringCone.rotation.z = -Math.PI / 2; ringGrp.add(ringCone);
+const ringTabs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.10, 0.045, 0.14), M.ring, 3);
+ringTabs.frustumCulled = false;
+{
+  const d = new THREE.Object3D();
+  for (let i = 0; i < 3; i++) {
+    const a = Math.PI / 2 + i * 2 * Math.PI / 3;
+    d.position.set(0, 0.405 * Math.cos(a), 0.405 * Math.sin(a));
+    d.rotation.x = a; d.updateMatrix(); ringTabs.setMatrixAt(i, d.matrix);
+  }
+  ringTabs.instanceMatrix.needsUpdate = true;
+}
+ringGrp.add(ringTabs);
+
+/* 目标齿轮:同步锥 + 齿圈外齿 + 结合爪 */
+const gearGrp = new THREE.Group(); gearGrp.position.set(0, CY, 0); scene.add(gearGrp);
+const web = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.44, 0.16, 36), M.gear);
+web.rotation.z = Math.PI / 2; web.position.x = 0.58; gearGrp.add(web);
+const gearTeeth = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 0.05, 0.056), M.gear, 34);
+gearTeeth.frustumCulled = false;
+{
+  const d = new THREE.Object3D(), n = 34;
+  for (let i = 0; i < n; i++) {
+    const a = i / n * 2 * Math.PI;
+    d.position.set(0.58, 0.465 * Math.cos(a), 0.465 * Math.sin(a));
+    d.rotation.x = a; d.updateMatrix(); gearTeeth.setMatrixAt(i, d.matrix);
+  }
+  gearTeeth.instanceMatrix.needsUpdate = true;
+}
+gearGrp.add(gearTeeth);
+const dogTeeth = new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.05, 0.09), M.tooth, 14);
+dogTeeth.frustumCulled = false;
+{
+  const d = new THREE.Object3D(), n = 14;
+  for (let i = 0; i < n; i++) {
+    const a = i / n * 2 * Math.PI;
+    d.position.set(0.46, 0.365 * Math.cos(a), 0.365 * Math.sin(a));
+    d.rotation.x = a; d.updateMatrix(); dogTeeth.setMatrixAt(i, d.matrix);
+  }
+  dogTeeth.instanceMatrix.needsUpdate = true;
+}
+gearGrp.add(dogTeeth);
+const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.29, 0.10, 36), M.cone);
+cone.rotation.z = -Math.PI / 2; cone.position.x = 0.40; gearGrp.add(cone);
+
+/* 锥面接触灼热光环 */
+const glow = new THREE.Mesh(new THREE.TorusGeometry(0.325, 0.035, 10, 48),
+  new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+glow.rotation.y = Math.PI / 2; glow.position.set(0.39, CY, 0); scene.add(glow);
+
+/* 拨叉 + 换挡导轨 */
+const forkGrp = new THREE.Group(); forkGrp.position.set(-0.14, CY, 0); scene.add(forkGrp);
+const prongGeo = new THREE.BoxGeometry(0.14, 0.10, 0.34);
+for (const py of [-0.45, 0.45]) { const pr = new THREE.Mesh(prongGeo, M.frame); pr.position.y = py; forkGrp.add(pr); }
+const stem = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.55, 0.10), M.frame);
+stem.position.set(0, 0.72, -0.12); forkGrp.add(stem);
+const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.9, 12), M.frame);
+rail.rotation.z = Math.PI / 2; rail.position.set(-0.05, CY + 1.0, -0.12); scene.add(rail);
+
+/* 换挡推力箭头 */
+const arrMat = new THREE.MeshStandardMaterial({ color: 0xff922b, roughness: 0.4, emissive: 0xff922b, emissiveIntensity: 0.4, transparent: true, opacity: 0.9 });
+const arrGrp = new THREE.Group(); arrGrp.position.set(0, CY, 0.62); scene.add(arrGrp);
+const arrCyl = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1, 10), arrMat);
+arrCyl.rotation.z = -Math.PI / 2; arrGrp.add(arrCyl);
+const arrHead = new THREE.Mesh(new THREE.ConeGeometry(0.10, 0.20, 12), arrMat);
+arrHead.rotation.z = -Math.PI / 2; arrGrp.add(arrHead);
+
+/* 火花粒子(打齿) */
+const SPARK_N = 70;
+const sparks = new THREE.InstancedMesh(new THREE.BoxGeometry(0.024, 0.024, 0.024),
+  new THREE.MeshBasicMaterial({ color: 0xffc078, transparent: true, opacity: 0.95 }), SPARK_N);
+sparks.frustumCulled = false;
+sparks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(sparks);
+const sPos = [], sVel = [];
+for (let i = 0; i < SPARK_N; i++) { sPos.push(new THREE.Vector3(0, -99, 0)); sVel.push(new THREE.Vector3()); }
+const sLife = new Float32Array(SPARK_N);
+const dummy = new THREE.Object3D();
+let sparkCursor = 0;
+function spawnSparks(n, x) {
+  for (let k = 0; k < n; k++) {
+    sparkCursor = (sparkCursor + 1) % SPARK_N;
+    const i = sparkCursor, a = Math.random() * 2 * Math.PI, r = 0.365;
+    sPos[i].set(x, CY + r * Math.cos(a), r * Math.sin(a));
+    sVel[i].set((0.4 + Math.random() * 1.6) * (Math.random() < 0.5 ? -1 : 1), (Math.random() - 0.2) * 2.2, (Math.random() - 0.5) * 2.4);
+    sLife[i] = 0.35 + Math.random() * 0.3;
+  }
+}
+function updSparks(dts) {
+  for (let i = 0; i < SPARK_N; i++) {
+    if (sLife[i] > 0) {
+      sLife[i] -= dts;
+      sVel[i].y -= 7 * dts;
+      sPos[i].addScaledVector(sVel[i], dts);
+      dummy.position.copy(sPos[i]);
+      dummy.scale.setScalar(Math.max(0.001, Math.min(1, sLife[i] * 2.4)));
+      dummy.rotation.set(sPos[i].x * 9, sPos[i].y * 9, 0);
+    } else {
+      dummy.position.set(0, -99, 0); dummy.scale.setScalar(0.0001);
+    }
+    dummy.updateMatrix(); sparks.setMatrixAt(i, dummy.matrix);
+  }
+  sparks.instanceMatrix.needsUpdate = true;
+}
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (matchMedia('(prefers-reduced-motion: reduce)').matches && qs.get('pause') === null) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let force = 100, dn0 = 400;
+let syncOn = true;
+let scenario = 0, autoDrive = true, dwellT = 0;
+let forkTarget = 0, forkPos = 0;
+const N_SLEEVE = 1325;
+let nSleeve = N_SLEEVE, nRing = 925, dn0Used = 400;
+let synced = false, aligned = false, engaged = false, grinding = false, revT = -1;
+let grindCount = 0, grindAcc = 0;
+let thS = 0, thG = 0;
+let sleeveXv = -0.14, ringXv = 0.30, pressKv = 0;
+
+/* 物理常量:锥面摩擦同步 T=μ·F/sinα·r ,同步时间 t=I·Δω/T */
+const I_IN = 0.021, R_CONE = 0.045, MU = 0.09, ALPHA = 7 * Math.PI / 180;
+const P_CONTACT = 0.42, P_GATE = 0.62, P_GATE_NS = 0.84, P_ENGAGE = 0.97;
+const FORK_T = [0.84, 0.48, 0.55, 0.70, 1.0, 0.84];
+const tConeOf = f => MU / Math.sin(ALPHA) * f * R_CONE;      /* N·m */
+const rateOf = f => tConeOf(f) / I_IN * 9.5493;              /* r/min per s */
+
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function resetSpeeds() {
+  engaged = false; synced = false; aligned = false; grinding = false; revT = -1;
+  forkTarget = 0; forkPos = 0; grindAcc = 0;
+  dn0Used = dn0; nRing = nSleeve - dn0;
+}
+function setSync(v) {
+  syncOn = v; tglSync.checked = v;
+  ringGrp.visible = v; sliderGrp.visible = v;
+  if (!engaged) resetSpeeds();
+}
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function grindEvent() {
+  grindCount++;
+  nRing += (Math.random() - 0.5) * 140;
+  const g = nSleeve - nRing;
+  if (Math.abs(g) < 160) nRing = nSleeve - (g >= 0 ? 1 : -1) * 160;
+  forkPos = Math.max(0, forkPos - 0.05);
+  spawnSparks(6 + (Math.random() * 5 | 0), sleeveXv + 0.14);
+}
+
+/* ---------------- 标签 ---------------- */
+const labelRegistry = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelRegistry.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+const lblSleeve = addLabel(
+  () => L(`齿毂+接合套 ${Math.round(nSleeve)} r/min`, `hub + sleeve ${Math.round(nSleeve)} rpm`),
+  () => 'e', new THREE.Vector3(-0.14, 1.99, 0), v => v.set(sleeveXv, 1.99, 0));
+const lblGear = addLabel(
+  () => L(`目标齿圈 ${Math.round(nRing)} r/min`, `target ring ${Math.round(nRing)} rpm`),
+  () => 'e', new THREE.Vector3(0.62, 2.10, 0));
+const lblRing = addLabel(() => {
+  if (!syncOn) return L('锁环:未安装(无同步器)', 'no lock ring (non-sync mode)');
+  if (synced) return L('锁环:已同步,锁止面让开', 'lock ring: synced, chamfers yield');
+  if (pressKv > 0.05) return L('锁环:锥面贴合,摩擦拖动中', 'lock ring: cone gripping, dragging');
+  return L('锁环:待命', 'lock ring: standby');
+}, () => !syncOn ? 'st' : (synced ? 'g' : (pressKv > 0.05 ? 'w' : 'e')),
+  new THREE.Vector3(0.30, 1.00, 0), v => v.set(ringXv, 1.00, 0));
+const lblCone = addLabel(() => {
+  const gap = Math.abs(nSleeve - nRing);
+  const est = gap < 8 ? 0 : Math.round(gap / rateOf(force) * 1000);
+  return L(`同步锥 T≈${tConeOf(force).toFixed(1)} N·m · 预计 ${est} ms 收敛`,
+    `cone T≈${tConeOf(force).toFixed(1)} N·m · est ${est} ms`);
+}, () => 'e', new THREE.Vector3(0.40, 0.66, 0));
+const lblSlider = addLabel(
+  () => L('滑块×3:把锁环推向锥面', '3 sliders: press ring onto cone'),
+  () => 'w', new THREE.Vector3(0, 0.82, 0), v => v.set(sleeveXv + 0.12, 0.82, 0));
+const lblFork = addLabel(
+  () => L(`拨叉 · 推力 ${Math.round(force)} N`, `fork · force ${Math.round(force)} N`),
+  () => 'st', new THREE.Vector3(-0.14, 0.52, 0), v => v.set(sleeveXv - 0.10, 0.52, 0));
+const lblStatus = addLabel(() => {
+  if (grinding) return L(`打齿!齿尖相撞,速差 ${Math.round(Math.abs(nSleeve - nRing))} r/min — 退回,别硬推`,
+    `GRINDING! teeth clash at ${Math.round(Math.abs(nSleeve - nRing))} rpm gap — back off`);
+  if (revT >= 0) return L('两脚离合:补油把齿圈转速拽上来…', 'double-clutch: blipping the ring up to speed…');
+  if (engaged) return L('扭矩接通:齿圈与接合套刚性锁死,速差恒为 0', 'torque flows: ring rigidly locked to sleeve, gap stays 0');
+  if (syncOn && synced) return L('转速已齐:锁止角让开,接合套继续前行', 'speeds matched: lock angle yields, sleeve moves on');
+  if (syncOn && pressKv > 0.05) return L(`锥面摩擦拖动中:速差 ${Math.round(nSleeve - nRing)} r/min`, `cone friction dragging: gap ${Math.round(nSleeve - nRing)} rpm`);
+  if (forkPos > P_CONTACT - 0.03) return L('滑块接触锁环:自由行程结束', 'sliders touch the ring: free travel over');
+  return L('空挡:拨叉自由行程,尚未接触锁环', 'neutral: fork free travel, nothing touched yet');
+}, () => {
+  if (grinding) return 'bad';
+  if (engaged) return 'g';
+  if (syncOn && synced) return 'w';
+  if (syncOn && pressKv > 0.05) return 'e';
+  return 'st';
+}, new THREE.Vector3(0.10, 2.62, 0));
+
+/* ================= 讲解步骤 ================= */
+const STEPS = [
+  { sync: false, b: '速差硬推 = 打齿', be: 'Hard push = grinding',
+    d: '3 挡降 2 挡:接合套随车轮转 1325 r/min,自由浮动的 2 挡齿圈只有 925 r/min。差着 400 r/min 硬推,齿尖撞齿尖——打齿冒火花,齿轮当场报废。',
+    de: 'Downshifting 3rd to 2nd: the sleeve turns at 1325 rpm with the wheels, the free-floating 2nd ring at only 925. Force it with a 400 rpm gap and tooth tips clash — sparks, and a ruined gear.' },
+  { sync: true, b: '锁环先上,压向锥面', be: 'Lock ring first, onto the cone',
+    d: '拨叉先经滑块把锁环压向齿轮的同步锥:7° 锥半角把 100 N 换挡力放大成约 820 N 法向压紧力,摩擦锥面开始吃劲。',
+    de: 'The fork first presses the lock ring onto the gear\'s friction cone via the sliders: the 7° half-angle amplifies a 100 N shift force into ~820 N of normal clamping.' },
+  { sync: true, b: '摩擦拖齐转速', be: 'Friction drags speeds together',
+    d: '锥面摩擦扭矩 T=μFr/sinα≈3.3 N·m 拖动齿圈连带的旋转惯量 I≈0.021 kg·m²:400 r/min 速差约 0.25 s 收敛归零——典型同步时间 0.1–0.3 s,推力越大越快(在限度内)。',
+    de: 'Cone friction torque T = μFr/sinα ≈ 3.3 N·m drags the ring\'s inertia I ≈ 0.021 kg·m²: a 400 rpm gap closes in ~0.25 s — typical sync time 0.1–0.3 s; more force, faster sync.' },
+  { sync: true, b: '锁止角让开', be: 'The lock angle yields',
+    d: '锁环内齿约 35° 的锁止角像棘轮:还有速差,摩擦扭矩就把接合套顶在门外;转速一齐、扭矩消失,锁止面顺势滑过——同步之前谁也插不进去。',
+    de: 'The ~35° lock angle on the ring teeth works like a ratchet: while any gap remains, friction torque wedges the sleeve out; synced, the torque vanishes and the chamfers slide past.' },
+  { sync: true, b: '插入齿圈,扭矩接通', be: 'Sleeve bites, torque flows',
+    d: '齐速后接合套内齿直插齿圈花键,滑块被压回让位——刚性锁死,速差恒为 0;发动机与车轮从此同转。',
+    de: 'At equal speeds the sleeve\'s internal teeth slide straight into the ring splines, sliders retract — rigid lock, the gap stays 0; engine and wheels spin as one.' },
+  { sync: false, b: '对照:无同步器', be: 'Compare: no synchronizer',
+    d: '关掉同步器,锥面与锁止角全部消失,只剩硬碰硬——只能靠「两脚离合+补油」人工把齿圈拽到同速:点「两脚离合·补油」再推,才能不打齿地插进去。',
+    de: 'Switch the synchronizer off: cone and lock angle vanish, only brute force remains — you\'d double-clutch and rev-match by hand: click "blip", then push to engage without grinding.' },
+];
+function activateStep(i, doReset = true) {
+  scenario = clamp(i, 0, STEPS.length - 1); dwellT = 0; autoDrive = true;
+  const s = STEPS[scenario];
+  if (s.sync !== undefined) setSync(s.sync);
+  if (doReset) resetSpeeds();
+  forkTarget = FORK_T[scenario];
+  markStep();
+}
+function goStep(i) { scenario = i; dwellT = 0; forkTarget = FORK_T[i]; markStep(); }
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elFork = document.getElementById('fork'), elForkVal = document.getElementById('forkVal');
+const elForce = document.getElementById('force'), elForceVal = document.getElementById('forceVal');
+const elDn = document.getElementById('dn'), elDnVal = document.getElementById('dnVal');
+const elSpd = document.getElementById('spd'), elSpdVal = document.getElementById('spdVal');
+const tglSync = document.getElementById('tglSync');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+const stS = document.getElementById('stS'), stR = document.getElementById('stR'),
+  stD = document.getElementById('stD'), stP = document.getElementById('stP'),
+  stK4 = document.getElementById('stK4');
+
+elFork.addEventListener('input', () => { autoDrive = false; forkTarget = parseInt(elFork.value, 10) / 100; });
+elForce.addEventListener('input', () => { force = parseInt(elForce.value, 10); elForceVal.textContent = force + ' N'; });
+elDn.addEventListener('input', () => { dn0 = parseInt(elDn.value, 10); elDnVal.textContent = dn0 + ' r/min'; resetSpeeds(); });
+elSpd.addEventListener('input', () => { speed = clamp(parseFloat(elSpd.value), 0.2, 3); elSpdVal.textContent = speed.toFixed(1) + '×'; });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+tglSync.addEventListener('change', () => { autoDrive = false; setSync(tglSync.checked); });
+tglLabels.addEventListener('change', () => {
+  for (const r of labelRegistry) r.o.element.style.display = tglLabels.checked ? '' : 'none';
+});
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+document.getElementById('btnRev').addEventListener('click', () => { revT = 0; });
+document.getElementById('btnReset').addEventListener('click', () => { autoDrive = false; resetSpeeds(); });
+if (!qsBool('labels', true)) { tglLabels.checked = false; tglLabels.dispatchEvent(new Event('change')); }
+controls.autoRotate = qsBool('spin', true) && tglRotate.checked;
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+let lastStep = -1;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const dts = dt * speed;
+
+  sleeveXv = -0.14 + 0.50 * forkPos;
+  pressKv = clamp((forkPos - P_CONTACT) / 0.10, 0, 1);
+  ringXv = 0.30 + 0.06 * pressKv;
+
+  if (playing) {
+    if (autoDrive) forkTarget = FORK_T[scenario];
+
+    /* 锥面摩擦同步:锁环被压上同步锥后,摩擦扭矩拖动齿圈追接合套 */
+    if (syncOn && pressKv > 0.05 && !synced && !engaged) {
+      nRing += rateOf(force) * pressKv * dts;
+      if (nSleeve - nRing <= 8) { nRing = nSleeve; synced = true; }
+    }
+    /* 两脚离合补油:外部把齿圈转速拽上来 */
+    if (revT >= 0) {
+      revT += dts;
+      nRing += (nSleeve - nRing) * Math.min(1, dts * 5);
+      if (Math.abs(nSleeve - nRing) < 2 || revT > 1.4) { nRing = nSleeve; revT = -1; }
+    }
+    aligned = !syncOn && Math.abs(nSleeve - nRing) <= 120;
+
+    /* 锁止角行程门:同步(或人工对速)之前推不过去 */
+    const maxP = engaged ? 1 : (syncOn ? (synced ? 1 : P_GATE) : (aligned ? 1 : P_GATE_NS));
+    const tgt = clamp(forkTarget, 0, maxP);
+    const mv = autoDrive ? 0.32 : 0.8;
+    forkPos += clamp(tgt - forkPos, -mv * dts, mv * dts);
+
+    if (!engaged && forkPos >= P_ENGAGE - 0.005) {
+      engaged = true; nRing = nSleeve; thG = thS;
+      spawnSparks(3, sleeveXv + 0.14);
+    }
+    if (engaged && forkTarget < 0.5 && forkPos < 0.5) engaged = false;
+
+    /* 打齿:无同步器 + 速差大 + 硬推到齿面 */
+    grinding = !syncOn && !aligned && !engaged && forkTarget > P_GATE_NS - 0.04 &&
+      forkPos > P_GATE_NS - 0.06 && Math.abs(nSleeve - nRing) > 120;
+    if (grinding) { grindAcc += dts; while (grindAcc >= 0.12) { grindAcc -= 0.12; grindEvent(); } }
+    else grindAcc = 0;
+
+    /* 步骤自动推进 */
+    if (autoDrive) {
+      if (scenario === 1) {
+        if (forkPos >= FORK_T[1] - 0.03) { dwellT += dts; if (dwellT > 1.4) goStep(2); } else dwellT = 0;
+      } else if (scenario === 2) {
+        if (synced) { dwellT += dts; if (dwellT > 0.9) goStep(3); } else dwellT = 0;
+      } else if (scenario === 3) {
+        if (forkPos >= FORK_T[3] - 0.03) { dwellT += dts; if (dwellT > 0.9) goStep(4); } else dwellT = 0;
+      } else if (scenario === 5 && aligned && !engaged && forkTarget < 0.95) {
+        forkTarget = 1.0;
+      }
+    }
+
+    thS += nSleeve * VISK * dts;
+    thG += nRing * VISK * dts;
+    if (engaged) thG = thS;
+  }
+
+  /* 视觉更新 */
+  sleeveGrp.position.x = sleeveXv; sleeveGrp.rotation.x = -thS;
+  hubGrp.rotation.x = -thS;
+  const sliderDx = forkPos < P_GATE ? 0.12 : 0.12 - 0.16 * clamp((forkPos - P_GATE) / 0.08, 0, 1);
+  sliderGrp.position.x = sleeveXv + sliderDx; sliderGrp.rotation.x = -thS;
+  ringGrp.position.x = ringXv; ringGrp.rotation.x = -thS;
+  gearGrp.rotation.x = -thG;
+  forkGrp.position.x = sleeveXv;
+  M.ring.emissiveIntensity = syncOn ? (synced ? 0.5 : 0.12 + 0.35 * pressKv) : 0.1;
+  glow.material.opacity = syncOn && pressKv > 0.05 && !synced && !engaged
+    ? 0.12 + 0.38 * pressKv * (0.6 + 0.4 * Math.sin(clock.elapsedTime * 22))
+    : (grinding ? 0.35 : 0);
+  const arrLen = 0.26 + force / 200 * 0.5, arrTail = sleeveXv - 0.30 - arrLen;
+  arrCyl.scale.y = arrLen; arrCyl.position.x = arrTail + arrLen / 2;
+  arrHead.position.x = arrTail + arrLen + 0.09;
+  arrGrp.visible = forkTarget > 0.03 && !engaged;
+  updSparks(dts);
+
+  /* stats 实时读数 */
+  stS.innerHTML = Math.round(nSleeve) + '<small> r/min</small>';
+  stR.innerHTML = Math.round(nRing) + '<small> r/min</small>';
+  const gd = Math.round(nSleeve - nRing);
+  stD.textContent = (gd > 0 ? '+' : '') + gd;
+  stD.className = 'v ' + (Math.abs(gd) <= 15 ? 'g' : Math.abs(gd) > 150 ? 'hot' : '');
+  if (syncOn) {
+    stK4.textContent = L('同步进度', 'sync progress');
+    const pr = synced || engaged ? 1 : clamp(1 - Math.abs(nSleeve - nRing) / Math.max(60, dn0Used), 0, 1);
+    stP.innerHTML = Math.round(pr * 100) + '<small> %</small>';
+    stP.className = 'v ' + (pr >= 0.999 ? 'g' : '');
+  } else {
+    stK4.textContent = L('打齿次数', 'grind hits');
+    stP.innerHTML = grindCount + '<small> 次</small>';
+    stP.className = 'v ' + (grindCount > 0 ? 'hot' : 'g');
+  }
+
+  if (autoDrive && playing) elFork.value = Math.round(forkPos * 100);
+  elForkVal.textContent = Math.round(forkPos * 100) + '%';
+
+  for (const r of labelRegistry) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (scenario !== lastStep) { lastStep = scenario; markStep(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+
+/* document.hidden 时停 rAF,恢复可见再续 */
+let rafOn = false;
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+const t0 = parseInt(qs.get('t'), 10);
+activateStep(Number.isFinite(t0) ? clamp(t0 - 1, 0, STEPS.length - 1) : 0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

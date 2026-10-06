@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>竞态条件与互斥锁 · 一次更新,凭空蒸发</title>
+<style>
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;--acc:#c9a22f;
+    --bg:#0f1113;--panel:rgba(15,17,19,.86);--panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;
+    --hover:rgba(255,255,255,.05);--shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,17,19,.78);--tool-border:rgba(255,255,255,.12);--cv-pill:rgba(15,17,19,.8);
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;--acc:#a08223;
+    --bg:#f1efec;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+    --text:#16202c;--text2:#5b6b7d;--text3:#33414f;
+    --hover:rgba(15,25,40,.05);--shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);--cv-pill:rgba(255,255,255,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s}
+  #app{position:fixed;inset:0}#app canvas{display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+  .lbl{background:var(--cv-pill);border:1px solid var(--tool-border);color:var(--text3);font-size:12px;
+    line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);transition:opacity .25s}
+  :root[data-theme="light"] .lbl{text-shadow:none}
+  .lbl.o{border-color:rgba(255,169,77,.9);color:#ffe0c2}.lbl.r{border-color:rgba(255,107,107,.9);color:#ffc2c2}
+  .lbl.g{border-color:rgba(116,220,132,.9);color:#c8f5d0}.lbl.b{border-color:rgba(116,192,252,.9);color:#bde9ff}
+  .lbl.y{border-color:rgba(252,196,25,.9);color:#ffe9a8}
+  :root[data-theme="light"] .lbl.o{color:#a34e00}:root[data-theme="light"] .lbl.r{color:#c92a2a}
+  :root[data-theme="light"] .lbl.g{color:#2b8a3e}:root[data-theme="light"] .lbl.b{color:#1864ab}
+  :root[data-theme="light"] .lbl.y{color:#b8860b}
+  .chips{display:flex;gap:6px;pointer-events:none;white-space:nowrap}
+  .chip{border:1px solid var(--tool-border);border-radius:8px;padding:4px 9px;font-size:11.5px;
+    background:var(--cv-pill);color:var(--text2);opacity:.5;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+  :root[data-theme="light"] .chip{text-shadow:none}
+  .chip.on{opacity:1;border-color:rgba(201,162,47,.9);color:#f7e8b0;font-weight:600}
+  :root[data-theme="light"] .chip.on{color:#7a6114;border-color:rgba(160,130,35,.8)}
+  #tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px}
+  .tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);
+    color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;
+    padding:0 12px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;text-decoration:none;backdrop-filter:blur(6px);
+    transition:border-color .15s,color .15s,transform .15s}
+  .tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px)}
+  #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px)}
+  #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  #stats{position:fixed;right:18px;bottom:18px;z-index:4;background:var(--panel);
+    border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+    backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px}
+  #stats .k{font-size:12px;color:var(--text2);align-self:center}
+  #stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  #stats .v small{font-size:11px;color:var(--text2);font-weight:400}
+  #stats .v.warn{color:#ff6b6b}#stats .v.ok{color:#8ce99a}
+  #panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;padding:14px 16px 12px;backdrop-filter:blur(6px);
+    box-shadow:var(--shadow);max-height:calc(100vh - 160px);overflow:auto}
+  #actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 30%;
+    background:var(--hover);color:var(--text2);border:1px solid var(--tool-border);
+    border-radius:9px;padding:7px 10px;font-size:12.5px;font-weight:600;
+    transition:border-color .15s,color .15s,background .15s}
+  .abtn:hover{border-color:var(--acc);color:var(--text)}
+  .abtn.on{border-color:rgba(201,162,47,.6);background:rgba(201,162,47,.12);color:var(--text)}
+  :root[data-theme="light"] .abtn.on{border-color:rgba(160,130,35,.55);background:rgba(160,130,35,.10)}
+  .row{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .row label{font-size:12px;color:var(--text2);flex:0 0 92px}
+  .row .val{font-size:11.5px;color:var(--text3);flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc);height:18px}
+  #steps{list-style:none;margin-top:8px}
+  #steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;align-items:flex-start}
+  #steps li:hover{background:var(--hover)}
+  #steps li.on{background:rgba(201,162,47,.10);border-color:rgba(201,162,47,.45)}
+  :root[data-theme="light"] #steps li.on{background:rgba(160,130,35,.08);border-color:rgba(160,130,35,.4)}
+  #steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;display:flex;
+    align-items:center;justify-content:center;margin-top:1px;
+    background:rgba(255,255,255,.12);color:var(--text3)}
+  :root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10)}
+  #steps li.on .n{background:var(--acc);color:#fff}
+  #steps .t{font-size:12px;color:var(--text3);line-height:1.45}
+  #steps .t b{color:var(--text);font-size:12px}
+  #steps li.on .t b{color:#f7e8b0}
+  :root[data-theme="light"] #steps li.on .t b{color:#7a6114}
+  #ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border)}
+  #play{grid-row:1/3;grid-column:1;padding:10px 14px;font-size:14px;font-weight:600;
+    background:var(--acc);color:#fff;border:0;border-radius:10px;cursor:pointer}
+  #play:hover{filter:brightness(1.12)}
+  #toggles{display:flex;gap:12px;flex-wrap:wrap}
+  #toggles label{font-size:12px;color:var(--text2);display:flex;gap:5px;align-items:center;cursor:pointer}
+  #toggles input{accent-color:var(--acc)}
+  #rel{margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-border);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #rel span{font-size:11.5px;color:var(--text2)}
+  #rel a{font-size:11.5px;color:var(--text3);text-decoration:none;border:1px solid var(--tool-border);
+    border-radius:999px;padding:3px 10px;transition:color .15s,border-color .15s}
+  #rel a:hover{color:var(--acc);border-color:var(--acc)}
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; }
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+  @media(max-width:900px){#stats{display:none}}
+  @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
+    #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="竞态条件与互斥锁" data-en="Race Conditions &amp; Mutexes">竞态条件与互斥锁</h1>
+  <div class="sub" data-zh="两个线程同时对 count++ ,而 ++ 是「读-改-写」三步——调度器把三步交错,两次 LOAD 读到同一个旧值、两次 STORE 都写回「旧+1」,一次更新凭空蒸发;互斥锁把临界区焊成串行:拿锁者进、后来者睡,自旋锁则忙等烧 CPU;加锁顺序相反会撞出 AB-BA 死锁;CAS 比较交换写回前核对旧值,被抢就重试——不加锁也不丢 · 拖动旋转 / 空格运行/暂停" data-en="Two threads run count++ on a shared variable, and ++ is read-modify-write — the scheduler interleaves the three steps, both LOADs read the same old value, both STOREs write old+1, and one update evaporates; a mutex welds the critical section serial: the holder runs, the other sleeps, a spinlock burns CPU busy-waiting; opposite lock orders collide into an AB-BA deadlock; CAS verifies the old value before writing back and retries — atomic with no lock at all · drag to orbit / Space = run/pause">两个线程同时对 count++ ,而 ++ 是「读-改-写」三步——调度器把三步交错,两次 LOAD 读到同一个旧值、两次 STORE 都写回「旧+1」,一次更新凭空蒸发;互斥锁把临界区焊成串行:拿锁者进、后来者睡,自旋锁则忙等烧 CPU;加锁顺序相反会撞出 AB-BA 死锁;CAS 比较交换写回前核对旧值,被抢就重试——不加锁也不丢 · 拖动旋转 / 空格运行/暂停</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="最终计数" data-en="Final count">最终计数</span><span class="v" id="stCount">0</span>
+  <span class="k" data-zh="期望计数" data-en="Expected">期望计数</span><span class="v" id="stExpect">0</span>
+  <span class="k" data-zh="丢失更新" data-en="Lost updates">丢失更新</span><span class="v" id="stLost">0</span>
+  <span class="k" data-zh="线程等待" data-en="Wait time">线程等待</span><span class="v" id="stWait">0.0<small>s</small></span>
+</div>
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="actions">
+    <button class="abtn" id="bDraw" data-zh="抽签调度" data-en="Draw schedule">抽签调度</button>
+    <button class="abtn" id="bReroll" data-zh="重跑一轮" data-en="Re-run round">重跑一轮</button>
+    <button class="abtn" id="bFix" data-zh="统一锁序" data-en="Fix lock order">统一锁序</button>
+    <button class="abtn" id="bReset" data-zh="重置" data-en="Reset">重置</button>
+  </div>
+  <div class="row">
+    <label data-zh="调度交错率" data-en="Interleave">调度交错率</label>
+    <input id="sMix" type="range" min="0" max="100" step="5" value="65">
+    <span class="val" id="sMixVal">65%</span>
+  </div>
+  <div class="row">
+    <label data-zh="播放速度" data-en="Speed">播放速度</label>
+    <input id="sSpeed" type="range" min="0.25" max="2" step="0.05" value="1">
+    <span class="val" id="sSpeedVal">×1.00</span>
+  </div>
+  <div class="row">
+    <label data-zh="阶段跳转" data-en="Phase">阶段跳转</label>
+    <input id="sStep" type="range" min="0" max="5" step="1" value="0">
+    <span class="val" id="sStepVal">1/6</span>
+  </div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" data-zh="运行" data-en="Run">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglSpin" type="checkbox"> <span data-zh="自旋等待" data-en="Spin-wait">自旋等待</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../deadlock-banker/" data-zh="AB-BA 死锁" data-en="AB-BA Deadlock">AB-BA 死锁</a>
+    <a href="../virtual-memory/" data-zh="虚拟内存" data-en="Virtual Memory">虚拟内存</a>
+    <a href="../garbage-collection/" data-zh="垃圾回收" data-en="Garbage Collection">垃圾回收</a>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const htmlEl=document.documentElement;
+let THEME=localStorage.getItem('htw-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+let LANG=localStorage.getItem('htw-lang')||'zh';
+const L=(zh,en)=>LANG==='en'?en:zh;
+
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:3';
+document.body.appendChild(labelRenderer.domElement);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x101418,22,64);
+const camera=new THREE.PerspectiveCamera(36,innerWidth/innerHeight,0.1,300);
+camera.position.set(0.6,3.6,11.8);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,2.2,0);controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=4;controls.maxDistance=30;
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
+scene.add(new THREE.HemisphereLight(0xdfe8f2,0x1a1c22,0.55));
+const key=new THREE.DirectionalLight(0xfff2dd,1.05);key.position.set(6,10,8);scene.add(key);
+const fill=new THREE.DirectionalLight(0x9ab8ff,0.3);fill.position.set(-8,5,-6);scene.add(fill);
+const groundM=new THREE.MeshStandardMaterial({color:0x1c2027,roughness:0.95});
+const ground=new THREE.Mesh(new THREE.CircleGeometry(24,64),groundM);
+ground.rotation.x=-Math.PI/2;scene.add(ground);
+
+const labelReg=[];
+function addLabel(textFn,pos,cls='',visFn=()=>true){
+  const div=document.createElement('div');div.className='lbl '+cls;
+  const o=new CSS2DObject(div);o.position.copy(pos);scene.add(o);
+  labelReg.push({o,text:textFn,vis:visFn});div.textContent=textFn();return o;
+}
+
+/* ── 场景:中央共享内存 count 台座,左右线程 A/B,后方法令时间线,上方调度器 ── */
+const COL_A=0x5f8dff,COL_B=0xff8c42,GOLD=0xc9a22f;
+const goldMat=new THREE.MeshStandardMaterial({color:GOLD,roughness:0.25,metalness:0.7,emissive:0x8a6d14,emissiveIntensity:0.4});
+const slabM=new THREE.MeshStandardMaterial({color:0x2a303a,roughness:0.6,metalness:0.35});
+const dummy=new THREE.Object3D();
+const V1=new THREE.Vector3(),V2=new THREE.Vector3(),V3t=new THREE.Vector3();
+
+/* 共享内存台座 + 计数格(InstancedMesh) */
+const memG=new THREE.Group();memG.position.set(0,0,-0.6);scene.add(memG);
+const slab=new THREE.Mesh(new THREE.BoxGeometry(5.2,0.9,1.5),slabM);slab.position.y=0.95;memG.add(slab);
+const foot=new THREE.Mesh(new THREE.CylinderGeometry(1.7,2.0,0.3,36),slabM);foot.position.y=0.15;memG.add(foot);
+const NC=10;
+const cubeM=new THREE.MeshStandardMaterial({color:GOLD,roughness:0.3,metalness:0.55,emissive:0x6b5313,emissiveIntensity:0.55});
+const countMesh=new THREE.InstancedMesh(new THREE.BoxGeometry(0.34,0.34,0.34),cubeM,NC);memG.add(countMesh);
+const memPos=new THREE.Vector3(0,1.62,-0.6);
+
+/* 调度器:金环 + 二十面体核,抽签时狂转 */
+const schedG=new THREE.Group();schedG.position.set(0,5.4,-0.6);scene.add(schedG);
+const ring=new THREE.Mesh(new THREE.TorusGeometry(0.62,0.055,12,48),goldMat);schedG.add(ring);
+const coreM=new THREE.MeshStandardMaterial({color:GOLD,roughness:0.2,metalness:0.7,emissive:0x9c7d1a,emissiveIntensity:0.8});
+const core=new THREE.Mesh(new THREE.IcosahedronGeometry(0.3,0),coreM);schedG.add(core);
+
+/* 线程 A/B */
+function makeThread(x,hex,emi){
+  const g=new THREE.Group();g.position.set(x,0,1.6);scene.add(g);
+  const ped=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.62,0.24,24),slabM);ped.position.y=0.12;g.add(ped);
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(0.3,0.5,6,16),
+    new THREE.MeshStandardMaterial({color:hex,roughness:0.35,metalness:0.3,emissive:emi,emissiveIntensity:0.35}));
+  body.position.y=1.0;g.add(body);
+  return{grp:g,body,mat:body.material,homeX:x,phase:x>0?1.7:0};
+}
+const tA=makeThread(-4.4,COL_A,0x1c3a8c),tB=makeThread(4.4,COL_B,0x8a3d10);
+function bodyPos(th,out){return out.set(th.grp.position.x,th.body.position.y,1.6);}
+
+/* 指令格:每线程 读-改-写 三格(InstancedMesh) */
+const cellGeo=new THREE.BoxGeometry(0.52,0.3,0.14);
+const tapeMesh=new THREE.InstancedMesh(cellGeo,new THREE.MeshBasicMaterial({color:0xffffff}),6);
+scene.add(tapeMesh);
+const cellPos=[];
+for(const bx of[-4.4,4.4])for(let i=0;i<3;i++)cellPos.push(new THREE.Vector3(bx+(i-1)*0.62,2.55,1.6));
+const cOn=new THREE.Color(0xffd43b),cOff=new THREE.Color(0x39404d);
+function refreshTape(){
+  [tA,tB].forEach((th,ti)=>{
+    const act=th.done?-1:th.pc;
+    for(let i=0;i<3;i++){
+      const k=ti*3+i;
+      dummy.position.copy(cellPos[k]);dummy.rotation.set(0,0,0);
+      dummy.scale.setScalar(i===act?1+0.12*Math.sin(simT*10):1);
+      dummy.updateMatrix();tapeMesh.setMatrixAt(k,dummy.matrix);
+      tapeMesh.setColorAt(k,i===act?cOn:cOff);
+    }
+  });
+  tapeMesh.instanceMatrix.needsUpdate=true;
+  if(tapeMesh.instanceColor)tapeMesh.instanceColor.needsUpdate=true;
+}
+
+/* 执行时间线:48 个小格,红=被覆盖的写入,橙=CAS 重试 */
+const TL=48;
+const tlMesh=new THREE.InstancedMesh(new THREE.BoxGeometry(0.2,0.2,0.2),new THREE.MeshBasicMaterial({color:0xffffff}),TL);
+scene.add(tlMesh);
+let tlHead=0;
+const cA=new THREE.Color(COL_A),cB=new THREE.Color(COL_B),cLost=new THREE.Color(0xff5252),cRetry=new THREE.Color(0xffb020);
+function tlClear(){
+  dummy.rotation.set(0,0,0);
+  for(let i=0;i<TL;i++){dummy.position.set(-5.4+i*(10.8/(TL-1)),0.5,-3.6);dummy.scale.setScalar(0.0001);dummy.updateMatrix();tlMesh.setMatrixAt(i,dummy.matrix);}
+  tlMesh.instanceMatrix.needsUpdate=true;tlHead=0;
+}
+function tlWrite(kind){
+  dummy.position.set(-5.4+tlHead*(10.8/(TL-1)),0.5,-3.6);dummy.rotation.set(0,0,0);
+  dummy.scale.setScalar(1);dummy.updateMatrix();
+  tlMesh.setMatrixAt(tlHead,dummy.matrix);
+  tlMesh.setColorAt(tlHead,kind==='lost'?cLost:kind==='retry'?cRetry:kind==='A'?cA:cB);
+  tlMesh.instanceMatrix.needsUpdate=true;
+  if(tlMesh.instanceColor)tlMesh.instanceColor.needsUpdate=true;
+  tlHead=(tlHead+1)%TL;
+}
+tlClear();
+
+/* 互斥锁(金挂锁)与 AB-BA 两把环锁 + 虚线伸手 + 红弧 */
+const lockG=new THREE.Group();lockG.position.set(0,2.9,0.35);scene.add(lockG);
+const lockMat=goldMat.clone();
+const lockBody=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.42,0.2),lockMat);lockG.add(lockBody);
+const shank=new THREE.Mesh(new THREE.TorusGeometry(0.17,0.05,10,24,Math.PI),lockMat);shank.position.y=0.21;lockG.add(shank);
+lockG.visible=false;
+function makeRing(x){
+  const g=new THREE.Group();g.position.set(x,2.2,0.2);scene.add(g);
+  const r=new THREE.Mesh(new THREE.TorusGeometry(0.3,0.09,12,32),goldMat.clone());g.add(r);
+  const post=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,1.1,12),slabM);post.position.set(x,0.55,0.2);scene.add(post);
+  return g;
+}
+const L1=makeRing(-2.0),L2=makeRing(2.0);L1.visible=L2.visible=false;
+function beam(ax,ay,bx,by){
+  const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+    [new THREE.Vector3(ax,ay,1.2),new THREE.Vector3(bx,by,0.2)]),
+    new THREE.LineDashedMaterial({color:0xff6b6b,dashSize:0.16,gapSize:0.1,transparent:true,opacity:0}));
+  l.computeLineDistances();scene.add(l);return l;
+}
+const beamA=beam(-4.4,1.7,2.0,2.2),beamB=beam(4.4,1.7,-2.0,2.2);
+const arcPts=[];for(let k=0;k<=24;k++){const th=k/24*Math.PI;arcPts.push(new THREE.Vector3(Math.cos(th)*2.0,3.15+0.5*Math.sin(th),0.2));}
+const arc=new THREE.Line(new THREE.BufferGeometry().setFromPoints(arcPts),
+  new THREE.LineBasicMaterial({color:0xff6b6b,transparent:true,opacity:0}));
+scene.add(arc);
+
+/* 自旋轨道粒子(忙等) */
+const orbMesh=new THREE.InstancedMesh(new THREE.SphereGeometry(0.05,8,6),new THREE.MeshBasicMaterial({color:0xffb020}),10);
+scene.add(orbMesh);
+
+/* 数据往返粒子 + 爆闪粒子池 */
+const shuttles=[];
+for(let i=0;i<6;i++){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(0.09,10,8),new THREE.MeshBasicMaterial({transparent:true,opacity:0.95}));
+  m.visible=false;scene.add(m);
+  shuttles.push({m,from:new THREE.Vector3(),to:new THREE.Vector3(),t:1,dur:0.3});
+}
+function shuttle(from,to,hex){
+  for(const s of shuttles){
+    if(s.m.visible)continue;
+    s.from.copy(from);s.to.copy(to);s.t=0;s.m.visible=true;s.m.material.color.setHex(hex);return;
+  }
+}
+const bursts=[];
+for(let i=0;i<16;i++){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,6),new THREE.MeshBasicMaterial({transparent:true}));
+  m.visible=false;scene.add(m);
+  bursts.push({m,v:new THREE.Vector3(),life:0});
+}
+function burst(pos,hex,n){
+  let c=0;
+  for(const b of bursts){
+    if(b.life>0)continue;
+    b.m.visible=true;b.m.position.copy(pos);b.m.material.color.setHex(hex);b.m.material.opacity=1;
+    b.v.set((Math.random()-0.5)*2.4,1.6+Math.random()*1.6,(Math.random()-0.5)*2.4);
+    b.life=0.7;if(++c>=n)break;
+  }
+}
+
+/* ── 状态与调度 ── */
+const P=5,TICK=0.34,OPS=['load','inc','store'],OPS_CAS=['load','inc','cas'];
+const TA={key:'A',th:tA,reg:0,exp:0,pc:0,passes:P,done:false,wait:0,lastLost:false};
+const TB={key:'B',th:tB,reg:0,exp:0,pc:0,passes:P,done:false,wait:0,lastLost:false};
+let lockMode='none',abbaOn=false,slowStep=false,spin=false;
+let count=0,passesDone=0,roundHold=0,retries=0,countFlash=0;
+let playing=true,labelsOn=true,speed=1,interleave=0.65,simT=0,spinBoost=0;
+let schedAcc=0,script=null,lastHolder='A',lastSched='A';
+const abba={st:0,t:0,wait:0};
+const qs=new URLSearchParams(location.search);
+if(qs.get('pause')==='1')playing=false;
+if(qs.get('labels')==='0')labelsOn=false;
+if(qs.get('speed')!==null){const sp=clamp(parseFloat(qs.get('speed'))||1,0.25,2);speed=sp;
+  document.getElementById('sSpeed').value=sp;document.getElementById('sSpeedVal').textContent='×'+sp.toFixed(2);}
+let t0=-1;if(qs.get('t')!==null)t0=parseInt(qs.get('t'))||0;
+
+const statusDiv=document.createElement('div');statusDiv.className='lbl';
+const statusObj=new CSS2DObject(statusDiv);statusObj.position.set(0,0.3,3.0);scene.add(statusObj);
+function setStatus(text,cls){statusDiv.textContent=text;statusDiv.className='lbl '+cls;}
+function defStatus(){
+  if(lockMode==='mutex')setStatus(L('锁把「读-改-写」焊成一体:拿锁者进,后来者等','The lock welds read-modify-write: holder runs, the other waits'),'');
+  else if(lockMode==='cas')setStatus(L('CAS:写回前核对旧值,被抢就重试','CAS: verify the old value before writing back; retry if taken'),'');
+  else setStatus(L('无保护:调度器随时把三步切开——盯住两次 LOAD','Unprotected: the scheduler may split the three steps — watch both LOADs'),'y');
+}
+
+function resetRound(){
+  count=0;passesDone=0;roundHold=0;retries=0;schedAcc=0;script=null;countFlash=0;
+  for(const th of[TA,TB]){th.reg=0;th.exp=0;th.pc=0;th.passes=P;th.done=false;th.wait=0;th.lastLost=false;}
+  lastHolder='A';lastSched='A';tlClear();defStatus();
+}
+function checkRoundEnd(){
+  if(!(TA.done&&TB.done)||roundHold>0)return;
+  roundHold=0.0001;
+  const lost=passesDone-count;
+  setStatus(lost>0
+    ?L(`本轮完成:应 +${2*P},实得 +${count} —— 丢了 ${lost} 次`,`Round done: expected +${2*P}, got +${count} — ${lost} lost`)
+    :L(`本轮完成:应 +${2*P},实得 +${count},分毫不差`,`Round done: expected +${2*P}, got +${count}, exact`),lost>0?'r':'g');
+}
+function nextThread(){
+  const rA=!TA.done,rB=!TB.done;
+  if(!rA&&!rB)return null;
+  if(lockMode==='mutex'){
+    const cur=lastHolder==='A'?TA:TB,oth=cur===TA?TB:TA;
+    if(!cur.done&&cur.pc!==0)return cur;
+    if(!oth.done){lastHolder=oth.key;return oth;}
+    return cur;
+  }
+  if(!rA||!rB)return rA?TA:TB;
+  const cur=lastSched==='A'?TA:TB,oth=cur===TA?TB:TA;
+  const t=Math.random()<interleave?oth:cur;
+  lastSched=t.key;return t;
+}
+function execOp(th,op){
+  const hex=th.key==='A'?COL_A:COL_B;
+  if(op==='load'){th.reg=count;th.exp=count;bodyPos(th.th,V2);shuttle(memPos,V2,hex);return true;}
+  if(op==='inc'){th.reg++;return true;}
+  if(op==='store'){
+    const before=count;count=th.reg;countFlash=1;th.lastLost=th.reg<=before;
+    bodyPos(th.th,V2);shuttle(V2,memPos,hex);
+    if(th.lastLost){burst(memPos,0xff5252,10);setStatus(L('丢失!这次写回覆盖了别人的更新','Lost! this store overwrote a newer update'),'r');}
+    return true;
+  }
+  if(op==='cas'){
+    if(count===th.exp){count=th.reg;countFlash=1;bodyPos(th.th,V2);shuttle(V2,memPos,hex);return true;}
+    retries++;th.exp=count;th.reg=count+1;
+    burst(memPos,0xffb020,5);tlWrite('retry');
+    setStatus(L('CAS 失败:旧值已变——自动重试','CAS failed: value changed — retrying'),'y');
+    return false;
+  }
+  return true;
+}
+function doMicroStep(th){
+  const ops=lockMode==='cas'?OPS_CAS:OPS;
+  if(!execOp(th,ops[th.pc]))return;
+  th.pc++;
+  if(th.pc>=3){
+    th.pc=0;th.passes--;passesDone++;
+    tlWrite(th.lastLost?'lost':th.key);
+    if(th.passes<=0){th.done=true;checkRoundEnd();}
+  }
+}
+function stepSim(s){
+  if(s<=0)return;
+  if(script){
+    schedAcc+=s;
+    while(schedAcc>=TICK&&script.length){
+      schedAcc-=TICK;
+      const th=script.shift()==='A'?TA:TB;
+      if(lockMode==='mutex'){const oth=th===TA?TB:TA;if(!oth.done)oth.wait+=TICK;}
+      doMicroStep(th);spinBoost=Math.max(spinBoost,3);
+    }
+    if(!script.length)script=null;
+    return;
+  }
+  if(TA.done&&TB.done){roundHold+=s;if(roundHold>2.6)resetRound();return;}
+  schedAcc+=s;let guard=8;
+  while(schedAcc>=TICK&&guard-->0){
+    schedAcc-=TICK;
+    const th=nextThread();if(!th)break;
+    if(lockMode==='mutex'){const oth=th===TA?TB:TA;if(!oth.done)oth.wait+=TICK;}
+    doMicroStep(th);
+  }
+}
+function stepAbba(s){
+  abba.t+=s;
+  const DUR=[1.3,5.0,3.2,1.6];
+  if(abba.t>=DUR[abba.st]){
+    abba.t=0;abba.st=(abba.st+1)%4;
+    if(abba.st===0){abba.wait=0;setStatus(L('再来一遍:A 先拿 L1,B 先拿 L2','Again: A takes L1 first, B takes L2 first'),'y');}
+    if(abba.st===1)setStatus(L('A 等 L2、B 等 L1——锁序相反,互等成环(AB-BA)','A waits on L2, B on L1 — opposite lock orders close a ring (AB-BA)'),'r');
+    if(abba.st===2)setStatus(L('统一锁序:都先 L1 后 L2——环无从形成','One global order: L1 then L2 — no ring can form'),'g');
+    if(abba.st===3)setStatus(L('两边都走完了','Both finished'),'');
+  }
+  if(abba.st===1)abba.wait+=s;
+}
+
+/* ── 抽签调度:招牌按钮。无保护时当场咬合出一次丢失 ── */
+document.getElementById('bDraw').addEventListener('click',()=>{
+  spinBoost=8;
+  if(abbaOn){setStatus(L('这一步看锁序:按「统一锁序」解开环','This step is about lock order: press "Fix lock order"'),'');return;}
+  if(TA.done&&TB.done)resetRound();
+  if(TA.pc||TB.pc){for(const th of[TA,TB]){th.pc=0;th.reg=0;th.exp=0;}}
+  const seq=[];
+  if(!TA.done)seq.push('A','A','A');
+  if(!TB.done)seq.push('B','B','B');
+  if(lockMode==='mutex'){
+    script=seq.slice();
+    setStatus(L('抽签:强制 A、B 交替——但锁把三步焊成一体,一次也不丢','Draw: force A/B alternation — the lock welds the three steps, nothing lost'),'g');
+  }else if(lockMode==='cas'){
+    script=seq.includes('A')&&seq.includes('B')?['A','B','A','B','A','B']:seq;
+    setStatus(L('抽签:交错照样发生——CAS 写回前对暗号,冲突就重试','Draw: interleaving still happens — CAS checks the old value, retries on conflict'),'y');
+  }else{
+    script=seq.includes('A')&&seq.includes('B')?['A','B','A','B','A','B']:seq;
+    setStatus(L('抽签:调度器把两次 ++ 咬进同一格——盯住 count','Draw: the scheduler bites both ++ into the same slot — watch count'),'r');
+  }
+  schedAcc=0;
+});
+document.getElementById('bReroll').addEventListener('click',()=>{resetRound();setStatus(L('重跑一轮','Re-running the round'),'');});
+document.getElementById('bFix').addEventListener('click',()=>{
+  if(abbaOn){if(abba.st!==2){abba.st=2;abba.t=0;}}
+  else setStatus(L('锁序演示在第 5 步','The lock-order demo is step 5'),'');
+});
+document.getElementById('bReset').addEventListener('click',()=>{resetRound();applyPhase(activeStep);});
+
+/* ── 步骤 ── */
+function setSim(mode,opts={}){
+  lockMode=mode;abbaOn=false;slowStep=!!opts.slow;
+  spin=!!opts.spin;document.getElementById('tglSpin').checked=spin;
+  L1.visible=L2.visible=false;
+  resetRound();
+}
+function enterAbba(){
+  abbaOn=true;script=null;
+  L1.visible=L2.visible=true;abba.st=0;abba.t=0;abba.wait=0;
+  for(const th of[TA,TB]){th.pc=0;th.reg=0;}
+  tlClear();
+  setStatus(L('A 先拿 L1,B 先拿 L2——各持一把','A takes L1, B takes L2 — one each'),'y');
+}
+const STEPS=[
+ {zh:'<b>无锁竞跑</b>:A、B 各自 count++——每条 ++ 都是「读-改-写」三步,调度器随时切开',
+  en:'<b>Unprotected race</b>: A and B each run count++ — every ++ is read-modify-write, three steps the scheduler may split anytime',
+  act(){setSim('none');}},
+ {zh:'<b>交错与丢失</b>:两次 LOAD 读到同一个旧值,两次 STORE 都写回「旧+1」——一次更新凭空蒸发;按「抽签调度」当场复刻',
+  en:'<b>Interleave & lose</b>: both LOADs read the same old value, both STOREs write old+1 — one update evaporates; press "Draw schedule" to replay it live',
+  act(){setSim('none',{slow:true});interleave=0.85;
+    document.getElementById('sMix').value=85;document.getElementById('sMixVal').textContent='85%';}},
+ {zh:'<b>互斥锁串行</b>:进临界区先拿锁——拿锁者跑完三步,后来者排队等,count 分毫不差',
+  en:'<b>Mutex serializes</b>: take the lock before the critical section — the holder runs all three steps, the other queues, count stays exact',
+  act(){setSim('mutex',{spin:false});}},
+ {zh:'<b>自旋 vs 阻塞</b>:自旋锁忙等——循环试探烧 CPU;互斥量睡眠让核——等待也要付费',
+  en:'<b>Spin vs sleep</b>: a spinlock busy-waits, burning cycles; a mutex sleeps and frees the core — waiting is never free',
+  act(){setSim('mutex',{spin:true});}},
+ {zh:'<b>锁序与 AB-BA</b>:A 先 L1 后 L2、B 先 L2 后 L1——各持一把互等成环;统一加锁顺序,环即消失',
+  en:'<b>Lock order & AB-BA</b>: A takes L1 then L2, B takes L2 then L1 — each holds one and waits for the other; one global order dissolves the ring',
+  act(){enterAbba();}},
+ {zh:'<b>CAS 无锁</b>:比较交换——写回前核对旧值,不符就重试;不加锁,一次也不丢',
+  en:'<b>Lock-free CAS</b>: compare-and-swap — verify the old value before writing back, retry if stale; no lock, nothing lost',
+  act(){setSim('cas');}},
+];
+let activeStep=0;
+function buildSteps(){
+  const el=document.getElementById('steps');el.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="n">${i+1}</span><span class="t"><b>${LANG==='en'?s.en:s.zh}</b></span>`;
+    li.addEventListener('click',()=>{applyPhase(i);});
+    el.appendChild(li);
+  });
+  syncSteps();
+}
+function syncSteps(){document.querySelectorAll('#steps li').forEach((li,i)=>li.classList.toggle('on',i===activeStep));}
+function applyPhase(i){
+  activeStep=i;STEPS[i].act();syncSteps();updateStats();
+  document.getElementById('sStep').value=i;
+  document.getElementById('sStepVal').textContent=(i+1)+'/6';
+}
+
+/* ── 芯片行:当前保护状态 ── */
+const chipsDiv=document.createElement('div');chipsDiv.className='chips';
+const chipsObj=new CSS2DObject(chipsDiv);chipsObj.position.set(0,4.45,-0.6);scene.add(chipsObj);
+const chipEls=[];
+function buildChips(){
+  chipsDiv.innerHTML='';chipEls.length=0;
+  const names=[L('读-改-写 可被切开','RMW splittable'),L('临界区串行','critical section'),L('CAS 原子提交','CAS atomic')];
+  for(const nm of names){
+    const s=document.createElement('span');s.className='chip';s.textContent=nm;
+    chipsDiv.appendChild(s);chipEls.push(s);
+  }
+}
+function updateChips(){
+  const on=[!abbaOn&&lockMode==='none',!abbaOn&&lockMode==='mutex',!abbaOn&&lockMode==='cas'];
+  chipEls.forEach((c,i)=>c.classList.toggle('on',on[i]));
+}
+
+/* ── 标签 ── */
+addLabel(()=>L('调度器 · 抽签','Scheduler · draw'),new THREE.Vector3(0,6.35,-0.6),'y');
+addLabel(()=>L('count = ','count = ')+count,new THREE.Vector3(0,1.05,0.55),'g');
+addLabel(()=>threadPill(TA),new THREE.Vector3(-4.4,3.55,1.6),'b');
+addLabel(()=>threadPill(TB),new THREE.Vector3(4.4,3.55,1.6),'o');
+addLabel(()=>L('A 寄存器','A reg')+' = '+TA.reg,new THREE.Vector3(-4.4,1.9,1.6),'b');
+addLabel(()=>L('B 寄存器','B reg')+' = '+TB.reg,new THREE.Vector3(4.4,1.9,1.6),'o');
+for(const[ti,bx]of[[0,-4.4],[1,4.4]])for(let i=0;i<3;i++){
+  const cls=ti===0?'b':'o';
+  addLabel(()=>i===0?L('读取','LOAD'):i===1?'+1':(lockMode==='cas'?L('比较交换','CAS'):L('写回','STORE')),
+    new THREE.Vector3(bx+(i-1)*0.62,2.98,1.6),cls);
+}
+addLabel(()=>L('互斥锁 · 持有:','Mutex · holder:')+lastHolder,new THREE.Vector3(0,3.75,0.35),'y',()=>lockG.visible);
+addLabel(()=>L('执行时间线 · 红=丢失','Timeline · red=lost'),new THREE.Vector3(-6.1,0.95,-3.6),'r');
+addLabel(()=>L('锁 L1','Lock L1'),new THREE.Vector3(-2.0,2.95,0.2),'y',()=>L1.visible);
+addLabel(()=>L('锁 L2','Lock L2'),new THREE.Vector3(2.0,2.95,0.2),'y',()=>L2.visible);
+addLabel(()=>L('互等成环!','Circular wait!'),new THREE.Vector3(0,4.35,0.2),'r',()=>abbaOn&&abba.st===1);
+addLabel(()=>L('CAS:旧值不符 → 重试','CAS: stale value → retry'),new THREE.Vector3(0,3.6,-0.6),'y',()=>!abbaOn&&lockMode==='cas');
+function threadPill(th){
+  let s=L('线程','Thread')+' '+th.key;
+  if(abbaOn)return s;
+  s+=' · reg '+th.reg;
+  if(lockMode==='mutex'&&!th.done&&lastHolder!==th.key){
+    s+=spin?L(' · 忙等 ',' · spin ')+th.wait.toFixed(1)+'s':L(' · 睡眠等锁 ',' · asleep ')+th.wait.toFixed(1)+'s';
+  }
+  return s;
+}
+
+function updateStats(){
+  const lost=passesDone-count;
+  const e1=document.getElementById('stCount'),e2=document.getElementById('stExpect'),
+    e3=document.getElementById('stLost'),e4=document.getElementById('stWait');
+  e1.textContent=count;e1.className='v'+(lost>0?' warn':'');
+  e2.textContent=passesDone;
+  e3.textContent=lost;e3.className='v '+(lost>0?'warn':'ok');
+  const w=abbaOn?abba.wait:TA.wait+TB.wait;
+  e4.innerHTML=w.toFixed(1)+'<small>s</small>';
+  e4.className='v'+(abbaOn&&abba.st===1?' warn':'');
+  updateChips();
+}
+
+/* ── 控件 ── */
+document.getElementById('sMix').addEventListener('input',e=>{
+  interleave=clamp(+e.target.value,0,100)/100;
+  document.getElementById('sMixVal').textContent=e.target.value+'%';
+});
+document.getElementById('sSpeed').addEventListener('input',e=>{
+  speed=clamp(+e.target.value,0.25,2);
+  document.getElementById('sSpeedVal').textContent='×'+speed.toFixed(2);
+});
+document.getElementById('sStep').addEventListener('input',e=>{applyPhase(clamp(+e.target.value,0,5));});
+document.getElementById('tglSpin').addEventListener('change',e=>{spin=e.target.checked;});
+document.getElementById('tglLabels').addEventListener('change',e=>{
+  labelsOn=e.target.checked;
+  for(const r of labelReg)r.o.visible=labelsOn;
+});
+document.getElementById('play').addEventListener('click',()=>{playing=!playing;syncPlayBtn();});
+function syncPlayBtn(){document.getElementById('play').textContent=playing?L('暂停','Pause'):L('运行','Run');}
+document.getElementById('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+document.getElementById('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();document.getElementById('play').click();}});
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);
+});
+function applyTheme(){
+  htmlEl.dataset.theme=THEME;
+  document.getElementById('themeBtn').textContent=THEME==='dark'?'☀':'☾';
+  const dark=THEME==='dark';
+  scene.background=new THREE.Color(dark?0x101418:0xe9e4dc);
+  scene.fog.color.setHex(dark?0x101418:0xe9e4dc);
+  groundM.color.setHex(dark?0x1c2027:0xc9c2b6);
+}
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el=>{
+    if(el.tagName==='INPUT')return;
+    el.textContent=LANG==='en'?(el.dataset.en||el.dataset.zh):el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent=LANG==='en'?'ZH':'EN';
+  buildChips();updateChips();buildSteps();defStatus();
+}
+
+/* ── 每帧视觉 ── */
+function visuals(dt){
+  spinBoost*=Math.max(0,1-dt*1.6);
+  core.rotation.y+=dt*(1.5+spinBoost*3);
+  ring.rotation.z+=dt*0.4;
+  coreM.emissiveIntensity=0.6+0.3*Math.sin(simT*4)+spinBoost*0.15;
+  countFlash=Math.max(0,countFlash-dt*2.5);
+  for(let i=0;i<NC;i++){
+    dummy.position.set((i-(NC-1)/2)*0.42,1.62,0);dummy.rotation.set(0,0,0);
+    dummy.scale.setScalar(i<count?(1+(i===count-1?0.5*countFlash:0)):0.0001);
+    dummy.updateMatrix();countMesh.setMatrixAt(i,dummy.matrix);
+  }
+  countMesh.instanceMatrix.needsUpdate=true;
+  /* 线程体:浮动 / 忙等抖动 / 睡眠下沉 */
+  let orbCenter=null;
+  for(const th of[TA,TB]){
+    const t=th.th,waiting=lockMode==='mutex'&&!abbaOn&&!th.done&&lastHolder!==th.key;
+    t.body.position.y=1.0+(waiting&&!spin?-0.22:0.05*Math.sin(simT*2+t.phase));
+    const tx=t.homeX+(waiting&&spin?(Math.random()-0.5)*0.07:0);
+    t.grp.position.x+=(tx-t.grp.position.x)*Math.min(1,dt*12);
+    if(waiting&&spin){orbCenter=t;t.mat.emissiveIntensity=0.85;}
+    else if(waiting){t.mat.emissiveIntensity=0.1;}
+    else{t.mat.emissiveIntensity+=(0.35-t.mat.emissiveIntensity)*Math.min(1,dt*6);}
+    if(abbaOn&&abba.st===1){t.mat.emissive.setHex(0xc22626);t.mat.emissiveIntensity=0.7+0.35*Math.sin(simT*6);}
+    else t.mat.emissive.setHex(th.key==='A'?0x1c3a8c:0x8a3d10);
+  }
+  /* 忙等轨道粒子 */
+  for(let k=0;k<10;k++){
+    if(orbCenter){
+      const a=simT*7+k*Math.PI*0.2;
+      V1.copy(orbCenter.th.body.position);V1.z+=0.0;
+      dummy.position.set(V1.x+Math.cos(a)*0.55,V1.y+0.25*Math.sin(k*1.7+simT*3),1.6+Math.sin(a)*0.55);
+      dummy.scale.setScalar(1);
+    }else{dummy.position.set(0,-10,0);dummy.scale.setScalar(0.0001);}
+    dummy.rotation.set(0,0,0);dummy.updateMatrix();orbMesh.setMatrixAt(k,dummy.matrix);
+  }
+  orbMesh.instanceMatrix.needsUpdate=true;
+  /* 互斥锁 */
+  lockG.visible=!abbaOn&&lockMode==='mutex';
+  if(lockG.visible){
+    lockG.position.y=2.9+0.08*Math.sin(simT*2.4);
+    lockMat.emissive.setHex(lastHolder==='A'?0x2b4d9b:0xa34d10);
+  }
+  /* AB-BA 锁位 / 虚线 / 红弧 */
+  if(abbaOn){
+    const held=abba.st<=1;
+    V1.set(held?-3.3:-2.0,held?2.0:2.2,held?1.3:0.2);
+    V2.set(held?3.3:2.0,held?2.0:2.2,held?1.3:0.2);
+    L1.position.lerp(V1,Math.min(1,dt*5));L2.position.lerp(V2,Math.min(1,dt*5));
+    const o=abba.st===1?0.55+0.3*Math.sin(simT*7):0;
+    beamA.material.opacity=o;beamB.material.opacity=o;arc.material.opacity=o;
+  }else{beamA.material.opacity=0;beamB.material.opacity=0;arc.material.opacity=0;}
+  /* 数据往返粒子 */
+  for(const s of shuttles){
+    if(!s.m.visible)continue;
+    s.t+=dt;const k=clamp(s.t/s.dur,0,1);
+    s.m.position.lerpVectors(s.from,s.to,k);
+    s.m.position.y+=0.35*Math.sin(k*Math.PI);
+    if(k>=1)s.m.visible=false;
+  }
+  /* 爆闪粒子 */
+  for(const b of bursts){
+    if(b.life<=0)continue;
+    b.life-=dt;b.m.position.addScaledVector(b.v,dt);b.v.y-=3*dt;
+    b.m.material.opacity=Math.max(0,b.life/0.7);
+    if(b.life<=0)b.m.visible=false;
+  }
+  refreshTape();
+}
+
+const clock=new THREE.Clock();
+let raf=null;
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const dt=clamp(clock.getDelta(),0,0.05);
+  const dts=dt*(playing?1:0);
+  simT+=dts;
+  const simDt=dts*speed*(slowStep?0.5:1);
+  if(abbaOn)stepAbba(simDt);else stepSim(simDt);
+  visuals(dt);
+  frame.acc=(frame.acc||0)+dt;
+  if(frame.acc>0.12){frame.acc=0;updateStats();}
+  for(const r of labelReg){r.o.visible=labelsOn&&r.vis();if(r.o.visible)r.o.element.textContent=r.text();}
+  statusObj.visible=labelsOn;chipsObj.visible=labelsOn;
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+function start(){if(raf===null){clock.getDelta();raf=requestAnimationFrame(frame);}}
+function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+
+labelsOn=!(qs.get('labels')==='0');
+document.getElementById('tglLabels').checked=labelsOn;
+applyTheme();buildChips();buildSteps();
+applyPhase(t0>=0&&t0<STEPS.length?t0:0);
+updateStats();syncPlayBtn();start();
+
+</script>
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div');
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
