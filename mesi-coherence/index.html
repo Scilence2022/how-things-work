@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>缓存一致性与 MESI · 一核动笔，旁人全作废</title>
+<style>
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;--acc:#4c9e5f;
+    --bg:#0f1113;--panel:rgba(15,17,19,.86);--panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9;--text2:#9fb0c3;--text3:#c7d2de;
+    --hover:rgba(255,255,255,.05);--shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(15,17,19,.78);--tool-border:rgba(255,255,255,.12);--cv-pill:rgba(15,17,19,.8);
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;--acc:#2b8a3e;
+    --bg:#f1efec;--panel:rgba(255,255,255,.88);--panel-border:rgba(15,25,40,.10);
+    --text:#16202c;--text2:#5b6b7d;--text3:#33414f;
+    --hover:rgba(15,25,40,.05);--shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85);--tool-border:rgba(15,25,40,.14);--cv-pill:rgba(255,255,255,.85);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;transition:background .25s}
+  #app{position:fixed;inset:0}#app canvas{display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+  .lbl{background:var(--cv-pill);border:1px solid var(--tool-border);color:var(--text3);font-size:12px;
+    line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);transition:opacity .25s}
+  :root[data-theme="light"] .lbl{text-shadow:none}
+  .lbl.o{border-color:rgba(255,169,77,.9);color:#ffe0c2}.lbl.r{border-color:rgba(255,107,107,.9);color:#ffc2c2}
+  .lbl.g{border-color:rgba(116,220,132,.9);color:#c8f5d0}.lbl.b{border-color:rgba(116,192,252,.9);color:#bde9ff}
+  :root[data-theme="light"] .lbl.o{color:#a34e00}:root[data-theme="light"] .lbl.r{color:#c92a2a}
+  :root[data-theme="light"] .lbl.g{color:#2b8a3e}:root[data-theme="light"] .lbl.b{color:#1864ab}
+  #tools{position:fixed;top:16px;right:18px;z-index:6;display:flex;gap:8px}
+  .tbtn{appearance:none;border:1px solid var(--tool-border);background:var(--tool);
+    color:var(--text3);font:inherit;font-size:12.5px;font-weight:600;min-width:40px;height:32px;
+    padding:0 12px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;text-decoration:none;backdrop-filter:blur(6px);
+    transition:border-color .15s,color .15s,transform .15s}
+  .tbtn:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-1px)}
+  #title{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:calc(100vw - 320px)}
+  #title h1{font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  #title .sub{font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  #stats{position:fixed;right:18px;bottom:18px;z-index:4;background:var(--panel);
+    border:1px solid var(--panel-border);border-radius:12px;padding:10px 16px;
+    backdrop-filter:blur(6px);display:grid;grid-template-columns:auto auto;gap:3px 18px}
+  #stats .k{font-size:12px;color:var(--text2);align-self:center}
+  #stats .v{font-size:17px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+  #stats .v small{font-size:11px;color:var(--text2);font-weight:400}
+  #stats .v.ok{color:#7bd88f}#stats .v.warn{color:#ffd43b}#stats .v.bad{color:#ff6b6b}
+  :root[data-theme="light"] #stats .v.warn{color:#d98f00}
+  #panel{position:fixed;left:18px;bottom:18px;z-index:5;width:392px;
+    background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:14px;padding:14px 16px 12px;backdrop-filter:blur(6px);
+    box-shadow:var(--shadow);max-height:calc(100vh - 160px);overflow:auto}
+  #legend{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .chip{font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid}
+  .chip.o{color:#ffe0ae;border-color:rgba(255,180,84,.7)}
+  .chip.g{color:#c8f5d0;border-color:rgba(116,220,132,.7)}
+  .chip.r{color:#ffc2c2;border-color:rgba(255,107,107,.7)}
+  .chip.b{color:#bde9ff;border-color:rgba(116,192,252,.7)}
+  .chip.n{color:#adb5bd;border-color:rgba(173,181,189,.7)}
+  :root[data-theme="light"] .chip.o{color:#a34e00} :root[data-theme="light"] .chip.g{color:#2b8a3e}
+  :root[data-theme="light"] .chip.r{color:#c92a2a} :root[data-theme="light"] .chip.b{color:#1864ab}
+  :root[data-theme="light"] .chip.n{color:#66727e}
+  #actions{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .abtn{appearance:none;font:inherit;cursor:pointer;flex:1 1 40%;
+    background:var(--hover);color:var(--text2);border:1px solid var(--tool-border);
+    border-radius:9px;padding:7px 10px;font-size:12.5px;font-weight:600;
+    transition:border-color .15s,color .15s,background .15s}
+  .abtn:hover{border-color:var(--acc);color:var(--text)}
+  .abtn.on{border-color:rgba(76,158,95,.65);background:rgba(76,158,95,.14);color:var(--text)}
+  .abtn.crash{border-color:rgba(255,107,107,.55);color:#ff8787}
+  :root[data-theme="light"] .abtn.on{border-color:rgba(43,138,62,.55);background:rgba(43,138,62,.10)}
+  .row{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .row label{font-size:12px;color:var(--text2);flex:0 0 92px}
+  .row .val{font-size:11.5px;color:var(--text3);flex:0 0 72px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc);height:18px}
+  #formula{margin-top:8px;font-size:11.5px;line-height:1.55;color:var(--text2);
+    border-top:1px dashed var(--panel-border);padding-top:7px}
+  #formula b{color:var(--text3);font-weight:600}
+  #steps{list-style:none;margin-top:8px}
+  #steps li{display:flex;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;align-items:flex-start}
+  #steps li:hover{background:var(--hover)}
+  #steps li.on{background:rgba(76,158,95,.10);border-color:rgba(76,158,95,.45)}
+  :root[data-theme="light"] #steps li.on{background:rgba(43,138,62,.08);border-color:rgba(43,138,62,.4)}
+  #steps .n{flex:0 0 18px;height:18px;border-radius:50%;font-size:11.5px;display:flex;
+    align-items:center;justify-content:center;margin-top:1px;
+    background:rgba(255,255,255,.12);color:var(--text3)}
+  :root[data-theme="light"] #steps .n{background:rgba(15,25,40,.10)}
+  #steps li.on .n{background:var(--acc);color:#fff}
+  #steps .t{font-size:12px;color:var(--text3);line-height:1.45}
+  #steps .t b{color:var(--text);font-size:12px}
+  #steps li.on .t b{color:#d3f9d8}
+  :root[data-theme="light"] #steps li.on .t b{color:var(--acc)}
+  #ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;
+    margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-border)}
+  #play{grid-row:1/3;grid-column:1;padding:10px 14px;font-size:14px;font-weight:600;
+    background:var(--acc);color:#fff;border:0;border-radius:10px;cursor:pointer}
+  #play:hover{filter:brightness(1.12)}
+  #toggles{display:flex;gap:12px;flex-wrap:wrap}
+  #toggles label{font-size:12px;color:var(--text2);display:flex;gap:5px;align-items:center;cursor:pointer}
+  #toggles input{accent-color:var(--acc)}
+  #rel{margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-border);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  #rel span{font-size:11.5px;color:var(--text2)}
+  #rel a{font-size:11.5px;color:var(--text3);text-decoration:none;border:1px solid var(--tool-border);
+    border-radius:999px;padding:3px 10px;transition:color .15s,border-color .15s}
+  #rel a:hover{color:var(--acc);border-color:var(--acc)}
+  @media(max-width:900px){#stats{display:none}}
+  @media(max-width:760px){#panel{width:calc(100vw - 36px);max-height:55vh}
+    #title{max-width:calc(100vw - 200px)}#title h1{font-size:16px}}
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="缓存一致性与 MESI:一核动笔，旁人全作废" data-en="Cache Coherence &amp; MESI: One Core Writes, Every Copy Dies">缓存一致性与 MESI:一核动笔，旁人全作废</h1>
+  <div class="sub" data-zh="每核私有 L1 命中 4 拍、DRAM 200+ 拍,差 50 倍,热数据各存各的;可一行 64 B 两核都要写时,每次写都得先上总线广播无效化(60–120 拍)抢独占——两个计数器挤在同一行,状态灯 M↔I 乒乓闪烁,48 次写撑出几千拍;把 b 挪到下一行(64 B 对齐/填充),当场安静 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A private L1 hit costs 4 cycles, DRAM 200+ — a 50x gap, so hot data lives in private caches. But when two cores keep writing one 64 B line, every write must first broadcast an invalidation on the bus (60–120 cycles) to seize exclusivity: two counters sharing a line make the state lamps ping-pong M↔I and 48 writes balloon into thousands of cycles; move b to the next line (64 B alignment/padding) and it goes quiet instantly · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">每核私有 L1 命中 4 拍、DRAM 200+ 拍,差 50 倍,热数据各存各的;可一行 64 B 两核都要写时,每次写都得先上总线广播无效化(60–120 拍)抢独占——两个计数器挤在同一行,状态灯 M↔I 乒乓闪烁,48 次写撑出几千拍;把 b 挪到下一行(64 B 对齐/填充),当场安静 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+<div id="stats">
+  <span class="k" data-zh="本轮 48 写耗时" data-en="48-write pass">本轮 48 写耗时</span><span class="v" id="stCyc">—</span>
+  <span class="k" data-zh="总线无效化" data-en="Invalidations">总线无效化</span><span class="v" id="stInv">—</span>
+  <span class="k" data-zh="核0 工作行状态" data-en="Core 0 line">核0 工作行状态</span><span class="v" id="stS0">—</span>
+  <span class="k" data-zh="核1 工作行状态" data-en="Core 1 line">核1 工作行状态</span><span class="v" id="stS1">—</span>
+  <span class="k" data-zh="伪共享代价" data-en="False-sharing cost">伪共享代价</span><span class="v" id="stRatio">—</span>
+</div>
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip.r" data-zh="M 已改:唯一写者" data-en="M Modified: sole writer">M 已改:唯一写者</span>
+    <span class="chip.o" data-zh="E 独占:可静默升级" data-en="E Exclusive: silent upgrade">E 独占:可静默升级</span>
+    <span class="chip.g" data-zh="S 共享:只读副本" data-en="S Shared: read-only copy">S 共享:只读副本</span>
+    <span class="chip.b" data-zh="总线事务:无效化/取行" data-en="bus: invalidate / line fill">总线事务:无效化/取行</span>
+    <span class="chip.n" data-zh="I 失效:取行才能再写" data-en="I Invalid: refetch to write">I 失效:取行才能再写</span>
+  </div>
+  <div id="actions">
+    <button class="abtn crash" id="btnShare" data-zh="同一行双计数(伪共享)" data-en="same line (false sharing)">同一行双计数(伪共享)</button>
+    <button class="abtn" id="btnAlign" data-zh="行对齐:两行分离" data-en="aligned: two lines">行对齐:两行分离</button>
+    <button class="abtn" id="btnNew" data-zh="新一轮" data-en="New pass">新一轮</button>
+  </div>
+  <div class="row">
+    <label data-zh="写入速率" data-en="Write rate">写入速率</label>
+    <input id="sSpd" type="range" min="2" max="120" step="2" value="24">
+    <span class="val" id="sSpdVal">24 写/s</span>
+  </div>
+  <div class="row">
+    <label data-zh="总线往返代价" data-en="Bus round trip">总线往返代价</label>
+    <input id="sBus" type="range" min="30" max="300" step="10" value="90">
+    <span class="val" id="sBusVal">90 拍</span>
+  </div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" data-zh="运行" data-en="Run">运行</button>
+    <div id="toggles">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglMsg" type="checkbox" checked> <span data-zh="总线消息" data-en="Bus msgs">总线消息</span></label>
+      <label><input id="tglSpin" type="checkbox"> <span data-zh="自动环绕" data-en="Auto-orbit">自动环绕</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../cpu-cache/" data-zh="CPU 缓存与局部性" data-en="CPU cache &amp; locality">CPU 缓存与局部性</a>
+    <a href="../virtual-memory/" data-zh="虚拟内存" data-en="Virtual memory">虚拟内存</a>
+    <a href="../mutex-race/" data-zh="互斥锁与竞态" data-en="Mutex &amp; races">互斥锁与竞态</a>
+  </div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ============ URL 参数 / 工具 ============ */
+const qs=new URLSearchParams(location.search);
+const qsFloat=(k,d)=>{const v=parseFloat(qs.get(k));return Number.isFinite(v)?v:d;};
+const qsBool=(k,d)=>{const v=qs.get(k);return v===null?d:v!=='0'&&v!=='false';};
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const el=id=>document.getElementById(id);
+
+/* ============ 主题 / 语言 ============ */
+const htmlEl=document.documentElement;
+let THEME=localStorage.getItem('htw-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+let LANG=localStorage.getItem('htw-lang')||'zh';
+const L=(zh,en)=>LANG==='en'?en:zh;
+
+/* ============ 渲染器 / 场景 ============ */
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.05;
+el('app').appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:3';
+el('labels').appendChild(labelRenderer.domElement);
+
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x10161a,26,85);
+const camera=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,0.1,300);
+camera.position.set(0,13.5,23);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,1.2,0);controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=5;controls.maxDistance=60;controls.autoRotateSpeed=0.4;
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
+scene.add(new THREE.HemisphereLight(0xdfe8f2,0x1a2226,0.55));
+const key=new THREE.DirectionalLight(0xfff2dd,1.0);key.position.set(10,22,14);scene.add(key);
+const fill=new THREE.DirectionalLight(0xcfe8ff,0.35);fill.position.set(-12,10,-10);scene.add(fill);
+
+/* ============ 物理模型（真实量级） ============
+   L1 命中 4 拍；S→M 抢独占 ≈ 0.7×总线往返；I→M ≈ 总线往返（默认 90 拍）
+   DRAM 冷取 ≈ 200+ 拍；缓存行 64 B；每轮 48 次写（开轮 4 次读） */
+const OPS=48;
+const SC={I:0,S:1,E:2,M:3};
+const SC_COL=[0x495057,0x51cf66,0xffd43b,0xff6b6b];
+const SC_CH=['I','S','E','M'];
+
+/* ============ 材质 / 地面 ============ */
+const groundM=new THREE.MeshStandardMaterial({color:0x1a2024,roughness:0.95});
+const boardM=new THREE.MeshStandardMaterial({color:0x27313d,roughness:0.4,metalness:0.5});
+const dieM=new THREE.MeshStandardMaterial({color:0x63e6be,emissive:0x0ca678,emissiveIntensity:0.8,roughness:0.3});
+const dramM=new THREE.MeshStandardMaterial({color:0x2e3a47,roughness:0.45,metalness:0.45});
+const busM=new THREE.MeshStandardMaterial({color:0x37424e,roughness:0.35,metalness:0.7});
+const padM=new THREE.MeshStandardMaterial({color:0x495057,roughness:0.85});
+const ground=new THREE.Mesh(new THREE.CircleGeometry(30,64),groundM);
+ground.rotation.x=-Math.PI/2;scene.add(ground);
+
+/* ============ 双核封装 + 私有 L1 槽位（行A/行B） ============ */
+function makeCore(cx){
+  const g=new THREE.Group();g.position.set(cx,0,0);scene.add(g);
+  const pillar=new THREE.Mesh(new THREE.BoxGeometry(0.6,1.3,0.6),boardM);pillar.position.y=0.65;g.add(pillar);
+  const board=new THREE.Mesh(new THREE.BoxGeometry(4.6,0.6,3.2),boardM);board.position.y=1.6;g.add(board);
+  const die=new THREE.Mesh(new THREE.BoxGeometry(2.2,0.14,1.4),dieM);die.position.set(0,1.97,-0.7);g.add(die);
+  return g;
+}
+const coreG=[makeCore(-11),makeCore(11)];
+const slotGeo=new THREE.BoxGeometry(1.5,0.2,2.4);
+const slots=[],slotFlash=[];
+for(let c=0;c<2;c++){
+  const row=[],fr=[];
+  for(let ln=0;ln<2;ln++){
+    const m=new THREE.Mesh(slotGeo,new THREE.MeshStandardMaterial({roughness:0.35,metalness:0.2}));
+    m.position.set(-0.95+ln*1.9,2.0,0.35);
+    coreG[c].add(m);row.push(m);fr.push(0);
+  }
+  slots.push(row);slotFlash.push(fr);
+}
+/* 当前写者指示锥：悬在本核工作槽位上方，随写入脉冲下压 */
+const ptrGeo=new THREE.ConeGeometry(0.26,0.5,4);
+const ptrs=[];
+for(let c=0;c<2;c++){
+  const p=new THREE.Mesh(ptrGeo,new THREE.MeshBasicMaterial({color:0xffd43b,transparent:true,opacity:0.9}));
+  p.rotation.x=Math.PI;p.visible=false;coreG[c].add(p);ptrs.push(p);
+}
+
+/* ============ 共享 DRAM：两行缓存行条 ============ */
+const dramGrp=new THREE.Group();dramGrp.position.set(0,0,-8);scene.add(dramGrp);
+const dramBox=new THREE.Mesh(new THREE.BoxGeometry(7.5,1.4,4.6),dramM);dramBox.position.y=0.7;dramGrp.add(dramBox);
+function makeStrip(z){
+  const s=new THREE.Mesh(new THREE.BoxGeometry(5.6,0.16,0.62),
+    new THREE.MeshStandardMaterial({color:0x74c0fc,emissive:0x1864ab,emissiveIntensity:0.4,roughness:0.4}));
+  s.position.set(0,1.52,z);dramGrp.add(s);return s;
+}
+const stripA=makeStrip(-0.7),stripB=makeStrip(0.7);
+const stripFlash=[0,0];
+/* 行内布局：a 固定在行 A 左端；伪共享时 b 紧挨 a，对齐时 b 搬去行 B，右侧垫填充 */
+const pad1=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.2,0.5),padM);pad1.position.set(0.4,0.18,0);stripA.add(pad1);
+const pad2=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.2,0.5),padM);pad2.position.set(1.7,0.18,0);stripA.add(pad2);
+/* 64 B 行解剖：每行 8 个 8 B 槽位瓦片（跟随各自行条移动） */
+const tileGeo=new THREE.BoxGeometry(0.56,0.1,0.46);
+function makeTiles(zRow){
+  const im=new THREE.InstancedMesh(tileGeo,new THREE.MeshStandardMaterial({roughness:0.5}),8);
+  const m4=new THREE.Matrix4(),c0=new THREE.Color(0x22303c);
+  for(let k=0;k<8;k++){
+    m4.setPosition(-2.45+k*0.7,0.15,zRow);
+    im.setMatrixAt(k,m4);im.setColorAt(k,c0);
+  }
+  im.instanceColor.needsUpdate=true;return im;
+}
+const tileA=makeTiles(0),tileB=makeTiles(0);
+stripA.add(tileA);stripB.add(tileB);
+const _tc=new THREE.Color();
+function paintTiles(){
+  for(let ln=0;ln<2;ln++){
+    const im=ln===0?tileA:tileB;
+    for(let k=0;k<8;k++){
+      let hex=0x22303c;
+      if(ln===0&&k===0)hex=0x3bc9db;                                  // 变量 a
+      if(mode==='share'&&ln===0&&k===1)hex=0xff8787;                  // b 与 a 同行
+      if(mode==='align'&&ln===1&&k===0)hex=0x69db7c;                  // b 独占行 B
+      if(mode==='align'&&ln===0&&k>=1&&k<=6)hex=0x495057;             // 填充字节
+      _mc.setHex(hex);
+      if(stripFlash[ln]>0)_mc.lerp(_tc.setHex(0xffffff),stripFlash[ln]*0.8);
+      im.setColorAt(k,_mc);
+    }
+    im.instanceColor.needsUpdate=true;
+  }
+}
+
+/* ============ 监听总线 + 消息粒子（InstancedMesh） ============ */
+const busBar=new THREE.Mesh(new THREE.BoxGeometry(27,0.26,1.1),busM);
+busBar.position.set(0,0.13,6.8);scene.add(busBar);
+busM.emissive.setHex(0xffd43b);let busFlash=0;   // 总线事务时微微发光
+const CORE_X=[-11,11],DRAM_Z=-8;
+const MSG_N=26;
+const msgIM=new THREE.InstancedMesh(new THREE.SphereGeometry(0.2,10,8),
+  new THREE.MeshBasicMaterial({transparent:true,opacity:0.95}),MSG_N);
+msgIM.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(MSG_N*3),3);
+msgIM.frustumCulled=false;scene.add(msgIM);
+const msgs=Array.from({length:MSG_N},()=>({t:1,ax:0,az:0,bx:0,bz:0}));
+const MSG_COL=[0xff6b6b,0x74c0fc,0xffd43b];   // 0 无效化 1 DRAM取行 2 回写
+let msgOn=qsBool('msg',true);
+const dummy=new THREE.Object3D(),_mc=new THREE.Color();
+function spawnMsg(kind,fromCore,toCore){
+  const m=msgs.find(m=>m.t>=1)||msgs[0];
+  m.t=0;busFlash=1;
+  if(kind===1){m.ax=0;m.az=DRAM_Z;m.bx=CORE_X[toCore];m.bz=0;}            // DRAM→核
+  else if(kind===2){m.ax=CORE_X[fromCore];m.az=0;m.bx=0;m.bz=DRAM_Z;}     // 核→DRAM 回写
+  else{m.ax=CORE_X[fromCore];m.az=0;m.bx=CORE_X[1-fromCore];m.bz=0;}      // 核→核 无效化
+  msgIM.setColorAt(msgs.indexOf(m),_mc.setHex(MSG_COL[kind]));
+  msgIM.instanceColor.needsUpdate=true;
+}
+function updateMsgs(dt){
+  for(let i=0;i<MSG_N;i++){
+    const m=msgs[i];
+    if(m.t>=1||!msgOn){dummy.position.set(0,-6,0);dummy.scale.setScalar(0.001);}
+    else{
+      m.t=Math.min(1,m.t+dt*1.6);
+      dummy.position.set(lerp(m.ax,m.bx,m.t),1.4+Math.sin(m.t*Math.PI)*2.2,lerp(m.az,m.bz,m.t));
+      dummy.scale.setScalar(1);
+    }
+    dummy.updateMatrix();msgIM.setMatrixAt(i,dummy.matrix);
+  }
+  msgIM.instanceMatrix.needsUpdate=true;
+}
+
+/* ============ 标签 ============ */
+const labelReg=[];
+let labelsOn=qsBool('labels',true);
+function addLabel(textFn,pos,cls='',vis=()=>true,parent=scene,clsFn=null){
+  const div=document.createElement('div');div.className='lbl '+cls;
+  const o=new CSS2DObject(div);o.position.copy(pos);parent.add(o);
+  labelReg.push({o,text:textFn,vis,cls:clsFn||cls});
+  div.textContent=textFn();return o;
+}
+addLabel(()=>L('核 0 · 私有 L1','Core 0 · private L1'),new THREE.Vector3(0,2.75,-0.7),'b',()=>true,coreG[0]);
+addLabel(()=>L('核 1 · 私有 L1','Core 1 · private L1'),new THREE.Vector3(0,2.75,-0.7),'b',()=>true,coreG[1]);
+addLabel(()=>L('共享内存 DRAM:所有核的底账','Shared DRAM: the backing store'),new THREE.Vector3(0,2.5,0),'g',()=>true,dramGrp);
+addLabel(()=>L('监听总线:RdX / Invalid 广播,全员照办','snoop bus: RdX / Invalid broadcasts, all comply'),new THREE.Vector3(0,0.95,6.8),'o');
+let mode='share';                 // share: a、b 同在行 A（伪共享） | align: b 在行 B
+let lineState=[[0,0],[0,0]];      // lineState[核][行] → I/S/E/M
+for(let c=0;c<2;c++)for(let ln=0;ln<2;ln++)
+  addLabel(()=>`行${ln?'B':'A'}·${SC_CH[lineState[c][ln]]}`,new THREE.Vector3(0,0.55,0),'',
+    ()=>true,slots[c][ln],()=>'lbl '+({0:'',1:'g',2:'o',3:'r'}[lineState[c][ln]]));
+const varALbl=addLabel(()=>L('变量 a','var a'),new THREE.Vector3(-2.1,0.5,0),'b',()=>true,stripA);
+addLabel(()=>L('一条缓存行 = 64 B = 8 × 8 B','one cache line = 64 B = 8 x 8 B'),new THREE.Vector3(-4.3,2.0,-0.7),'o',()=>true,dramGrp);
+addLabel(()=>L('MESI 迁移:旁人读 M→S · 写 S 广播 Invalid→I · 取行 I→M · E→M 免总线',
+  'MESI moves: peer reads M→S · writing S broadcasts Invalid→I · fetch I→M · E→M silently'),
+  new THREE.Vector3(0,0.5,3.6),'g');
+const varBLbl=addLabel(()=>mode==='share'?L('变量 b(同在行 A!)','var b (same line A!)'):L('变量 b → 行 B','var b → line B'),
+  new THREE.Vector3(-0.7,0.5,0),mode==='share'?'r':'g',()=>true,stripA,
+  ()=>'lbl '+(mode==='share'?'r':'g'));
+addLabel(()=>L('56 B 填充','56 B padding'),new THREE.Vector3(1.05,0.5,0),'',()=>mode==='align',stripA);
+let lastEvent={z:'待机:按「运行」开始一轮 48 写',e:'idle: press Run to start a 48-write pass'};
+addLabel(()=>L('▎'+lastEvent.z,'▎'+lastEvent.e),new THREE.Vector3(0,3.7,0),'b');
+
+/* ============ MESI 仿真引擎 ============ */
+let counters=[0,0];
+let BUS=clamp(qsFloat('bus',90),30,300);
+let opsSpeed=clamp(qsFloat('speed',24),2,120);
+let playing=!qsBool('pause',false);
+if(qs.get('pause')===null&&matchMedia('(prefers-reduced-motion: reduce)').matches)playing=false;
+let cnt={cyc:0,inv:0,ops:0,up:0};
+let lastShare=null,lastAlign=null,ratio=null;
+let passPause=0,opAcc=0,dispCyc=0,stepHold=-1;
+const lineOf=c=>c===0?0:(mode==='share'?0:1);
+
+function resetPass(){             // 每轮换上下文：两核的行都被逐出，从 I 重新开始
+  cnt={cyc:0,inv:0,ops:0,up:0};
+  lineState=[[0,0],[0,0]];
+}
+function doOp(){
+  const k=cnt.ops,c=k%2,ln=lineOf(c),other=1-c;
+  const st=lineState[c][ln];
+  let cost,ez,ee;
+  if(k<4){                        // 开轮先读：把行读回缓存
+    if(st===SC.I){
+      cost=Math.round(BUS*0.9);
+      const os=lineState[other][ln];
+      if(os===SC.M){lineState[other][ln]=SC.S;spawnMsg(2,other,-1);stripFlash[ln]=1;ez=`核${other} 回写,降为 S`;ee=`core${other} writes back, demotes to S`;}
+      else if(os!==SC.I){lineState[other][ln]=SC.S;spawnMsg(0,other,c);ez=`总线取行,核${other} 降 S`;ee=`bus fetch, core${other} demotes to S`;}
+      else{spawnMsg(1,c,-1);stripFlash[ln]=1;ez='DRAM 取行';ee='line fill from DRAM';}
+      lineState[c][ln]=lineState[other][ln]===SC.I?SC.E:SC.S;
+    }else{cost=4;ez='读命中';ee='read hit';}
+  }else{                          // 写计数器
+    counters[c]++;
+    if(st===SC.M){cost=4;ez='写命中(M)·免总线';ee='write hit (M) · no bus';}
+    else if(st===SC.E){cost=4;cnt.up++;ez='E 静默升级→M(免总线)';ee='E silent upgrade to M (no bus)';}
+    else if(st===SC.S){cost=Math.round(BUS*0.7);cnt.inv++;
+      if(lineState[other][ln]===SC.S)lineState[other][ln]=SC.I;
+      spawnMsg(0,c,other);ez=`S→M:广播 Invalid,核${other} 作废`;ee=`S→M: Invalid broadcast, core${other} dropped`;}
+    else{cost=BUS;cnt.inv++;
+      const os=lineState[other][ln];
+      if(os===SC.M){lineState[other][ln]=SC.I;spawnMsg(2,other,-1);stripFlash[ln]=1;ez=`I→M:取脏行+回写,核${other} 作废`;ee=`I→M: dirty fetch + writeback, core${other} dropped`;}
+      else if(os!==SC.I){lineState[other][ln]=SC.I;spawnMsg(0,c,other);ez=`I→M:取行,核${other} 作废`;ee=`I→M: line fetch, core${other} dropped`;}
+      else{spawnMsg(1,c,-1);stripFlash[ln]=1;ez='I→M:DRAM 取行';ee='I→M: line fill from DRAM';}}
+  }
+  cnt.cyc+=cost;cnt.ops++;
+  if(k>=4)cnt.cyc+=8;              // 每次写之间夹 2 次本地 L1 命中(循环内其他工作)
+  slotFlash[c][ln]=1;
+  lastEvent={z:`核${c} ${ez} · ${cost} 拍`,e:`core${c} ${ee} · ${cost} cyc`};
+}
+function endPass(){
+  dispCyc=cnt.cyc;
+  if(mode==='share')lastShare=cnt.cyc;else lastAlign=cnt.cyc;
+  if(lastShare&&lastAlign)ratio=lastShare/lastAlign;
+  stepHold=-1;passPause=0.9;
+}
+function setMode(m){
+  mode=m;syncMode();layoutVars();resetPass();
+}
+function layoutVars(){            // b 的标签搬行、填充条显隐
+  const p=varBLbl.parent;p.remove(varBLbl);
+  if(mode==='share'){stripA.add(varBLbl);varBLbl.position.set(-0.7,0.5,0);}
+  else{stripB.add(varBLbl);varBLbl.position.set(-2.1,0.5,0);}
+  pad1.visible=pad2.visible=mode==='align';
+  paintTiles();
+}
+function fullReset(){
+  counters=[0,0];lastShare=lastAlign=ratio=null;dispCyc=0;stepHold=-1;
+  resetPass();
+}
+
+/* ============ 讲解步骤（7 步） ============ */
+let camTween=null;
+function flyTo(p,t){camTween={p0:camera.position.clone(),p1:new THREE.Vector3(...p),t0:controls.target.clone(),t1:new THREE.Vector3(...t),k:0};}
+function setSlow(v){opsSpeed=v;el('sSpd').value=v;syncUI();}
+const STEPS=[
+ {zh:'存储墙:每核私有 L1 命中 4 拍,DRAM 200+ 拍,差 50 倍——热数据必须各存各的',
+  en:'Memory wall: private L1 hits in 4 cycles, DRAM 200+ — a 50x gap; hot data must live in private caches',
+  act:()=>{flyTo([0,13.5,23],[0,1.2,0]);}},
+ {zh:'两核先后读同一行:先来的独占 E,后来的一挤,两人都标 S(共享)——读永远相安无事',
+  en:'Both cores read the same line: the first held E, the second joins in — both end S (shared); reads never conflict',
+  act:()=>{setMode('share');setSlow(10);flyTo([-6,6,11],[-9,2,2]);}},
+ {zh:'写共享行必须先抢独占:总线广播 Invalid 作废旁核副本,自己才升 M——写之前先清场',
+  en:'Writing a shared line seizes exclusivity: broadcast Invalid, drop the peer copy, then upgrade to M — clear the room first',
+  act:()=>{setMode('share');setSlow(10);flyTo([6,5.5,12],[9,2,1]);}},
+ {zh:'E 态是省钱的优化:整行唯一副本读到就标 E,写时静默升 M、不发总线——独享就不用喊',
+  en:'E is the optimization: a lone copy loads as E and upgrades to M silently, no bus traffic — no need to shout when you own it',
+  act:()=>{setMode('align');setSlow(10);flyTo([7,5.5,12],[9,2,1]);}},
+ {zh:'伪共享:a、b 两个变量挤在同一 64 B 行,两核轮写 → 行乒乓 M↔I,几乎每写都付 60–90 拍总线账,慢 2–10×',
+  en:'False sharing: a and b share one 64 B line; alternating writes ping-pong M↔I, paying a 60–90-cycle bus toll nearly every write — 2–10x slower',
+  act:()=>{setMode('share');setSlow(36);flyTo([0,10,18],[0,1.5,0]);}},
+ {zh:'行对齐/填充:把 b 挪进下一行(垫 56 B),两行各自稳坐 M,只剩 4 拍命中——当场安静',
+  en:'Align/pad: move b to the next line (56 B of padding); each line sits in M, hits cost 4 cycles — instant quiet',
+  act:()=>{setMode('align');setSlow(36);flyTo([0,7,-2],[0,1.6,-7]);}},
+ {zh:'监听总线:没有中央裁判,每个核偷听总线上的 RdX/Invalid 并照办——一致性=广播+作废',
+  en:'Snooping: no central referee — every core eavesdrops on RdX/Invalid broadcasts and complies; coherence = broadcast + invalidate',
+  act:()=>{flyTo([0,4.5,16],[0,0.8,6.8]);}},
+];
+function stepIndex(){
+  if(stepHold>=0)return stepHold;
+  if(mode==='align')return 5;
+  if(cnt.ops>4)return 4;
+  if(cnt.ops>0)return 1;
+  return 0;
+}
+function buildSteps(){
+  const ol=el('steps');ol.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    const li=document.createElement('li');
+    const zh=s.zh.split(':'),en=s.en.split(':');
+    li.innerHTML=`<span class="n">${i+1}</span><span class="t"><b>${L(zh[0],en[0])}</b>　${L(zh.slice(1).join(':'),en.slice(1).join(':'))}</span>`;
+    li.addEventListener('click',()=>{stepHold=i;s.act();});
+    ol.appendChild(li);
+  });
+}
+
+/* ============ 主题 / 语言 / UI ============ */
+function applyTheme(){
+  htmlEl.dataset.theme=THEME;
+  el('themeBtn').textContent=THEME==='dark'?'☀':'☾';
+  const dark=THEME==='dark';
+  scene.background=new THREE.Color(dark?0x10161a:0xe9e4dc);
+  scene.fog.color.setHex(dark?0x10161a:0xe9e4dc);
+  groundM.color.setHex(dark?0x1a2024:0xc9c2b6);
+  boardM.color.setHex(dark?0x27313d:0x8a97a5);
+  dramM.color.setHex(dark?0x2e3a47:0x7a8ba0);
+  busM.color.setHex(dark?0x37424e:0x93a3b3);
+  padM.color.setHex(dark?0x495057:0xaab4bf);
+}
+function applyLang(){
+  htmlEl.lang=LANG==='en'?'en':'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(e=>{
+    if(e.tagName==='INPUT')return;
+    e.textContent=LANG==='en'?(e.dataset.en||e.dataset.zh):e.dataset.zh;
+  });
+  el('langBtn').textContent=LANG==='en'?'中':'EN';
+  document.title=L('缓存一致性与 MESI · 一核动笔，旁人全作废','Cache Coherence & MESI · One Core Writes, Every Copy Dies');
+  buildSteps();syncUI();setPlayLabel();updateFormula();
+}
+function syncMode(){
+  el('btnShare').classList.toggle('on',mode==='share');
+  el('btnAlign').classList.toggle('on',mode==='align');
+}
+function syncUI(){
+  el('sSpdVal').textContent=Math.round(opsSpeed)+(LANG==='en'?' w/s':' 写/s');
+  el('sBusVal').textContent=Math.round(BUS)+(LANG==='en'?' cyc':' 拍');
+}
+function setPlayLabel(){el('play').textContent=playing?L('暂停','Pause'):L('运行','Run');}
+function updateStats(){
+  const cyc=passPause>0?dispCyc:cnt.cyc;
+  el('stCyc').innerHTML=cyc+'<small>'+(LANG==='en'?' cyc':' 拍')+'</small>';
+  el('stCyc').className='v '+(cyc>2000?'bad':cyc>400?'warn':'ok');
+  el('stInv').innerHTML=cnt.inv+'<small>'+(LANG==='en'?' x':' 次')+'</small>';
+  el('stInv').className='v '+(cnt.inv>24?'bad':cnt.inv>8?'warn':'ok');
+  for(let c=0;c<2;c++){
+    const st=lineState[c][lineOf(c)];
+    el('stS'+c).textContent=SC_CH[st];
+    el('stS'+c).className='v '+(st===1?'ok':st===2?'warn':st===3?'bad':'');
+  }
+  el('stRatio').innerHTML=ratio?('×'+ratio.toFixed(1)):'—';
+  el('stRatio').className='v '+(ratio?(ratio>1.8?'bad':ratio>1.25?'warn':'ok'):'');
+}
+function updateFormula(){
+  const up=Math.round(BUS*0.7);
+  el('formula').innerHTML=L(
+   `M 写命中 <b>4 拍</b> · S→M 抢独占 ≈ <b>${up} 拍</b>(1 次无效化) · I→M ≈ <b>${Math.round(BUS)} 拍</b> · E→M <b>0 总线</b> · E 静默升级 <b>${cnt.up}</b> 次<br>` +
+   `a=${counters[0]} · b=${counters[1]} · 本轮无效化 <b>${cnt.inv}</b> 次 · ▎${lastEvent.z}`,
+   `M write hit <b>4 cyc</b> · S→M upgrade ≈ <b>${up} cyc</b> (1 invalidation) · I→M ≈ <b>${Math.round(BUS)} cyc</b> · E→M <b>no bus</b> · ${cnt.up} silent E upgrades<br>` +
+   `a=${counters[0]} · b=${counters[1]} · ${cnt.inv} invalidations this pass · ▎${lastEvent.e}`);
+}
+
+/* ============ 事件 ============ */
+el('btnShare').addEventListener('click',()=>{setMode('share');});
+el('btnAlign').addEventListener('click',()=>{setMode('align');});
+el('btnNew').addEventListener('click',fullReset);
+el('sSpd').addEventListener('input',e=>{opsSpeed=+e.target.value;syncUI();});
+el('sBus').addEventListener('input',e=>{BUS=+e.target.value;syncUI();updateFormula();});
+el('tglMsg').addEventListener('change',e=>{msgOn=e.target.checked;});
+el('tglSpin').addEventListener('change',e=>{controls.autoRotate=e.target.checked;});
+el('tglLabels').addEventListener('change',e=>{labelsOn=e.target.checked;});
+el('play').addEventListener('click',()=>{playing=!playing;setPlayLabel();});
+el('langBtn').addEventListener('click',()=>{LANG=LANG==='zh'?'en':'zh';localStorage.setItem('htw-lang',LANG);applyLang();});
+el('themeBtn').addEventListener('click',()=>{THEME=THEME==='dark'?'light':'dark';localStorage.setItem('htw-theme',THEME);applyTheme();});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();el('play').click();}});
+addEventListener('keydown',e=>{const n=+e.key;if(n>=1&&n<=7){stepHold=n-1;STEPS[n-1].act();}});
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);
+});
+if(!labelsOn)el('tglLabels').checked=false;
+if(!msgOn)el('tglMsg').checked=false;
+
+/* ============ 主循环 ============ */
+const clock=new THREE.Clock();
+let raf=null,accT=0,simT=0;
+const tmpC=new THREE.Color();
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const rawDt=clamp(clock.getDelta(),0,0.05);
+  if(playing){
+    simT+=rawDt;
+    if(passPause>0){passPause-=rawDt;if(passPause<=0)resetPass();}
+    else{
+      opAcc+=opsSpeed*rawDt;let g=0;
+      while(opAcc>=1&&g<400){opAcc-=1;doOp();g++;}
+      if(cnt.ops>=OPS)endPass();
+    }
+    for(let c=0;c<2;c++)for(let ln=0;ln<2;ln++)slotFlash[c][ln]=Math.max(0,slotFlash[c][ln]-rawDt*3);
+    stripFlash[0]=Math.max(0,stripFlash[0]-rawDt*3);
+    stripFlash[1]=Math.max(0,stripFlash[1]-rawDt*3);
+  }
+  /* 槽位着色 = MESI 状态灯（仅 4 个，逐帧可负担） */
+  for(let c=0;c<2;c++)for(let ln=0;ln<2;ln++){
+    tmpC.setHex(SC_COL[lineState[c][ln]]);
+    const sm=slots[c][ln].material;
+    sm.color.copy(tmpC);sm.emissive.copy(tmpC);
+    sm.emissiveIntensity=0.25+slotFlash[c][ln]*1.3;
+  }
+  /* DRAM 行条：对齐时 b 条滑远；被取/回写时闪 */
+  stripB.position.z=lerp(stripB.position.z,mode==='align'?1.9:0.7,Math.min(1,rawDt*6));
+  stripA.material.emissiveIntensity=0.35+stripFlash[0]*1.6;
+  stripB.material.emissiveIntensity=0.35+stripFlash[1]*1.6;
+  for(let c=0;c<2;c++){
+    const ln=lineOf(c),f=slotFlash[c][ln];
+    ptrs[c].visible=f>0.02;
+    ptrs[c].position.set(-0.95+ln*1.9,2.45-f*0.3,0.35);
+    ptrs[c].material.opacity=0.25+f*0.75;
+  }
+  updateMsgs(msgOn?rawDt:0);
+  /* 相机飞行 */
+  if(camTween){
+    camTween.k=Math.min(1,camTween.k+rawDt*1.4);
+    const e=1-Math.pow(1-camTween.k,3);
+    camera.position.lerpVectors(camTween.p0,camTween.p1,e);
+    controls.target.lerpVectors(camTween.t0,camTween.t1,e);
+    if(camTween.k>=1)camTween=null;
+  }
+  accT+=rawDt;
+  if(accT>0.12){
+    accT=0;updateStats();updateFormula();paintTiles();
+    busFlash=Math.max(0,busFlash-0.12*2.5);
+    busM.emissiveIntensity=0.06+busFlash*0.9;
+  }
+  for(const r of labelReg){
+    const on=labelsOn&&r.vis();
+    r.o.visible=on&&r.text()!=='';
+    if(on){
+      r.o.element.textContent=r.text();
+      r.o.element.className='lbl '+(typeof r.cls==='function'?r.cls():r.cls);
+    }
+  }
+  const si=stepIndex();
+  [...el('steps').children].forEach((li,i)=>li.classList.toggle('on',i===si));
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+function start(){if(raf===null){clock.getDelta();raf=requestAnimationFrame(frame);}}
+function stop(){if(raf!==null){cancelAnimationFrame(raf);raf=null;}}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+
+/* ============ 初始化 ============ */
+resetPass();
+applyTheme();
+applyLang();
+/* ?mode=share|align 初始布局 */
+setMode(qs.get('mode')==='align'?'align':'share');
+setPlayLabel();
+/* ?t= 初始相位 0–1000 → 落在对应讲解步骤 */
+if(qs.get('t')!==null){
+  const si=clamp(Math.round(clamp(qsFloat('t',0),0,1000)/1000*(STEPS.length-1)),0,STEPS.length-1);
+  stepHold=si;STEPS[si].act();
+}
+controls.autoRotate=qsBool('spin',false);
+if(controls.autoRotate)el('tglSpin').checked=true;
+start();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
