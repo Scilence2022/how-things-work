@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>红外测温与热电堆 · 看不见的 10 μm,读出 36.8 °C</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#c05a4a;
+    --bg:#141110; --panel:rgba(20,16,14,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f5f2ef; --text2:#b3a79e; --text3:#ded2c8;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(20,16,14,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(20,16,14,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#9c4237;
+    --bg:#efe9e4; --panel:rgba(255,253,251,.88); --panel-border:rgba(50,30,20,.10);
+    --text:#241c18; --text2:#6f6259; --text3:#41352d;
+    --hover:rgba(50,30,20,.05); --shadow:0 8px 26px rgba(60,40,30,.15);
+    --tool:rgba(255,253,251,.85); --tool-border:rgba(50,30,20,.14);
+    --cv-pill:rgba(255,253,251,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.o { border-color: rgba(255,169,77,.9); color: #ffe0c2; }
+  .lbl.r { border-color: rgba(255,107,107,.9); color: #ffc2c2; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.st { border-color: rgba(192,140,120,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.o { color:#a34e00; } :root[data-theme="light"] .lbl.r { color:#c92a2a; }
+  :root[data-theme="light"] .lbl.g { color:#2b8a3e; } :root[data-theme="light"] .lbl.b { color:#1864ab; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #plot { position: fixed; right: 18px; bottom: 18px; z-index: 4; width: 330px; height: 210px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    backdrop-filter: blur(6px); padding: 8px 10px 6px; }
+  #plot h3 { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 2px; }
+  #plotCv { width: 100%; height: calc(100% - 20px); display: block; }
+
+  #stats { position: fixed; right: 18px; bottom: 240px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 396px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 14px 16px 12px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.r { color:#c92a2a; } :root[data-theme="light"] .chip.b { color:#1864ab; }
+  #actions { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 7px 10px; font-size: 12.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(192,90,74,.65); background: rgba(192,90,74,.14); color: var(--text); }
+  .abtn.brk { border-color: rgba(255,107,107,.55); color: #ff8787; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(156,66,55,.55); background: rgba(156,66,55,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 88px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 18px; }
+  #formula { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 7px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 8px; }
+  #steps li { display: flex; gap: 9px; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(192,90,74,.10); border-color: rgba(192,90,74,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(156,66,55,.08); border-color: rgba(156,66,55,.4); }
+  #steps .n { flex: 0 0 18px; height: 18px; border-radius: 50%; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(50,30,20,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 12px; color: var(--text3); line-height: 1.45; }
+  #steps .t b { color: var(--text); font-size: 12px; }
+  #steps li.on .t b { color: #ffc9bc; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 4; grid-column: 1; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  #toggles { display: flex; gap: 12px; margin-top: 2px; flex-wrap: wrap; }
+  #toggles label { font-size: 12px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11.5px; color: var(--text2); }
+  #rel a { font-size: 11.5px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 3px 10px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 1150px) { #plot { display: none; } #stats { bottom: 18px; } }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="红外测温与热电堆:看不见的 10 μm,读出 36.8 °C" data-en="IR Thermometry &amp; Thermopiles: invisible 10 μm light, read out as 36.8 °C">红外测温与热电堆:看不见的 10 μm,读出 36.8 °C</h1>
+  <div class="sub" data-zh="一切物体按 εσT⁴ 辐射(σ=5.67×10⁻⁸)→ 300 K 峰值 9.7 μm,恰落 8–14 μm 大气窗 → 热电堆黑斑吸光升温,塞贝克效应串出数百 µV → 仪表按 T=(V/εσ)^¼ 反演 → 命门是发射率:抛光金属 ε≈0.1 拨盘留 0.98,350 K 当场读成 ~302 K(差 48 K);贴 ε≈0.95 黑胶带归位 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Everything radiates as εσT⁴ (σ=5.67×10⁻⁸) → a 300 K body peaks at 9.7 μm, inside the 8–14 μm atmospheric window → a thermopile's black absorber warms up and Seebeck couples deliver a few hundred µV → the gun inverts T=(V/εσ)^¼ → emissivity is the trap: polished metal ε≈0.1 dialled as 0.98 reads 350 K as ~302 K (48 K off); ε≈0.95 black tape fixes it · 3D demo · drag to orbit / scroll to zoom · Space = play/pause">一切物体按 εσT⁴ 辐射(σ=5.67×10⁻⁸)→ 300 K 峰值 9.7 μm,恰落 8–14 μm 大气窗 → 热电堆黑斑吸光升温,塞贝克效应串出数百 µV → 仪表按 T=(V/εσ)^¼ 反演 → 命门是发射率:抛光金属 ε≈0.1 拨盘留 0.98,350 K 当场读成 ~302 K(差 48 K);贴 ε≈0.95 黑胶带归位 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="表面辐射 M" data-en="exitance M">表面辐射 M</span><span class="v" id="stM">—</span>
+  <span class="k" data-zh="热电堆电压" data-en="thermopile V">热电堆电压</span><span class="v warn" id="stV">—</span>
+  <span class="k" data-zh="仪表读数" data-en="gun reading">仪表读数</span><span class="v ok" id="stRead">—</span>
+  <span class="k" data-zh="读数误差" data-en="reading error">读数误差</span><span class="v" id="stErr">—</span>
+  <span class="k" data-zh="8–14 μm 窗内占比" data-en="in 8–14 μm band">8–14 μm 窗内占比</span><span class="v" id="stBand">—</span>
+</div>
+
+<div id="plot">
+  <h3 data-zh="普朗克谱 B(λ,T)(对数-对数)— 主曲线=目标 T · 淡虚线=人体 310 K" data-en="Planck B(λ,T) (log-log) — main curve = target T · faint dashed = body 310 K">普朗克谱 B(λ,T)(对数-对数)— 主曲线=目标 T · 淡虚线=人体 310 K</h3>
+  <canvas id="plotCv"></canvas>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip.o" data-zh="目标板:真值 T 与真实 ε" data-en="target plate: true T and true ε">目标板:真值 T 与真实 ε</span>
+    <span class="chip.b" data-zh="红外光子:8–14 μm 窗内通量" data-en="IR photons: flux inside 8–14 μm">红外光子:8–14 μm 窗内通量</span>
+    <span class="chip.r" data-zh="热电堆:热端升温 → µV 电压" data-en="thermopile: hot end warms → µV">热电堆:热端升温 → µV 电压</span>
+    <span class="chip.g" data-zh="仪表:按拨盘 ε 反演读数" data-en="gun: inverts with dial ε">仪表:按拨盘 ε 反演读数</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnMatte" data-zh="哑光黑漆 ε≈0.95" data-en="matte black ε≈0.95">哑光黑漆 ε≈0.95</button>
+    <button class="abtn brk" id="btnPolish" data-zh="抛光金属 ε≈0.10" data-en="polished metal ε≈0.10">抛光金属 ε≈0.10</button>
+    <button class="abtn" id="btnTape" data-zh="贴黑胶带 ε≈0.95" data-en="black tape ε≈0.95">贴黑胶带 ε≈0.95</button>
+  </div>
+  <div class="row"><label data-zh="目标真实温度" data-en="true target T">目标真实温度</label><input id="sT" type="range" min="290" max="450" step="1" value="350"><span class="val" id="sTVal">350 K</span></div>
+  <div class="row"><label data-zh="仪表拨盘 ε(设定)" data-en="dial ε (assumed)">仪表拨盘 ε(设定)</label><input id="sE" type="range" min="0.10" max="0.98" step="0.01" value="0.98"><span class="val" id="sEVal">0.98</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play" style="grid-row:1/4">运行</button>
+    <div class="row" style="margin-top:0"><label data-zh="波前相位" data-en="wave phase">波前相位</label><input id="phase" type="range" min="0" max="1000" step="5" value="0"><span class="val" id="phaseVal">0%</span></div>
+    <div class="row" style="margin-top:0"><label data-zh="速度" data-en="Speed">速度</label><input id="spd" type="range" min="0.25" max="3" step="0.05" value="1"><span class="val" id="spdVal">×1.00</span></div>
+    <div id="toggles" style="margin-top:0">
+      <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+      <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      <label><input id="tglBeam" type="checkbox" checked> <span data-zh="辐射束" data-en="IR beam">辐射束</span></label>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../blackbody-radiation/" data-zh="万物按温度发光" data-en="everything glows by T">万物按温度发光</a>
+    <a href="../thermoelectric/" data-zh="塞贝克:温差变电" data-en="Seebeck: ΔT → power">塞贝克:温差变电</a>
+    <a href="../thermoregulation/" data-zh="皮肤 ε≈0.98 的散热" data-en="skin cools at ε≈0.98">皮肤 ε≈0.98 的散热</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x141110, 18, 60);
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const bg = THEME === 'light' ? 0xefe9e4 : 0x141110;
+  scene.background = new THREE.Color(bg);
+  scene.fog.color.set(bg);
+  M.floor.color.set(THEME === 'light' ? 0xd8d0c8 : 0x262019);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('红外测温与热电堆 · 看不见的 10 μm,读出 36.8 °C', 'IR Thermometry & Thermopiles · invisible 10 μm light, read out as 36.8 °C');
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  refreshLabels();
+  buildSteps();
+  setPlayLabel();
+  updateFormula();
+  drawPlot();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+  drawPlot();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(4.0, 2.5, 6.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.3, 1.3, 0.2);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 30;
+controls.autoRotateSpeed = 0.4;
+
+const hemi = new THREE.HemisphereLight(0xf0e2d4, 0x241d1a, 0.6);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff1e0, 1.2);
+key.position.set(6, 10, 7);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9ab8ff, 0.35);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.5, metalness: 0.15, emissive: 0x000000 }, opts));
+}
+const M = {
+  floor: mat(0x262019, { roughness: 0.95, metalness: 0 }),
+  stand: mat(0x3a3f47, { roughness: 0.6, metalness: 0.5 }),
+  heater: mat(0x4a3028, { roughness: 0.7, emissive: 0xff5a1a, emissiveIntensity: 0 }),
+  platePolish: mat(0xc7ccd4, { roughness: 0.12, metalness: 0.92 }),
+  plateMatte: mat(0x26262b, { roughness: 0.92, metalness: 0.05 }),
+  tape: mat(0x1a1a1e, { roughness: 0.95 }),
+  gun: mat(0x35404d, { roughness: 0.55, metalness: 0.3 }),
+  gunDark: mat(0x181d24, { roughness: 0.5 }),
+  screen: mat(0x0c2018, { emissive: 0x35e0a0, emissiveIntensity: 0.6 }),
+  steel: mat(0x9aa4b2, { roughness: 0.35, metalness: 0.8 }),
+  gold: mat(0xd9a441, { roughness: 0.3, metalness: 0.9 }),
+  pcb: mat(0x1f5c3a, { roughness: 0.7 }),
+  chipBlack: mat(0x0d0d10, { roughness: 0.6, emissive: 0xff4400, emissiveIntensity: 0.15 }),
+  beam: new THREE.MeshBasicMaterial({ color: 0xff8a5e, transparent: true, opacity: 0.1,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+};
+
+/* ---------------- 场景搭建 ---------------- */
+const floor = new THREE.Mesh(new THREE.CircleGeometry(13, 48), M.floor);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+const grid = new THREE.GridHelper(26, 26, 0x4a4038, 0x332c27);
+grid.material.transparent = true;
+grid.material.opacity = 0.5;
+grid.position.y = 0.005;
+scene.add(grid);
+
+/* 目标板(主角)+ 支架 + 加热炉 */
+const plateG = new THREE.Group();
+plateG.position.set(-1.6, 1.4, 0);
+scene.add(plateG);
+const plateMesh = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.35, 1.35), M.plateMatte);
+plateG.add(plateMesh);
+const tapeMesh = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.7, 0.7), M.tape);
+tapeMesh.position.set(0.042, 0.15, 0);
+tapeMesh.visible = false;
+plateG.add(tapeMesh);
+const standBase = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.07, 0.95), M.stand);
+standBase.position.set(-1.6, 0.035, 0);
+scene.add(standBase);
+const standCol = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.66, 0.45), M.stand);
+standCol.position.set(-1.6, 0.37, 0);
+scene.add(standCol);
+const heater = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.1, 1.1), M.heater);
+heater.position.set(-2.35, 1.4, 0);
+scene.add(heater);
+for (const z of [-0.32, 0.32]) {
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.52, 10), M.steel);
+  rod.rotation.z = Math.PI / 2;
+  rod.position.set(-1.9, 1.4, z);
+  scene.add(rod);
+}
+
+/* 红外测温枪(三脚架) */
+const gunG = new THREE.Group();
+gunG.position.set(2.7, 1.4, 0);
+scene.add(gunG);
+const gBody = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.3, 0.18), M.gun);
+gunG.add(gBody);
+const gBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.078, 0.5, 16), M.gunDark);
+gBarrel.rotation.z = Math.PI / 2;
+gBarrel.position.set(-0.5, 0, 0);
+gunG.add(gBarrel);
+const gGrip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.4, 0.14), M.gunDark);
+gGrip.position.set(0.12, -0.32, 0);
+gGrip.rotation.z = -0.28;
+gunG.add(gGrip);
+const gScreen = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.02), M.screen);
+gScreen.position.set(0.08, 0.2, 0);
+gScreen.rotation.x = -0.5;
+gunG.add(gScreen);
+const head = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.22, 10), M.gunDark);
+head.position.set(2.7, 1.22, 0);
+scene.add(head);
+for (const a of [0.4, 2.5, 4.6]) {
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.013, 1.36, 8), M.gunDark);
+  const top = new THREE.Vector3(2.7, 1.16, 0);
+  const bot = new THREE.Vector3(2.7 + Math.cos(a) * 0.44, 0, Math.sin(a) * 0.44);
+  leg.position.copy(top).lerp(bot, 0.5);
+  leg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), top.clone().sub(bot).normalize());
+  scene.add(leg);
+}
+
+/* 热电堆解剖台:PCB + 黑化热端 + 金丝 + 冷端环 */
+const sensG = new THREE.Group();
+sensG.position.set(1.6, 0, 2.1);
+scene.add(sensG);
+const sBase = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.06, 0.55), M.stand);
+sBase.position.y = 0.03;
+sensG.add(sBase);
+const sPost = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.42, 10), M.steel);
+sPost.position.y = 0.27;
+sensG.add(sPost);
+const sPcb = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.035, 0.34), M.pcb);
+sPcb.position.y = 0.5;
+sensG.add(sPcb);
+const sChip = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.02, 0.17), M.chipBlack);
+sChip.position.y = 0.528;
+sensG.add(sChip);
+const sRing = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.011, 8, 36), M.gold);
+sRing.rotation.x = Math.PI / 2;
+sRing.position.set(0, 0.525, 0);
+sensG.add(sRing);
+for (const z of [-0.05, 0.05]) {
+  const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.15, 6), M.gold);
+  wire.position.set(0.1, 0.527, z);
+  wire.rotation.z = 0.9;
+  sensG.add(wire);
+}
+
+/* 红外光束锥(枪口→目标) */
+const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.6, 3.5, 20, 1, true), M.beam);
+beam.rotation.z = -Math.PI / 2;
+beam.position.set(0.18, 1.4, 0);
+scene.add(beam);
+
+/* 红外光子流(InstancedMesh) */
+const PN = 110;
+const phIM = new THREE.InstancedMesh(new THREE.SphereGeometry(0.032, 8, 6),
+  new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95 }), PN);
+phIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+phIM.frustumCulled = false;
+scene.add(phIM);
+const photons = [];
+for (let i = 0; i < PN; i++) {
+  photons.push({
+    p: Math.random(),
+    v: 0.5 + Math.random() * 0.25,
+    start: new THREE.Vector3(-1.55, 1.4 + (Math.random() * 1.16 - 0.58), Math.random() * 1.16 - 0.58),
+    bow: new THREE.Vector3((Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3),
+  });
+}
+const phDummy = new THREE.Object3D();
+const END = new THREE.Vector3(1.93, 1.4, 0);
+
+/* ---------------- 场景标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, pos, cls = '') {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + cls;
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn });
+  div.textContent = textFn();
+  return o;
+}
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+
+/* ================= 物理模型(全部实时计算) =================
+   普朗克 B(λ,T) → 8–14 μm 窗内辐出度;传感器只能看到"窗内+反射环境"。
+   仪表扣除 (1−ε拨)σT_amb⁴ 后按 T=(V/(εσ))^¼ 反演。 */
+const SIGMA = 5.67e-8, C1 = 3.7418e8, C2 = 14387.8, TAMB = 295;
+const A_DET = 1.0e-6, F_GEO = 0.05, RESP = 50;   // 探测面积 m²·几何因子·响应率 V/W
+function planckB(lam, T) { return C1 / (Math.pow(lam, 5) * (Math.exp(C2 / (lam * T)) - 1)); }
+function bandExitance(T) {   /* ∫M_λ dλ,8–14 μm,λ:μm → W/m²(M_λ=2πhc²/λ⁵/… 已含 π) */
+  let s = 0;
+  const n = 30;
+  for (let i = 0; i < n; i++) s += planckB(8 + (i + 0.5) * 6 / n, T);
+  return s * 6 / n;
+}
+function bandFraction(T) { return bandExitance(T) / (SIGMA * T * T * T * T); }
+function invertT(Memit, epsSet) {  /* 解 ε·bandExitance(T)=Memitar(T) */
+  let lo = 200, hi = 1000;
+  for (let i = 0; i < 26; i++) {
+    const mid = (lo + hi) / 2;
+    if (epsSet * bandExitance(mid) < Memit) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/* ---------------- 状态 ---------------- */
+let T = clamp(qsFloat('T', 350), 290, 450);
+let surface = 'matte';                       // matte | polish | tape
+let epsSet = clamp(qsFloat('e', 0.98), 0.1, 0.98);
+let speed = clamp(qsFloat('speed', 1), 0.25, 3);
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let tSim = qsFloat('t', 0) / 1000 * 12;      // ?t= 波前相位(0–1000)
+let labelsOn = true, beamOn = true, stepPhase = null, tIdle = 0;
+const EPS_OF = { matte: 0.95, polish: 0.10, tape: 0.95 };
+const epsTrue = () => EPS_OF[surface];
+
+function calcModel() {
+  const M4 = SIGMA * T * T * T * T;                          // 同温黑体全波辐出度
+  const EbT = bandExitance(T), EbA = bandExitance(TAMB);
+  const seen = epsTrue() * EbT + (1 - epsTrue()) * EbA;      // 传感器窗内所见(含反射环境)
+  const V = RESP * seen * A_DET * F_GEO;                     // 塞贝克电压(V)
+  const Memit = Math.max(1e-9, seen - (1 - epsSet) * EbA);   // 仪表扣除反射项
+  const Tread = invertT(Memit, epsSet);
+  return { M4, seen, V, Tread, err: Tread - T, frac: EbT / M4 };
+}
+
+const lblPlate = addLabel(() => L(`目标板 ${Math.round(T)} K(${(T - 273.15).toFixed(0)} °C)· ε=${epsTrue().toFixed(2)} → M=${Math.round(epsTrue() * SIGMA * T * T * T * T)} W/m²`,
+  `plate ${Math.round(T)} K (${(T - 273.15).toFixed(0)} °C) · ε=${epsTrue().toFixed(2)} → M=${Math.round(epsTrue() * SIGMA * T * T * T * T)} W/m²`), new THREE.Vector3(-1.6, 2.5, 0), 'o');
+const lblBeam = addLabel(() => L(`8–14 μm 窗内 ${(bandFraction(T) * 100).toFixed(0)}% 能量 · 热电堆探到 ${(calcModel().V * 1e6).toFixed(0)} µV`,
+  `8–14 μm band holds ${(bandFraction(T) * 100).toFixed(0)}% of power · thermopile sees ${(calcModel().V * 1e6).toFixed(0)} µV`), new THREE.Vector3(0.18, 2.1, 0), 'b');
+const lblSensor = addLabel(() => L('热电堆:黑化热端吸光升温 → 塞贝克 µV 电压', 'thermopile: black absorber warms → Seebeck µV'), new THREE.Vector3(1.6, 1.05, 2.1), 'r');
+const lblRead = addLabel(() => {
+  const m = calcModel();
+  const bad = Math.abs(m.err) > 3;
+  return L(`仪表读数 ${(m.Tread - 273.15).toFixed(1)} °C · 误差 ${m.err >= 0 ? '+' : ''}${m.err.toFixed(1)} K${bad ? '(发射率在撒谎!)' : ''}`,
+    `reads ${(m.Tread - 273.15).toFixed(1)} °C · error ${m.err >= 0 ? '+' : ''}${m.err.toFixed(1)} K${bad ? ' (emissivity lies!)' : ''}`);
+}, new THREE.Vector3(2.7, 2.3, 0), 'st');
+const lblStatus = addLabel(() => {
+  const m = calcModel();
+  if (Math.abs(m.err) <= 3) return L('拨盘 ε 与表面匹配:读数可信(误差 ≤3 K)', 'dial ε matches the surface: reading trustworthy (≤3 K off)');
+  return L(`拨盘 ε=${epsSet.toFixed(2)} ≠ 表面 ε=${epsTrue().toFixed(2)}:读数系统性偏差 ${m.err >= 0 ? '+' : ''}${m.err.toFixed(0)} K`,
+    `dial ε=${epsSet.toFixed(2)} ≠ surface ε=${epsTrue().toFixed(2)}: systematic error ${m.err >= 0 ? '+' : ''}${m.err.toFixed(0)} K`);
+}, new THREE.Vector3(0.4, 0.05, 2.6), 'st');
+
+/* ================= 讲解步骤 ================= */
+function flyTo(p, t) {
+  camTween = {
+    p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]),
+    t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0
+  };
+}
+const STEPS = [
+  { b: '万物都在发光', be: 'Everything glows',
+    d: '任何温度高于绝对零度的物体都按 εσT⁴ 辐射:300 K 的物体每平方米发出 ~460 W,峰值 9.7 μm——眼睛看不见,红外测温替你看。',
+    de: 'Anything above absolute zero radiates as εσT⁴: a 300 K object sheds ~460 W per m², peaking at 9.7 μm — invisible to eyes, caught by the IR gun.',
+    act: () => { T = 300; setSurface('matte'); epsSet = 0.98; flyTo([4.2, 2.6, 6.2], [0, 1.25, 0]); } },
+  { b: '8–14 μm 大气窗', be: 'The 8–14 μm window',
+    d: '室温物体的普朗克峰恰好落在大气最透明的 8–14 μm 窗,这一窗占全波能量的近四成(300 K 时 38%)——红外测温就是把这段光收下来"称重"。',
+    de: 'Room-temperature Planck peaks sit in the clearest atmospheric window, 8–14 μm, 38% of total power at 300 K — IR thermometry just weighs that slice of light.',
+    act: () => { beamOn = true; document.getElementById('tglBeam').checked = true; flyTo([1.4, 2.2, 4.4], [0.2, 1.4, 0]); } },
+  { b: 'T 差 1%,P 差 4%', be: '1% in T, 4% in power',
+    d: '四次方是放大器:350 K 的板升温 1%(3.5 K),辐出度立刻 +4%——读数灵敏,误差也被同样放大。',
+    de: 'The fourth power amplifies: warm a 350 K plate by 1% (3.5 K) and its exitance jumps 4% — sensitive, and errors amplify just the same.',
+    act: () => { T = 450; flyTo([-3.6, 2.7, 4.4], [-1.9, 1.3, 0]); } },
+  { b: '热电堆:塞贝克换能', be: 'Thermopile: Seebeck conversion',
+    d: '窗内光被黑化吸收斑吃掉,热端只升温零点零几 K;几十对热电偶串联(α≈100–400 µV/K),输出几百 µV——光强变成了电压。',
+    de: 'The blackened absorber swallows the beam, warming the hot junction by hundredths of a kelvin; dozens of series couples (α≈100–400 µV/K) hand you a few hundred µV.',
+    act: () => { flyTo([3.4, 1.9, 4.6], [1.6, 0.6, 2.0]); } },
+  { b: '反演 T=(V/εσ)^¼', be: 'Inverting T=(V/εσ)^¼',
+    d: '仪表先扣掉反射的环境项 (1−ε)σT_amb⁴,再把剩下的功率开四次方换算回温度——拨盘上的 ε 是你替它做的假设。',
+    de: 'The gun subtracts the reflected ambient term (1−ε)σT_amb⁴, then takes the fourth root of the rest — the ε you dial in is an assumption made on your behalf.',
+    act: () => { epsSet = 0.95; syncSliders(); syncAll(); } },
+  { b: '发射率命门', be: 'The emissivity trap',
+    d: '同一块 350 K(77 °C)板:哑光漆 ε≈0.95 → 读 ~75 °C;换抛光金属 ε≈0.10 而拨盘还在 0.98 → 当场读成 ~29 °C,差出 ~48 K。',
+    de: 'Same 350 K (77 °C) plate: matte paint ε≈0.95 reads ~75 °C; swap to polished metal ε≈0.10 with the dial still at 0.98 and it plunges to ~29 °C — ~48 K off.',
+    act: () => { setSurface('polish'); epsSet = 0.98; flyTo([3.8, 2.1, 5.4], [0.3, 1.3, 0]); } },
+  { b: '黑胶带与额温枪', be: 'Black tape & forehead guns',
+    d: '现场补救:贴条 ε≈0.95 黑胶带,读数当场归位;皮肤 ε≈0.98 但额头只有 34–35.5 °C≠核心 37 °C——额温枪靠偏移补偿,不直接量核心。',
+    de: 'Field fix: a strip of ε≈0.95 black tape restores the reading instantly. Skin is ε≈0.98 but the forehead sits at 34–35.5 °C, not core 37 °C — forehead guns offset-compensate.',
+    act: () => { setSurface('tape'); flyTo([3.0, 2.0, 4.9], [0, 1.35, 0]); } },
+];
+function stepIndex() {
+  if (surface === 'tape') return 6;
+  if (Math.abs(epsSet - epsTrue()) > 0.3) return 5;
+  if (!beamOn) return 1;
+  if (T >= 430) return 2;
+  if (T <= 315) return 0;
+  return 4;
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { stepPhase = i; s.act(); syncAll(); });
+    el.appendChild(li);
+  });
+}
+
+/* ================= UI ================= */
+const elPlay = document.getElementById('play');
+const elT = document.getElementById('sT'), elTVal = document.getElementById('sTVal');
+const elE = document.getElementById('sE'), elEVal = document.getElementById('sEVal');
+const elSpd = document.getElementById('spd'), elSpdVal = document.getElementById('spdVal');
+const stM = document.getElementById('stM'), stV = document.getElementById('stV'),
+  stRead = document.getElementById('stRead'), stErr = document.getElementById('stErr'),
+  stBand = document.getElementById('stBand');
+const formulaEl = document.getElementById('formula');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('运行', 'Run'); }
+function setSurface(s) {
+  surface = s;
+  tapeMesh.visible = s === 'tape';
+  plateMesh.material = s === 'polish' ? M.platePolish : M.plateMatte;
+  document.getElementById('btnMatte').classList.toggle('on', s === 'matte');
+  document.getElementById('btnPolish').classList.toggle('on', s === 'polish');
+  document.getElementById('btnTape').classList.toggle('on', s === 'tape');
+}
+function syncSliders() {
+  elT.value = T; elTVal.textContent = `${Math.round(T)} K · ${(T - 273.15).toFixed(0)} °C`;
+  elE.value = epsSet; elEVal.textContent = epsSet.toFixed(2);
+  elSpd.value = speed; elSpdVal.textContent = '×' + speed.toFixed(2);
+}
+function updateStats() {
+  const m = calcModel();
+  stM.innerHTML = Math.round(epsTrue() * m.M4) + ' <small>W/m²</small>';
+  stV.innerHTML = (m.V * 1e6).toFixed(0) + ' <small>µV</small>';
+  const ok = Math.abs(m.err) <= 3;
+  stRead.innerHTML = (m.Tread - 273.15).toFixed(1) + ' <small>°C</small>';
+  stRead.className = 'v ' + (ok ? 'ok' : 'bad');
+  stErr.innerHTML = (m.err >= 0 ? '+' : '') + m.err.toFixed(1) + ' <small>K</small>';
+  stErr.className = 'v ' + (ok ? 'ok' : 'bad');
+  stBand.innerHTML = (m.frac * 100).toFixed(0) + ' <small>%</small>';
+}
+function updateFormula() {
+  const m = calcModel();
+  formulaEl.innerHTML = L(
+    `<b>辐射 M = εσT⁴</b>:ε=${epsTrue().toFixed(2)},T=${Math.round(T)} K → ${Math.round(epsTrue() * m.M4)} W/m²;T 每偏 1% → M 偏 ~4%<br>` +
+    `<b>塞贝克 V = N·α·ΔT</b>:窗内 ${(m.frac * 100).toFixed(0)}% 能量 → 热电堆 ${(m.V * 1e6).toFixed(0)} µV<br>` +
+    `<b>反演 T = (V/εσ)^¼</b>:拨盘 ε=${epsSet.toFixed(2)} vs 表面 ε=${epsTrue().toFixed(2)} → 读数 ${(m.Tread - 273.15).toFixed(1)} °C(真值 ${(T - 273.15).toFixed(1)} °C)`,
+    `<b>Exitance M = εσT⁴</b>: ε=${epsTrue().toFixed(2)}, T=${Math.round(T)} K → ${Math.round(epsTrue() * m.M4)} W/m²; 1% off in T → ~4% in M<br>` +
+    `<b>Seebeck V = N·α·ΔT</b>: ${(m.frac * 100).toFixed(0)}% of power in-band → thermopile ${(m.V * 1e6).toFixed(0)} µV<br>` +
+    `<b>Inversion T = (V/εσ)^¼</b>: dial ε=${epsSet.toFixed(2)} vs surface ε=${epsTrue().toFixed(2)} → reads ${(m.Tread - 273.15).toFixed(1)} °C (true ${(T - 273.15).toFixed(1)} °C)`);
+}
+function syncAll() {
+  syncSliders(); updateFormula(); updateStats();
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === stepPhase));
+}
+elT.addEventListener('input', () => { T = +elT.value; syncAll(); });
+elE.addEventListener('input', () => { epsSet = +elE.value; syncAll(); });
+elSpd.addEventListener('input', () => { speed = +elSpd.value; syncSliders(); });
+document.getElementById('btnMatte').addEventListener('click', () => { setSurface('matte'); syncAll(); });
+document.getElementById('btnPolish').addEventListener('click', () => { setSurface('polish'); syncAll(); });
+document.getElementById('btnTape').addEventListener('click', () => { setSurface('tape'); syncAll(); });
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+const elPh = document.getElementById('phase'), elPhVal = document.getElementById('phaseVal');
+elPh.addEventListener('input', () => {
+  tSim = parseInt(elPh.value, 10) / 1000 * 12;
+  elPhVal.textContent = Math.round(((tSim % 12) + 12) % 12 / 12 * 100) + '%';
+});
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglRotate').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+document.getElementById('tglBeam').addEventListener('change', e => { beamOn = e.target.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  drawPlot();
+});
+
+/* ================= 绘图:普朗克曲线(log-log)+ 8–14 μm 窗 ================= */
+const plotCv = document.getElementById('plotCv');
+const SUP = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+function drawPlot() {
+  const ctx = plotCv.getContext('2d');
+  const W = plotCv.width = plotCv.clientWidth * 2;
+  const H = plotCv.height = plotCv.clientHeight * 2;
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const cTxt = css.getPropertyValue('--text2').trim() || '#b3a79e';
+  const acc = css.getPropertyValue('--acc').trim() || '#c05a4a';
+  const padL = 46, padR = 12, padT = 14, padB = 26;
+  const lx0 = Math.log10(0.5), lx1 = Math.log10(60);
+  const xOf = lam => padL + (Math.log10(lam) - lx0) / (lx1 - lx0) * (W - padL - padR);
+  const yOf = v => (H - padB) - Math.log10(Math.max(v, 1)) / 8 * (H - padB - padT);
+  ctx.font = '17px system-ui';
+  /* 8–14 μm 大气窗 */
+  ctx.fillStyle = 'rgba(255,120,90,.13)';
+  ctx.fillRect(xOf(8), padT, xOf(14) - xOf(8), H - padB - padT);
+  ctx.fillStyle = 'rgba(255,150,120,.85)';
+  ctx.fillText(L('8–14 μm 窗', '8–14 μm window'), xOf(8) + 2, padT + 15);
+  /* 坐标 */
+  ctx.strokeStyle = 'rgba(150,135,125,.25)';
+  ctx.fillStyle = cTxt;
+  for (const d of [1, 2, 5, 10, 20, 50]) {
+    ctx.beginPath(); ctx.moveTo(xOf(d), padT); ctx.lineTo(xOf(d), H - padB); ctx.stroke();
+    ctx.fillText(String(d), xOf(d) - (d < 10 ? 8 : 12), H - 8);
+  }
+  ctx.fillText(L('μm', 'μm'), W - padR - 22, H - 8);
+  for (let e = 2; e <= 7; e += 2) {
+    const y = yOf(Math.pow(10, e));
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.fillText('10' + String(e).split('').map(c => SUP[c]).join(''), 6, y + 6);
+  }
+  /* 曲线辅助函数 */
+  const curve = (Tg, style, width, dash) => {
+    ctx.strokeStyle = style;
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash || []);
+    ctx.beginPath();
+    for (let i = 0; i <= 120; i++) {
+      const lam = Math.pow(10, lx0 + (lx1 - lx0) * i / 120);
+      const y = yOf(planckB(lam, Tg));
+      i ? ctx.lineTo(xOf(lam), y) : ctx.moveTo(xOf(lam), y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  };
+  curve(310, 'rgba(159,176,195,.4)', 1.6, [6, 5]);   // 人体参照
+  curve(T, acc, 2.6);                                 // 当前目标
+  /* λmax 标记 */
+  const lm = 2898 / T;
+  ctx.strokeStyle = 'rgba(255,169,77,.6)';
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath(); ctx.moveTo(xOf(lm), yOf(planckB(lm, T))); ctx.lineTo(xOf(lm), H - padB); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ffa94d';
+  ctx.beginPath(); ctx.arc(xOf(lm), yOf(planckB(lm, T)), 5.5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffa94d';
+  ctx.fillText(`λmax ${lm.toFixed(1)}`, Math.min(xOf(lm) + 8, W - 90), yOf(planckB(lm, T)) + 20);
+}
+
+/* ================= 主循环 ================= */
+const clock = new THREE.Clock();
+const cDim = new THREE.Color(0x4a1c10), cHot = new THREE.Color(0xffa06a), cTmp = new THREE.Color();
+const _v = new THREE.Vector3();
+let raf = null, statsAcc = 0, camTween = null;
+controls.addEventListener('start', () => { camTween = null; });
+function frame() {
+  raf = requestAnimationFrame(frame);
+  const dt0 = clamp(clock.getDelta(), 0, 0.05);
+  const dt = dt0 * speed * (playing ? 1 : 0);
+  tSim += dt;
+  tIdle += dt0;
+  /* —— 相机飞行 —— */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt0 * 1.5);
+    const s = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, s);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, s);
+    if (camTween.k >= 1) camTween = null;
+  }
+  /* —— 光子流:通量∝窗内功率,颜色按波前相位脉动 —— */
+  const m = calcModel();
+  const flux = clamp(m.V * 1e6 / 800, 0.12, 1);
+  const nAct = Math.round(PN * flux);
+  phIM.count = nAct;
+  for (let i = 0; i < nAct; i++) {
+    const ph = photons[i];
+    ph.p = (ph.p + dt * ph.v * 0.4) % 1;
+    _v.lerpVectors(ph.start, END, ph.p);
+    const s = Math.sin(Math.PI * ph.p);
+    _v.x += ph.bow.x * s; _v.y += ph.bow.y * s; _v.z += ph.bow.z * s;
+    phDummy.position.copy(_v);
+    phDummy.scale.setScalar(0.75 + 0.55 * s);
+    phDummy.updateMatrix();
+    phIM.setMatrixAt(i, phDummy.matrix);
+    const pulse = 0.4 + 0.6 * Math.max(0, Math.sin(ph.p * 12.566 - tSim * 4));
+    cTmp.lerpColors(cDim, cHot, pulse);
+    phIM.setColorAt(i, cTmp);
+  }
+  phIM.instanceMatrix.needsUpdate = true;
+  if (phIM.instanceColor) phIM.instanceColor.needsUpdate = true;
+  /* —— 光束 / 热端 / 加热炉辉光 —— */
+  beam.visible = beamOn;
+  beam.material.opacity = beamOn ? 0.04 + flux * 0.15 : 0;
+  M.chipBlack.emissiveIntensity = 0.12 + flux * 2.0 + 0.1 * Math.sin(tIdle * 6);
+  M.heater.emissiveIntensity = clamp((T - 290) / 160, 0, 1) * 1.3 + 0.05 * Math.sin(tIdle * 7);
+  /* —— stats(节流)+ 相位滑块回写 —— */
+  statsAcc += dt0;
+  if (statsAcc > 0.15) {
+    statsAcc = 0;
+    updateStats();
+    updateFormula();
+    const frac = ((tSim % 12) + 12) % 12 / 12;
+    if (document.activeElement !== elPh) {
+      elPh.value = Math.round(frac * 1000);
+      elPhVal.textContent = Math.round(frac * 100) + '%';
+    }
+  }
+  for (const r of labelReg) r.o.element.textContent = r.text();
+  const si = stepIndex();
+  if (si !== stepPhase) {
+    stepPhase = si;
+    [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === si));
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function start() { if (raf === null) { clock.getDelta(); raf = requestAnimationFrame(frame); } }
+function stop() { if (raf !== null) { cancelAnimationFrame(raf); raf = null; } }
+document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+
+/* ================= 初始化 ================= */
+applyTheme();
+setSurface('matte');
+buildSteps();
+applyLang();
+syncAll();
+setPlayLabel();
+elPh.value = Math.round(((tSim % 12) + 12) % 12 / 12 * 1000);
+elPhVal.textContent = Math.round(((tSim % 12) + 12) % 12 / 12 * 100) + '%';
+start();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
