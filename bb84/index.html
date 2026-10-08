@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>量子密钥分发 BB84 · 窃听者的测量,就是现场证据</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4f7cac;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#3c6791;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(25,113,194,.9); color: #1971c2; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  /* 对账表 */
+  #recWrap { position: fixed; right: 18px; top: 62px; z-index: 4; width: 256px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px;
+    padding: 7px 10px 9px; backdrop-filter: blur(6px); }
+  #recWrap h4 { font-size: 11px; color: var(--text2); font-weight: 600; margin-bottom: 4px;
+    display: flex; justify-content: space-between; }
+  #recWrap h4 u { text-decoration: none; color: var(--text3); font-weight: 400; }
+  #recTable { max-height: 30vh; overflow: auto; scrollbar-width: thin; }
+  .trow { display: grid; grid-template-columns: 24px 76px 76px 52px; gap: 2px; font-size: 10.5px;
+    color: var(--text2); padding: 1px 4px; border-radius: 4px; font-variant-numeric: tabular-nums;
+    border-left: 2px solid transparent; white-space: nowrap; }
+  .trow i { font-style: normal; opacity: .65; }
+  .trow u { text-decoration: none; text-align: right; }
+  .trow.sift { border-left-color: rgba(116,220,132,.8); color: var(--text3); background: rgba(116,220,132,.07); }
+  .trow.err { border-left-color: rgba(255,107,107,.9); background: rgba(255,107,107,.16); color: #ffb3b3; }
+  .trow.drop { opacity: .34; }
+  :root[data-theme="light"] .trow.err { color: #c92a2a; }
+  #recTable.sifting .trow.sift { animation: siftPulse 1.1s ease-in-out 3; }
+  @keyframes siftPulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(2); } }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(79,124,172,.65); background: rgba(79,124,172,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(60,103,145,.55); background: rgba(60,103,145,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(79,124,172,.10); border-color: rgba(79,124,172,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(60,103,145,.08); border-color: rgba(60,103,145,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #a9c9e4; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } #recWrap { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="量子密钥分发 BB84:窃听者的测量,就是现场证据" data-en="BB84 Quantum Key Distribution: an eavesdropper's measurement is the evidence">量子密钥分发 BB84:窃听者的测量,就是现场证据</h1>
+  <div class="sub" data-zh="Alice 用随机基矢(+ / ×)把随机比特编进光子偏振,Bob 用另一组随机基矢去测:基对则结果准、基错则 50% 乱;公开比较基矢(不公开比特)后只留基对的 sifted key;窃听者 Eve 若中途截获测量,有 50% 概率选错基、引入约 25% 误码率(QBER)——对账一小段就当场暴露;安全底线:QBER 阈值 ~11%,超过整条密钥作废;不可克隆定理:未知量子态无法复制,抄一份再放回去这条路被物理定律封死;工程实况:光纤受衰减限制 ~100 km 级,"墨子号"卫星 2017 年实现 1200 km 星地分发 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Alice encodes random bits into photon polarization with random bases (+ / ×); Bob measures with his own random bases: right basis = exact result, wrong basis = 50% noise; after publicly comparing bases (never bits) only matching rows remain as the sifted key; an eavesdropper Eve who intercepts and measures picks the wrong basis 50% of the time and injects ~25% QBER — a short reconciliation exposes her on the spot; the safety line is ~11% QBER, above which the whole key is discarded; the no-cloning theorem forbids copying an unknown state, closing the copy-and-restore route; in practice fiber links reach ~100 km, and the Micius satellite achieved 1200 km space-to-ground distribution in 2017 · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">Alice 用随机基矢(+ / ×)把随机比特编进光子偏振,Bob 用另一组随机基矢去测:基对则结果准、基错则 50% 乱;公开比较基矢(不公开比特)后只留基对的 sifted key;窃听者 Eve 若中途截获测量,有 50% 概率选错基、引入约 25% 误码率(QBER)——对账一小段就当场暴露;安全底线:QBER 阈值 ~11%,超过整条密钥作废;不可克隆定理:未知量子态无法复制,抄一份再放回去这条路被物理定律封死;工程实况:光纤受衰减限制 ~100 km 级,"墨子号"卫星 2017 年实现 1200 km 星地分发 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="recWrap">
+  <h4><span data-zh="量子对账表(逐光子)" data-en="photon-by-photon ledger">量子对账表(逐光子)</span><u id="recCount">—</u></h4>
+  <div id="recTable"></div>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="发送光子数" data-en="photons sent">发送光子数</span><span class="v" id="stSent">0</span>
+  <span class="k" data-zh="sifted 密钥长度" data-en="sifted key length">sifted 密钥长度</span><span class="v" id="stSift">0</span>
+  <span class="k" data-zh="QBER 误码率" data-en="QBER">QBER 误码率</span><span class="v" id="stQber">—</span>
+  <span class="k" data-zh="安全阈值" data-en="threshold">安全阈值</span><span class="v warn" id="stThr">11<small> %</small></span>
+  <span class="k" data-zh="密钥状态" data-en="key status">密钥状态</span><span class="v" id="stKey">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="+ 基 0°/90°" data-en="+ basis 0°/90°">+ 基 0°/90°</span>
+    <span class="chip g" data-zh="× 基 45°/135°" data-en="× basis 45°/135°">× 基 45°/135°</span>
+    <span class="chip o" data-zh="Eve 截获" data-en="Eve intercept">Eve 截获</span>
+    <span class="chip r" data-zh="误码 / 作废" data-en="error / void">误码 / 作废</span>
+  </div>
+  <div id="actions">
+    <button class="abtn hot" id="btnEve" data-zh="Eve 窃听:开" data-en="Eve eavesdrop: off">Eve 窃听:开</button>
+    <button class="abtn" id="btnSift" data-zh="筛基动画" data-en="sifting demo">筛基动画</button>
+    <button class="abtn" id="btnReset" data-zh="复位统计" data-en="reset stats">复位统计</button>
+  </div>
+  <div class="row"><label data-zh="光子速率" data-en="photon rate">光子速率</label><input id="rate" type="range" min="4" max="40" step="1" value="16"><span class="val" id="rateVal">1.6 /s</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="相位" data-en="Phase">相位</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+        <label><input id="tglTable" type="checkbox" checked> <span data-zh="对账表滚动" data-en="ledger scroll">对账表滚动</span></label>
+        <label><input id="tglPol" type="checkbox" checked> <span data-zh="极化视角" data-en="pol. view">极化视角</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../quantum-entanglement/" data-zh="量子纠缠" data-en="quantum entanglement">量子纠缠</a>
+    <a href="../diffie-hellman/" data-zh="Diffie–Hellman 密钥交换" data-en="Diffie–Hellman key exchange">Diffie–Hellman 密钥交换</a>
+    <a href="../zero-knowledge/" data-zh="零知识证明" data-en="zero-knowledge proof">零知识证明</a>
+    <a href="../polarization/" data-zh="偏振" data-en="polarization">偏振</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const f0 = x => x.toFixed(0);
+const f1 = x => x.toFixed(1);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeff1f4 : 0x0f1216);
+  M.frame.color.set(THEME === 'light' ? 0x8d99a8 : 0x39424f);
+  M.ground.color.set(THEME === 'light' ? 0xd7dce3 : 0x1b202a);
+  M.rail.color.set(THEME === 'light' ? 0xb9c2cf : 0x9aa7b6);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('量子密钥分发 BB84 · 窃听者的测量,就是现场证据', 'BB84 QKD · An Eavesdropper Leaves Fingerprints');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  updateFormula();
+  updateEveBtn();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const AY = 1.35;                       // 光轴高度
+const AX = -5.4, BX = 5.4, EX = 0;     // Alice / Bob / Eve 光学位置
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(2.6, 3.3, 7.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 18;
+controls.autoRotateSpeed = 0.4;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 1.9);
+key.position.set(4, 8, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  frame: mat(0x39424f, { roughness: 0.65, metalness: 0.35 }),
+  ground: mat(0x1b202a, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  rail: mat(0x9aa7b6, { metalness: 0.85, roughness: 0.25 }),
+  crystal: mat(0x74c0fc, { emissive: 0x4dabf7, emissiveIntensity: 1.2, roughness: 0.15, metalness: 0.1 }),
+  discPlus: mat(0x74c0fc, { emissive: 0x74c0fc, emissiveIntensity: 0.5, metalness: 0.2, roughness: 0.4 }),
+  discCross: mat(0xffd43b, { emissive: 0xffd43b, emissiveIntensity: 0.35, metalness: 0.2, roughness: 0.4 }),
+  eve: mat(0xff922b, { emissive: 0xff922b, emissiveIntensity: 0.4, metalness: 0.3, roughness: 0.4 }),
+  bar: mat(0x51cf66, { emissive: 0x51cf66, emissiveIntensity: 0.7, metalness: 0.1, roughness: 0.5 }),
+  thr: mat(0xff6b6b, { emissive: 0xff6b6b, emissiveIntensity: 0.5, metalness: 0.1, roughness: 0.5 }),
+};
+
+/* ---------------- 场景搭建 ---------------- */
+const rig = new THREE.Group();
+scene.add(rig);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(15, 48), M.ground);
+ground.rotation.x = -Math.PI / 2;
+rig.add(ground);
+
+/* 光轨 */
+const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, BX - AX + 0.6, 12), M.rail);
+rail.rotation.z = Math.PI / 2;
+rail.position.set(0, AY, 0);
+rig.add(rail);
+const railArrow = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.2, 12), M.rail);
+railArrow.rotation.z = -Math.PI / 2;
+railArrow.position.set(-1.4, AY, 0);
+rig.add(railArrow);
+
+/* Alice:基座 + 发光晶体 + 偏振片组 */
+function pedestal(x, w) {
+  const p = new THREE.Mesh(new THREE.BoxGeometry(w, 1.12, w), M.frame);
+  p.position.set(x, 0.56, 0);
+  rig.add(p);
+  return p;
+}
+pedestal(AX, 0.6);
+const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.2), M.crystal);
+crystal.position.set(AX, AY, 0);
+rig.add(crystal);
+const polA = new THREE.Group();               // Alice 偏振片组:+ 片与 × 片
+polA.position.set(AX + 0.5, AY, 0);
+const dA1 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.035, 28), M.discPlus);
+dA1.rotation.z = Math.PI / 2;
+const dA2 = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.02, 10, 32), M.discCross);
+dA2.rotation.y = Math.PI / 2;
+dA2.rotation.z = Math.PI / 4;
+polA.add(dA1, dA2);
+rig.add(polA);
+
+/* Bob:基座 + 可旋转检偏器 */
+pedestal(BX, 0.6);
+const analyzer = new THREE.Group();           // 检偏器:环 + 指示条,绕光轴旋转选基
+analyzer.position.set(BX - 0.5, AY, 0);
+const ringB = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.028, 12, 40), M.rail);
+ringB.rotation.y = Math.PI / 2;
+const barB = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.6, 0.045), M.discPlus);
+analyzer.add(ringB, barB);
+rig.add(analyzer);
+const detB = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.44, 0.44), M.frame);
+detB.position.set(BX + 0.08, AY, 0);
+rig.add(detB);
+
+/* Eve:截获测量装置(可开关) */
+const eveGroup = new THREE.Group();
+const eveBox = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.5, 0.34), M.eve);
+const eveLens = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.1, 16), M.frame);
+eveLens.rotation.x = Math.PI / 2;
+eveLens.position.set(0, 0, 0.21);
+const eveClamp = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.022, 10, 24), M.eve);
+eveClamp.rotation.y = Math.PI / 2;
+eveClamp.position.set(0, 0, 0.85);
+eveGroup.add(eveBox, eveLens, eveClamp);
+eveGroup.position.set(EX, AY, -0.85);
+eveGroup.visible = false;
+rig.add(eveGroup);
+
+/* QBER 实时柱 + 11% 阈值环 */
+const BAR_MAX = 1.7, QMAX = 0.5, THR_H = 0.11 / QMAX * BAR_MAX;
+const barBase = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.08, 0.62), M.frame);
+barBase.position.set(3.1, 0.04, -1.4);
+rig.add(barBase);
+const barGeo = new THREE.BoxGeometry(0.36, 1, 0.36);
+barGeo.translate(0, 0.5, 0);
+const qbar = new THREE.Mesh(barGeo, M.bar);
+qbar.position.set(3.1, 0.08, -1.4);
+qbar.scale.y = 0.001;
+rig.add(qbar);
+const thrRing = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.022, 10, 36), M.thr);
+thrRing.rotation.x = Math.PI / 2;
+thrRing.position.set(3.1, 0.08 + THR_H, -1.4);
+rig.add(thrRing);
+
+/* ---------------- 量子规则(严格按测量公设) ---------------- */
+/* 态:|0⟩|1⟩(+基)|+⟩|−⟩(×基);测量基相同 → 100% 得原比特;不同 → 50/50 */
+const qbMeasure = (sBasis, sBit, mBasis) => mBasis === sBasis ? sBit : (Math.random() < 0.5 ? 0 : 1);
+const polAngle = (basis, bit) => basis === 0 ? (bit ? 0 : Math.PI / 2) : (bit ? 3 * Math.PI / 4 : Math.PI / 4);
+const COL_B = 0x74c0fc, COL_G = 0xffd43b, COL_R = 0xff6b6b;
+
+/* ---------------- 光子池(InstancedMesh 不便带子物体,12 组即可) ---------------- */
+const PH_N = 12, PH_V = 3.2;
+const phPool = [];
+{
+  const sphGeo = new THREE.SphereGeometry(0.075, 16, 12);
+  const stripGeo = new THREE.BoxGeometry(0.02, 0.34, 0.03);
+  for (let i = 0; i < PH_N; i++) {
+    const g = new THREE.Group();
+    const sph = new THREE.Mesh(sphGeo, new THREE.MeshStandardMaterial({
+      color: COL_B, emissive: COL_B, emissiveIntensity: 1.5, roughness: 0.3 }));
+    const strip = new THREE.Mesh(stripGeo, new THREE.MeshBasicMaterial({ color: COL_B }));
+    const div = document.createElement('div');
+    div.className = 'lbl st';
+    div.style.display = 'none';
+    const lbl = new CSS2DObject(div);
+    lbl.position.set(0, 0.34, 0);
+    g.add(sph, strip, lbl);
+    g.visible = false;
+    scene.add(g);
+    phPool.push({ g, sph, strip, div, active: false, x: 0, phase: 0, wait: 0, flash: 0,
+      aBit: 0, aBasis: 0, stBasis: 0, stBit: 0, disturbed: false, ghost: false });
+  }
+}
+function applyPhotonLook(p) {
+  p.strip.rotation.x = polAngle(p.stBasis, p.stBit);
+  const c = p.disturbed ? COL_R : (p.stBasis === 0 ? COL_B : COL_G);
+  p.strip.material.color.set(c);
+  p.sph.material.color.set(c);
+  p.sph.material.emissive.set(c);
+  p.div.textContent = p.stBit + '·' + (p.stBasis ? '×' : '+');
+  p.div.className = 'lbl ' + (p.disturbed ? 'bad' : (p.stBasis ? 'w' : 'e'));
+}
+function emitPhoton() {
+  const p = phPool.find(q => !q.active);
+  if (!p) return;
+  p.active = true; p.x = AX + 0.25; p.phase = 0; p.wait = 0; p.flash = 0; p.ghost = false;
+  p.aBit = Math.random() < 0.5 ? 0 : 1;
+  p.aBasis = Math.random() < 0.5 ? 0 : 1;
+  p.stBasis = p.aBasis; p.stBit = p.aBit; p.disturbed = false;
+  p.g.visible = true; p.div.style.display = '';
+  p.sph.scale.setScalar(1);
+  applyPhotonLook(p);
+  sent++;
+}
+
+/* 不可克隆演示:复制态的"幽灵光子"必然失败 */
+const GH_N = 5, ghosts = [];
+{
+  const gGeo = new THREE.SphereGeometry(0.06, 12, 10);
+  for (let i = 0; i < GH_N; i++) {
+    const m = new THREE.Mesh(gGeo, new THREE.MeshBasicMaterial({ color: COL_R, transparent: true, opacity: 0.8 }));
+    m.visible = false;
+    scene.add(m);
+    ghosts.push({ m, t: 0, life: 0 });
+  }
+}
+function spawnGhost() {
+  const gh = ghosts.find(g => g.life <= 0);
+  if (!gh) return;
+  gh.t = 0; gh.life = 0.9;
+  gh.m.position.set(EX + (Math.random() - 0.5) * 0.3, AY + 0.5, 0.2);
+  gh.m.visible = true;
+}
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let rate = clamp(qsFloat('rate', 1.6), 0.4, 4);
+let eveOn = false, cloneMode = false;
+let sent = 0, rows = 0, sifted = 0, errs = 0, keyVoid = false, thrFlash = 0;
+let emitT = 0, bobFlash = 0, eveFlash = 0, bobAngle = 0;
+let scenario = 0, dwell = 0, tour = true;
+let labelsOn = qsBool('labels', true);
+let focusT = 0;
+const focusPos = new THREE.Vector3(), focusTgt = new THREE.Vector3();
+const FOCI = {
+  alice: { p: [AX + 2.3, AY + 1.15, 2.7], t: [AX + 0.5, AY, 0] },
+  bob:   { p: [BX - 2.0, AY + 1.15, 2.7], t: [BX - 0.5, AY, 0] },
+  mid:   { p: [0.5, AY + 1.35, 4.8], t: [0.2, AY, -0.15] },
+  wide:  { p: [2.6, 3.3, 7.8], t: [0, 1.1, 0] },
+};
+function focusOn(name) {
+  const f = FOCI[name] || FOCI.wide;
+  focusPos.fromArray(f.p); focusTgt.fromArray(f.t);
+  focusT = 1;
+}
+controls.addEventListener('start', () => { focusT = 0; });
+
+const qberNow = () => sifted ? errs / sifted : 0;
+function updateEveBtn() {
+  document.getElementById('btnEve').textContent = eveOn ? L('Eve 窃听:开', 'Eve eavesdrop: ON') : L('Eve 窃听:关', 'Eve eavesdrop: off');
+  document.getElementById('btnEve').classList.toggle('on', eveOn);
+}
+function setEve(v) { eveOn = v; eveGroup.visible = v; updateEveBtn(); updateFormula(); }
+function resetStats() {
+  sent = rows = sifted = errs = 0; keyVoid = false;
+  recTableEl.innerHTML = '';
+  recCountEl.textContent = '—';
+}
+function recordRow(p, bobBasis, bobBit) {
+  rows++;
+  const sift = bobBasis === p.aBasis;
+  let err = false;
+  if (sift) {
+    sifted++;
+    err = bobBit !== p.aBit;
+    if (err) errs++;
+  }
+  const div = document.createElement('div');
+  const cls = 'trow ' + (sift ? (err ? 'err sift' : 'sift') : 'drop');
+  div.className = cls;
+  const tag = !sift ? L('× 筛除', '× sifted out') : (err ? L('✗ 误码', '✗ error') : L('✓', '✓'));
+  div.innerHTML = `<i>${rows}</i><span>A ${p.aBit}·${p.aBasis ? '×' : '+'}</span>` +
+    `<span>B ${bobBit}·${bobBasis ? '×' : '+'}</span><u>${tag}${p.disturbed ? ' ⚠' : ''}</u>`;
+  recTableEl.appendChild(div);
+  while (recTableEl.children.length > 36) recTableEl.removeChild(recTableEl.firstChild);
+  if (tglTable.checked) recTableEl.scrollTop = recTableEl.scrollHeight;
+  recCountEl.textContent = L(`sifted ${sifted} / ${rows}`, `sifted ${sifted} / ${rows}`);
+  if (!keyVoid && sifted >= 8 && qberNow() > 0.11) { keyVoid = true; thrFlash = 1.4; updateFormula(); }
+}
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, visFn) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, vis: visFn });
+  div.textContent = textFn();
+  return o;
+}
+const lblAlice = addLabel(
+  () => L('Alice · 随机偏振光源(+/× 基)', 'Alice · random polarization source (+/×)'),
+  () => 'e', new THREE.Vector3(AX, AY + 0.72, 0));
+const lblBob = addLabel(
+  () => L('Bob · 随机基检偏器', 'Bob · random-basis analyzer'),
+  () => 'e', new THREE.Vector3(BX, AY + 0.72, 0));
+const lblEve = addLabel(
+  () => eveOn ? L('Eve 截获测量中:50% 选错基 → 态被扰动', 'Eve intercepting: 50% wrong basis → state disturbed')
+              : L('Eve 关闭:光子直达 Bob', 'Eve off: photons fly straight to Bob'),
+  () => eveOn ? 'bad' : 'st', new THREE.Vector3(EX, AY + 0.85, -0.85));
+const lblQber = addLabel(
+  () => L(`QBER ${f1(qberNow() * 100)}%(阈值 11%)`, `QBER ${f1(qberNow() * 100)}% (threshold 11%)`),
+  () => keyVoid ? 'bad' : (qberNow() > 0.05 ? 'w' : 'g'),
+  new THREE.Vector3(3.1, 2.55, -1.4));
+const lblClone = addLabel(
+  () => L('复制 |ψ⟩ → ✗ 不可克隆定理:任何复制必破坏原态', 'copy |ψ⟩ → ✗ no-cloning: copying must destroy the state'),
+  () => 'bad', new THREE.Vector3(EX, AY + 1.5, 0), () => cloneMode);
+const lblStatus = addLabel(
+  () => {
+    if (cloneMode) return L('想"抄一份再放回"?物理定律直接禁止 — 只能测量(留下扰动)或原样转发', 'copy-and-restore is forbidden by physics — you can only measure (leaving disturbance) or forward untouched');
+    if (keyVoid) return L(`QBER ${f1(qberNow() * 100)}% 冲过 11% 阈值:整条密钥作废!点「复位统计」重新开始`, `QBER ${f1(qberNow() * 100)}% broke the 11% line: the whole key is void! hit reset`);
+    if (eveOn) return L('Eve 在中途截获测量再转发:sifted key 里约 1/4 的比特已错 — 对账一小段即暴露', 'Eve measures and resends: ~1/4 of sifted bits are wrong — a short check exposes her');
+    return L('光子流:Alice 随机编码 → Bob 随机测量 → 公开比基矢 → sifted key', 'photon flow: Alice encodes → Bob measures → compare bases → sifted key');
+  },
+  () => keyVoid ? 'bad' : (eveOn ? 'w' : 'st'),
+  new THREE.Vector3(0, 3.15, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { focus: 'alice', eve: false, sift: false, clone: false, reset: false, dur: 7,
+    b: '偏振编码:两组基、四个态', be: 'Encoding: two bases, four states',
+    d: 'Alice 把随机比特编进单光子偏振:+ 基用水平/垂直(0°/90°),× 基用 45°/135°。每个光子的量子态只有 |0⟩|1⟩|+⟩|−⟩ 四种,比特与基矢各自独立随机。',
+    de: 'Alice encodes random bits into single-photon polarization: the + basis uses horizontal/vertical (0°/90°), the × basis uses 45°/135°. Each photon is in one of four states |0⟩|1⟩|+⟩|−⟩, with bits and bases independently random.' },
+  { focus: 'wide', eve: false, sift: false, clone: false, reset: false, dur: 7,
+    b: 'Alice 发送:随机 bit × 随机基', be: 'Alice sends: random bit × random basis',
+    d: '每颗光子拖着偏振态飞向 Bob,上方标签标注它的比特与基。基矢序列本身也是密钥的一部分——此刻只有 Alice 知道每颗光子的"身份证"。',
+    de: 'Each photon flies to Bob carrying its polarization state, labeled above with its bit and basis. The basis sequence is itself part of the key — only Alice knows each photon\'s identity right now.' },
+  { focus: 'bob', eve: false, sift: false, clone: false, reset: false, dur: 8,
+    b: 'Bob 随机基测量:对则准、错则乱', be: 'Bob measures: right basis exact, wrong basis random',
+    d: 'Bob 用自己独立随机的基去测:基与 Alice 相同 → 结果 100% 准;基不同 → 50/50 乱猜。量子测量不允许"看一眼再原样放回"——看,就必须选基,就必然扰动。',
+    de: 'Bob measures with his own random basis: if it matches Alice\'s, the result is 100% exact; if not, it is a 50/50 coin flip. Quantum measurement never allows "peek and put back" — looking means choosing a basis and disturbing.' },
+  { focus: 'mid', eve: false, sift: true, clone: false, reset: false, dur: 8,
+    b: '筛基:公开基矢、保留同基行', be: 'Sifting: publish bases, keep matching rows',
+    d: '两人在公开信道广播各自的基矢序列(只说 +/×,绝不说 0/1),保留基相同的行作 sifted key,基不同的行整行作废——平均剩下一半,对账表里绿边行即存活者。',
+    de: 'They broadcast their basis sequences on a public channel (only +/×, never the bits), keep rows with matching bases as the sifted key and discard the rest — about half survives; green-edged rows in the ledger are the survivors.' },
+  { focus: 'wide', eve: false, sift: false, clone: false, reset: true, dur: 7,
+    b: '无窃听:对账 0 错 → 提取密钥', be: 'No eavesdropper: 0 errors → key extracted',
+    d: '再随机挑一小段 sifted key 公开对比比特值:没有 Eve 时误码率为 0,剩余部分即共享密钥,可用于一次一密——信息论级安全。注意右侧 QBER 柱贴地。',
+    de: 'They then reveal a small random sample of sifted bits: with no Eve the error rate is 0, and the rest is a shared key usable for a one-time pad — information-theoretic security. Watch the QBER bar stay flat on the floor.' },
+  { focus: 'mid', eve: false, sift: false, clone: false, reset: true, dur: 10,
+    b: 'Eve 截胡:25% 误码当场暴露', be: 'Eve intercepts: 25% QBER exposes her on the spot',
+    d: '打开 Eve:Eve 随机选基截获测量再转发。她有 50% 概率选错基,把态重置成自己的结果;Bob 再测, sifted 行出错概率 ≈ ½×½ = 25%,远超 11% 安全阈值——看红线冲过阈值环,整条密钥当场作废。',
+    de: 'Switch Eve on: she intercepts, measures with a random basis and resends. Half the time she picks the wrong basis and resets the state to her result; Bob then errs on ≈ ½×½ = 25% of sifted rows, far above the 11% threshold — watch the red bar smash through the threshold ring and void the whole key.' },
+  { focus: 'mid', eve: false, sift: false, clone: true, reset: false, dur: 10,
+    b: '不可克隆定理:抄一份?物理禁止', be: 'No-cloning theorem: copying is forbidden',
+    d: '为什么 Eve 不能"抄一份、原样放回"?未知量子态无法被复制——这是线性量子力学的定理,不是工程难题。任何获取信息的尝试必然留下扰动。工程上光纤受衰减限制在 ~100 km 级;"墨子号"卫星 2017 年实现 1200 km 星地密钥分发。',
+    de: 'Why can\'t Eve just copy and restore? Unknown quantum states cannot be cloned — a theorem of linear quantum mechanics, not an engineering nuisance. Any attempt to gain information must leave a trace. Fiber links are attenuation-limited to ~100 km; the Micius satellite achieved 1200 km space-to-ground distribution in 2017.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  dwell = 0; tour = true;
+  const s = STEPS[scenario];
+  setEve(s.eve);
+  if (s.reset) resetStats();
+  cloneMode = s.clone;
+  recTableEl.classList.toggle('sifting', s.sift);
+  refreshLabels();
+  focusOn(s.focus);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const q = qberNow();
+  const head = L(`QBER(Eve) = ½(选错基) × ½(Bob 测错) ≈ <b>25%</b> · 安全阈值 <b>~11%</b> · 筛后效率 ½ = <b>50%</b>`,
+    `QBER(Eve) = ½(wrong basis) × ½(Bob misreads) ≈ <b>25%</b> · threshold <b>~11%</b> · sifting yield ½ = <b>50%</b>`);
+  const per = [
+    L(`态空间:|0⟩ |1⟩(+基 0°/90°)· |+⟩ |−⟩(×基 45°/135°)· 共 2 基 × 2 bit = <b>4 态</b>`,
+      `States: |0⟩ |1⟩ (+ basis 0°/90°) · |+⟩ |−⟩ (× basis 45°/135°) · 2 bases × 2 bits = <b>4 states</b>`),
+    L(`bit、基各自独立均匀随机 · P(任一态) = ¼ · Eve 无法预知任何一次选择`,
+      `bits and bases i.i.d. uniform · P(any state) = ¼ · Eve can predict no choice`),
+    L(`基对:P(准) = <b>100%</b> · 基错:P(错) = <b>50%</b> · 期望 sifted 占比 50%`,
+      `matching basis: P(exact) = <b>100%</b> · mismatched: P(error) = <b>50%</b> · sifted ≈ 50%`),
+    L(`公开信息 = 基矢序列(非比特)· 保留基同行 → 平均 N/2 · 抽样对账长度 ~ 数百 bit`,
+      `public info = basis sequence (never bits) · keep matching rows → N/2 on average · reconciliation sample ~ hundreds of bits`),
+    L(`QBER ≈ 0% → 提取安全密钥 · 一次一密:密钥长度 ≥ 明文长度即信息论安全`,
+      `QBER ≈ 0% → extract secure key · one-time pad: key ≥ plaintext is information-theoretically secure`),
+    L(`当前实测 QBER = <b>${f1(q * 100)}%</b>${keyVoid ? ' → <b>超过 11%,整条作废</b>' : ''} · 抽样 n=200 时检出概率 > 99.999%`,
+      `measured QBER = <b>${f1(q * 100)}%</b>${keyVoid ? ' → <b>above 11%, key void</b>' : ''} · with n=200 sample, detection probability > 99.999%`),
+    L(`不可克隆:¬∃U: U|ψ⟩=|ψ⟩|ψ⟩ · 光纤 ~<b>100 km</b> 级 · 墨子号 2017:<b>1200 km</b> 星地分发`,
+      `no-cloning: ¬∃U: U|ψ⟩=|ψ⟩|ψ⟩ · fiber ~<b>100 km</b> · Micius 2017: <b>1200 km</b> space-to-ground`),
+  ];
+  formulaEl.innerHTML = head + '<br>' + per[scenario];
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elRate = document.getElementById('rate'), elRateVal = document.getElementById('rateVal');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+const tglTable = document.getElementById('tglTable');
+const tglPol = document.getElementById('tglPol');
+const recTableEl = document.getElementById('recTable');
+const recCountEl = document.getElementById('recCount');
+const stSent = document.getElementById('stSent'), stSift = document.getElementById('stSift'),
+  stQber = document.getElementById('stQber'), stKey = document.getElementById('stKey');
+let polVis = true;
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && (!r.vis || r.vis());
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elRate.addEventListener('input', () => { rate = (+elRate.value) / 10; elRateVal.textContent = rate.toFixed(1) + ' /s'; });
+document.getElementById('btnEve').addEventListener('click', () => { setEve(!eveOn); tour = false; });
+document.getElementById('btnSift').addEventListener('click', () => {
+  recTableEl.classList.remove('sifting');
+  void recTableEl.offsetWidth;
+  recTableEl.classList.add('sifting');
+  tour = false;
+});
+document.getElementById('btnReset').addEventListener('click', () => { resetStats(); updateFormula(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+tglPol.addEventListener('change', () => {
+  polVis = tglPol.checked;
+  for (const p of phPool) if (p.active) p.strip.visible = polVis;
+});
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------- stats 刷新 ---------------- */
+function updateStats() {
+  const q = qberNow();
+  stSent.textContent = String(sent);
+  stSift.textContent = sifted + '';
+  stSift.className = 'v ' + (keyVoid ? '' : 'ok');
+  stQber.innerHTML = f1(q * 100) + '<small> %</small>';
+  stQber.className = 'v ' + (keyVoid ? 'bad' : (q > 0.05 ? 'warn' : 'ok'));
+  let txt, cls;
+  if (sifted < 8) { txt = L('采样中…', 'sampling…'); cls = 'v'; }
+  else if (keyVoid) { txt = L('作废 ✗', 'VOID ✗'); cls = 'v bad'; }
+  else { txt = L('安全 ✓', 'secure ✓'); cls = 'v ok'; }
+  stKey.textContent = txt;
+  stKey.className = cls;
+}
+
+/* ---------------- 光子更新 ---------------- */
+const _c = new THREE.Color();
+function updPhotons(dt, et) {
+  for (const p of phPool) {
+    if (!p.active) continue;
+    /* 扰动红闪脉冲 */
+    if (p.flash > 0) {
+      p.flash -= dt;
+      const s = 1 + 0.65 * Math.max(0, Math.sin(p.flash * 22));
+      p.sph.scale.setScalar(s);
+      if (p.flash <= 0) p.sph.scale.setScalar(1);
+    }
+    /* Eve 处停留测量 */
+    if (p.wait > 0) {
+      p.wait -= dt;
+      p.g.position.set(EX, AY + Math.sin(et * 30) * 0.02, 0);
+      if (p.wait > 0) continue;
+    }
+    p.x += PH_V * dt;
+    /* 途经 Eve:截获测量(量子规则),错基则态被重置 */
+    if (eveOn && p.phase === 0 && p.x >= EX) {
+      p.x = EX; p.phase = 1;
+      const eBasis = Math.random() < 0.5 ? 0 : 1;
+      const eBit = qbMeasure(p.stBasis, p.stBit, eBasis);
+      p.disturbed = eBasis !== p.stBasis;
+      p.stBasis = eBasis; p.stBit = eBit;
+      p.flash = 0.45; p.wait = 0.4;
+      applyPhotonLook(p);
+      p.strip.visible = polVis;
+      eveFlash = 0.4;
+    }
+    /* 不可克隆演示:路过 Eve 上空试图复制 */
+    if (cloneMode && !p.ghost && p.x > EX - 0.2) { p.ghost = true; spawnGhost(); }
+    /* 到达 Bob:随机基测量(量子规则)并入账 */
+    if (p.x >= BX - 0.55) {
+      const bBasis = Math.random() < 0.5 ? 0 : 1;
+      const bBit = qbMeasure(p.stBasis, p.stBit, bBasis);
+      bobAngle = polAngle(bBasis, 0);
+      bobFlash = 0.45;
+      recordRow(p, bBasis, bBit);
+      p.active = false; p.g.visible = false; p.div.style.display = 'none';
+      continue;
+    }
+    p.g.position.set(p.x, AY, 0);
+  }
+}
+function updGhosts(dt, et) {
+  for (const gh of ghosts) {
+    if (gh.life <= 0) continue;
+    gh.t += dt;
+    const k = gh.t / gh.life;
+    if (k >= 1) { gh.life = 0; gh.m.visible = false; continue; }
+    gh.m.position.y += dt * 0.55;
+    gh.m.scale.setScalar(0.15 + Math.sin(Math.PI * k) * 0.55);
+    gh.m.material.opacity = (Math.sin(et * 42) > 0 ? 0.85 : 0.25) * (1 - k);
+  }
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0, qberH = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const dts = dt * speed;
+  et += dt;
+  if (playing) {
+    if (tour) {
+      dwell += dt;
+      if (dwell > STEPS[scenario].dur) activateStep((scenario + 1) % STEPS.length);
+    }
+    emitT -= dts;
+    if (emitT <= 0) { emitPhoton(); emitT += 1 / rate; }
+    updPhotons(dts, et);
+    updGhosts(dts, et);
+  }
+  /* 视觉活性:晶体脉动、偏振片旋转、Eve 悬浮 */
+  crystal.rotation.y += dt * 0.8;
+  crystal.scale.setScalar(1 + 0.07 * Math.sin(et * 4));
+  M.crystal.emissiveIntensity = 1.1 + 0.5 * Math.sin(et * 4);
+  polA.rotation.x += dt * 0.5;
+  dA2.rotation.x = Math.sin(et * 0.7) * 0.5;
+  ringB.rotation.x += dt * 0.35;
+  bobFlash = Math.max(0, bobFlash - dt);
+  barB.material = bobFlash > 0 ? M.discCross : M.discPlus;
+  const tgtA = bobAngle + Math.sin(et * 1.3) * 0.06;
+  analyzer.rotation.x += (tgtA - analyzer.rotation.x) * Math.min(1, dt * 8);
+  eveGroup.position.y = AY + Math.sin(et * 1.8) * 0.04;
+  eveGroup.rotation.y += dt * 0.6;
+  eveFlash = Math.max(0, eveFlash - dt);
+  M.eve.emissiveIntensity = 0.4 + (eveFlash > 0 ? 1.4 * eveFlash / 0.4 : 0) + (eveOn ? 0.15 * Math.sin(et * 5) : 0);
+  /* QBER 柱逼近目标高度 + 阈值环脉动 */
+  const q = qberNow();
+  qberH += (clamp01(q / QMAX) * BAR_MAX - qberH) * Math.min(1, dt * 4);
+  qbar.scale.y = Math.max(qberH, 0.001);
+  _c.set(q < 0.05 ? 0x51cf66 : (q <= 0.11 ? 0xffa94d : 0xff6b6b));
+  qbar.material.color.copy(_c);
+  qbar.material.emissive.copy(_c);
+  thrFlash = Math.max(0, thrFlash - dt);
+  M.thr.emissiveIntensity = 0.45 + (keyVoid ? 0.55 + 0.4 * Math.sin(et * 7) : 0) + thrFlash * 2;
+  thrRing.scale.setScalar(1 + thrFlash * 0.5);
+  /* 相机焦点缓动 */
+  if (focusT > 0) {
+    focusT -= dt / 1.7;
+    const k = 1 - Math.exp(-dt * 3);
+    controls.target.lerp(focusTgt, k);
+    camera.position.lerp(focusPos, k);
+  }
+  /* 标签 */
+  for (const r of labelReg) {
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  /* stats 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) { lastStatsT = now; updateStats(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+elRate.value = Math.round(rate * 10);
+elRateVal.textContent = rate.toFixed(1) + ' /s';
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
