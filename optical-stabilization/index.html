@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>光学防抖 · 陀螺测抖,VCM 把镜组反向平移 δ=f·tanθ</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#c08a3e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#9a6d2c;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(25,113,194,.9); color: #1971c2; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(192,138,62,.65); background: rgba(192,138,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(154,109,44,.55); background: rgba(154,109,44,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #pvwrap { margin-top: 4px; border: 1px dashed var(--panel-border); border-radius: 8px; padding: 3px; }
+  #pvCanvas { display: block; width: 100%; height: 96px; }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(192,138,62,.10); border-color: rgba(192,138,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(154,109,44,.08); border-color: rgba(154,109,44,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #ecd9b0; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="光学防抖:陀螺仪测抖,VCM 把镜组反向平移 δ=f·tanθ" data-en="Optical Stabilization: gyro senses shake, VCM shifts the lens by δ=f·tanθ">光学防抖:陀螺仪测抖,VCM 把镜组反向平移 δ=f·tanθ</h1>
+  <div class="sub" data-zh="手抖是 5-8 Hz、±0.5-1° 的角晃动:1/30 s 快门里镜头就转了约 0.2°,60 mm 镜头下影像在传感器上抹过几十像素;防抖链路 = 陀螺仪测角速度 → 控制器算补偿 → 音圈电机 VCM 把浮动镜组垂直光轴平移 δ=f·tanθ(60 mm 转 1° → 1.05 mm),让光束原路打回传感器;光学防抖买回 3-5 档快门(8-32× 曝光时长),机身五轴再补俯仰/横滚;但稳住的是相机不是被摄物,追拍照样糊 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Hand shake is a 5-8 Hz angular wobble of ±0.5-1°: during a 1/30 s exposure the lens turns ~0.2°, smearing the image across dozens of pixels on a 60 mm lens; the chain = gyro senses angular rate, controller computes compensation, voice-coil motor (VCM) shifts the floating lens group perpendicular to the axis by δ=f·tanθ (60 mm at 1° → 1.05 mm) so light returns on its original path; OIS buys 3-5 stops of shutter (8-32× exposure), 5-axis IBIS adds pitch/roll; but it steadies the camera, not the subject — panning blur remains · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">手抖是 5-8 Hz、±0.5-1° 的角晃动:1/30 s 快门里镜头就转了约 0.2°,60 mm 镜头下影像在传感器上抹过几十像素;防抖链路 = 陀螺仪测角速度 → 控制器算补偿 → 音圈电机 VCM 把浮动镜组垂直光轴平移 δ=f·tanθ(60 mm 转 1° → 1.05 mm),让光束原路打回传感器;光学防抖买回 3-5 档快门(8-32× 曝光时长),机身五轴再补俯仰/横滚;但稳住的是相机不是被摄物,追拍照样糊 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="当前抖角 θ" data-en="shake θ">当前抖角 θ</span><span class="v" id="stTh">—</span>
+  <span class="k" data-zh="镜组位移 δ" data-en="lens shift δ">镜组位移 δ</span><span class="v" id="stDl">—</span>
+  <span class="k" data-zh="等效档位" data-en="stop gain">等效档位</span><span class="v" id="stStops">—</span>
+  <span class="k" data-zh="拖影像素" data-en="blur px">拖影像素</span><span class="v" id="stBlur">—</span>
+  <span class="k" data-zh="稳定度" data-en="stability">稳定度</span><span class="v" id="stStab">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="固定镜组" data-en="fixed groups">固定镜组</span>
+    <span class="chip g" data-zh="浮动镜组/VCM" data-en="floating group / VCM">浮动镜组/VCM</span>
+    <span class="chip o" data-zh="光束路径" data-en="beam path">光束路径</span>
+    <span class="chip r" data-zh="传感器/拖影" data-en="sensor / blur">传感器/拖影</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnOIS" data-zh="防抖 开/关对比" data-en="OIS on/off compare">防抖 开/关对比</button>
+    <button class="abtn" id="btnAxis5" data-zh="五轴模式" data-en="5-axis mode">五轴模式</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="抖动幅度" data-en="shake amplitude">抖动幅度</label><input id="amp" type="range" min="0.2" max="1.5" step="0.05" value="0.6"><span class="val" id="ampVal">0.60°</span></div>
+  <div class="row"><label data-zh="快门速度" data-en="shutter speed">快门速度</label><input id="shut" type="range" min="8" max="250" step="1" value="60"><span class="val" id="shutVal">1/60 s</span></div>
+  <div id="pvwrap"><canvas id="pvCanvas" width="368" height="96"></canvas></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="进度" data-en="Step">进度</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglRay" type="checkbox" checked> <span data-zh="光路显示" data-en="light path">光路显示</span></label>
+        <label><input id="tglGyro" type="checkbox" checked> <span data-zh="陀螺曲线" data-en="gyro trace">陀螺曲线</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../autofocus/" data-zh="自动对焦" data-en="autofocus">自动对焦</a>
+    <a href="../camera-sensor/" data-zh="相机传感器" data-en="camera sensor">相机传感器</a>
+    <a href="../mems-accelerometer/" data-zh="MEMS 加速度计" data-en="MEMS accelerometer">MEMS 加速度计</a>
+    <a href="../aperture-depth-of-field/" data-zh="光圈与景深" data-en="aperture and depth of field">光圈与景深</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeff1f4 : 0x0f1216);
+  M.ground.color.set(THEME === 'light' ? 0xd7dce3 : 0x1b202a);
+  M.barrel.color.set(THEME === 'light' ? 0x7f8fa2 : 0x93a7ba);
+  M.body.color.set(THEME === 'light' ? 0x6d7885 : 0x39424e);
+  rayMat.color.set(THEME === 'light' ? 0x1173a6 : 0x6fd0ff);
+  axisMat.color.set(THEME === 'light' ? 0x7a8694 : 0x5a6572);
+  drawGyro();
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('光学防抖 · 陀螺测抖,VCM 把镜组反向平移 δ=f·tanθ', 'Optical Stabilization · Gyro In, VCM Counter-Shift, δ=f·tanθ');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(1.1, 1.55, 3.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.35, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.9;
+controls.maxDistance = 9;
+controls.autoRotateSpeed = 0.2;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 1.9);
+key.position.set(4, 8, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const rayMat = new THREE.LineBasicMaterial({ color: 0x6fd0ff, transparent: true, opacity: 0.8 });
+const axisMat = new THREE.LineDashedMaterial({ color: 0x5a6572, dashSize: 0.06, gapSize: 0.05,
+  transparent: true, opacity: 0.55 });
+const M = {
+  ground: mat(0x1b202a, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  body: mat(0x39424e, { roughness: 0.5, metalness: 0.6 }),
+  barrel: new THREE.MeshStandardMaterial({ color: 0x93a7ba, roughness: 0.4, metalness: 0.5,
+    transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }),
+  glass: new THREE.MeshStandardMaterial({ color: 0xbfe3f2, roughness: 0.08, metalness: 0.05,
+    transparent: true, opacity: 0.3, side: THREE.DoubleSide, emissive: 0x1a3b4d, emissiveIntensity: 0.35 }),
+  glass2: new THREE.MeshStandardMaterial({ color: 0xe8d8b8, roughness: 0.1, metalness: 0.05,
+    transparent: true, opacity: 0.28, side: THREE.DoubleSide, emissive: 0x3d3320, emissiveIntensity: 0.3 }),
+  copper: mat(0xc08a3e, { emissive: 0x8a5a1e, emissiveIntensity: 0.3, roughness: 0.35, metalness: 0.7 }),
+  dark: mat(0x232830, { roughness: 0.6, metalness: 0.4 }),
+  shaft: mat(0xd8dee8, { metalness: 0.85, roughness: 0.25 }),
+  photo: mat(0x2f8f66, { emissive: 0x1f8f5f, emissiveIntensity: 0.45, roughness: 0.3, metalness: 0.2 }),
+  pcb: mat(0x1e4d3a, { roughness: 0.7, metalness: 0.2 }),
+  dot: new THREE.MeshBasicMaterial({ color: 0xffb84d }),
+};
+
+/* ---------------- 镜头纵向剖视(光轴沿 X) ----------------
+   前组 x=-1.12 → 中组 x=-0.45 → 浮动补偿组 x=+0.18 → 传感器 x≈1.2;焦距演示值 f=60 mm */
+const F_MM = 60, PITCH_MM = 0.004, HZ = 6, KV = 26.5;   // KV: 角度→画面位移的可视化比例
+const shakeG = new THREE.Group();
+scene.add(shakeG);
+
+const GAP = 2.1;
+const barrelGeo = new THREE.CylinderGeometry(0.47, 0.47, 2.9, 48, 1, true, -GAP / 2, TAU - GAP);
+barrelGeo.rotateZ(Math.PI / 2);
+const barrel = new THREE.Mesh(barrelGeo, M.barrel);
+shakeG.add(barrel);
+for (const rx of [-1.45, 1.45]) {
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.47, 0.025, 10, 40), M.body);
+  rim.rotation.y = Math.PI / 2;
+  rim.position.x = rx;
+  shakeG.add(rim);
+}
+function lensGeo(r, sag) {                    // 双凸透镜:绕 Y 旋转车削成型,再转到光轴方向
+  const pts = [];
+  for (let i = 0; i <= 16; i++) {
+    const a = Math.PI * i / 16;
+    pts.push(new THREE.Vector2(Math.sin(a) * r, Math.cos(a) * sag));
+  }
+  const g = new THREE.LatheGeometry(pts, 36);
+  g.rotateZ(Math.PI / 2);
+  return g;
+}
+const lensFront = new THREE.Mesh(lensGeo(0.4, 0.09), M.glass);
+lensFront.position.x = -1.12; shakeG.add(lensFront);
+const lensMid = new THREE.Mesh(lensGeo(0.3, 0.06), M.glass2);
+lensMid.position.x = -0.45; shakeG.add(lensMid);
+const aperture = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.02, 8, 36), M.dark);
+aperture.rotation.y = Math.PI / 2; aperture.position.x = -0.8; shakeG.add(aperture);
+
+/* 浮动补偿镜组 + VCM(线圈随动,磁铁/导轨固定) */
+const floatG = new THREE.Group();
+floatG.position.x = 0.18;
+shakeG.add(floatG);
+const lensFloat = new THREE.Mesh(lensGeo(0.26, 0.06), M.glass);
+floatG.add(lensFloat);
+const holder = new THREE.Mesh(new THREE.TorusGeometry(0.29, 0.03, 10, 36), M.body);
+holder.rotation.y = Math.PI / 2;
+floatG.add(holder);
+const coil = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.028, 10, 40), M.copper);
+coil.rotation.y = Math.PI / 2;
+floatG.add(coil);
+for (const my of [-0.45, 0.45]) {
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.8, 0.09), M.dark);
+  mag.position.set(0.18, my, 0);
+  shakeG.add(mag);
+}
+for (const rz of [-0.4, 0.4]) {
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.0, 0.04), M.shaft);
+  rail.position.set(0.18, 0, rz);
+  shakeG.add(rail);
+}
+
+/* 传感器 + 电路板 */
+const sensorG = new THREE.Group();
+shakeG.add(sensorG);
+const senBody = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.6, 0.6), M.dark);
+senBody.position.x = 1.26; sensorG.add(senBody);
+const senFace = new THREE.Mesh(new THREE.PlaneGeometry(0.54, 0.54), M.photo);
+senFace.rotation.y = -Math.PI / 2;
+senFace.position.x = 1.195; sensorG.add(senFace);
+const pcb = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.78, 0.78), M.pcb);
+pcb.position.x = 1.34; sensorG.add(pcb);
+
+/* 光轴虚线 + 5 条折射光线(世界系,不随抖动旋转) */
+const axisGeo = new THREE.BufferGeometry().setFromPoints(
+  [new THREE.Vector3(-1.85, 0, 0), new THREE.Vector3(1.45, 0, 0)]);
+const axisLine = new THREE.Line(axisGeo, axisMat);
+axisLine.computeLineDistances();
+scene.add(axisLine);
+const EK = [-0.3, -0.15, 0, 0.15, 0.3];
+const rays = [];
+for (let k = 0; k < EK.length; k++) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3));
+  const line = new THREE.Line(g, rayMat);
+  line.frustumCulled = false;
+  scene.add(line);
+  rays.push(line);
+}
+const hitDot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 14, 10), M.dot);
+hitDot.position.set(1.19, 0, 0);
+scene.add(hitDot);
+
+/* ---------------- 取景模拟(canvas 纹理,残影 = 拖影) ---------------- */
+const vf = document.createElement('canvas');
+vf.width = 208; vf.height = 140;
+const vfc = vf.getContext('2d');
+const vfTex = new THREE.CanvasTexture(vf);
+vfTex.colorSpace = THREE.SRGBColorSpace;
+const vfPlate = new THREE.Mesh(new THREE.PlaneGeometry(1.58, 1.08), M.dark);
+const vfScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.0),
+  new THREE.MeshBasicMaterial({ map: vfTex, toneMapped: false }));
+const vfG = new THREE.Group();
+vfG.position.set(0, 1.52, 0);
+vfG.rotation.x = -0.5;
+vfPlate.position.z = -0.004;
+vfG.add(vfPlate); vfG.add(vfScreen);
+scene.add(vfG);
+
+/* 地面 */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 2.7, 0.05, 48), M.ground);
+ground.position.y = -0.75;
+scene.add(ground);
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let amp = clamp(qsFloat('amp', 0.6), 0.2, 1.5);       // 抖动幅度(度)
+let shutN = Math.round(clamp(qsFloat('shut', 60), 8, 250)); // 快门分母:1/N s
+let ois = true, axis5 = false;
+let ts = 0, scenario = 0, dwell = 0, tour = true;
+let labelsOn = qsBool('labels', true);
+let raysOn = true, gyroOn = true;
+let th = 0, th2 = 0, yC = 0, zC = 0, dY = 0, dZ = 0, yP = 0, zP = 0, dlLast = 0;
+const hist = [];                                       // 陀螺曲线历史 [θ°, δmm]
+const R_OFF = () => axis5 ? 0.08 : 0.10;               // 补偿残差(预测控制后)
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+const thDeg = () => th * 180 / Math.PI;
+const dlMm = () => (ois ? 0.9 : 0) * F_MM * Math.tan(th);
+const lblShake = addLabel(
+  () => L(`手抖 θ = ${thDeg().toFixed(2)}° @ 6 Hz`, `shake θ = ${thDeg().toFixed(2)}° at 6 Hz`),
+  () => Math.abs(thDeg()) > 0.5 ? 'w' : 'st',
+  new THREE.Vector3(-1.9, 0.78, 0));
+const lblLens = addLabel(
+  () => L(`浮动镜组 δ = ${(ois ? 0.9 * F_MM * Math.tan(th) : 0).toFixed(2)} mm`, `floating δ = ${(ois ? 0.9 * F_MM * Math.tan(th) : 0).toFixed(2)} mm`),
+  () => 'e',
+  new THREE.Vector3(0.18, 0.62, 0));
+const lblSensor = addLabel(
+  () => L(`传感器命中偏移 ${(F_MM * yP / KV).toFixed(2)} mm`, `sensor hit offset ${(F_MM * yP / KV).toFixed(2)} mm`),
+  () => Math.abs(yP) < 0.08 ? 'g' : 'bad',
+  new THREE.Vector3(1.5, 0.6, 0));
+const lblVf = addLabel(
+  () => L(`取景模拟 · 防抖${ois ? '开:稳如三脚架' : '关:拖影'}`, `viewfinder · OIS ${ois ? 'on: tripod-steady' : 'off: smeared'}`),
+  () => ois ? 'g' : 'bad',
+  new THREE.Vector3(0, 2.18, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'shake', tgt: [-1.3, 0.5, 0], dur: 8,
+    b: '手抖:5-8 Hz 的角晃动', be: 'Hand shake: a 5-8 Hz angular wobble',
+    d: '手持相机以 5-8 Hz 颤抖,幅度 ±0.5-1°:1/30 s 快门里镜头就转了约 0.2°——看整只镜头在微微摇摆,这就是手抖的角运动本质。',
+    de: 'A handheld camera trembles at 5-8 Hz, ±0.5-1°: during a 1/30 s exposure the lens turns about 0.2° — watch the whole barrel sway slightly: that is shake as angular motion.' },
+  { hl: 'geom', tgt: [-0.7, 0.35, 0], dur: 8,
+    b: '角度变位移:δ = f·tanθ', be: 'Angle into shift: δ = f·tanθ',
+    d: '焦距越长,同样的角抖动在传感器上抹得越远:60 mm 镜头转 1°,像点就要跑 f·tanθ ≈ 1.05 mm——相当于几百个像素,这就是长焦手抖更致命的原因。',
+    de: 'The longer the focal length, the farther the same wobble smears the image: on a 60 mm lens, 1° sends the image point f·tanθ ≈ 1.05 mm — hundreds of pixels. That is why telephoto shake hurts most.' },
+  { hl: 'gyro', tgt: [-0.9, 0.4, 0], dur: 8,
+    b: '陀螺仪:先知道抖了多少', be: 'Gyro: measure the shake first',
+    d: '镜头里的 MEMS 陀螺仪以 kHz 级采样输出角速度,控制器积分得到实时抖角 θ(看面板里的陀螺曲线),再按 δ=f·tanθ 换算成镜组位移——整条链路延迟压在 ~10 ms 量级。',
+    de: 'A MEMS gyro inside the lens samples angular rate at kHz rates; the controller integrates it into the live shake angle θ (see the gyro trace) and converts it to a shift via δ=f·tanθ — total latency held near 10 ms.' },
+  { hl: 'vcm', tgt: [0.2, 0.35, 0], dur: 8,
+    b: 'VCM:音圈电机反向平移', be: 'VCM: counter-shift the floating group',
+    d: '浮动镜组挂在导轨上,音圈电机(线圈 + 磁铁,与扬声器同原理)通电流即产生推力,把镜组垂直光轴平移 δ,让被抖歪的光束原路折回传感器中心——线圈亮度随补偿力度变化。',
+    de: 'The floating group rides on rails; a voice-coil motor (coil plus magnets, same principle as a speaker) pushes it perpendicular to the axis by δ, bending the shaken beams back onto the sensor center — coil glow tracks the effort.' },
+  { hl: 'stops', tgt: [0, 0.5, 0], dur: 8,
+    b: '3-5 档快门 = 8-32 倍曝光', be: '3-5 stops = 8-32× longer exposure',
+    d: '残差约 10% 的补偿等效 3-5 档快门:1/60 s 的安全快门可以放到 1/8 s 上下(2^3.3 ≈ 10 倍)。夜景/室内不必再拼命提感光度,画质直接受益。',
+    de: 'Compensation with ~10% residual equals 3-5 stops: a 1/60 s safe shutter stretches to around 1/8 s (2^3.3 ≈ 10×). Night and indoor shots keep low ISO — image quality wins directly.' },
+  { hl: 'vs', tgt: [0, 1.3, 0], dur: 10, fire: 'ois',
+    b: '招牌瞬间:开/关防抖对比', be: 'The moment: OIS on vs off',
+    d: '关掉防抖:光斑在传感器上大幅游走,取景画面拖成一片;打开防抖:浮动镜组反向平移,光斑钉在原地,画面稳如三脚架。用按钮反复切换,对比上方取景模拟。',
+    de: 'OIS off: the light spot wanders across the sensor and the viewfinder smears into a streak; OIS on: the floating group counter-shifts, the spot pins to place, steady as a tripod. Toggle the button and compare the viewfinder.' },
+  { hl: 'axis5', tgt: [0.6, 0.5, 0], dur: 9,
+    b: '五轴与最后的边界', be: 'Five axes and the final limit',
+    d: '机身防抖搬的是传感器:加上下俯仰/左右偏航/滚轮翻滚共五轴;但防抖稳住的只是相机——追拍奔跑的运动员时是"被摄物在动",再快的 VCM 也救不了,只能靠快门与闪光。',
+    de: 'In-body IBIS moves the sensor: pitch, yaw and roll make five axes; but stabilization steadies the camera, not the subject — panning a runner means the subject moves, and no VCM can fix that; only shutter and flash remain.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+let tgtVec = new THREE.Vector3(-1.3, 0.5, 0);
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  dwell = 0;
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+  if (STEPS[scenario].fire === 'ois') setOIS(!ois);
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const dmax = F_MM * Math.tan(amp * Math.PI / 180);
+  const blurOff = 2 * dmax * Math.abs(Math.sin(Math.PI * HZ / shutN)) / PITCH_MM;
+  const r = R_OFF();
+  const stops = ois ? Math.log2(1 / r) : 0;
+  formulaEl.innerHTML =
+    L(`δ = f·tanθ = 60 mm × tan(${thDeg().toFixed(2)}°) ≈ <b>${(F_MM * Math.tan(th)).toFixed(2)} mm</b>(60 mm 转 1° → 1.05 mm · 行程 ±1 mm 量级)`,
+      `δ = f·tanθ = 60 mm × tan(${thDeg().toFixed(2)}°) ≈ <b>${(F_MM * Math.tan(th)).toFixed(2)} mm</b> (60 mm at 1° → 1.05 mm · travel ±1 mm)`) +
+    '<br>' +
+    L(`拖影 = 2δ·sin(π·6·T)/间距 ≈ <b>${(ois ? blurOff * r : blurOff).toFixed(0)} px</b>(像素间距 4 µm · 快门 1/${shutN} s · 关防抖 ${(blurOff).toFixed(0)} px)`,
+      `blur = 2δ·sin(π·6·T)/pitch ≈ <b>${(ois ? blurOff * r : blurOff).toFixed(0)} px</b> (4 µm pitch · shutter 1/${shutN} s · OIS off: ${(blurOff).toFixed(0)} px)`) +
+    '<br>' +
+    L(`安全快门 ≈ 1/(f·2^档) = 1/(60×${Math.pow(2, stops).toFixed(0)}) ≈ <b>1/${Math.max(1, Math.round(60 * Math.pow(2, stops)))} s</b> · 残差 ~${(r * 100).toFixed(0)}% · VCM 响应 ~10 ms`,
+      `safe shutter ≈ 1/(f·2^stops) = 1/(60×${Math.pow(2, stops).toFixed(0)}) ≈ <b>1/${Math.max(1, Math.round(60 * Math.pow(2, stops)))} s</b> · residual ~${(r * 100).toFixed(0)}% · VCM ~10 ms`);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elAmp = document.getElementById('amp'), elAmpVal = document.getElementById('ampVal');
+const elShut = document.getElementById('shut'), elShutVal = document.getElementById('shutVal');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.element.style.display = labelsOn ? '' : 'none';
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elAmp.addEventListener('input', () => {
+  amp = +elAmp.value;
+  elAmpVal.textContent = amp.toFixed(2) + '°';
+  tour = false;
+  updateFormula();
+});
+elShut.addEventListener('input', () => {
+  shutN = +elShut.value;
+  elShutVal.textContent = '1/' + shutN + ' s';
+  tour = false;
+  updateFormula();
+});
+function setOIS(v) {
+  ois = v;
+  document.getElementById('btnOIS').classList.toggle('on', ois);
+  updateFormula();
+}
+function setAxis5(v) {
+  axis5 = v;
+  document.getElementById('btnAxis5').classList.toggle('on', axis5);
+  updateFormula();
+}
+document.getElementById('btnOIS').addEventListener('click', () => { setOIS(!ois); tour = false; });
+document.getElementById('btnAxis5').addEventListener('click', () => { setAxis5(!axis5); tour = false; });
+document.getElementById('btnReset').addEventListener('click', () => {
+  amp = 0.6; shutN = 60;
+  elAmp.value = '0.6'; elAmpVal.textContent = '0.60°';
+  elShut.value = '60'; elShutVal.textContent = '1/60 s';
+  setOIS(true); setAxis5(false);
+  updateFormula();
+});
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+document.getElementById('tglRay').addEventListener('change', e => {
+  raysOn = e.target.checked;
+  rays.forEach(ln => { ln.visible = raysOn; });
+  axisLine.visible = raysOn;
+  hitDot.visible = raysOn;
+});
+document.getElementById('tglGyro').addEventListener('change', e => {
+  gyroOn = e.target.checked;
+  document.getElementById('pvwrap').style.display = gyroOn ? '' : 'none';
+});
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------- stats 刷新(150 ms 节流) ---------------- */
+const stTh = document.getElementById('stTh'), stDl = document.getElementById('stDl'),
+  stStops = document.getElementById('stStops'), stBlur = document.getElementById('stBlur'),
+  stStab = document.getElementById('stStab');
+function updateStats() {
+  const thd = Math.abs(thDeg());
+  stTh.innerHTML = thd.toFixed(2) + '<small>°</small>';
+  stTh.className = 'v ' + (thd > 0.9 ? 'bad' : thd > 0.5 ? 'warn' : 'ok');
+  const dmm = Math.abs(dlMm());
+  stDl.innerHTML = dmm.toFixed(2) + '<small> mm</small>';
+  stDl.className = 'v ' + (ois ? 'ok' : '');
+  const r = R_OFF();
+  const stops = ois ? Math.log2(1 / r) : 0;
+  stStops.innerHTML = stops.toFixed(1) + '<small> ' + L('档', 'stops') + '</small>';
+  stStops.className = 'v ' + (ois ? 'ok' : 'warn');
+  const dmax = F_MM * Math.tan(amp * Math.PI / 180);
+  const blurOff = 2 * dmax * Math.abs(Math.sin(Math.PI * HZ / shutN)) / PITCH_MM;
+  const blurPx = ois ? blurOff * r : blurOff;
+  stBlur.innerHTML = blurPx.toFixed(0) + '<small> px</small>';
+  stBlur.className = 'v ' + (blurPx < 20 ? 'ok' : blurPx < 120 ? 'warn' : 'bad');
+  const stab = ois ? (1 - r) * 100 : 0;
+  stStab.innerHTML = stab.toFixed(0) + '<small>%</small>';
+  stStab.className = 'v ' + (stab >= 85 ? 'ok' : stab >= 50 ? 'warn' : 'bad');
+  /* 陀螺曲线历史 */
+  hist.push([thDeg(), dlMm()]);
+  if (hist.length > 72) hist.shift();
+  drawGyro();
+}
+
+/* ---------------- 陀螺曲线(canvas) ---------------- */
+const pvCanvas = document.getElementById('pvCanvas');
+const gtx = pvCanvas.getContext('2d');
+function drawGyro() {
+  const c = gtx, W = pvCanvas.width, H = pvCanvas.height;
+  const ink = THEME === 'dark' ? '#8fa0b4' : '#5b6b7d';
+  c.clearRect(0, 0, W, H);
+  const mid = H / 2;
+  c.strokeStyle = ink; c.lineWidth = 1; c.globalAlpha = 0.4;
+  c.beginPath(); c.moveTo(6, mid); c.lineTo(W - 6, mid); c.stroke();
+  c.globalAlpha = 1;
+  c.font = '9px sans-serif';
+  c.fillStyle = '#6fd0ff'; c.fillText(L('抖角 θ', 'shake θ'), 8, 11);
+  c.fillStyle = '#ffa94d'; c.fillText(L('镜组位移 δ', 'shift δ'), 8, 22);
+  const Y = v => mid - clamp(v / 1.8, -1, 1) * (mid - 8);
+  const trace = (idx, col) => {
+    c.strokeStyle = col; c.lineWidth = 1.5;
+    c.beginPath();
+    hist.forEach((h, i) => {
+      const x = 6 + i / 71 * (W - 12);
+      i ? c.lineTo(x, Y(h[idx])) : c.moveTo(x, Y(h[idx]));
+    });
+    c.stroke();
+  };
+  trace(0, '#6fd0ff');
+  trace(1, '#ffa94d');
+  c.fillStyle = ink;
+  c.fillText('+1.8', W - 26, 10);
+  c.fillText('0', W - 14, mid + 3);
+  c.fillText('-1.8', W - 26, H - 3);
+}
+
+/* ---------------- 取景模拟绘制(残影法) ---------------- */
+function drawVF() {
+  const W = vf.width, H = vf.height;
+  vfc.fillStyle = 'rgba(10,12,16,0.22)';
+  vfc.fillRect(0, 0, W, H);
+  const ox = clamp(zP * 40, -34, 34), oy = clamp(-yP * 55, -26, 26);
+  vfc.fillStyle = '#233246';
+  vfc.fillRect(ox * 0.6, H * 0.62 + oy, W, H);
+  vfc.fillStyle = '#ffd27a';
+  vfc.beginPath();
+  vfc.arc(W * 0.72 + ox, H * 0.3 + oy, 13, 0, TAU);
+  vfc.fill();
+  vfc.strokeStyle = '#4a5a70'; vfc.lineWidth = 2;
+  for (const px of [0.2, 0.42, 0.6]) {
+    vfc.beginPath();
+    vfc.moveTo(W * px + ox, H * 0.62 + oy);
+    vfc.lineTo(W * px + ox, H * (0.62 + 0.26 * px) + oy);
+    vfc.stroke();
+  }
+  vfc.strokeStyle = ois ? 'rgba(123,216,143,0.9)' : 'rgba(255,107,107,0.9)';
+  vfc.lineWidth = 1.5;
+  vfc.beginPath();
+  vfc.moveTo(W / 2 - 9, H / 2); vfc.lineTo(W / 2 + 9, H / 2);
+  vfc.moveTo(W / 2, H / 2 - 9); vfc.lineTo(W / 2, H / 2 + 9);
+  vfc.stroke();
+  vfTex.needsUpdate = true;
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  if (playing) {
+    ts += dt * speed * 0.42;                        // 慢放:6 Hz 抖动可视化
+    if (tour) {
+      dwell += dt;
+      if (dwell > STEPS[scenario].dur) activateStep((scenario + 1) % STEPS.length);
+    }
+  }
+  /* 手抖角注入(双谐波,幅度归一) */
+  const w = TAU * HZ * ts;
+  th = amp * Math.PI / 180 * (0.82 * Math.sin(w) + 0.18 * Math.sin(2.17 * w + 1.3));
+  th2 = amp * Math.PI / 180 * 0.55 * (0.8 * Math.sin(0.78 * w + 0.7) + 0.2 * Math.sin(1.9 * w));
+  /* 镜头整体随抖动微转(可视化"相机在晃",光线保持世界系) */
+  shakeG.rotation.z = th * 0.45;
+  shakeG.rotation.y = -th2 * 0.45 * (axis5 ? 1 : 0.3);
+  /* 像点与补偿量 */
+  yC = KV * Math.tan(th);
+  zC = KV * Math.tan(th2) * 0.6;
+  dY = ois ? -0.9 * yC : 0;
+  dZ = (ois && axis5) ? -0.9 * zC : 0;
+  yP = yC + dY;
+  zP = zC + dZ;
+  floatG.position.y = dY;
+  floatG.position.z = dZ;
+  if (axis5) sensorG.rotation.z = ois ? -th * 0.3 : 0; else sensorG.rotation.z = 0;
+  hitDot.position.set(1.19, yP, zP);
+  M.dot.color.setHex(Math.abs(yP) < 0.08 ? 0x7bd88f : 0xffb84d);
+  /* 线圈发光随补偿速度 */
+  M.copper.emissiveIntensity = 0.25 + Math.min(1, Math.abs(dlMm() - dlLast) * 30) * 0.9;
+  dlLast = dlMm();
+  /* 光路:5 条折射光线,E → 前组 → 浮动组(折点) → 传感器 */
+  for (let k = 0; k < EK.length; k++) {
+    const s = EK[k];
+    const p = rays[k].geometry.attributes.position.array;
+    p[0] = -1.78; p[1] = s + yC * 0.32; p[2] = s * 0.75 + zC * 0.32;
+    p[3] = -1.12; p[4] = s * 0.6 + yC * 0.68; p[5] = s * 0.45 + zC * 0.68;
+    p[6] = 0.18; p[7] = yC + s * 0.16; p[8] = zC + s * 0.12;
+    p[9] = 1.19; p[10] = yP + s * 0.3; p[11] = zP + s * 0.24;
+    rays[k].geometry.attributes.position.needsUpdate = true;
+  }
+  /* 取景模拟 + 步骤高亮 */
+  drawVF();
+  const hlK = 0.45 + 0.2 * Math.sin(performance.now() / 200);
+  const hl = STEPS[scenario].hl;
+  M.copper.emissiveIntensity += (hl === 'vcm' || hl === 'vs') ? hlK * 0.6 : 0;
+  M.photo.emissiveIntensity = 0.45 + (hl === 'vs' ? hlK * 0.5 : 0);
+  vfPlate.scale.setScalar(1 + (hl === 'vs' ? hlK * 0.02 : 0));
+  /* 相机目标缓动 */
+  controls.target.lerp(tgtVec, 0.05);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  /* stats + 陀螺曲线节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) { lastStatsT = now; updateStats(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+elAmp.value = amp.toFixed(2);
+elAmpVal.textContent = amp.toFixed(2) + '°';
+elShut.value = shutN;
+elShutVal.textContent = '1/' + shutN + ' s';
+if (gyroOn) document.getElementById('pvwrap').style.display = '';
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>密码学哈希与雪崩效应 · 翻转 1 位,输出换掉一半</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4f9d5c;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#3f8049;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(25,113,194,.9); color: #1971c2; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(79,157,92,.65); background: rgba(79,157,92,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(63,128,73,.55); background: rgba(63,128,73,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #pvwrap { margin-top: 4px; border: 1px dashed var(--panel-border); border-radius: 8px; padding: 3px; }
+  #pvCanvas { display: block; width: 100%; height: 96px; }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(79,157,92,.10); border-color: rgba(79,157,92,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(63,128,73,.08); border-color: rgba(63,128,73,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #b5dcbf; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; }
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="密码学哈希与雪崩效应:翻转 1 位,输出换掉一半" data-en="Cryptographic Hash and Avalanche: flip one bit, half the output changes">密码学哈希与雪崩效应:翻转 1 位,输出换掉一半</h1>
+  <div class="sub" data-zh="任意长输入 → 固定 256 位摘要;分块后经压缩函数迭代(Merkle–Damgård),SHA-256 每块 64 轮移位/异或/模加把 1 位输入搅进全部状态;雪崩:输入差 1 位,输出期望 128 位不同(50%)——两个摘要看起来毫无亲缘;找碰撞靠生日界,256 位哈希需 ~2¹²⁸ 次尝试;密码入库要加盐 + 慢函数(bcrypt/argon2),让 GPU 的 10¹⁰ 次/秒猜测失效 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Arbitrary-length input in, a fixed 256-bit digest out. Blocks feed a compression function (Merkle-Damgård); SHA-256 mixes each through 64 rounds of shifts, XORs and modular adds. Avalanche: one flipped input bit changes ~128 output bits (50%) — the two digests look unrelated. Collisions take ~2^128 tries by the birthday bound; passwords need salt plus a slow function (bcrypt/argon2) to blunt 10^10 guesses per second · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">任意长输入 → 固定 256 位摘要；分块后经压缩函数迭代（Merkle–Damgård），SHA-256 每块 64 轮移位/异或/模加把 1 位输入搅进全部状态；雪崩：输入差 1 位，输出期望 128 位不同（50%）——两个摘要看起来毫无亲缘；找碰撞靠生日界，256 位哈希需 ~2¹²⁸ 次尝试；密码入库要加盐 + 慢函数（bcrypt/argon2），让 GPU 的 10¹⁰ 次/秒猜测失效 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="输入差异" data-en="input diff">输入差异</span><span class="v" id="stIn">—</span>
+  <span class="k" data-zh="输出翻转位数" data-en="output bits flipped">输出翻转位数</span><span class="v" id="stOut">—</span>
+  <span class="k" data-zh="雪崩率" data-en="avalanche rate">雪崩率</span><span class="v" id="stAv">—</span>
+  <span class="k" data-zh="碰撞代价" data-en="collision cost">碰撞代价</span><span class="v" id="stCol">—</span>
+  <span class="k" data-zh="状态" data-en="status">状态</span><span class="v" id="stSt">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="摘要 A 的 256 位" data-en="digest A (256 bits)">摘要 A 的 256 位</span>
+    <span class="chip g" data-zh="摘要 B 的 256 位" data-en="digest B (256 bits)">摘要 B 的 256 位</span>
+    <span class="chip r" data-zh="异或(翻位点)" data-en="XOR (flipped bits)">异或(翻位点)</span>
+    <span class="chip o" data-zh="64 轮混合" data-en="64 mixing rounds">64 轮混合</span>
+  </div>
+  <div id="actions">
+    <button class="abtn hot" id="btnFlip" data-zh="翻转输入 1 位" data-en="flip 1 input bit">翻转输入 1 位</button>
+    <button class="abtn" id="btnText" data-zh="换一段输入" data-en="new input">换一段输入</button>
+    <button class="abtn" id="btnStep" data-zh="逐轮单步" data-en="step a round">逐轮单步</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="混合轮数" data-en="mix rounds">混合轮数</label><input id="rnd" type="range" min="1" max="64" step="1" value="8"><span class="val" id="rndVal">8</span></div>
+  <div id="pvwrap"><canvas id="pvCanvas" width="368" height="96"></canvas></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="相位" data-en="Phase">相位</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglSpin" type="checkbox" checked> <span data-zh="轮盘旋转" data-en="rounds spin">轮盘旋转</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../rsa-crypto/" data-zh="RSA" data-en="RSA">RSA</a>
+    <a href="../diffie-hellman/" data-zh="Diffie–Hellman" data-en="Diffie-Hellman">Diffie–Hellman</a>
+    <a href="../blockchain/" data-zh="区块链" data-en="blockchain">区块链</a>
+    <a href="../hash-table/" data-zh="哈希表" data-en="hash table">哈希表</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeff1f4 : 0x0f1216);
+  M.ground.color.set(THEME === 'light' ? 0xd7dce3 : 0x1b202a);
+  bitOff.color.set(THEME === 'light' ? 0xb9c2cd : 0x232a33);
+  drawPV();
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('密码学哈希与雪崩效应 · 翻转 1 位,输出换掉一半', 'Cryptographic Hash and the Avalanche Effect');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(0.4, 1.5, 3.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.45, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.8;
+controls.maxDistance = 12;
+controls.autoRotateSpeed = 0.22;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.8));
+const key = new THREE.DirectionalLight(0xffffff, 1.8);
+key.position.set(4, 8, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.3,
+    emissive: color, emissiveIntensity: 0.1, ...opts });
+}
+const M = {
+  ground: mat(0x1b202a, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  frame: mat(0x39424f, { roughness: 0.55, metalness: 0.5 }),
+  drum: mat(0x50585f, { roughness: 0.4, metalness: 0.55 }),
+  drumOn: mat(0x4f9d5c, { roughness: 0.4, metalness: 0.3, emissive: 0x2e7d3c, emissiveIntensity: 0.8 }),
+};
+const bitOn = new THREE.MeshStandardMaterial({ color: 0x7bd88f, emissive: 0x3f9d5c, emissiveIntensity: 0.9, roughness: 0.3 });
+const bitOff = new THREE.MeshStandardMaterial({ color: 0x232a33, roughness: 0.5 });
+const bitDiff = new THREE.MeshStandardMaterial({ color: 0xff6b6b, emissive: 0xd43c3c, emissiveIntensity: 0.9, roughness: 0.3 });
+
+/* ---------------- 场景:A/B 两块 256 位灯阵 + 中间 64 轮轮盘 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 0.05, 48), M.ground);
+ground.position.y = -0.6;
+scene.add(ground);
+/* 灯阵面板:16×16 instanced cubes */
+const GRID = 16, SP = 0.052;
+function bitPanel(x0) {
+  const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(0.042, 0.042, 0.02), bitOff, 256);
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < 256; i++) {
+    const gx = i % GRID, gy = Math.floor(i / GRID);
+    dummy.position.set(x0 + (gx - (GRID - 1) / 2) * SP, 0.42 + (GRID - 1) / 2 * SP - gy * SP, 0);
+    dummy.updateMatrix();
+    inst.setMatrixAt(i, dummy.matrix);
+    inst.setColorAt(i, new THREE.Color(0x232a33));
+  }
+  inst.instanceMatrix.needsUpdate = true;
+  scene.add(inst);
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(GRID * SP + 0.12, GRID * SP + 0.12, 0.012), M.frame);
+  frame.position.set(x0, 0.42 + 0.38, -0.012);
+  scene.add(frame);
+  return inst;
+}
+const panelA = bitPanel(-1.05);
+const panelB = bitPanel(1.05);
+/* 64 轮轮盘:上弧排 8 只鼓,逐轮点亮 */
+const drums = [];
+for (let i = 0; i < 8; i++) {
+  const a = Math.PI * (0.15 + 0.7 * i / 7);
+  const d = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.05, 18), M.drum);
+  d.position.set(-Math.cos(a) * 1.15, 1.32 + Math.sin(a) * 0.5, 0);
+  d.rotation.z = a + Math.PI / 2;
+  scene.add(d);
+  drums.push(d);
+}
+/* 输入块:底部两个小方块(输入 A/B 文本块) */
+const inBlock = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.1), mat(0x9a8468, { metalness: 0.4 }));
+inBlock.position.set(0, -0.2, 0);
+scene.add(inBlock);
+/* 翻转位指示箭头(输入块上) */
+const flipArrow = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 10),
+  new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0 }));
+flipArrow.rotation.z = Math.PI;
+flipArrow.position.set(0.12, 0.05, 0.06);
+inBlock.add(flipArrow);
+
+/* ---------------- 哈希计算(真实 SHA-256) ---------------- */
+let inputA = 'how-things-work · batch 31';
+const PRESETS = [
+  'how-things-work · batch 31',
+  '雪崩效应 avalanche effect',
+  'SHA-256 of two nearly identical strings',
+  '生日界 birthday bound: 2^128',
+];
+let presetIdx = 0;
+let hexA = '', hexB = '', bitsA = [], bitsB = [], diffCount = 0, flippedBit = -1;
+async function sha(txt) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function toBits(hex) {
+  const out = [];
+  for (let i = 0; i < 64; i++) {
+    const v = parseInt(hex[i], 16);
+    for (let b = 3; b >= 0; b--) out.push((v >> b) & 1);
+  }
+  return out;
+}
+async function recompute(flip) {
+  if (flip) {
+    /* 翻转输入某个字节的一位(视为文本级演示:替换一个字符的低位) */
+    const i = Math.floor(Math.random() * inputA.length);
+    const c = inputA.charCodeAt(i);
+    const flipped = String.fromCharCode(c ^ 1);
+    inputB_ = inputA.slice(0, i) + flipped + inputA.slice(i + 1);
+    flippedBit = i;
+  } else {
+    inputB_ = inputA;
+    flippedBit = -1;
+  }
+  const [a, b] = await Promise.all([sha(inputA), sha(inputB_)]);
+  hexA = a; hexB = b;
+  bitsA = toBits(a); bitsB = toBits(b);
+  diffCount = 0;
+  for (let i = 0; i < 256; i++) if (bitsA[i] !== bitsB[i]) diffCount++;
+  paint();
+  updateFormula();
+}
+let inputB_ = inputA;
+function paint() {
+  const cOn = new THREE.Color(0x7bd88f), cOff = new THREE.Color(0x232a33), cDf = new THREE.Color(0xff6b6b);
+  for (let i = 0; i < 256; i++) {
+    panelA.setColorAt(i, bitsA[i] ? cOn : cOff);
+    panelB.setColorAt(i, bitsB[i] ? cOn : cOff);
+  }
+  panelA.instanceColor.needsUpdate = true;
+  panelB.instanceColor.needsUpdate = true;
+}
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let rounds = clamp(qsFloat('r', 8), 1, 64);         // 演示混合轮数
+let scenario = 0, dwell = 0, tour = true;
+let labelsOn = qsBool('labels', true);
+let spinOn = true;
+let roundLit = 0;                                    // 轮盘点亮进度
+const VISK = 0.0045;
+
+/* 演示:雪崩率 vs 轮数(xorshift 混合,比例正确地逼近 50%) */
+function avalancheDemo(roundsN) {
+  const mix = x => {
+    for (let r = 0; r < roundsN; r++) {
+      x ^= x << 13; x >>>= 0;
+      x ^= x >>> 17;
+      x ^= x << 5; x >>>= 0;
+      x = (x + 0x9e3779b9) >>> 0;
+    }
+    return x >>> 0;
+  };
+  const a = 0x12345678, b = a ^ 1;
+  let d = 0;
+  for (let k = 0; k < 24; k++) {
+    const xa = mix(a + k * 0x9e3779b9), xb = mix(b + k * 0x9e3779b9);
+    let x = xa ^ xb;
+    while (x) { d += x & 1; x >>>= 1; }
+  }
+  return d / (24 * 32);
+}
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, cond) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn || (() => ''), follow, cond });
+  div.textContent = textFn();
+  return o;
+}
+const lblA = addLabel(() => L(`A = "${inputA.slice(0, 18)}${inputA.length > 18 ? '…' : ''}"`, `A = "${inputA.slice(0, 18)}${inputA.length > 18 ? '...' : ''}"`), () => 'b',
+  new THREE.Vector3(-1.05, 1.12, 0));
+const lblB = addLabel(() => {
+  if (flippedBit < 0) return L('B = A(未翻转)', 'B = A (no flip)');
+  return L(`B = A 翻转第 ${flippedBit + 1} 个字符的 1 位`, `B = A with 1 bit of char ${flippedBit + 1} flipped`);
+}, () => 'g', new THREE.Vector3(1.05, 1.12, 0));
+const lblHexA = addLabel(() => hexA ? hexA.slice(0, 16) + '…' : L('计算中…', 'computing...'), () => 'st',
+  new THREE.Vector3(-1.05, -0.14, 0));
+const lblHexB = addLabel(() => hexB ? hexB.slice(0, 16) + '…' : L('计算中…', 'computing...'), () => 'st',
+  new THREE.Vector3(1.05, -0.14, 0));
+const lblDiff = addLabel(() => L(`输出翻转 ${diffCount} / 256 位(期望 128 ≈ 50%)`, `${diffCount} of 256 output bits flipped (expect ~128 = 50%)`), () => 'w',
+  new THREE.Vector3(0, 0.02, 0));
+const lblRounds = addLabel(() => L(`SHA-256:每块 64 轮(移位/异或/模加)· 演示 ${Math.round(rounds)} 轮`, `SHA-256: 64 rounds per block (shift/XOR/mod-add) · demo ${Math.round(rounds)}`), () => 'o',
+  new THREE.Vector3(0, 2.15, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { tgt: [0, 0.5, 0], dur: 9,
+    b: '任意长 → 固定 256 位', be: 'Any length in, 256 bits out',
+    d: '哈希函数把任意长度的输入压成固定 256 位摘要:同样的输入永远得到同样的摘要,改一个字节,256 位全部重掷——它是数据的「指纹」,不是「压缩」。',
+    de: 'A hash squeezes any input into a fixed 256-bit digest: same input, same digest, forever; change one byte and all 256 bits re-roll. It is a fingerprint of data, not a compression of it.' },
+  { tgt: [0, 0.5, 0], dur: 9,
+    b: '分块迭代:Merkle–Damgård', be: 'Block iteration: Merkle-Damgard',
+    d: '输入切 512 位一块,喂给压缩函数:上一轮的 256 位状态与本块混合,输出又是 256 位——链式吞到结尾;填充位保证任意长度都能对齐。',
+    de: 'Input is cut into 512-bit blocks for a compression function: the running 256-bit state mixes with each block and hands 256 bits onward, chaining to the end; padding aligns any length.' },
+  { tgt: [0, 1.3, 0], dur: 9,
+    b: '64 轮:移位、异或、模加', be: '64 rounds: shift, XOR, mod-add',
+    d: 'SHA-256 每块跑 64 轮:右旋、Σ 函数、Ch/Maj 选择、模 2³² 加、再拌 64 个常数——每轮都把上一轮的差分搅得更「无处可猜」;轮盘逐只点亮,就是这条流水线。',
+    de: 'SHA-256 runs 64 rounds per block: rotations, Sigma functions, Ch/Maj choices, addition mod 2^32, seasoned with 64 constants — each round stirs last round\'s differences beyond guessing. The drums lighting in turn are that pipeline.' },
+  { tgt: [0, 0.45, 0], dur: 10,
+    b: '雪崩:1 位 → ~128 位', be: 'Avalanche: 1 bit becomes ~128',
+    d: '点「翻转输入 1 位」:B 与 A 只差一个字符的最低位,但两块灯阵各亮各的——异或红灯期望 128 颗(50%±0.08%);重复按,每次都换一批,两个摘要毫无亲缘。',
+    de: 'Press "flip 1 input bit": B differs from A by one low bit of one character, yet the two panels light independently — expect ~128 red XOR lamps (50% plus or minus 0.08). Press again: a fresh, unrelated pair every time.' },
+  { tgt: [0, 0.45, 0], dur: 9,
+    b: '生日界:碰撞要 2¹²⁸', be: 'Birthday bound: collisions at 2^128',
+    d: '找「两个输入同摘要」不必试 2²⁵⁶ 次:任意两人生日相同的概率在 23 人就过半——同理,n 次尝试的碰撞期望在 n≈2¹²⁸ 出头;这是 256 位输出给的「128 位安全」。',
+    de: 'Finding two inputs with one digest does not take 2^256 tries: like two people sharing a birthday among 23, collisions cluster — expectation crosses half at n≈2^128. That is the "128-bit security" a 256-bit digest buys.' },
+  { tgt: [0, 0.2, 0], dur: 9,
+    b: '密码入库:加盐 + 慢函数', be: 'Storing passwords: salt + slow hash',
+    d: '快哈希每秒可算 10¹⁰ 次,GPU 一晚扫穿字典——所以密码要用 bcrypt/argon2:内置盐让同密码人人不同,慢函数(几千轮迭代)把每次猜测的代价抬高五个数量级。',
+    de: 'Fast hashes run 10^10 times a second on a GPU — a dictionary is gone overnight. Passwords use bcrypt/argon2: a built-in salt makes every stored hash unique, and thousands of iterations tax each guess by five orders of magnitude.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+let tgtVec = new THREE.Vector3(0, 0.5, 0);
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  dwell = 0;
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const av = avalancheDemo(Math.round(rounds));
+  formulaEl.innerHTML =
+    L(`雪崩:Pr(输出位翻转) ≈ <b>50%</b>;实测:输入差 1 字符位 → 输出翻转 <b>${diffCount}/256 = ${(diffCount / 2.56).toFixed(1)}%</b>`,
+      `avalanche: Pr(bit flips) ≈ <b>50%</b>; measured: 1 input bit → <b>${diffCount}/256 = ${(diffCount / 2.56).toFixed(1)}%</b> of output flipped`) +
+    '<br>' +
+    L(`演示混合 ${Math.round(rounds)} 轮 → 雪崩率 <b>${(av * 100).toFixed(1)}%</b>(64 轮后贴近 50%,再多是浪费)`,
+      `demo mixing ${Math.round(rounds)} rounds → avalanche <b>${(av * 100).toFixed(1)}%</b> (saturates near 50% by round 64)`) +
+    '<br>' +
+    L(`生日碰撞代价 ≈ 2^(256/2) = <b>2¹²⁸</b> 次尝试 · 密码场景:bcrypt/argon2 + 盐,把 10¹⁰ 次/秒的 GPU 打回 10⁴ 次/秒`,
+      `birthday collision ≈ 2^(256/2) = <b>2^128</b> tries · passwords: bcrypt/argon2 + salt cuts 10^10 GPU guesses/s to 10^4`);
+}
+
+/* ---------------- 雪崩-轮数曲线(canvas) ---------------- */
+const pvCanvas = document.getElementById('pvCanvas');
+const pvCtx = pvCanvas.getContext('2d');
+function drawPV() {
+  const c = pvCtx, W = pvCanvas.width, H = pvCanvas.height;
+  const ink = THEME === 'dark' ? '#8fa0b4' : '#5b6b7d';
+  c.clearRect(0, 0, W, H);
+  const X = r => 12 + (r - 1) / 63 * (W - 26);
+  const Y = a => H - 12 - clamp01(a) * (H - 24);
+  c.strokeStyle = ink; c.lineWidth = 1; c.font = '9px sans-serif'; c.fillStyle = ink;
+  c.beginPath(); c.moveTo(12, H - 12); c.lineTo(W - 14, H - 12); c.stroke();
+  /* 50% 参考线 */
+  c.strokeStyle = '#ff8f6b'; c.setLineDash([4, 3]);
+  c.beginPath(); c.moveTo(12, Y(0.5)); c.lineTo(W - 14, Y(0.5)); c.stroke();
+  c.setLineDash([]);
+  c.fillStyle = '#ff8f6b';
+  c.fillText('50%', W - 34, Y(0.5) - 3);
+  /* 曲线 */
+  c.strokeStyle = '#7bd88f'; c.lineWidth = 1.8;
+  c.beginPath();
+  for (let r = 1; r <= 64; r++) {
+    const a = avalancheDemo(r);
+    const x = X(r), y = Y(a);
+    r === 1 ? c.moveTo(x, y) : c.lineTo(x, y);
+  }
+  c.stroke();
+  /* 当前轮数 */
+  c.fillStyle = '#ffe27a';
+  c.beginPath(); c.arc(X(Math.round(rounds)), Y(avalancheDemo(Math.round(rounds))), 3.2, 0, TAU); c.fill();
+  c.fillStyle = ink;
+  c.fillText(L('混合轮数(演示函数)', 'mixing rounds (demo function)'), 14, H - 3);
+  c.fillText(L('输出翻转比例', 'output flip fraction'), 14, 9);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elRnd = document.getElementById('rnd'), elRndVal = document.getElementById('rndVal');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+const tglSpin = document.getElementById('tglSpin');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elRnd.addEventListener('input', () => {
+  rounds = +elRnd.value;
+  elRndVal.textContent = Math.round(rounds) + '';
+  tour = false;
+  updateFormula();
+});
+document.getElementById('btnFlip').addEventListener('click', () => {
+  recompute(true);
+  flipArrow.material.opacity = 1;
+  tour = false;
+});
+document.getElementById('btnText').addEventListener('click', () => {
+  presetIdx = (presetIdx + 1) % PRESETS.length;
+  inputA = PRESETS[presetIdx];
+  recompute(false);
+  tour = false;
+});
+document.getElementById('btnStep').addEventListener('click', () => {
+  rounds = rounds >= 64 ? 1 : rounds + 1;
+  elRnd.value = Math.round(rounds);
+  elRndVal.textContent = Math.round(rounds) + '';
+  updateFormula();
+  tour = false;
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+  presetIdx = 0;
+  inputA = PRESETS[0];
+  rounds = 8;
+  elRnd.value = '8'; elRndVal.textContent = '8';
+  recompute(false);
+  activateStep(0);
+});
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+tglSpin.addEventListener('change', () => { spinOn = tglSpin.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stIn = document.getElementById('stIn'), stOut = document.getElementById('stOut'),
+  stAv = document.getElementById('stAv'), stCol = document.getElementById('stCol'), stSt = document.getElementById('stSt');
+function updateStats() {
+  stIn.innerHTML = flippedBit < 0 ? '0' : '1<small> bit</small>';
+  stOut.innerHTML = diffCount + '<small> /256</small>';
+  stOut.className = 'v ' + (diffCount > 100 && diffCount < 156 ? 'ok' : 'warn');
+  stAv.innerHTML = (diffCount / 2.56).toFixed(0) + '<small> %</small>';
+  stCol.innerHTML = '2<sup></sup><small> tries</small>'.replace('<sup></sup>', '<sup>128</sup>');
+  stSt.textContent = hexA ? L('摘要就绪', 'digest ready') : L('计算中…', 'computing...');
+  stSt.className = 'v ' + (hexA ? 'ok' : 'warn');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const dts = dt * speed;
+  et += dt;
+  if (playing) {
+    /* 轮盘旋转 + 按轮数点亮 */
+    const lit = Math.ceil(rounds / 8);
+    drums.forEach((d, i) => {
+      if (spinOn) d.rotation.y += dts * (0.6 + i * 0.15);
+      d.material = i < lit ? M.drumOn : M.drum;
+    });
+    flipArrow.material.opacity = Math.max(0, flipArrow.material.opacity - dts * 0.6);
+    inBlock.rotation.y = Math.sin(et * 0.6) * 0.25;
+    if (tour) {
+      dwell += dt;
+      if (dwell > STEPS[scenario].dur) activateStep((scenario + 1) % STEPS.length);
+    }
+  }
+  controls.target.lerp(tgtVec, 0.06);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+    r.o.visible = labelsOn && (!r.cond || r.cond());
+  }
+  const now = performance.now();
+  if (now - lastStatsT > 150) { lastStatsT = now; updateStats(); drawPV(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+elRnd.value = Math.round(rounds);
+elRndVal.textContent = Math.round(rounds) + '';
+recompute(false);
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>滚动码钥匙 · 每按一次换一码,重放报文当场作废</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#3fae7f;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#2f8f66;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(25,113,194,.9); color: #1971c2; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(63,174,127,.65); background: rgba(63,174,127,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(47,143,102,.55); background: rgba(47,143,102,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(63,174,127,.10); border-color: rgba(63,174,127,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(47,143,102,.08); border-color: rgba(47,143,102,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #b9e8cf; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="滚动码钥匙:每按一次换一码,重放报文当场作废" data-en="Rolling Code Fobs: one code per press, replays die on arrival">滚动码钥匙:每按一次换一码,重放报文当场作废</h1>
+  <div class="sub" data-zh="定码遥控被抓一次空气、重放即开门;滚动码让钥匙与车共享密钥 K 与计数器:每次按下发送 E_K(counter++) 的密文,车端解密后校验计数器落在同步窗口(典型 256)内才执行开锁;录下的旧码计数器早已前移,重放成功率 0;Keeloq 66 位 = 32 序列号 + 28 计数器 + 4 按键 + 2 校验,现代方案用 AES-128;钥匙在盲区狂按几百次会失步,窗口内自动重同步,超出才回退盲插配对;中继攻击只是实时转发信号,滚动码防不住——距离防护才是解 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Fixed-code remotes die to one sniff plus one replay; rolling codes give fob and car a shared key K and counter: every press sends E_K(counter++) ciphertext, and the car unlocks only if the decrypted counter falls inside the sync window (typically 256); a recorded code's counter is long spent — replay success rate 0; KeeLoq 66 bit = 32 serial + 28 counter + 4 buttons + 2 parity, modern systems use AES-128; mashing the fob off-range desyncs it — the car resyncs within the window, else falls back to pairing; relay attacks only forward signals live, which rolling code cannot stop — distance bounding is the fix · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">定码遥控被抓一次空气、重放即开门;滚动码让钥匙与车共享密钥 K 与计数器:每次按下发送 E_K(counter++) 的密文,车端解密后校验计数器落在同步窗口(典型 256)内才执行开锁;录下的旧码计数器早已前移,重放成功率 0;Keeloq 66 位 = 32 序列号 + 28 计数器 + 4 按键 + 2 校验,现代方案用 AES-128;钥匙在盲区狂按几百次会失步,窗口内自动重同步,超出才回退盲插配对;中继攻击只是实时转发信号,滚动码防不住——距离防护才是解 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="钥匙计数器" data-en="fob counter">钥匙计数器</span><span class="v" id="stFob">—</span>
+  <span class="k" data-zh="车端计数器" data-en="car counter">车端计数器</span><span class="v" id="stCar">—</span>
+  <span class="k" data-zh="窗口余量" data-en="window margin">窗口余量</span><span class="v" id="stMargin">—</span>
+  <span class="k" data-zh="报文状态" data-en="packet state">报文状态</span><span class="v" id="stMsg">—</span>
+  <span class="k" data-zh="安全判定" data-en="verdict">安全判定</span><span class="v" id="stSec">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="钥匙/发射端" data-en="fob / sender">钥匙/发射端</span>
+    <span class="chip g" data-zh="车端校验" data-en="car check">车端校验</span>
+    <span class="chip o" data-zh="密文报文" data-en="ciphertext packet">密文报文</span>
+    <span class="chip r" data-zh="窃听者/重放" data-en="attacker / replay">窃听者/重放</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnPress" data-zh="正常开门" data-en="normal unlock">正常开门</button>
+    <button class="abtn hot" id="btnReplay" data-zh="重放攻击" data-en="replay attack">重放攻击</button>
+    <button class="abtn hot" id="btnDesync" data-zh="失步与重同步" data-en="desync and resync">失步与重同步</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="同步窗口 W" data-en="sync window W">同步窗口 W</label><input id="win" type="range" min="16" max="1024" step="16" value="256"><span class="val" id="winVal">256 步</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="进度" data-en="Step">进度</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglPkt" type="checkbox" checked> <span data-zh="报文内容" data-en="packet hex">报文内容</span></label>
+        <label><input id="tglAtk" type="checkbox" checked> <span data-zh="窃听者" data-en="attacker">窃听者</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../diffie-hellman/" data-zh="迪菲-赫尔曼密钥交换" data-en="Diffie-Hellman">迪菲-赫尔曼密钥交换</a>
+    <a href="../cryptographic-hash/" data-zh="密码学哈希" data-en="cryptographic hash">密码学哈希</a>
+    <a href="../rfid/" data-zh="RFID 与 NFC" data-en="RFID and NFC">RFID 与 NFC</a>
+    <a href="../bluetooth-hopping/" data-zh="蓝牙跳频" data-en="bluetooth hopping">蓝牙跳频</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeff1f4 : 0x0f1216);
+  M.ground.color.set(THEME === 'light' ? 0xd7dce3 : 0x1b202a);
+  M.body.color.set(THEME === 'light' ? 0x7d8894 : 0x9aa6b4);
+  M.pad.color.set(THEME === 'light' ? 0x8b98a8 : 0x39424e);
+  M.caseB.color.set(THEME === 'light' ? 0x76828f : 0x39424d);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('滚动码钥匙 · 每按一次换一码,重放报文当场作废', 'Rolling Code Fobs · One Code per Press, Replays Die');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(3.0, 2.3, 3.7);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.5, -0.15);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.2;
+controls.maxDistance = 12;
+controls.autoRotateSpeed = 0.2;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 1.9);
+key.position.set(4, 8, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x1b202a, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  pad: mat(0x39424e, { roughness: 0.6, metalness: 0.4 }),
+  body: mat(0x9aa6b4, { roughness: 0.35, metalness: 0.65 }),
+  glass: mat(0x18222e, { roughness: 0.12, metalness: 0.4, emissive: 0x0a1622, emissiveIntensity: 0.5 }),
+  wheel: mat(0x1c2026, { roughness: 0.9, metalness: 0.1, emissive: 0x000000 }),
+  trim: mat(0x2b323b, { roughness: 0.5, metalness: 0.6 }),
+  head: mat(0xfff4d8, { emissive: 0xffedb8, emissiveIntensity: 0.7, roughness: 0.3, metalness: 0.2 }),
+  tail: mat(0xff5a4a, { emissive: 0xdd2211, emissiveIntensity: 0.5, roughness: 0.4 }),
+  fob: mat(0x272d35, { roughness: 0.5, metalness: 0.4 }),
+  btn: mat(0x3fae7f, { emissive: 0x2f8f66, emissiveIntensity: 0.45, roughness: 0.4 }),
+  acc: mat(0x3fae7f, { emissive: 0x2f8f66, emissiveIntensity: 0.85, roughness: 0.4, metalness: 0.3 }),
+  shaft: mat(0xd8dee8, { metalness: 0.85, roughness: 0.25 }),
+  caseB: mat(0x39424d, { roughness: 0.55, metalness: 0.45 }),
+  red: mat(0xff4d4d, { emissive: 0xff2222, emissiveIntensity: 0.7, roughness: 0.4 }),
+};
+
+/* ---------------- 场景布局:车 / 钥匙 / 窃听者 三角 ---------------- */
+const CAR = new THREE.Vector3(2.35, 0, -1.5);
+const FOB = new THREE.Vector3(-1.95, 0, 1.35);
+const ATK = new THREE.Vector3(-1.8, 0, -2.2);
+const fobTop = () => new THREE.Vector3(FOB.x, 0.8, FOB.z);
+const atkTop = () => new THREE.Vector3(ATK.x - 0.3, 1.35, ATK.z - 0.12);
+const carPt = () => new THREE.Vector3(CAR.x - 1.4, 0.55, CAR.z + 0.7);
+
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 3.6, 0.05, 56), M.ground);
+ground.position.y = -0.025;
+scene.add(ground);
+const padF = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.03, 32), M.pad);
+padF.position.set(FOB.x, 0.015, FOB.z); scene.add(padF);
+const padA = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.03, 32), M.pad);
+padA.position.set(ATK.x, 0.015, ATK.z); scene.add(padA);
+
+/* 汽车 */
+const carG = new THREE.Group();
+carG.position.copy(CAR); carG.rotation.y = -2.25;
+scene.add(carG);
+const carBody = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.36, 1.08), M.body);
+carBody.position.y = 0.46; carG.add(carBody);
+const carGlass = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.34, 0.96), M.glass);
+carGlass.position.set(-0.15, 0.79, 0); carG.add(carGlass);
+const carRoof = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.05, 1.0), M.body);
+carRoof.position.set(-0.15, 0.98, 0); carG.add(carRoof);
+for (const wx of [-0.72, 0.72]) for (const wz of [-0.55, 0.55]) {
+  const w = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.14, 20), M.wheel);
+  w.geometry.rotateX(Math.PI / 2);
+  w.position.set(wx, 0.22, wz); carG.add(w);
+}
+for (const hz of [-0.34, 0.34]) {
+  const h = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, 0.18), M.head);
+  h.position.set(1.18, 0.52, hz); carG.add(h);
+  const t = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.16), M.tail);
+  t.position.set(-1.18, 0.52, hz); carG.add(t);
+}
+const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.22, 8), M.trim);
+ant.position.set(-0.62, 1.1, -0.3); carG.add(ant);
+const ledMat = new THREE.MeshBasicMaterial({ color: 0x3fae7f });
+const carLed = new THREE.Mesh(new THREE.SphereGeometry(0.045, 14, 10), ledMat);
+carLed.position.set(0.25, 1.03, 0); carG.add(carLed);
+const ringMat = new THREE.MeshBasicMaterial({ color: 0x7bd88f, transparent: true, opacity: 0,
+  side: THREE.DoubleSide, depthWrite: false });
+const ring = new THREE.Mesh(new THREE.RingGeometry(1.1, 1.42, 48), ringMat);
+ring.rotation.x = -Math.PI / 2;
+ring.position.set(CAR.x, 0.03, CAR.z);
+scene.add(ring);
+
+/* 钥匙 fob(立于基座) */
+const fobG = new THREE.Group(); fobG.position.copy(FOB); scene.add(fobG);
+const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 0.62, 24), M.pad);
+pedestal.position.y = 0.31; fobG.add(pedestal);
+const fobT = new THREE.Group(); fobT.position.y = 0.66; fobT.rotation.y = 0.5; fobG.add(fobT);
+const fobBody = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.075, 0.5), M.fob);
+fobT.add(fobBody);
+for (const bz of [-0.16, -0.05]) {
+  const b = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.02, 16), M.btn);
+  b.position.set(0, 0.048, bz); fobT.add(b);
+}
+const fobLedMat = new THREE.MeshBasicMaterial({ color: 0x7bd88f });
+const fobLed = new THREE.Mesh(new THREE.SphereGeometry(0.02, 12, 8), fobLedMat);
+fobLed.position.set(0, 0.05, 0.17); fobT.add(fobLed);
+const keyring = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.009, 8, 24), M.shaft);
+keyring.rotation.x = Math.PI / 2; keyring.position.set(0, 0.02, 0.31); fobT.add(keyring);
+
+/* 窃听者(天线 + 笔记本) */
+const atkG = new THREE.Group(); atkG.position.copy(ATK); atkG.rotation.y = 0.6; scene.add(atkG);
+const atkCase = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.28, 0.42), M.caseB);
+atkCase.position.y = 0.15; atkG.add(atkCase);
+const atkScr = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 0.02), M.glass);
+atkScr.position.set(0, 0.42, -0.19); atkScr.rotation.x = -0.3; atkG.add(atkScr);
+const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 1.55, 10), M.shaft);
+mast.position.set(-0.3, 0.78, -0.12); atkG.add(mast);
+const dish = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.13, 20, 1, true), M.shaft);
+dish.position.set(-0.3, 1.47, -0.12); dish.rotation.x = Math.PI; atkG.add(dish);
+const recLed = new THREE.Mesh(new THREE.SphereGeometry(0.022, 12, 8), M.red);
+recLed.position.set(0.2, 0.31, 0.15); atkG.add(recLed);
+
+/* 重同步光束(盲插配对) */
+const beamMat = new THREE.MeshBasicMaterial({ color: 0x5aa8ff, transparent: true, opacity: 0, depthWrite: false });
+const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1, 8), beamMat);
+scene.add(beam);
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let WIN = clamp(qsFloat('win', 256), 16, 1024);     // 同步窗口
+let fobC = 1204, carC = 1204;                        // 两侧计数器
+let dispFob = 1204, dispCar = 1204;                  // 滚动显示值
+let storedN = 0, lastStoredC = 0, storedHex = '—';
+let rejectedN = 0, lastDiff = 1, lastResult = 'idle';
+let mainBusy = false, needPair = false, pairing = false, pairT = 0;
+let flashK = 0, pressGlow = 0, pressT = 0, scenario = 0, dwell = 0, tour = true;
+let labelsOn = qsBool('labels', true);
+let pktOn = true, atkOn = true;
+const flights = [];
+
+function hexOf(c) {                                  // 由计数器派生的伪密文(演示)
+  let h = Math.imul(c, 2654435761) >>> 0;
+  const b = [];
+  for (let i = 0; i < 4; i++) b.push(((h >>> (i * 8)) & 255).toString(16).toUpperCase().padStart(2, '0'));
+  return b.join(' ');
+}
+let verdictTxt = '', verdictCls = 'g';
+function verdictSet(cls, txt) { verdictCls = cls; verdictTxt = txt; }
+
+/* ---------------- 报文飞行 ---------------- */
+const pktGeo = new THREE.BoxGeometry(0.17, 0.1, 0.24);
+function spawnPacket(a, b, counter, kind) {          // kind: live / replay / rec
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(pktGeo, M.acc));
+  const div = document.createElement('div'); div.className = 'lbl e';
+  const o = new CSS2DObject(div); o.position.y = 0.24; g.add(o);
+  const f = {
+    g, div, t: 0, dur: kind === 'rec' ? 1.1 : 1.5, counter, kind,
+    ax: a.x, ay: a.y, az: a.z, bx: b.x, by: b.y, bz: b.z,
+    mx: (a.x + b.x) / 2, my: Math.max(a.y, b.y) + 0.85, mz: (a.z + b.z) / 2 + 0.25,
+    txt: () => kind === 'rec' ? '' :
+      (pktOn ? `${hexOf(counter)} · c=${counter}${kind === 'replay' ? L(' · 旧报文', ' · old') : ''}`
+             : `E_K(c=${counter})`),
+    done: () => kind === 'rec' ? storeDone(counter) : kind === 'replay' ? handleReplay(counter) : handleLive(counter),
+  };
+  div.style.display = kind === 'rec' ? 'none' : '';
+  g.position.copy(a);
+  scene.add(g);
+  flights.push(f);
+}
+function updFlights(dt) {
+  for (let i = flights.length - 1; i >= 0; i--) {
+    const f = flights[i];
+    f.t += dt * speed / f.dur;
+    const t = Math.min(f.t, 1), u = 1 - t;
+    f.g.position.set(
+      u * u * f.ax + 2 * u * t * f.mx + t * t * f.bx,
+      u * u * f.ay + 2 * u * t * f.my + t * t * f.by,
+      u * u * f.az + 2 * u * t * f.mz + t * t * f.bz);
+    f.g.rotation.y += dt * 3;
+    if (f.kind !== 'rec') f.div.textContent = f.txt();
+    if (t >= 1) { scene.remove(f.g); flights.splice(i, 1); f.done(); }
+  }
+}
+function doPress() {                                 // 正常按下:counter 先加一再发送
+  if (mainBusy) return;
+  fobC++;
+  spawnPacket(fobTop(), carPt(), fobC, 'live');
+  if (atkOn) spawnPacket(fobTop(), atkTop(), fobC, 'rec');
+  fobLedMat.color.setHex(0xbaffd4);
+  pressGlow = 1;
+  mainBusy = true;
+}
+function doReplay() {
+  const c = storedN > 0 ? lastStoredC : carC - 57;
+  spawnPacket(atkTop(), carPt(), c, 'replay');
+}
+function doDesync() {                                // 盲区狂按:计数器冲出窗口
+  needPair = true;
+  fobC = carC + WIN + 240;
+  mainBusy = false;
+  doPress();
+}function storeDone(c) { storedN++; lastStoredC = c; storedHex = hexOf(c); }
+function handleLive(c) {
+  mainBusy = false;
+  if (pairing) return;
+  const d = c - carC;
+  lastDiff = d;
+  if (d >= 1 && d <= WIN) {
+    carC = c; lastResult = 'ok';
+    flash(0x7bd88f);
+    verdictSet('g', L(`✓ 窗口校验通过 · 计数器前移到 ${carC}`, `✓ window check passed · counter → ${carC}`));
+  } else if (d <= 0) {
+    lastResult = 'replay';
+    flash(0xff6b6b);
+    verdictSet('bad', L('✗ 计数器过期 · 拒收', '✗ stale counter · rejected'));
+  } else {
+    lastResult = 'desync';
+    flash(0xff6b6b);
+    verdictSet('bad', L(`✗ 失步:差 ${d} 步 > 窗口 ${WIN}`, `✗ desync: gap ${d} > window ${WIN}`));
+    if (needPair) startPairing();
+  }
+}
+function handleReplay(c) {                           // 招牌瞬间:旧码被拒
+  rejectedN++;
+  lastResult = 'replay';
+  lastDiff = c - carC;
+  flash(0xff6b6b);
+  verdictSet('bad', L(`✗ 重放拒绝 · 旧码 c=${c} 已过期(车端 ${carC})`, `✗ replay rejected · old c=${c} expired (car ${carC})`));
+}
+function startPairing() {
+  pairing = true; pairT = 0;
+  verdictSet('e', L('超出窗口 → 回退盲插配对模式…', 'outside window → fallback pairing mode…'));
+}
+function flash(hex) {
+  flashK = 1;
+  ringMat.color.setHex(hex);
+  ledMat.color.setHex(hex);
+}
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+const lblFob = addLabel(
+  () => L(`钥匙 fob · 计数器 ${Math.round(dispFob)}`, `fob · counter ${Math.round(dispFob)}`), () => 'st',
+  new THREE.Vector3(FOB.x - 0.1, 1.12, FOB.z));
+const lblCar = addLabel(
+  () => L(`车端 · 计数器 ${Math.round(dispCar)} · 窗口 +${WIN}`, `car · counter ${Math.round(dispCar)} · window +${WIN}`), () => 'st',
+  new THREE.Vector3(CAR.x - 0.3, 1.5, CAR.z));
+const lblAtk = addLabel(
+  () => storedN > 0 ?
+    L(`窃听者 · 已录 ${storedN} 条 · ${storedHex}`, `attacker · ${storedN} stored · ${storedHex}`) :
+    L('窃听者 · 待机监听中', 'attacker · sniffing'),
+  () => 'w',
+  new THREE.Vector3(ATK.x - 0.15, 1.95, ATK.z));
+const lblVerdict = addLabel(
+  () => verdictTxt, () => verdictCls,
+  new THREE.Vector3(CAR.x - 0.3, 1.88, CAR.z));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'fob', tgt: [FOB.x, 0.7, FOB.z], dur: 8,
+    b: '定码遥控:录一次就破', be: 'Fixed code: captured once, broken once',
+    d: '早期遥控每按一次都发同一段码:窃听器在百米外抓一次空气,晚上重放给车,车门应声而开——码是死的,抓到等于拿到钥匙。',
+    de: 'Early remotes sent the same code on every press: an attacker sniffs it once from a hundred meters, replays it at night, and the door opens — a static code means capture equals theft.' },
+  { hl: 'pair', tgt: [0, 0.7, -0.2], dur: 8,
+    b: '共享密钥 K 与计数器', be: 'Shared key K and counter',
+    d: '配对时钥匙与车写入同一把密钥 K,并约定同一个计数器 c:每次按下,c 先加一,再发送 E_K(序列号 | c | 按键) 的密文——计数器藏在密文里,空气中的码每次都不同。',
+    de: 'At pairing, fob and car write the same key K and agree on one counter c: each press increments c, then sends E_K(serial | c | button) — the counter hides inside ciphertext, so the airborne code is never the same twice.' },
+  { hl: 'send', tgt: [-0.6, 0.9, 0.3], dur: 8,
+    b: '按下:一段一次性密文上路', be: 'Press: a one-time ciphertext takes flight',
+    d: '看报文小牌:密文随计数器滚动变化,飞向车端。两侧持同一对称密钥,传输的是密钥的产物而不是口令——录下的只是某个 c 的产物,用完即废。',
+    de: 'Watch the packet tag: ciphertext rolls with the counter as it flies to the car. Both sides hold the same symmetric key; what travels is a derived value, not a secret — a recorded packet is spent the moment it lands.' },
+  { hl: 'check', tgt: [CAR.x - 0.6, 0.8, CAR.z], dur: 8,
+    b: '车端:解密 + 同步窗口校验', be: 'Car: decrypt, then window check',
+    d: '车解密出 c_rx,校验 0 小于 c_rx − c_car ≤ W(典型 W=256):落在窗口内就开锁,并把车端计数器前移到 c_rx——偶尔在盲区多按几次也能被宽容接收。',
+    de: 'The car decrypts c_rx and checks 0 < c_rx − c_car ≤ W (typically 256): inside the window it unlocks and advances its counter to c_rx — a few blind extra presses are tolerated.' },
+  { hl: 'replay', tgt: [ATK.x + 0.3, 1.0, ATK.z + 0.3], dur: 10, fire: 'replay',
+    b: '招牌瞬间:重放旧码,纹丝不动', be: 'The moment: replay bounces off',
+    d: '窃听者把昨天录下的报文原样发给车:解密出的计数器早已被后续按下消耗掉,差值落出窗口 → 红灯,车灯纹丝不动。对比两侧计数器数字:旧码是一次性的,重放成功率 0。',
+    de: 'The attacker replays yesterday\'s packet verbatim: its counter was long consumed by later presses, the gap falls outside the window — red light, the car does not twitch. Compare the two counters: a recorded code is single-use, replay success rate zero.' },
+  { hl: 'desync', tgt: [FOB.x + 0.5, 0.8, FOB.z - 0.5], dur: 10, fire: 'desync',
+    b: '失步与重同步', be: 'Desync and resync',
+    d: '钥匙在口袋/行李箱里盲按几百次,计数器一骑绝尘,超出窗口 → 全部拒收。窗口内车端自动前移重同步;彻底超窗则回退盲插配对:插入钥匙或按车内按钮,重新对齐两侧计数器。',
+    de: 'Mash the fob a few hundred times in a pocket or trunk and its counter runs far ahead — beyond the window everything is rejected. Within the window the car resyncs automatically; past it, the car falls back to pairing (key in slot or in-car button) to realign both counters.' },
+  { hl: 'relay', tgt: [ATK.x, 1.2, ATK.z], dur: 9,
+    b: '边界:中继攻击防不住', be: 'The boundary: relay attacks get through',
+    d: '中继攻击不破解任何码,只是把钥匙信号实时转发给车、再把车的应答转发回来——车看到的是一次合法的一次性码。滚动码防重放、不防转发;解法是距离防护(UWB 测距边界)。',
+    de: 'Relay attacks break no code — they forward the fob\'s signal to the car and the answer back in real time, so the car sees one legitimate one-time code. Rolling code stops replay, not forwarding; the fix is distance bounding (UWB ranging).' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+let tgtVec = new THREE.Vector3(0, 0.7, -0.2);
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  dwell = 0;
+  const s = STEPS[scenario];
+  tgtVec.fromArray(s.tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+  if (s.fire === 'replay') doReplay();
+  if (s.fire === 'desync') doDesync();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`报文 = <b>E_K(序列号 | 计数器 | 指令)</b> · Keeloq 66 bit = 32+28+4+2 · 现代方案 AES-128 滚动码`,
+      `packet = <b>E_K(serial | counter | cmd)</b> · KeeLoq 66 bit = 32+28+4+2 · modern: AES-128 rolling code`) +
+    '<br>' +
+    L(`校验 <b>0 &lt; c_rx − c_car ≤ W=${WIN}</b> · 最近差值 ${lastDiff} → 执行并前移车端计数器`,
+      `check <b>0 &lt; c_rx − c_car ≤ W=${WIN}</b> · last gap ${lastDiff} → unlock and advance the counter`) +
+    '<br>' +
+    L(`重放:c_rx ≤ c_car → <b>拒收</b> · 已拦截 ${rejectedN} 次 · 重放成功率 <b>0%</b>`,
+      `replay: c_rx ≤ c_car → <b>reject</b> · ${rejectedN} blocked · replay success rate <b>0%</b>`);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elWin = document.getElementById('win'), elWinVal = document.getElementById('winVal');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.element.style.display = labelsOn ? '' : 'none';
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elWin.addEventListener('input', () => {
+  WIN = +elWin.value;
+  elWinVal.textContent = WIN + L(' 步', ' steps');
+  tour = false;
+  updateFormula();
+});
+document.getElementById('btnPress').addEventListener('click', () => { doPress(); tour = false; });
+document.getElementById('btnReplay').addEventListener('click', () => { doReplay(); tour = false; });
+document.getElementById('btnDesync').addEventListener('click', () => { doDesync(); tour = false; });
+document.getElementById('btnReset').addEventListener('click', () => {
+  fobC = carC = dispFob = dispCar = 1204;
+  storedN = 0; lastStoredC = 0; storedHex = '—';
+  rejectedN = 0; lastDiff = 1; lastResult = 'idle';
+  needPair = false; pairing = false; mainBusy = false; flashK = 0;
+  flights.forEach(f => scene.remove(f.g));
+  flights.length = 0;
+  ringMat.opacity = 0;
+  beamMat.opacity = 0;
+  verdictSet('g', L('待命 · 链路安全', 'standby · link secure'));
+  updateFormula();
+});
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+document.getElementById('tglPkt').addEventListener('change', e => { pktOn = e.target.checked; });
+document.getElementById('tglAtk').addEventListener('change', e => {
+  atkOn = e.target.checked;
+  atkG.visible = atkOn;
+  if (!atkOn) storedN = 0;
+});
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stFob = document.getElementById('stFob'), stCar = document.getElementById('stCar'),
+  stMargin = document.getElementById('stMargin'), stMsg = document.getElementById('stMsg'),
+  stSec = document.getElementById('stSec');
+function updateStats() {
+  stFob.textContent = Math.round(dispFob);
+  stCar.textContent = Math.round(dispCar);
+  const margin = WIN - (fobC - carC);
+  stMargin.innerHTML = margin + '<small> ' + L('步', 'steps') + '</small>';
+  stMargin.className = 'v ' + (margin < 0 ? 'bad' : margin < WIN * 0.25 ? 'warn' : 'ok');
+  const flying = flights.some(f => f.kind === 'live' || f.kind === 'replay');
+  let txt, cls;
+  if (pairing) { txt = L('重同步中…', 'resyncing…'); cls = 'v warn'; }
+  else if (flying) { txt = L('密文飞行中…', 'ciphertext in flight…'); cls = 'v warn'; }
+  else if (lastResult === 'ok') { txt = L('有效 · 已执行', 'valid · executed'); cls = 'v ok'; }
+  else if (lastResult === 'replay') { txt = L('重放 · 拒绝', 'replay · rejected'); cls = 'v bad'; }
+  else if (lastResult === 'desync') { txt = L('失步 · 超出窗口', 'desync · out of window'); cls = 'v bad'; }
+  else { txt = L('待机', 'idle'); cls = 'v'; }
+  stMsg.textContent = txt; stMsg.className = cls;
+  stSec.textContent = (needPair && !pairing) ? L('失步 · 待重同步', 'desync · resync pending') :
+    L('重放成功率 0%', 'replay success 0%');
+  stSec.className = 'v ' + ((needPair && !pairing) ? 'warn' : 'ok');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+const YDIR = new THREE.Vector3(0, 1, 0);
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  if (playing) {
+    pressT += dt * speed;
+    if (pressT > 3.4) { pressT = 0; if (!mainBusy) doPress(); }
+    if (tour) {
+      dwell += dt;
+      if (dwell > STEPS[scenario].dur) activateStep((scenario + 1) % STEPS.length);
+    }
+  }
+  /* 计数器滚动显示 */
+  dispFob += (fobC - dispFob) * clamp(dt * 7, 0, 1);
+  dispCar += (carC - dispCar) * clamp(dt * 7, 0, 1);
+  if (Math.abs(fobC - dispFob) < 0.6) dispFob = fobC;
+  if (Math.abs(carC - dispCar) < 0.6) dispCar = carC;
+  /* 报文飞行 + 到达判定 */
+  updFlights(dt);
+  /* 盲插配对:蓝色光束 → 计数器对齐 */
+  if (pairing) {
+    pairT += dt;
+    const a = fobTop(), b = carPt();
+    const dir = new THREE.Vector3().subVectors(b, a);
+    const len = dir.length();
+    beam.position.copy(a).addScaledVector(dir, 0.5);
+    beam.scale.set(1, len, 1);
+    beam.quaternion.setFromUnitVectors(YDIR, dir.normalize());
+    beamMat.opacity = (0.35 + 0.3 * Math.sin(et * 14)) * clamp(1.6 - pairT, 0, 1);
+    if (pairT > 1.6) {
+      pairing = false; needPair = false;
+      carC = fobC; lastResult = 'ok';
+      flash(0x6fb8ff);
+      verdictSet('e', L('✓ 已重同步(盲插配对) · 计数器对齐', '✓ resynced via pairing · counters aligned'));
+    }
+  } else beamMat.opacity = 0;
+  /* 校验结果闪光:地环 + 车灯 + 状态 LED */
+  flashK = Math.max(0, flashK - dt * 1.1);
+  ringMat.opacity = flashK * 0.6;
+  ring.scale.setScalar(1 + (1 - flashK) * 0.9);
+  M.head.emissiveIntensity = 0.7 + flashK * (1.1 + 0.9 * Math.sin(et * 36));
+  carLed.scale.setScalar(1 + flashK * 0.9);
+  pressGlow = Math.max(0, pressGlow - dt * 2);
+  M.btn.emissiveIntensity = 0.45 + pressGlow * 1.2;
+  fobLedMat.color.lerp(new THREE.Color(0x7bd88f), dt * 2);
+  recLed.material.emissiveIntensity = (atkOn && flights.some(f => f.kind === 'rec')) ?
+    0.6 + 0.5 * Math.sin(et * 20) : 0.35;
+  /* 步骤高亮脉动 */
+  const hlK = 0.45 + 0.2 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  if (hl === 'fob') M.btn.emissiveIntensity += hlK;
+  else if (hl === 'check' || hl === 'pair') M.head.emissiveIntensity = Math.max(M.head.emissiveIntensity, 0.7 + hlK * 0.5);
+  else if (hl === 'replay' || hl === 'relay') M.red.emissiveIntensity = 0.5 + hlK;
+  else if (hl === 'desync') { M.btn.emissiveIntensity += hlK; M.red.emissiveIntensity = 0.5 + hlK; }
+  else M.red.emissiveIntensity = 0.35;
+  if (hl === 'send') M.acc.emissiveIntensity = 0.85 + hlK * 0.6; else M.acc.emissiveIntensity = 0.85;
+  /* 相机目标缓动 */
+  controls.target.lerp(tgtVec, 0.05);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  lblAtk.element.style.display = (labelsOn && atkOn) ? '' : 'none';
+  /* stats 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) { lastStatsT = now; updateStats(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+elWin.value = WIN;
+elWinVal.textContent = WIN + L(' 步', ' steps');
+atkG.visible = atkOn;
+verdictSet('g', L('待命 · 链路安全', 'standby · link secure'));
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

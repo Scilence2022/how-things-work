@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>极小极大与 Alpha-Beta 剪枝 · α≥β 一刀剪掉整棵未来</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#8a6fd6;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#6a4fc0;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(25,113,194,.9); color: #1971c2; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.s { color: var(--text2); border-color: var(--tool-border); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(138,111,214,.65); background: rgba(138,111,214,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(106,79,192,.55); background: rgba(106,79,192,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(138,111,214,.10); border-color: rgba(138,111,214,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(106,79,192,.08); border-color: rgba(106,79,192,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #cfc2f2; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="极小极大与 Alpha-Beta 剪枝:α≥β 一刀剪掉整棵未来" data-en="Minimax and Alpha-Beta Pruning: one α≥β test cuts a whole future">极小极大与 Alpha-Beta 剪枝:α≥β 一刀剪掉整棵未来</h1>
+  <div class="sub" data-zh="博弈树逐层交替 MAX/MIN:我方选最大、对方选最小,叶子估值反向传播出最优走法;穷举要扫 b^d 个叶子 — 国际象棋 b=35、深 6 层约 18 亿;α 是 MAX 已保证的下界,β 是 MIN 已保证的上界,一旦 α≥β,对手绝不会让局面走进该分支,整棵子树直接剪掉;走法排序越好剪得越狠,最好情形 O(b^(d/2)),同样的算力多看一倍深度 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The game tree alternates MAX/MIN layer by layer: we maximize, the foe minimizes, and leaf scores back-propagate into the best move; brute force scans b^d leaves — chess with b=35 at depth 6 is about 1.8 billion; alpha is the lower bound MAX has secured, beta the upper bound MIN has secured, and the moment α≥β the foe would never allow that branch — prune the whole subtree; better move ordering cuts harder, best case O(b^(d/2)): double the depth for the same effort · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">博弈树逐层交替 MAX/MIN:我方选最大、对方选最小,叶子估值反向传播出最优走法;穷举要扫 b^d 个叶子 — 国际象棋 b=35、深 6 层约 18 亿;α 是 MAX 已保证的下界,β 是 MIN 已保证的上界,一旦 α≥β,对手绝不会让局面走进该分支,整棵子树直接剪掉;走法排序越好剪得越狠,最好情形 O(b^(d/2)),同样的算力多看一倍深度 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="已访问叶数" data-en="visited leaves">已访问叶数</span><span class="v" id="stV">—</span>
+  <span class="k" data-zh="剪掉叶数" data-en="pruned leaves">剪掉叶数</span><span class="v" id="stP">—</span>
+  <span class="k" data-zh="理论叶数 b^d" data-en="full tree b^d">理论叶数 b^d</span><span class="v" id="stT">—</span>
+  <span class="k" data-zh="剪枝率" data-en="prune rate">剪枝率</span><span class="v" id="stR">—</span>
+  <span class="k" data-zh="根最优值" data-en="root best value">根最优值</span><span class="v" id="stB">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="MAX 节点 · 我方" data-en="MAX node · us">MAX 节点 · 我方</span>
+    <span class="chip o" data-zh="MIN 节点 · 对方" data-en="MIN node · foe">MIN 节点 · 对方</span>
+    <span class="chip g" data-zh="叶值 ≥ 0" data-en="leaf ≥ 0">叶值 ≥ 0</span>
+    <span class="chip r" data-zh="叶值 < 0" data-en="leaf < 0">叶值 < 0</span>
+    <span class="chip s" data-zh="被剪子树" data-en="pruned subtree">被剪子树</span>
+  </div>
+  <div id="actions">
+    <button class="abtn hot" id="btnRace" data-zh="竞速:纯枚举 vs α-β" data-en="race: plain vs α-β">竞速:纯枚举 vs α-β</button>
+    <button class="abtn on" id="btnStep" data-zh="单步传播" data-en="single step">单步传播</button>
+    <button class="abtn" id="btnRand" data-zh="换一副叶值" data-en="new leaf values">换一副叶值</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="分支数 b" data-en="branching b">分支数 b</label><input id="br" type="range" min="2" max="4" step="1" value="3"><span class="val" id="brVal">3</span></div>
+  <div class="row"><label data-zh="树深 d" data-en="depth d">树深 d</label><input id="dp" type="range" min="2" max="4" step="1" value="3"><span class="val" id="dpVal">3</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+        <label><input id="tglOrder" type="checkbox"> <span data-zh="走法排序" data-en="move ordering">走法排序</span></label>
+        <label><input id="tglMark" type="checkbox" checked> <span data-zh="α≥β 标记" data-en="α≥β markers">α≥β 标记</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../a-star-search/" data-zh="A* 搜索" data-en="A* search">A* 搜索</a>
+    <a href="../decision-tree/" data-zh="决策树" data-en="decision tree">决策树</a>
+    <a href="../nash-equilibrium/" data-zh="纳什均衡" data-en="Nash equilibrium">纳什均衡</a>
+    <a href="../dynamic-programming/" data-zh="动态规划" data-en="dynamic programming">动态规划</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+const fmtV = v => v === null || v === undefined ? '?' :
+  (!Number.isFinite(v) ? (v > 0 ? '+∞' : '-∞') : (v >= 0 ? '+' : '') + v.toFixed(2));
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeff1f4 : 0x0f1216);
+  M.ground.color.set(THEME === 'light' ? 0xd7dce3 : 0x1b202a);
+  M.pruned.color.set(THEME === 'light' ? 0xc2c9d4 : 0x3a4048);
+  EM.base.color.set(THEME === 'light' ? 0x9aa6b8 : 0x44506b);
+  EM.ring.color.set(THEME === 'light' ? 0xaab4c4 : 0x3a4557);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('极小极大与 Alpha-Beta 剪枝 · α≥β 一刀剪掉整棵未来', 'Minimax and Alpha-Beta Pruning · Cut futures with α≥β');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 200);
+camera.position.set(1.2, 3.4, 6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.5;
+controls.maxDistance = 20;
+controls.autoRotateSpeed = 0.2;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 1.9);
+key.position.set(4, 8, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.4,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: new THREE.MeshStandardMaterial({ color: 0x1b202a, roughness: 0.95, metalness: 0 }),
+  max: mat(0x5b8dd6, { emissiveIntensity: 0.18 }),
+  min: mat(0xd69a5b, { emissiveIntensity: 0.18 }),
+  maxV: mat(0x7fb2ff, { emissive: 0x3a6fd8, emissiveIntensity: 0.85, roughness: 0.3, metalness: 0.3 }),
+  minV: mat(0xffb877, { emissive: 0xd87a2a, emissiveIntensity: 0.85, roughness: 0.3, metalness: 0.3 }),
+  leaf: mat(0x67788c, { roughness: 0.6, metalness: 0.2, emissiveIntensity: 0.04 }),
+  leafG: mat(0x46c27a, { emissive: 0x1f9d55, emissiveIntensity: 0.9, metalness: 0.2, roughness: 0.35 }),
+  leafR: mat(0xd8604f, { emissive: 0xc23a2a, emissiveIntensity: 0.9, metalness: 0.2, roughness: 0.35 }),
+  pruned: mat(0x3a4048, { roughness: 0.8, metalness: 0.1, emissive: 0x000000 }),
+  cursor: mat(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.9, metalness: 0.1, roughness: 0.3 }),
+  raceA: mat(0x6f87b8, { emissive: 0x445a8c, emissiveIntensity: 0.5 }),
+  raceB: mat(0x53c48a, { emissive: 0x1f9d55, emissiveIntensity: 0.8 }),
+};
+const EM = {
+  base: new THREE.LineBasicMaterial({ color: 0x44506b, transparent: true, opacity: 0.55 }),
+  lit: new THREE.LineBasicMaterial({ color: 0x9fc4e8, transparent: true, opacity: 0.95 }),
+  cut: new THREE.LineBasicMaterial({ color: 0x2c313a, transparent: true, opacity: 0.35 }),
+  ring: new THREE.LineBasicMaterial({ color: 0x3a4557, transparent: true, opacity: 0.3 }),
+};
+
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 0.06, 56), M.ground);
+scene.add(ground);
+
+/* ---------------- 博弈树:构建 / 布局 ---------------- */
+let B = 3, D = 3, ordOn = false, cutMarkOn = true, labelsOn = qsBool('labels', true);
+let nodes = [], root = null, leafTotal = 0, R = 3, leavesIdx = [];
+let treeGroup = null;
+const LEAF_LBL_MAX = 64;          // 叶子数超过该值时隐藏叶值标签(性能)
+const DY = 0.82;
+
+function buildTree() {
+  if (treeGroup) {
+    treeGroup.traverse(o => { if (o.isCSS2DObject) o.element.remove(); if (o.geometry) o.geometry.dispose(); });
+    scene.remove(treeGroup);
+  }
+  treeGroup = new THREE.Group();
+  scene.add(treeGroup);
+  nodes = [];
+  const mk = (depth, isMax, parent) => {
+    const nd = { depth, isMax, parent, children: [], order0: null, value: null, alpha: -Infinity, beta: Infinity,
+      pos: new THREE.Vector3(), mesh: null, edge: null, lbl: null, cutLbl: null,
+      pruned: false, visited: false, baseS: 1 };
+    nodes.push(nd);
+    if (depth < D) for (let i = 0; i < B; i++) nd.children.push(mk(depth + 1, !isMax, nd));
+    return nd;
+  };
+  root = mk(0, true, null);
+  /* 叶子随机估值,内部节点取真值 max/min */
+  const setTV = nd => {
+    if (!nd.children.length) { nd.tv = Math.random() * 2 - 1; return nd.tv; }
+    let v = nd.isMax ? -Infinity : Infinity;
+    for (const c of nd.children) { const cv = setTV(c); v = nd.isMax ? Math.max(v, cv) : Math.min(v, cv); }
+    nd.tv = v; return v;
+  };
+  setTV(root);
+  for (const nd of nodes) if (nd.children.length) nd.order0 = nd.children.slice();
+  /* 径向布局:叶子外圈均布,父节点在角域中心,层级向上 */
+  leavesIdx = nodes.filter(n => !n.children.length);
+  leafTotal = leavesIdx.length;
+  R = Math.max(2.3, leafTotal * 0.225 / TAU);
+  const yC = DY * D / 2;
+  const place = (nd, a0, a1) => {
+    const am = (a0 + a1) / 2, r = R * nd.depth / D;
+    nd.pos.set(r * Math.cos(am), yC - nd.depth * DY, r * Math.sin(am));
+    const w = (a1 - a0) / B;
+    nd.children.forEach((c, i) => place(c, a0 + w * i, a0 + w * (i + 1)));
+  };
+  place(root, -Math.PI, Math.PI);
+  const sph = new THREE.SphereGeometry(1, 18, 14);
+  for (const nd of nodes) {
+    nd.baseS = nd === root ? 0.16 : nd.children.length ? 0.115 : 0.085;
+    nd.mesh = new THREE.Mesh(sph, nd === root ? M.max : nd.children.length ? (nd.isMax ? M.max : M.min) : M.leaf);
+    nd.mesh.position.copy(nd.pos);
+    nd.mesh.scale.setScalar(nd.baseS);
+    treeGroup.add(nd.mesh);
+    if (nd.parent) {
+      nd.edge = new THREE.Line(new THREE.BufferGeometry().setFromPoints([nd.parent.pos, nd.pos]), EM.base);
+      treeGroup.add(nd.edge);
+    }
+    if (!nd.children.length) {
+      const div = document.createElement('div');
+      div.className = 'lbl ' + (nd.tv >= 0 ? 'g' : 'bad');
+      div.textContent = fmtV(nd.tv);
+      div.style.display = 'none';
+      nd.lbl = new CSS2DObject(div);
+      nd.lbl.position.set(0, 0.2, 0);
+      nd.mesh.add(nd.lbl);
+    }
+  }
+  for (let d = 1; d <= D; d++) {           // 层环:提示"逐层"
+    const pts = [];
+    for (let i = 0; i <= 96; i++) {
+      const a = i / 96 * TAU;
+      pts.push(new THREE.Vector3(R * d / D * Math.cos(a), yC - d * DY, R * d / D * Math.sin(a)));
+    }
+    treeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), EM.ring));
+  }
+  ground.position.y = -yC - 0.56;
+  ground.scale.setScalar((R + 1.5) / 2.4);
+  camera.position.set(R * 0.35, yC + 2.4, R * 1.35 + 2);
+  controls.maxDistance = R * 3.6 + 4;
+  tgtVec.set(0, 0.2, 0);
+}
+
+/* ---------------- 走法排序 + 记录 DFS 步骤 ---------------- */
+let rec = [], recLeaves = [], cutoffs = [], stepIdx = 0, stepAcc = 0, visitedLive = 0, prunedLive = 0, rootShown = null;
+let cursor = null, cursorPrev = null;
+
+function applyOrder() {
+  for (const nd of nodes) if (nd.children.length) {
+    nd.children = ordOn ?
+      nd.order0.slice().sort((a, b) => nd.isMax ? b.tv - a.tv : a.tv - b.tv) :
+      nd.order0.slice();
+  }
+}
+function grayCount(nd) { return nd.children.length ? nd.children.reduce((s, c) => s + grayCount(c), 0) : 1; }
+function graySubtree(nd) {
+  const walk = x => {
+    x.pruned = true;
+    x.mesh.material = M.pruned;
+    if (x.edge) x.edge.material = EM.cut;
+    if (x.lbl) x.lbl.element.style.display = 'none';
+    x.children.forEach(walk);
+  };
+  prunedLive += grayCount(nd);
+  walk(nd);
+}
+function computeRecord() {
+  rec = []; cutoffs = [];
+  const dfs = (nd, alpha, beta) => {
+    if (!nd.children.length) { rec.push({ t: 0, nd }); return nd.tv; }
+    let v = nd.isMax ? -Infinity : Infinity;
+    for (let i = 0; i < nd.children.length; i++) {
+      const cv = dfs(nd.children[i], alpha, beta);
+      v = nd.isMax ? Math.max(v, cv) : Math.min(v, cv);
+      if (nd.isMax) alpha = Math.max(alpha, cv); else beta = Math.min(beta, cv);
+      rec.push({ t: 1, nd, v, alpha, beta });
+      if (alpha >= beta) {                 // 剪枝:其余孩子整棵子树跳过
+        rec.push({ t: 2, nd });
+        cutoffs.push(nd);
+        for (let j = i + 1; j < nd.children.length; j++) rec.push({ t: 3, nd: nd.children[j] });
+        break;
+      }
+    }
+    return v;
+  };
+  dfs(root, -Infinity, Infinity);
+  recLeaves = rec.filter(r => r.t === 0).map(r => r.nd);
+}
+function setCursor(nd) { cursor = nd; }
+function applyItem(it) {
+  const nd = it.nd;
+  if (it.t === 0) {                        // 叶子被打分
+    nd.visited = true; visitedLive++;
+    nd.mesh.material = nd.tv >= 0 ? M.leafG : M.leafR;
+    if (nd.edge) nd.edge.material = EM.lit;
+    if (nd.lbl) nd.lbl.element.style.display = (labelsOn && leafTotal <= LEAF_LBL_MAX) ? '' : 'none';
+  } else if (it.t === 1) {                 // 内部节点算出值
+    nd.visited = true; nd.value = it.v; nd.alpha = it.alpha; nd.beta = it.beta;
+    if (nd === root) rootShown = it.v;
+    nd.mesh.material = nd.isMax ? M.maxV : M.minV;
+    if (nd.edge) nd.edge.material = EM.lit;
+    setCursor(nd);
+  } else if (it.t === 2) {                 // α≥β 判定弹出
+    setCursor(nd);
+    if (!nd.cutLbl) {
+      const div = document.createElement('div');
+      div.className = 'lbl bad';
+      div.textContent = 'α ≥ β';
+      nd.cutLbl = new CSS2DObject(div);
+      nd.cutLbl.position.set(0, 0.32, 0);
+      nd.mesh.add(nd.cutLbl);
+    }
+    nd.cutLbl.element.style.display = (labelsOn && cutMarkOn) ? '' : 'none';
+  } else {                                 // 整片子树变灰
+    graySubtree(nd);
+  }
+}
+function resetStates() {
+  visitedLive = 0; prunedLive = 0; rootShown = null; cursor = null;
+  for (const nd of nodes) {
+    nd.pruned = false; nd.visited = false; nd.value = null; nd.alpha = -Infinity; nd.beta = Infinity;
+    nd.mesh.material = nd === root ? M.max : nd.children.length ? (nd.isMax ? M.max : M.min) : M.leaf;
+    nd.mesh.scale.setScalar(nd.baseS);
+    if (nd.edge) nd.edge.material = EM.base;
+    if (nd.lbl) nd.lbl.element.style.display = 'none';
+    if (nd.cutLbl) nd.cutLbl.element.style.display = 'none';
+  }
+}
+function setOrder(v) {
+  ordOn = v;
+  document.getElementById('tglOrder').checked = v;
+  applyOrder(); computeRecord();
+  stepIdx = 0; stepAcc = 0;
+  resetStates();
+  updateFormula();
+}
+function replayAll() {
+  resetStates();
+  for (let i = 0; i < stepIdx; i++) applyItem(rec[i]);
+}
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+const yTop = () => DY * D / 2;
+const rootLbl = addLabel(
+  () => rootShown === null ? L('根 · MAX · 求值中…', 'root · MAX · searching…') : L(`根 · MAX · 最优值 ${fmtV(rootShown)}`, `root · MAX · best ${fmtV(rootShown)}`),
+  () => 'st', new THREE.Vector3(0, 0, 0),
+  v => v.set(0, yTop() + 0.45, 0));
+const curLbl = addLabel(
+  () => cursor ? `${cursor.isMax ? 'MAX' : 'MIN'} · v=${fmtV(cursor.value)} · α=${fmtV(cursor.alpha)} β=${fmtV(cursor.beta)}` : '',
+  () => cursor ? (cursor.isMax ? 'e' : 'w') : '', new THREE.Vector3(0, 0, 0),
+  v => { if (cursor) v.copy(cursor.pos).add(new THREE.Vector3(0, 0.36, 0)); });
+const raceLblA = addLabel(() => '', () => 'e', new THREE.Vector3(-3, 2, 0));
+const raceLblB = addLabel(() => '', () => 'g', new THREE.Vector3(3, 2, 0));
+raceLblA.element.style.display = raceLblB.element.style.display = 'none';
+
+function refreshLabels() {
+  for (const r of labelReg) {
+    if (r.o === raceLblA || r.o === raceLblB) r.o.element.style.display = (labelsOn && race) ? '' : 'none';
+    else r.o.element.style.display = labelsOn ? '' : 'none';
+  }
+  for (const nd of nodes) {
+    if (nd.lbl) nd.lbl.element.style.display = (labelsOn && leafTotal <= LEAF_LBL_MAX && nd.visited) ? '' : 'none';
+    if (nd.cutLbl) nd.cutLbl.element.style.display = (labelsOn && cutMarkOn) ? '' : 'none';
+  }
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { ord: false, dur: 9, t: () => [0, 0.2, 0],
+    b: '博弈树:MAX 与 MIN 逐层交替', be: 'Game tree: MAX and MIN alternate',
+    d: '根节点是我方回合(MAX,蓝):挑评估值最大的孩子;下一层是对方回合(MIN,橙):挑最小的 — 一层层交替到叶子。整棵树就是所有可能的未来,叶子是对终局的打分,绿正红负。',
+    de: 'The root is our turn (MAX, blue): pick the child with the largest value; the next layer is the foe (MIN, orange): the smallest — alternating down to the leaves. The tree is every possible future; leaves score the endgame, green positive, red negative.' },
+  { ord: false, dur: 8, t: () => [0, -0.3, R * 0.45],
+    b: '叶值反向传播:层层取大取小', be: 'Back-propagation: max up, min up',
+    d: '动画自底向上传播:叶子先被打分,每个 MAX 节点把孩子里的最大值顶上去,每个 MIN 节点把最小值顶上去;根节点最后拿到最优值 — 这就是当前应走的一步。',
+    de: 'The animation propagates bottom-up: leaves are scored first, each MAX node lifts its largest child value, each MIN node the smallest; the root ends with the best value — that is the move to play.' },
+  { ord: false, dur: 8, t: () => [0, 0.5, 0],
+    b: '穷举的代价:b^d 个叶子', be: 'Cost of brute force: b^d leaves',
+    d: '分支 b、深度 d 的树有 b^d 个叶子:国际象棋 b≈35,只看 6 层就有 35^6 ≈ 18 亿个终局要打分 — 朴素极小极大一个都逃不掉,深度每加一层,代价再乘 35。',
+    de: 'A tree with branching b and depth d has b^d leaves: chess has b≈35, so just 6 plies mean 35^6 ≈ 1.8 billion endgames to score — plain minimax must see every one; each extra ply multiplies the cost by 35.' },
+  { ord: false, dur: 9, t: () => [0, 0.1, R * 0.4],
+    b: 'α 与 β:两条正在收紧的界', be: 'Alpha and beta: two tightening bounds',
+    d: 'DFS 一路带着两个数:α = MAX 沿途已保证的下界,β = MIN 已保证的上界。每算完一个孩子,界就收紧一点 — 跟随光标标签可以同时看到 v、α、β 三个数的变化。',
+    de: 'DFS carries two numbers: alpha, the lower bound MAX has secured; beta, the upper bound MIN has secured. Every finished child tightens them — the cursor tag shows v, alpha and beta evolving together.' },
+  { ord: true, dur: 10, t: () => cutoffs.length ? [cutoffs[0].pos.x, cutoffs[0].pos.y + 0.5, cutoffs[0].pos.z] : [0, 0.3, 0],
+    b: 'α ≥ β:剪枝瞬间', be: 'α ≥ β: the instant of the cutoff',
+    d: '一旦某节点 α ≥ β:这棵子树再搜出什么,对手在上层也绝不会允许成真 — 其余分支整片变灰跳过。看灰色的子树和弹出的 α≥β 标记:它们根本不需要被看见。',
+    de: 'Once α ≥ β at a node: whatever the rest of the subtree holds, the foe higher up would never allow it — the remaining branches all turn gray and are skipped. Gray subtrees with an α≥β tag are futures no one needs to see.' },
+  { ord: true, dur: 10, t: () => [0, -0.2, R * 0.45],
+    b: '走法排序:剪得越狠,看得越远', be: 'Move ordering: cut harder, see deeper',
+    d: '先试最强走法,α 很快顶到 β,剪枝立刻发生。打开"走法排序"重放一遍:同一棵树,访问的叶子骤降;最好情形 O(b^(d/2)),相当于 √35 ≈ 6 倍加速 — 同样算力多看一倍深度。',
+    de: 'Try the strongest move first and alpha hits beta at once, so cuts fire immediately. Toggle move ordering and replay: the same tree, far fewer leaves visited; best case O(b^(d/2)), a √35 ≈ 6x speedup — double the depth for the same effort.' },
+  { ord: true, dur: 9, t: () => [0, 0.3, 0],
+    b: '从深蓝到 AlphaGo 的搜索底座', be: 'From Deep Blue to AlphaGo',
+    d: '1997 年深蓝每秒评估 2 亿个局面,核心就是 α-β 加精心排序;AlphaGo 把"叶子打分"换成策略/价值网络,搜索层依旧是这种带剪枝的树搜索。会剪枝,才搜得深。',
+    de: 'Deep Blue in 1997 evaluated 200M positions per second on alpha-beta with crafted ordering; AlphaGo swapped leaf scoring for policy and value networks, yet its search layer is still pruned tree search. Pruning is what makes depth affordable.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+let tgtVec = new THREE.Vector3(0, 0.2, 0);
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  dwell = 0;
+  const s = STEPS[scenario];
+  if (s.ord !== ordOn) setOrder(s.ord);
+  tgtVec.fromArray(s.t());
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const rate = Math.round(prunedLive / leafTotal * 100);
+  formulaEl.innerHTML =
+    L(`全枚举叶数 N = b^d = ${B}^${D} = <b>${leafTotal}</b> · 国际象棋 b=35, d=6 → <b>≈18 亿</b>叶`,
+      `brute-force leaves N = b^d = ${B}^${D} = <b>${leafTotal}</b> · chess b=35, d=6 → <b>≈1.8 billion</b> leaves`) +
+    '<br>' +
+    L(`α-β 最好情形 O(b^(d/2)):35^3 ≈ <b>4.3 万</b>(√35 · 同算力看深一倍)· 本次已访问 <b>${visitedLive}</b> 叶`,
+      `α-β best case O(b^(d/2)): 35^3 ≈ <b>43k</b> (√35 · double the depth per effort) · visited <b>${visitedLive}</b> leaves so far`) +
+    '<br>' +
+    L(`剪枝判据 <b>α ≥ β</b>(MAX 下界 ≥ MIN 上界 → 对手必回避)· 已剪 <b>${prunedLive}</b> 叶 · 剪枝率 <b>${rate}%</b>`,
+      `cutoff rule <b>α ≥ β</b> (MAX lower bound ≥ MIN upper bound → foe never goes there) · pruned <b>${prunedLive}</b> leaves · rate <b>${rate}%</b>`);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elBr = document.getElementById('br'), elBrVal = document.getElementById('brVal');
+const elDp = document.getElementById('dp'), elDpVal = document.getElementById('dpVal');
+const stV = document.getElementById('stV'), stP = document.getElementById('stP'),
+  stT = document.getElementById('stT'), stR = document.getElementById('stR'), stB = document.getElementById('stB');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elBr.addEventListener('input', () => { B = +elBr.value; elBrVal.textContent = B; tour = false; hideRace(); rebuild(); });
+elDp.addEventListener('input', () => { D = +elDp.value; elDpVal.textContent = D; tour = false; hideRace(); rebuild(); });
+function rebuild() {
+  buildTree();
+  applyOrder(); computeRecord();
+  stepIdx = 0; stepAcc = 0;
+  resetStates();
+  updateFormula();
+}
+function hideRace() {
+  if (race) { race = null; }
+  raceLblA.element.style.display = raceLblB.element.style.display = 'none';
+}
+document.getElementById('btnRace').addEventListener('click', () => {
+  tour = false; playing = false; setPlayLabel();
+  stepIdx = 0; stepAcc = 0; resetStates();
+  race = { t0: performance.now(), until: performance.now() + 7000, done: false };
+  const y = yTop() + 1.05;
+  raceLblA.position.set(-R * 0.55, y, 0);
+  raceLblB.position.set(R * 0.55, y, 0);
+  raceLblA.element.style.display = raceLblB.element.style.display = labelsOn ? '' : 'none';
+});
+document.getElementById('btnStep').addEventListener('click', () => {
+  tour = false; playing = false; setPlayLabel();
+  if (stepIdx < rec.length) applyItem(rec[stepIdx++]);
+});
+document.getElementById('btnRand').addEventListener('click', () => {
+  tour = false; hideRace();
+  for (const nd of leavesIdx) nd.tv = Math.random() * 2 - 1;
+  const calc = nd => {
+    if (!nd.children.length) return nd.tv;
+    let v = nd.isMax ? -Infinity : Infinity;
+    for (const c of nd.children) { const cv = calc(c); v = nd.isMax ? Math.max(v, cv) : Math.min(v, cv); }
+    nd.tv = v; return v;
+  };
+  calc(root);
+  for (const nd of leavesIdx) {
+    nd.lbl.element.textContent = fmtV(nd.tv);
+    nd.lbl.element.className = 'lbl ' + (nd.tv >= 0 ? 'g' : 'bad');
+  }
+  applyOrder(); computeRecord();
+  stepIdx = 0; stepAcc = 0;
+  resetStates();
+  updateFormula();
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+  stepIdx = 0; stepAcc = 0; hideRace(); resetStates(); updateFormula();
+});
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglRotate').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+document.getElementById('tglOrder').addEventListener('change', e => { tour = false; hideRace(); setOrder(e.target.checked); });
+document.getElementById('tglMark').addEventListener('change', e => { cutMarkOn = e.target.checked; refreshLabels(); });
+controls.autoRotate = qsBool('spin', true);
+document.getElementById('tglRotate').checked = controls.autoRotate;
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------- stats 刷新 ---------------- */
+function updateStats() {
+  stV.innerHTML = visitedLive + '<small> / ' + leafTotal + '</small>';
+  stP.innerHTML = prunedLive + '<small> 叶</small>';
+  stT.innerHTML = leafTotal + '<small> = ' + B + '^' + D + '</small>';
+  const rate = Math.round(prunedLive / leafTotal * 100);
+  stR.innerHTML = rate + '<small> %</small>';
+  stR.className = 'v ' + (rate >= 55 ? 'ok' : rate >= 25 ? 'warn' : 'bad');
+  stB.textContent = rootShown === null ? '—' : fmtV(rootShown);
+  stB.className = 'v ' + (rootShown === null ? '' : rootShown >= 0 ? 'ok' : 'bad');
+}
+
+/* ---------------- 竞速动画 ---------------- */
+let race = null;
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0, scenario = 0, dwell = 0, tour = true;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  if (playing) {
+    if (stepIdx < rec.length) {            // 步进传播:14 步/秒 × speed
+      stepAcc += dt * speed * 14;
+      while (stepAcc >= 1 && stepIdx < rec.length) { stepAcc -= 1; applyItem(rec[stepIdx++]); }
+      if (stepIdx >= rec.length) setCursor(root);
+    }
+    if (tour) {
+      dwell += dt;
+      if (dwell > STEPS[scenario].dur && stepIdx >= rec.length) activateStep((scenario + 1) % STEPS.length);
+    }
+  }
+  /* 光标脉动 */
+  if (cursorPrev && cursorPrev !== cursor) cursorPrev.mesh.scale.setScalar(cursorPrev.baseS);
+  if (cursor) { cursor.mesh.scale.setScalar(cursor.baseS * (1.28 + 0.14 * Math.sin(et * 6))); cursorPrev = cursor; }
+  /* 竞速:先蓝扫全部叶子(纯枚举),再绿点亮 α-β 真正访问的 */
+  if (race) {
+    const t = (performance.now() - race.t0) / 1000;
+    if (t <= 1.3) {
+      const k = Math.floor(clamp(t / 1.3, 0, 1) * leafTotal);
+      for (let i = 0; i < leafTotal; i++) leavesIdx[i].mesh.material = i < k ? M.raceA : M.leaf;
+    } else {
+      for (let i = 0; i < leafTotal; i++) leavesIdx[i].mesh.material = M.raceA;
+      const k2 = Math.floor(clamp((t - 1.3) / 1.4, 0, 1) * recLeaves.length);
+      for (let i = 0; i < k2; i++) recLeaves[i].mesh.material = M.raceB;
+    }
+    raceLblA.element.textContent = L(`纯 Minimax · ${leafTotal} 叶全部访问`, `plain minimax · all ${leafTotal} leaves`);
+    raceLblB.element.textContent = L(`α-β · 仅 ${recLeaves.length} 叶`, `α-β · only ${recLeaves.length} leaves`);
+    if (t > 2.9 && !race.done) { race.done = true; stepIdx = rec.length; replayAll(); }
+    if (performance.now() > race.until) hideRace();
+  }
+  controls.target.lerp(tgtVec, 0.05);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    const txt = r.text();
+    r.o.element.textContent = txt;
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+    if (r.o === curLbl.o) r.o.element.style.display = (labelsOn && cursor) ? '' : 'none';
+    else if (r.o === raceLblA || r.o === raceLblB) { /* 竞速标签由 race 块管理 */ }
+  }
+  const nowT = performance.now();
+  if (nowT - lastStatsT > 150) { lastStatsT = nowT; updateStats(); updateFormula(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+buildTree();
+applyOrder();
+computeRecord();
+resetStates();
+applyTheme();
+applyLang();
+refreshLabels();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
