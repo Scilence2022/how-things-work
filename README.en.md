@@ -1166,7 +1166,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] Hormone Negative Feedback (TRH→TSH→T3/T4 negative loop; primary hypothyroidism: TSH↑ T4↓; Graves': autoantibody bypasses feedback) ✅ **hormone-feedback/**
 - [x] Epigenetics (CpG methylation → silencing; H3K27me3 compacts; H3K9ac opens; DNMT1 maintains pattern after replication) ✅ **epigenetics/**
 - [x] Hall Effect (V_H=IB/(nqt); n-type negative, p-type positive; BLDC commutation; ABS; clamp ammeter) ✅ **hall-effect/**
-- [x] Standing Waves & Resonance (y=2Acos(kx)sin(ωt); nodes stationary, antinodes double; f_n=nv/2L; resonance builds amplitude) ✅ **standing-waves/**
+- [x] Standing Waves & Resonance (y=2Acos(kx)sin(ωt); nodes stationary, antinodes double; f_n=nv/2L; resonance builds amplitude) ✅ **standing-waves/** (note: this card duplicated the Phase 5 "Standing Waves" link to the same page; the duplicate card was removed in Oct 2026 and the section count corrected)
 - [x] Hawking Radiation (virtual pairs split at horizon; T_H∝1/M; runaway evaporation; information paradox unsolved) ✅ **blackhole-evaporation/**
 - [x] Bernoulli Effect (A₁v₁=A₂v₂; p+½ρv²=const; Venturi meter; Pitot tube) ✅ **bernoulli-effect/**
 - [x] Hydraulic Jump (Fr=v/√(gd)>1 → abrupt jump; conjugate depth formula; stilling basin application) ✅ **hydraulic-jump/**
