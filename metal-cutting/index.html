@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>车削与切屑形成 · 剪切角上方的材料,瞬间被"折"成一条螺旋</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4f7cac;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#3c6791;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(25,113,194,.9); color: #1971c2; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(79,124,172,.65); background: rgba(79,124,172,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(60,103,145,.55); background: rgba(60,103,145,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #lvwrap { margin-top: 4px; border: 1px dashed var(--panel-border); border-radius: 8px; padding: 3px; }
+  #lifeCanvas { display: block; width: 100%; height: 96px; }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(79,124,172,.10); border-color: rgba(79,124,172,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(60,103,145,.08); border-color: rgba(60,103,145,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #a9c9e4; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="车削与切屑形成:剪切角上方的材料,瞬间被「折」成一条螺旋" data-en="Metal Cutting &amp; Chip Formation: the layer above the shear plane is folded into a spiral">车削与切屑形成:剪切角上方的材料,瞬间被「折」成一条螺旋</h1>
+  <div class="sub" data-zh="刀尖每转吃进 f=0.2 mm,φ≈25° 的剪切窄带里材料瞬间滑移堆叠、卷成切屑飞出 — 切削不是刮,是受控剪切;45 钢 ap=1.5 mm:F_c = k_c·a_p·f = 2400×1.5×0.2 ≈ 720 N、P = k_c·MRR ≈ 2.4 kW(MRR=60 cm³/min)、前刀面 700–900 °C;前角从 +10° 拧到 −10°,切屑从长螺卷变节状碎屑、力和温度一起涨;30–60 m/min 中速区积屑瘤长大又崩掉、已加工面拉毛;刀具寿命 v·Tⁿ=C(n≈0.3),后刀面 VB=0.3 mm 到限换刀 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The tool feeds f=0.2 mm per rev; in a narrow shear band at φ≈25° the material slips instantly and folds into a chip — cutting is controlled shear, not scraping; 45 steel, ap=1.5 mm: F_c = k_c·a_p·f = 2400×1.5×0.2 ≈ 720 N, P ≈ 2.4 kW (MRR=60 cm³/min), rake face 700–900 °C; rake from +10° to −10° turns long spirals into segmented chips as force and heat climb; at 30–60 m/min a BUE grows and snaps off, marring the surface; tool life v·Tⁿ=C (n≈0.3), flank wear VB=0.3 mm limit · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">刀尖每转吃进 f=0.2 mm,φ≈25° 的剪切窄带里材料瞬间滑移堆叠、卷成切屑飞出 — 切削不是刮,是受控剪切;45 钢 ap=1.5 mm:F_c = k_c·a_p·f = 2400×1.5×0.2 ≈ 720 N、P = k_c·MRR ≈ 2.4 kW(MRR=60 cm³/min)、前刀面 700–900 °C;前角从 +10° 拧到 −10°,切屑从长螺卷变节状碎屑、力和温度一起涨;30–60 m/min 中速区积屑瘤长大又崩掉、已加工面拉毛;刀具寿命 v·Tⁿ=C(n≈0.3),后刀面 VB=0.3 mm 到限换刀 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="切削速度 v_c" data-en="cutting speed v_c">切削速度 v_c</span><span class="v" id="stVc">—</span>
+  <span class="k" data-zh="切削力 F_c" data-en="cutting force F_c">切削力 F_c</span><span class="v" id="stFc">—</span>
+  <span class="k" data-zh="切削功率 P" data-en="power P">切削功率 P</span><span class="v" id="stP">—</span>
+  <span class="k" data-zh="前刀面温度" data-en="rake temp">前刀面温度</span><span class="v" id="stTd">—</span>
+  <span class="k" data-zh="切屑形态" data-en="chip type">切屑形态</span><span class="v" id="stChip">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="工件/坯料" data-en="workpiece/stock">工件/坯料</span>
+    <span class="chip g" data-zh="切屑" data-en="chip">切屑</span>
+    <span class="chip o" data-zh="剪切面/热" data-en="shear zone / heat">剪切面/热</span>
+    <span class="chip r" data-zh="积屑瘤/磨损" data-en="BUE / wear">积屑瘤/磨损</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnAl" data-zh="铝(带状)" data-en="Al (ribbon)">铝(带状)</button>
+    <button class="abtn on" id="btnSteel" data-zh="45 钢" data-en="45 steel">45 钢</button>
+    <button class="abtn" id="btnCi" data-zh="铸铁(崩碎)" data-en="cast iron (crumble)">铸铁(崩碎)</button>
+    <button class="abtn" id="btnCool" data-zh="冷却液" data-en="coolant">冷却液</button>
+  </div>
+  <div class="row"><label data-zh="前角 γ" data-en="rake γ">前角 γ</label><input id="rake" type="range" min="-10" max="15" step="1" value="10"><span class="val" id="rakeVal">+10°</span></div>
+  <div class="row"><label data-zh="切削速度 v_c" data-en="speed v_c">切削速度 v_c</label><input id="vc" type="range" min="30" max="300" step="5" value="200"><span class="val" id="vcVal">200 m/min</span></div>
+  <div id="lvwrap"><canvas id="lifeCanvas" width="368" height="96"></canvas></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="相位" data-en="Phase">相位</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCut" type="checkbox" checked> <span data-zh="剖切坯料" data-en="cut stock">剖切坯料</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../arc-welding/" data-zh="电弧焊与熔池" data-en="arc welding">电弧焊与熔池</a>
+    <a href="../injection-molding/" data-zh="注塑成型" data-en="injection molding">注塑成型</a>
+    <a href="../quench-hardening/" data-zh="淬火与马氏体" data-en="quench hardening">淬火与马氏体</a>
+    <a href="../age-hardening/" data-zh="时效硬化" data-en="age hardening">时效硬化</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const f0 = x => x.toFixed(0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeff1f4 : 0x0f1216);
+  M.bed.color.set(THEME === 'light' ? 0x8d99a8 : 0x39424f);
+  M.ground.color.set(THEME === 'light' ? 0xd7dce3 : 0x1b202a);
+  M.stock.color.set(THEME === 'light' ? 0xb9c2cc : 0x7e8ea0);
+  drawLife();
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('车削与切屑形成 · 剪切角上方的材料,瞬间被"折"成一条螺旋', 'Metal Cutting · The Shear Band Folds Metal Into a Spiral');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(0.95, 0.52, 1.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.32, 0.04, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.45;
+controls.maxDistance = 8;
+controls.autoRotateSpeed = 0.4;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 1.9);
+key.position.set(4, 8, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  bed: mat(0x39424f, { roughness: 0.65, metalness: 0.35 }),
+  ground: mat(0x1b202a, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  shaft: mat(0xd8dee8, { metalness: 0.85, roughness: 0.25 }),
+  work: mat(0xaab6c4, { metalness: 0.75, roughness: 0.3 }),
+  stock: mat(0x7e8ea0, { metalness: 0.5, roughness: 0.55, transparent: true, opacity: 0.22,
+    side: THREE.DoubleSide, depthWrite: false }),
+  tool: mat(0x4d5a6a, { metalness: 0.6, roughness: 0.4 }),
+  insert: mat(0xe8e2d4, { metalness: 0.3, roughness: 0.35 }),
+  hot: mat(0xff6a3d, { emissive: 0xff5522, emissiveIntensity: 1.0, metalness: 0.2, roughness: 0.4 }),
+  shear: new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
+  acc: mat(0x6ea3d0, { emissive: 0x4f7cac, emissiveIntensity: 0.8, metalness: 0.3, roughness: 0.4 }),
+};
+
+/* ---------------- 工艺参数(1 场景单位 = 100 mm) ----------------
+   v_c=200 m/min, f=0.2 mm/r, a_p=1.5 mm(视觉放大为 35 mm 便于观看),
+   k_c: 铝≈800 / 45钢≈2400 / 铸铁≈1350 N/mm² → F_c=k_c·a_p·f = 240/720/405 N */
+const RW = 0.40, RWORK = 0.365, AP = 0.035;      // 坯料半径 / 已加工半径 / 切层厚(视觉)
+const X_END = 1.2, X_MIN = 0.08;
+const MATS = {
+  al: { kc: 800, tf: 0.45, chip: 'ribbon' },
+  steel: { kc: 2400, tf: 1.0, chip: 'auto' },
+  ci: { kc: 1350, tf: 0.75, chip: 'crumble' },
+};
+let matKey = 'steel', rg = 10 * Math.PI / 180;   // 前角(rad)
+let vCut = 200, cool = false;
+const KC = () => MATS[matKey].kc;
+const Fc = () => KC() * 1.5 * 0.2;               // N
+const PkW = () => Fc() * vCut / 60000;           // kW
+const MRR = () => vCut * 1.5 * 0.2;              // cm³/min(m/min·mm·mm 数值即 cm³/min)
+const phiDeg = () => 20 + (rg * 180 / Math.PI) / 2;      // Merchant: φ=45−β/2+γ/2,β=50°
+const lam = () => Math.cos(phiDeg() * Math.PI / 180 - rg) / Math.sin(phiDeg() * Math.PI / 180);
+const Trake = () => 810 * MATS[matKey].tf * Math.pow(vCut / 200, 0.45) * (cool ? 0.6 : 1);
+const Tlife = () => Math.pow(684 * (cool ? 1.35 : 1) / vCut, 1 / 0.3);   // min, v·T^0.3=C
+const rpmSpindle = () => vCut / (Math.PI * 0.08);
+function chipType() {
+  if (MATS[matKey].chip === 'crumble') return 'crumble';
+  if (MATS[matKey].chip === 'ribbon') return 'ribbon';
+  return vCut < 120 ? 'segment' : 'ribbon';
+}
+const chipName = t => ({ ribbon: L('带状 · 长螺卷', 'ribbon · long spiral'),
+  segment: L('节状 · 折断', 'segmented'), crumble: L('崩碎 · 碎片', 'crumbles') })[t];
+
+/* ---------------- 车床静止件 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 0.06, 48), M.ground);
+ground.position.y = -0.95;
+scene.add(ground);
+const bed = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.14, 0.72), M.bed);
+bed.position.set(0.1, -0.86, 0.05);
+scene.add(bed);
+const headstock = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.55, 0.5), M.bed);
+headstock.position.set(-0.78, -0.52, 0);
+scene.add(headstock);
+const spindleNose = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.2, 20), M.shaft);
+spindleNose.rotation.z = Math.PI / 2;
+spindleNose.position.set(-0.5, 0, 0);
+scene.add(spindleNose);
+
+/* ---------------- 旋转的工件组 ---------------- */
+const workG = new THREE.Group();
+scene.add(workG);
+const workBar = new THREE.Mesh(new THREE.CylinderGeometry(RWORK, RWORK, 1.65, 40), M.work);
+workBar.geometry.rotateZ(Math.PI / 2);
+workBar.position.set(0.375, 0, 0);
+workG.add(workBar);
+const chuck = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.34, 32), M.bed);
+chuck.geometry.rotateZ(Math.PI / 2);
+chuck.position.set(-0.62, 0, 0);
+workG.add(chuck);
+for (let j = 0; j < 3; j++) {
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.13, 0.22), M.shaft);
+  const a = j * TAU / 3;
+  jaw.position.set(-0.62, Math.cos(a) * 0.4, Math.sin(a) * 0.4);
+  jaw.rotation.x = -a;
+  workG.add(jaw);
+}
+const stockShell = new THREE.Mesh(new THREE.CylinderGeometry(RW, RW, 1, 44, 1, true), M.stock);
+stockShell.geometry.rotateZ(Math.PI / 2);
+stockShell.scale.x = 0.1;
+workG.add(stockShell);
+const faceGrp = new THREE.Group();               // 端面环形切削面(随主轴旋转可见)
+const faceRing = new THREE.Mesh(new THREE.RingGeometry(RWORK, RW, 44), M.work);
+faceRing.rotation.y = Math.PI / 2;
+faceGrp.add(faceRing);
+for (let j = 0; j < 3; j++) {
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.006, (RW - RWORK) * 0.96, 0.05), M.shaft);
+  const a = j * TAU / 3 + 0.5;
+  blade.position.set(0, Math.cos(a) * (RWORK + AP / 2), Math.sin(a) * (RWORK + AP / 2));
+  blade.rotation.x = a;
+  faceGrp.add(blade);
+}
+workG.add(faceGrp);
+const stripeMat = mat(0x8fa8bd, { metalness: 0.4, roughness: 0.6 });
+for (const sx of [0.55, 0.85]) {                 // 坯料表面刻线(让旋转可见)
+  const st = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.006, 0.02), stripeMat);
+  st.position.set(sx, 0, RW + 0.001);
+  workG.add(st);
+  const st2 = st.clone();
+  st2.position.y = RW + 0.001; st2.position.z = 0; st2.rotation.x = Math.PI / 2;
+  workG.add(st2);
+}
+
+/* 已加工面振纹飘带(动态) */
+const RBK = 44;
+const rippleGeo = new THREE.BufferGeometry();
+rippleGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((RBK + 1) * 6), 3));
+{
+  const idx = [];
+  for (let i = 0; i < RBK; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  rippleGeo.setIndex(idx);
+}
+const ripple = new THREE.Mesh(rippleGeo, new THREE.MeshBasicMaterial({ color: 0x74c0fc,
+  transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+ripple.frustumCulled = false;
+scene.add(ripple);
+
+/* ---------------- 车刀组(随进给平移) ---------------- */
+const toolG = new THREE.Group();
+scene.add(toolG);
+function insertGeo(g) {
+  const cg = Math.cos(g), sg = Math.sin(g);
+  const ca = Math.cos(7 * Math.PI / 180), sa = Math.sin(7 * Math.PI / 180);
+  const sh = new THREE.Shape();
+  sh.moveTo(0, 0);
+  sh.lineTo(0.2 * cg, -0.2 * sg);          // 前刀面(刀尖 → 卷屑坡)
+  sh.lineTo(0.2 * cg + 0.09, -0.2 * sg);   // 刀片顶背
+  sh.lineTo(0.155, 0.085);
+  sh.lineTo(0.115 * ca, 0.115 * sa);       // 后刀面(带后角)
+  sh.closePath();
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.09, bevelEnabled: false });
+  geo.rotateY(-Math.PI / 2);
+  geo.translate(0.045, 0, 0);
+  return geo;
+}
+let insertMesh = new THREE.Mesh(insertGeo(rg), M.insert);
+toolG.add(insertMesh);
+const holder = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.13, 0.14), M.tool);
+holder.position.set(0, 0.1, 0.185);
+toolG.add(holder);
+const shank = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.13, 0.55), M.tool);
+shank.position.set(0, 0.1, 0.53);
+toolG.add(shank);
+const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.05, 0.12), M.tool);
+post.position.set(0, -0.52, 0.72);
+toolG.add(post);
+const clampScrew = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.05, 12), M.shaft);
+clampScrew.position.set(0, 0.05, 0.06);
+toolG.add(clampScrew);
+/* 前刀面刃口高亮条 */
+const rakeEdge = new THREE.Mesh(new THREE.BoxGeometry(0.092, 0.2, 0.006), M.hot);
+toolG.add(rakeEdge);
+/* 剪切面(发光窄面,伸入坯料) */
+const shearPlane = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1, 0.005), M.shear);
+toolG.add(shearPlane);
+/* 积屑瘤(小楔形体) */
+const bue = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.05, 4),
+  mat(0xc9b18a, { metalness: 0.7, roughness: 0.5, emissive: 0x8a6d3a, emissiveIntensity: 0.2 }));
+toolG.add(bue);
+/* 后刀面磨损带 VB */
+const wearBand = new THREE.Mesh(new THREE.BoxGeometry(0.092, 1, 0.004),
+  mat(0x9aa7b5, { emissive: 0x777788, emissiveIntensity: 0.25 }));
+toolG.add(wearBand);
+/* 切削力箭头(红色,指向 −Y 即切向抗力方向) */
+function makeArrow(material) {
+  const g = new THREE.Group();
+  const cylGeo = new THREE.CylinderGeometry(0.02, 0.02, 1, 10);
+  cylGeo.rotateZ(-Math.PI / 2); cylGeo.translate(0.5, 0, 0);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.14, 12), material);
+  head.geometry.rotateZ(-Math.PI / 2);
+  head.geometry.translate(0.07, 0, 0);
+  g.add(new THREE.Mesh(cylGeo, material), head);
+  g.userData.head = head;
+  return g;
+}
+const arrFc = makeArrow(mat(0xff922b, { emissive: 0xff7733, emissiveIntensity: 0.6 }));
+arrFc.rotation.z = -Math.PI / 2;                  // +X → −Y(工件对刀的切向力)
+arrFc.position.set(0, 0, 0.12);
+toolG.add(arrFc);
+function setArrow(g, len) {
+  g.children[0].scale.y = g.children[0].scale.z = 1;
+  g.children[0].scale.x = Math.max(len - 0.12, 0.02);
+  g.userData.head.position.x = Math.max(len - 0.12, 0.02);
+  g.visible = len > 0.05;
+}
+
+/* ---------------- 切屑(InstancedMesh 螺旋段)+ 碎屑粒子 ---------------- */
+const CHIP_N = 64, S0 = 0.18, PITCHX = 0.05;
+const chipMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.03, 0.05, 0.008),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.6 }), CHIP_N);
+chipMesh.frustumCulled = false;
+chipMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+for (let i = 0; i < CHIP_N; i++) chipMesh.setColorAt(i, new THREE.Color(1, 1, 1));
+scene.add(chipMesh);
+const FRAG_N = 64;
+const fragMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.018, 0.012, 0.012),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.55 }), FRAG_N);
+fragMesh.frustumCulled = false;
+fragMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+for (let i = 0; i < FRAG_N; i++) fragMesh.setColorAt(i, new THREE.Color(1, 1, 1));
+scene.add(fragMesh);
+const fPos = [], fVel = [];
+for (let i = 0; i < FRAG_N; i++) { fPos.push(new THREE.Vector3(0, -99, 0)); fVel.push(new THREE.Vector3()); }
+const fLife = new Float32Array(FRAG_N), fMax = new Float32Array(FRAG_N);
+let fragCursor = 0, fragAcc = 0;
+function spawnFrags(n, origin, dir, spread, speed) {
+  for (let k = 0; k < n; k++) {
+    fragCursor = (fragCursor + 1) % FRAG_N;
+    const i = fragCursor;
+    fPos[i].copy(origin);
+    fPos[i].x += (Math.random() - 0.5) * 0.05;
+    fVel[i].set((Math.random() - 0.5) * spread, (Math.random() - 0.5) * spread + 0.25, (Math.random() - 0.5) * spread)
+      .addScaledVector(dir, speed * (0.6 + Math.random() * 0.8));
+    fMax[i] = fLife[i] = 0.28 + Math.random() * 0.3;
+  }
+}
+/* 切屑螺旋路径:先沿前刀面直行,再卷成螺旋(轴平行主轴) */
+const RD = new THREE.Vector3(), A2 = new THREE.Vector3(), CEN = new THREE.Vector3(), Q0 = new THREE.Vector3();
+let RH = 0.11;
+const _p = new THREE.Vector3(), _t = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _q = new THREE.Quaternion();
+const _m4 = new THREE.Matrix4(), _sc = new THREE.Vector3();
+function pathPoint(s, out, outTan) {
+  if (s < S0) { out.copy(toolG.position).addScaledVector(RD, s); outTan.copy(RD); }
+  else {
+    const psi = (s - S0) / RH;
+    out.copy(CEN).addScaledVector(A2, Math.cos(psi) * RH).addScaledVector(RD, Math.sin(psi) * RH);
+    out.x += PITCHX * psi / TAU;
+    outTan.copy(A2).multiplyScalar(-Math.sin(psi)).addScaledVector(RD, Math.cos(psi));
+    outTan.x += PITCHX / (TAU * RH);
+    outTan.normalize();
+  }
+}
+const _c = new THREE.Color(), _hot = new THREE.Color(0xff5a2e), _coolc = new THREE.Color(0x9fb0c3);
+
+/* ---------------- 热辉光(前刀面温度云近似) ---------------- */
+function glowTexture() {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const c = cv.getContext('2d');
+  const gr = c.createRadialGradient(64, 64, 4, 64, 64, 62);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,170,80,0.55)');
+  gr.addColorStop(1, 'rgba(255,120,40,0)');
+  c.fillStyle = gr;
+  c.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(cv);
+}
+const heat = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), transparent: true,
+  opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }));
+heat.scale.setScalar(0.55);
+scene.add(heat);
+/* 冷却液流(开关) */
+const coolantJet = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.03, 0.42, 10),
+  new THREE.MeshBasicMaterial({ color: 0x4dc3ff, transparent: true, opacity: 0.5 }));
+coolantJet.visible = false;
+scene.add(coolantJet);
+const coolantNozzle = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.1), M.bed);
+coolantNozzle.visible = false;
+scene.add(coolantNozzle);
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let scenario = 0, dwell = 0, tour = true;
+let labelsOn = qsBool('labels', true);
+let theta = 0, xCut = 0.62, chipHead = 0, vb = 0.02, limitT = 0;
+let bueAmp = 0, bueT = 0, chatterSpike = 0, chatterPhase = 0;
+let tgtVec = new THREE.Vector3(0.32, 0.04, 0);
+
+function setMat(k) {
+  matKey = k;
+  document.getElementById('btnAl').classList.toggle('on', k === 'al');
+  document.getElementById('btnSteel').classList.toggle('on', k === 'steel');
+  document.getElementById('btnCi').classList.toggle('on', k === 'ci');
+  updateFormula();
+}
+function setCool(v) {
+  cool = v;
+  document.getElementById('btnCool').classList.toggle('on', v);
+  updateFormula();
+}
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+const lblWork = addLabel(
+  () => L(`工件 φ80 mm · n≈${f0(rpmSpindle())} r/min`, `workpiece φ80 · n≈${f0(rpmSpindle())} rpm`), () => 'e',
+  new THREE.Vector3(-0.35, 0.62, 0));
+const lblTool = addLabel(
+  () => L(`车刀 · 前角 γ=${rg >= 0 ? '+' : ''}${(rg * 180 / Math.PI).toFixed(0)}°`, `tool · rake γ=${rg >= 0 ? '+' : ''}${(rg * 180 / Math.PI).toFixed(0)}°`), () => 'st',
+  new THREE.Vector3(0.62, 0.5, 0.6),
+  v => v.set(xCut + 0.24, 0.34, 0.55));
+const lblShear = addLabel(
+  () => L(`剪切面 φ≈${phiDeg().toFixed(0)}° · 窄带滑移`, `shear plane φ≈${phiDeg().toFixed(0)}°`), () => 'w',
+  new THREE.Vector3(0.62, 0.24, 0.38),
+  v => v.set(xCut + Math.cos(phiDeg() * Math.PI / 180) * 0.06, Math.cos(phiDeg() * Math.PI / 180) * 0.07, RWORK + 0.05));
+const lblChip = addLabel(
+  () => L(`切屑 · 厚比 λ≈${lam().toFixed(1)}×`, `chip · ratio λ≈${lam().toFixed(1)}×`), () => 'g',
+  new THREE.Vector3(0.7, 0.42, 0.15),
+  v => { pathPoint(0.4, _p, _t); v.copy(_p).add(new THREE.Vector3(0, 0.1, 0.05)); });
+const lblBue = addLabel(
+  () => L('积屑瘤:30–60 m/min 长大→崩掉→拉毛表面', 'BUE: grows at 30–60 m/min, snaps off, mars surface'), () => 'bad',
+  new THREE.Vector3(0.62, 0.14, 0.44),
+  v => v.set(xCut, 0.1, RWORK + 0.1));
+const lblHeat = addLabel(
+  () => L(`前刀面 ≈${f0(Trake())} °C(最热点)`, `rake face ≈${f0(Trake())} °C (hottest)`), () => 'bad',
+  new THREE.Vector3(0.55, -0.18, 0.42),
+  v => v.set(xCut, -0.08, RWORK + 0.14));
+const lblSurf = addLabel(
+  () => L('已加工面:振纹/拉毛 ← 积屑瘤与振动', 'machined surface: chatter marks ← BUE & vibration'), () => 'st',
+  new THREE.Vector3(0.15, -0.42, 0.4),
+  v => v.set(clamp(xCut - 0.35, -0.4, 0.6), -0.14, RWORK + 0.12));
+const lblSt = addLabel(() => {
+  if (vb >= 0.3) return L(`后刀面 VB=${vb.toFixed(2)} mm 到限 → 自动换刀`, `flank VB=${vb.toFixed(2)} mm at limit → regrind`);
+  return L(`v·Tⁿ=C:此速度下寿命 T≈${f0(Tlife())} min · VB=${vb.toFixed(2)}/0.3 mm`, `v·Tⁿ=C: life T≈${f0(Tlife())} min · VB=${vb.toFixed(2)}/0.3 mm`);
+}, () => vb >= 0.3 ? 'bad' : 'g',
+  new THREE.Vector3(0.3, 1.0, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'geom', tgt: [0.55, 0.16, 0.3], dur: 8,
+    b: '正交切削几何:γ、后角、φ', be: 'Orthogonal cutting geometry',
+    d: '工件旋转、车刀只有一刀刃:前刀面卷屑、后刀面让开已加工面。招牌画面看这里 — 刀尖上方的材料不是被"刮"掉的,而是沿剪切面整片折断、顺着前刀面卷成连续螺旋飞出。',
+    de: 'The work spins, the tool has a single edge: rake face curls the chip, flank clears the cut surface. Watch the signature moment — the layer above the tip is not scraped, it shears off along a plane and curls into a continuous spiral.' },
+  { hl: 'shear', tgt: [0.6, 0.08, 0.36], dur: 8,
+    b: '剪切面:λ 倍变厚', be: 'The shear plane: chip thickens',
+    d: '材料以 φ≈25°(γ=+10° 时)的窄带在一瞬间滑移:上面一层堆到切屑里,切屑厚比 λ = cos(φ−γ)/sinφ ≈ 2.3;γ 越大剪切角越大、切屑越薄 — γ=+15°、φ≈35° 时 λ≈1.6。变形集中在 0.1 mm 量级的带里,速度超过 1 m/s。',
+    de: 'The material slips through a narrow band at φ≈25° (γ=+10°): the layer piles into a chip with thickness ratio λ = cos(φ−γ)/sinφ ≈ 2.3; higher rake raises φ and thins the chip — at γ=+15°, φ≈35°, λ≈1.6. All within a ~0.1 mm band moving faster than 1 m/s.' },
+  { hl: 'force', tgt: [0.55, 0.1, 0.4], dur: 8,
+    b: '力与功率的账', be: 'Force and power accounting',
+    d: 'F_c = k_c·a_p·f:45 钢 k_c≈2400 N/mm²,ap=1.5、f=0.2 → F_c≈720 N;铝≈240 N、铸铁≈405 N。功率 P = F_c·v_c = k_c·MRR:200 m/min 时 MRR=60 cm³/min、P≈2.4 kW — 一台车床的电机就是按这笔账选的。',
+    de: 'F_c = k_c·a_p·f: 45 steel k_c≈2400 N/mm², ap=1.5, f=0.2 → F_c≈720 N; Al≈240 N, cast iron≈405 N. Power P = F_c·v_c = k_c·MRR: at 200 m/min, MRR=60 cm³/min, P≈2.4 kW — the spindle motor is sized by exactly this bill.' },
+  { hl: 'heat', tgt: [0.6, 0.12, 0.34], dur: 8,
+    b: '温度云:前刀面最热', be: 'Heat map: the rake face is hottest',
+    d: '约 80% 的切削功变成热,大部分被切屑带走;摩擦最快的第二变形区 — 前刀面刀尖附近 — 温度最高:45 钢 200 m/min 时约 800 °C(700–900 °C),速度越高越烫。红热的是切屑,刀具靠它把热量"捎走"。',
+    de: 'About 80% of cutting work becomes heat, mostly carried away by the chip; the hottest spot is the secondary shear zone on the rake face near the edge: ≈800 °C (700–900 °C) for 45 steel at 200 m/min, climbing with speed. The glowing chip is the heat shuttle.' },
+  { hl: 'chips', tgt: [0.6, 0.2, 0.2], dur: 9,
+    b: '三种切屑:材料对照', be: 'Three chip types: compare materials',
+    d: '铝塑性极好 → 连绵的带状长螺卷(高危:缠刀,要靠卷屑槽折断);45 钢低速出节状切屑、高速又变带状;铸铁脆 → 端面就崩成碎屑。点上方材料按钮逐一对照,看切屑形态怎么变。',
+    de: 'Aluminum is very ductile → long ribbon spirals (a hazard: they snarl, so chip breakers fold them); 45 steel gives segmented chips at low speed, ribbons at high; brittle cast iron crumbles at the surface. Click the material buttons to compare.' },
+  { hl: 'bue', tgt: [0.6, 0.1, 0.38], dur: 9,
+    b: '积屑瘤:长大又崩掉', be: 'Built-up edge: grows, then snaps',
+    d: '把速度降到 30–60 m/min 的中速区:切屑底层在高温高压下焊在前刀面上,堆成一个积屑瘤 — 它忽大忽小、周期性崩掉,碎片四溅,已加工面被拉毛、振纹加重。高速(>100 m/min)后积屑瘤消失,表面反而变光。',
+    de: 'Drop into 30–60 m/min: the chip\'s under-layer welds onto the rake face and piles into a built-up edge — it swells, snaps periodically, sprays fragments and tears the machined surface. Above ~100 m/min the BUE vanishes and the finish improves.' },
+  { hl: 'wear', tgt: [0.5, 0.05, 0.4], dur: 10,
+    b: '刀具磨损与泰勒公式', be: 'Tool wear & Taylor\'s equation',
+    d: '后刀面磨损带 VB 随切削时间增长,寿命尽头的判据是 VB=0.3 mm。泰勒:v·Tⁿ=C,n≈0.3 — 200 m/min 时 T≈60 min,提到 260 m/min 寿命只剩约 20 min。冷却液把 C 拉高、曲线右移:同样的速度,寿命翻倍还多。',
+    de: 'Flank wear VB grows with cutting time; the criterion is VB=0.3 mm. Taylor: v·Tⁿ=C, n≈0.3 — T≈60 min at 200 m/min but only ~20 min at 260. Coolant raises C and shifts the curve right: same speed, more than double the life.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  dwell = 0;
+  const s = STEPS[scenario];
+  tgtVec.fromArray(s.tgt);
+  if (s.hl === 'chips') setMat('al');
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 寿命曲线(canvas) ---------------- */
+const lifeCanvas = document.getElementById('lifeCanvas');
+const lifeCtx = lifeCanvas.getContext('2d');
+function drawLife() {
+  const c = lifeCtx, W = lifeCanvas.width, H = lifeCanvas.height;
+  const ink = THEME === 'dark' ? '#8fa0b4' : '#5b6b7d';
+  c.clearRect(0, 0, W, H);
+  const lo = Math.log10(5), hi = Math.log10(3000);
+  const X = v => 8 + (v - 30) / 270 * (W - 50);
+  const Y = T => H - 12 - (Math.log10(clamp(T, 5, 3000)) - lo) / (hi - lo) * (H - 24);
+  c.strokeStyle = ink; c.lineWidth = 1; c.font = '9px sans-serif'; c.fillStyle = ink;
+  c.beginPath(); c.moveTo(X(30), Y(5)); c.lineTo(X(30), Y(3000)); c.lineTo(X(300), Y(3000)); c.stroke();
+  for (const [v, t] of [[100, 100], [200, 60], [300, 15]]) { c.globalAlpha = 0.3; c.fillRect(X(v) - 1, Y(t) - 1, 2, 2); c.globalAlpha = 1; }
+  const curve = (C2, col, dash) => {
+    c.strokeStyle = col; c.setLineDash(dash || []); c.lineWidth = 1.6;
+    c.beginPath();
+    for (let i = 0; i <= 40; i++) {
+      const v = 30 + 270 * i / 40, T = Math.pow(C2 / v, 1 / 0.3);
+      i ? c.lineTo(X(v), Y(T)) : c.moveTo(X(v), Y(T));
+    }
+    c.stroke(); c.setLineDash([]);
+  };
+  if (cool) curve(684, ink, [4, 3]);
+  curve(684 * (cool ? 1.35 : 1), cool ? '#4dc3ff' : '#ffa94d');
+  c.fillStyle = THEME === 'dark' ? '#fff' : '#16202c';
+  c.beginPath(); c.arc(X(vCut), Y(Tlife()), 3.4, 0, TAU); c.fill();
+  c.fillText('T/min(log)', 6, 9);
+  c.fillText('v_c m/min →', W - 66, H - 3);
+  c.fillStyle = cool ? '#4dc3ff' : '#ffa94d';
+  c.fillText(`T≈${f0(Tlife())} min @${f0(vCut)}`, X(150), Y(Tlife()) - 6);
+  c.fillStyle = '#ff6b6b';
+  c.fillText('VB 0.3 mm 到限', X(196), Y(60) + 14);
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const lamV = lam();
+  formulaEl.innerHTML =
+    L(`MRR = v_c·a_p·f = ${f0(vCut)}×1.5×0.2 = <b>${MRR().toFixed(0)} cm³/min</b> · n≈${f0(rpmSpindle())} r/min(φ80)`,
+      `MRR = v_c·a_p·f = ${f0(vCut)}×1.5×0.2 = <b>${MRR().toFixed(0)} cm³/min</b> · n≈${f0(rpmSpindle())} rpm (φ80)`) +
+    '<br>' +
+    L(`F_c = k_c·a_p·f = ${KC()}×1.5×0.2 ≈ <b>${f0(Fc())} N</b> · P = F_c·v_c ≈ <b>${PkW().toFixed(1)} kW</b> · 前刀面 ≈${f0(Trake())} °C`,
+      `F_c = k_c·a_p·f = ${KC()}×1.5×0.2 ≈ <b>${f0(Fc())} N</b> · P = F_c·v_c ≈ <b>${PkW().toFixed(1)} kW</b> · rake ≈${f0(Trake())} °C`) +
+    '<br>' +
+    L(`Merchant φ = 45°−β/2+γ/2 = <b>${phiDeg().toFixed(0)}°</b>(β=50°)· λ = cos(φ−γ)/sinφ ≈ <b>${lamV.toFixed(1)}×</b> · 泰勒 v·T<sup>0.3</sup>=C:T≈<b>${f0(Tlife())} min</b>`,
+      `Merchant φ = 45°−β/2+γ/2 = <b>${phiDeg().toFixed(0)}°</b> (β=50°) · λ = cos(φ−γ)/sinφ ≈ <b>${lamV.toFixed(1)}×</b> · Taylor v·T<sup>0.3</sup>=C: T≈<b>${f0(Tlife())} min</b>`);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elRake = document.getElementById('rake'), elRakeVal = document.getElementById('rakeVal');
+const elVc = document.getElementById('vc'), elVcVal = document.getElementById('vcVal');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+const tglCut = document.getElementById('tglCut');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.element.style.display = labelsOn ? '' : 'none';
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elRake.addEventListener('input', () => {
+  rg = (+elRake.value) * Math.PI / 180;
+  elRakeVal.textContent = (elRake.value >= 0 ? '+' : '') + elRake.value + '°';
+  toolG.remove(insertMesh);
+  insertMesh.geometry.dispose();
+  insertMesh = new THREE.Mesh(insertGeo(rg), M.insert);
+  toolG.add(insertMesh);
+  tour = false;
+  updateFormula();
+});
+elVc.addEventListener('input', () => {
+  vCut = +elVc.value;
+  elVcVal.textContent = vCut + ' m/min';
+  tour = false;
+  updateFormula();
+});
+document.getElementById('btnAl').addEventListener('click', () => { setMat('al'); tour = false; });
+document.getElementById('btnSteel').addEventListener('click', () => { setMat('steel'); tour = false; });
+document.getElementById('btnCi').addEventListener('click', () => { setMat('ci'); tour = false; });
+document.getElementById('btnCool').addEventListener('click', () => { setCool(!cool); tour = false; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+tglCut.addEventListener('change', () => {
+  M.stock.opacity = tglCut.checked ? 0.22 : 0.55;
+});
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stVc = document.getElementById('stVc'), stFc = document.getElementById('stFc'),
+  stP = document.getElementById('stP'), stTd = document.getElementById('stTd'),
+  stChip = document.getElementById('stChip');
+function updateStats() {
+  stVc.innerHTML = f0(vCut) + '<small> m/min</small>';
+  stFc.innerHTML = f0(Fc()) + '<small> N</small>';
+  stFc.className = 'v ' + (Fc() > 600 ? 'warn' : '');
+  stP.innerHTML = PkW().toFixed(1) + '<small> kW</small>';
+  stP.className = 'v ' + (PkW() > 3 ? 'warn' : 'ok');
+  stTd.innerHTML = f0(Trake()) + '<small> °C</small>';
+  stTd.className = 'v ' + (Trake() > 900 ? 'bad' : Trake() > 800 ? 'warn' : 'ok');
+  const ct = chipType();
+  const bueOn = bueAmp > 0.35;
+  stChip.textContent = chipName(ct) + (bueOn ? L(' · 积屑瘤!', ' · BUE!') : '');
+  stChip.className = 'v ' + (ct === 'crumble' ? 'warn' : bueOn ? 'bad' : 'ok');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const dts = dt * speed;
+  et += dt;
+  const phir = phiDeg() * Math.PI / 180;
+  RD.set(0, -Math.sin(rg), Math.cos(rg));
+  A2.set(0, Math.cos(rg), Math.sin(rg));
+  RH = 0.105 + rg * 0.0008;
+  const tip = toolG.position;
+  Q0.copy(RD).multiplyScalar(S0).add(tip);
+  CEN.copy(Q0).addScaledVector(A2, -RH);
+  if (playing) {
+    theta += vCut * 0.05 * dts;
+    xCut -= 0.02 * (vCut / 200) * dts;
+    if (xCut < X_MIN) xCut = 0.62;
+    chipHead = chipHead + (0.25 + vCut * 0.003) * dts;
+    /* 磨损 VB */
+    vb += 0.0022 * Math.pow(vCut / 200, 3) * (cool ? 0.5 : 1) * dts;
+    if (vb >= 0.3) { limitT += dt; if (limitT > 2.5) { vb = 0.02; limitT = 0; } }
+    else limitT = 0;
+    /* 积屑瘤生长-崩脱循环 */
+    const inBue = matKey === 'steel' && vCut >= 30 && vCut <= 60;
+    bueAmp += ((inBue ? 1 : 0) - bueAmp) * Math.min(1, dt * 2.2);
+    bueT += dt;
+    if (bueT > 4.6) {
+      bueT = 0;
+      if (bueAmp > 0.5) { chatterSpike = 1; spawnFrags(5, tip, RD, 0.9, 0.5); }
+    }
+    chatterSpike *= Math.exp(-1.8 * dt);
+    /* 巡讲 */
+    if (tour) {
+      dwell += dt;
+      if (dwell > STEPS[scenario].dur) activateStep((scenario + 1) % STEPS.length);
+    }
+    /* 崩碎粒子 */
+    if (chipType() === 'crumble') {
+      fragAcc += 26 * (vCut / 200) * dts;
+      while (fragAcc > 1) { fragAcc--; spawnFrags(1, tip, RD, 1.1, 0.8 + vCut * 0.003); }
+    }
+  }
+  /* 工件旋转与坯料随进给缩短 */
+  workG.rotation.x = theta;
+  const Ls = Math.max(0.06, X_END - xCut);
+  stockShell.scale.x = Ls;
+  stockShell.position.x = xCut + Ls / 2;
+  faceGrp.position.x = xCut;
+  /* 刀具组位置 */
+  toolG.position.set(xCut, 0, RWORK);
+  /* 前刀面刃口条 */
+  rakeEdge.rotation.x = Math.PI / 2 + rg;
+  rakeEdge.position.set(0, -Math.sin(rg) * 0.1 + 0.004, Math.cos(rg) * 0.1 + 0.004);
+  /* 剪切面 */
+  const Lsh = AP / Math.sin(phir);
+  shearPlane.scale.y = Lsh;
+  shearPlane.rotation.x = phir;
+  shearPlane.position.set(0, Math.cos(phir) * Lsh / 2, Math.sin(phir) * Lsh / 2);
+  /* 积屑瘤楔形体 */
+  bue.position.copy(RD).multiplyScalar(0.055).addScaledVector(A2, 0.012);
+  bue.rotation.x = Math.PI / 2 + rg;
+  const bs = bueAmp * Math.min(1, bueT / 2.5) * (0.65 + 0.35 * Math.sin(et * 2.3));
+  bue.scale.set(1, Math.max(0.001, bs), Math.max(0.001, bs * 0.8));
+  bue.visible = bs > 0.02;
+  /* 磨损带 VB */
+  const wv = vb / 0.3 * 0.055;
+  wearBand.scale.y = Math.max(wv, 0.001);
+  wearBand.position.set(0, Math.sin(7 * Math.PI / 180) * wv / 2 + 0.003, Math.cos(7 * Math.PI / 180) * wv / 2 + 0.003);
+  wearBand.rotation.x = Math.PI / 2 - 7 * Math.PI / 180;
+  wearBand.material.emissiveIntensity = vb >= 0.28 ? 0.5 + 0.5 * Math.sin(et * 10) : 0.25;
+  /* 力箭头 ∝ F_c */
+  setArrow(arrFc, 0.14 + clamp01(Fc() / 720) * 0.4);
+  /* 切屑 */
+  const ct = chipType();
+  chipMesh.visible = ct !== 'crumble';
+  if (chipMesh.visible) {
+    const gap = ct === 'ribbon' ? 0.046 : 0.09;
+    const smax = ct === 'ribbon' ? S0 + TAU * 2.3 * RH : 0.95;
+    const cyc = smax + gap * 2;
+    const lamF = clamp(lam() / 2.3, 0.65, 1.4);
+    _sc.set(1, 1, lamF);
+    for (let i = 0; i < CHIP_N; i++) {
+      let s = (chipHead - i * gap) % cyc;
+      if (s < 0) s += cyc;
+      if (s < 0.005 || s > smax || s > chipHead) {   // 尚未出生 / 已走出螺旋 → 隐藏
+        _p.set(0, -99, 0); _q.identity();
+      } else {
+        pathPoint(s, _p, _t);
+        _p.addScaledVector(A2, 0.004 * Math.sin(et * 6 + i * 1.7));
+        if (ct === 'segment') {
+          _t.x += 0.15 * Math.sin(i * 7.3 + chipHead * 0.7);
+          _t.normalize();
+        }
+        _q.setFromUnitVectors(_up, _t);
+      }
+      _m4.compose(_p, _q, _sc);
+      chipMesh.setMatrixAt(i, _m4);
+      const hotK = Math.exp(-s / 0.5) * clamp01(Trake() / 800);
+      _c.copy(_coolc).lerp(_hot, clamp01(hotK * 1.2));
+      chipMesh.setColorAt(i, _c);
+    }
+    chipMesh.instanceMatrix.needsUpdate = true;
+    if (chipMesh.instanceColor) chipMesh.instanceColor.needsUpdate = true;
+  }
+  /* 碎屑粒子 */
+  for (let i = 0; i < FRAG_N; i++) {
+    if (fLife[i] > 0) {
+      fLife[i] -= (playing ? dts : 0);
+      fVel[i].y -= 2.4 * dts;
+      fPos[i].addScaledVector(fVel[i], dts);
+      _p.copy(fPos[i]); _q.identity();
+      const k = clamp01(fLife[i] / fMax[i]);
+      _c.setRGB(0.55 + 0.45 * k, 0.4 + 0.25 * k, 0.35 + 0.2 * k);
+    } else {
+      _p.set(0, -99, 0); _q.identity(); _c.setRGB(0.1, 0.1, 0.1);
+    }
+    _sc.set(1, 1, 1);
+    _m4.compose(_p, _q, _sc);
+    fragMesh.setMatrixAt(i, _m4);
+    fragMesh.setColorAt(i, _c);
+  }
+  fragMesh.instanceMatrix.needsUpdate = true;
+  if (fragMesh.instanceColor) fragMesh.instanceColor.needsUpdate = true;
+  fragMesh.visible = chipType() === 'crumble' || bueAmp > 0.1;
+  /* 振纹飘带 */
+  {
+    const amp = 0.0035 + bueAmp * 0.011 + chatterSpike * 0.009;
+    const p = rippleGeo.attributes.position.array;
+    for (let i = 0; i <= RBK; i++) {
+      const x = xCut - 0.62 * i / RBK;
+      const w = amp * Math.sin(x * 46 + chatterPhase + et * 2.2) + amp * 0.5 * Math.sin(x * 23 - et * 1.3);
+      const i6 = i * 6;
+      p[i6] = x; p[i6 + 1] = 0.008; p[i6 + 2] = RWORK + Math.max(w, 0.0005);
+      p[i6 + 3] = x; p[i6 + 4] = -0.008; p[i6 + 5] = RWORK + Math.max(w, 0.0005);
+    }
+    rippleGeo.attributes.position.needsUpdate = true;
+  }
+  /* 热辉光 + 冷却液 */
+  const hotK = clamp01(Trake() / 950);
+  heat.position.set(xCut + RD.x * 0.06, RD.y * 0.06, RWORK + RD.z * 0.06 + 0.05);
+  heat.scale.setScalar(0.35 + 0.35 * hotK + 0.03 * Math.sin(et * 9));
+  heat.material.opacity = 0.35 + 0.55 * hotK;
+  heat.material.color.setHSL(cool ? 0.55 : 0.07, 0.9, 0.55);
+  M.shear.opacity = 0.4 + 0.25 * Math.abs(Math.sin(et * 7));
+  M.hot.emissiveIntensity = 0.6 + 0.6 * hotK;
+  coolantJet.visible = coolantNozzle.visible = cool;
+  if (cool) {
+    coolantJet.position.set(xCut - 0.18, 0.16, RWORK + 0.16);
+    coolantJet.rotation.x = 0.65;
+    coolantNozzle.position.set(xCut - 0.22, 0.28, RWORK + 0.3);
+    coolantJet.material.opacity = 0.4 + 0.15 * Math.sin(et * 21);
+  }
+  /* 步骤高亮 */
+  const hl = STEPS[scenario].hl;
+  const hlK = 0.5 + 0.3 * Math.sin(et * 5);
+  shearPlane.material.color.setHex(hl === 'shear' ? 0xfff6c0 : 0xffe9a0);
+  rakeEdge.material.emissiveIntensity = (hl === 'geom' || hl === 'heat') ? 0.8 + hlK : 0.5 + 0.2 * hotK;
+  if (hl === 'bue') bue.material.emissiveIntensity = 0.3 + 0.6 * hlK * bueAmp;
+  if (hl === 'wear') wearBand.material.emissiveIntensity = 0.4 + 0.6 * hlK;
+  if (hl === 'force') arrFc.children[0].material.emissiveIntensity = 0.5 + 0.6 * hlK;
+  if (hl === 'chips') chipMesh.material.emissiveIntensity = 0.25 + 0.2 * hlK;
+  ripple.material.opacity = 0.35 + (hl === 'bue' ? 0.35 * hlK : 0);
+  /* 相机目标缓动 */
+  controls.target.lerp(tgtVec, 0.05);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  lblBue.element.style.display = (labelsOn && bueAmp > 0.3) ? '' : 'none';
+  /* stats + 寿命曲线节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) { lastStatsT = now; updateStats(); drawLife(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+elRake.value = Math.round(rg * 180 / Math.PI);
+elRakeVal.textContent = (elRake.value >= 0 ? '+' : '') + elRake.value + '°';
+elVc.value = Math.round(vCut);
+elVcVal.textContent = Math.round(vCut) + ' m/min';
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
