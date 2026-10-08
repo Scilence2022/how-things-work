@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>步进电机与细分驱动 · 电磁齿轮与 sin/cos 微步</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #divSeg { display: flex; gap: 4px; flex: 1; }
+  #divSeg .abtn { flex: 1 1 0; padding: 3px 2px; text-align: center; }
+  #scope { width: 100%; height: 56px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="步进电机与细分驱动:电磁齿轮、sin/cos 微步与失步" data-en="Stepper Motors &amp; Microstepping: Electromagnetic Gearing, sin/cos Microsteps, Lost Steps">步进电机与细分驱动:电磁齿轮、sin/cos 微步与失步</h1>
+  <div class="sub" data-zh="两相混合式步进电机:转子 50 齿、定子 8 极绕 A/B 两相线圈,步距角 360°/(50×4)=1.8°、200 整步/圈;细分驱动让电流按 i_A=I·cosθ、i_B=I·sinθ 变化,256 细分时每微步 0.007°,合成磁场矢量连续旋转;转矩 T=K·I·sinδ,负载角 δ 超过约 2 个整步就失步——开环数步、没有反馈,3D 打印的层错位多源于此;NEMA17 保持转矩 0.4-0.6 N·m,16 细分 + 20 齿同步带轮 = 80 步/mm · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A two-phase hybrid stepper: 50 rotor teeth, 8 stator poles wound as phases A/B; step angle 360°/(50x4) = 1.8°, 200 full steps per rev. The driver shapes currents as i_A=I·cos θ, i_B=I·sin θ - at 256 microsteps each step is 0.007° and the field vector sweeps continuously. Torque is T=K·I·sin δ; past about 2 full steps of load angle the rotor loses sync. Open-loop, no encoder - the classic 3D-print layer shift. NEMA17 holding torque 0.4-0.6 N·m; 16 microsteps + 20-tooth pulley = 80 steps/mm · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">两相混合式步进电机:转子 50 齿、定子 8 极绕 A/B 两相线圈,步距角 360°/(50×4)=1.8°、200 整步/圈;细分驱动让电流按 i_A=I·cosθ、i_B=I·sinθ 变化,256 细分时每微步 0.007°,合成磁场矢量连续旋转;转矩 T=K·I·sinδ,负载角 δ 超过约 2 个整步就失步——开环数步、没有反馈,3D 打印的层错位多源于此;NEMA17 保持转矩 0.4-0.6 N·m,16 细分 + 20 齿同步带轮 = 80 步/mm · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="微步步距角" data-en="microstep angle">微步步距角</span><span class="v" id="stStepAng">—</span>
+  <span class="k" data-zh="转子位置" data-en="rotor position">转子位置</span><span class="v" id="stPos">—</span>
+  <span class="k" data-zh="负载角 δ" data-en="load angle δ">负载角 δ</span><span class="v" id="stDelta">—</span>
+  <span class="k" data-zh="可用转矩" data-en="torque margin">可用转矩</span><span class="v" id="stTorq">—</span>
+  <span class="k" data-zh="丢步" data-en="lost steps">丢步</span><span class="v" id="stLost">—</span>
+  <span class="k" data-zh="状态" data-en="status">状态</span><span class="v" id="stSt">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip r" data-zh="红 = N 极" data-en="red = N pole">红 = N 极</span>
+    <span class="chip b" data-zh="蓝 = S 极" data-en="blue = S pole">蓝 = S 极</span>
+    <span class="chip g" data-zh="转子 50 齿" data-en="50-tooth rotor">转子 50 齿</span>
+    <span class="chip o" data-zh="A/B 相铜绕组" data-en="A/B copper coils">A/B 相铜绕组</span>
+  </div>
+  <div id="actions">
+    <button class="abtn hot" id="btnStall" data-zh="失步演示(负载冲击)" data-en="stall demo (load slam)">失步演示(负载冲击)</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="细分" data-en="Divide by">细分</label>
+    <div id="divSeg">
+      <button class="abtn" id="div1" data-div="1" title="整步 1.8° / full step 1.8°">×1</button>
+      <button class="abtn" id="div2" data-div="2" title="半步 0.9° / half step 0.9°">×2</button>
+      <button class="abtn" id="div8" data-div="8" title="8 细分 / 8 microsteps">×8</button>
+      <button class="abtn" id="div32" data-div="32" title="32 细分 / 32 microsteps">×32</button>
+      <button class="abtn" id="div256" data-div="256" title="256 细分 0.007° / 256 microsteps">×256</button>
+    </div>
+  </div>
+  <div class="row"><label data-zh="目标转速" data-en="target rate">目标转速</label><input id="rate" type="range" min="0" max="1200" step="10" value="200"><span class="val" id="rateVal">200 步/s</span></div>
+  <div class="row"><label data-zh="负载转矩" data-en="load torque">负载转矩</label><input id="load" type="range" min="0" max="120" step="1" value="20"><span class="val" id="loadVal">20%</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglScope" type="checkbox" checked> <span data-zh="相电流波形" data-en="phase waves">相电流波形</span></label>
+        <label><input id="tglField" type="checkbox" checked> <span data-zh="磁场矢量" data-en="field vector">磁场矢量</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../bldc-motor/" data-zh="无刷直流电机" data-en="BLDC motor">无刷直流电机</a>
+    <a href="../induction-motor/" data-zh="感应电机" data-en="induction motor">感应电机</a>
+    <a href="../3d-printing/" data-zh="3D 打印" data-en="3D printing">3D 打印</a>
+    <a href="../pid-controller/" data-zh="PID 控制" data-en="PID controller">PID 控制</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const wrap = x => x - TAU * Math.round(x / TAU);        // 归一到 (-π, π]
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+const DEG = 180 / Math.PI;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeff1f4 : 0x0f1216);
+  M.housing.color.set(THEME === 'light' ? 0x9aa4b2 : 0x39424f);
+  M.yoke.color.set(THEME === 'light' ? 0x8a94a4 : 0x2f3742);
+  M.ground.color.set(THEME === 'light' ? 0xd7dce3 : 0x1b202a);
+  M.shoe.color.set(THEME === 'light' ? 0xb6bfca : 0xaeb8c4);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('步进电机与细分驱动 · 电磁齿轮与 sin/cos 微步', 'Stepper Motors & Microstepping · Electromagnetic Gearing and sin/cos Microsteps');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateRateLabel();
+  updateLoadLabel();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(-1.7, 1.0, 2.15);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.05, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.6;
+controls.maxDistance = 8;
+controls.autoRotateSpeed = 0.2;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(4, 8, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x1b202a, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  housing: mat(0x39424f, { roughness: 0.6, metalness: 0.35 }),
+  yoke: mat(0x2f3742, { roughness: 0.7, metalness: 0.3 }),
+  pole: mat(0x8b96a4, { roughness: 0.55, metalness: 0.45 }),
+  shoe: mat(0xaeb8c4, { roughness: 0.4, metalness: 0.6 }),
+  cup: mat(0xd8dee8, { metalness: 0.85, roughness: 0.28 }),
+  shaft: mat(0xd8dee8, { metalness: 0.85, roughness: 0.25 }),
+  coilA: mat(0xc9763a, { roughness: 0.5, metalness: 0.35, emissive: 0xff6a3c, emissiveIntensity: 0.1 }),
+  coilB: mat(0xc9763a, { roughness: 0.5, metalness: 0.35, emissive: 0x4c8cff, emissiveIntensity: 0.1 }),
+  magN: mat(0xd84a4a, { roughness: 0.45, metalness: 0.2, emissive: 0x8a1f1f, emissiveIntensity: 0.35 }),
+  magS: mat(0x3f6fd8, { roughness: 0.45, metalness: 0.2, emissive: 0x1a3a8a, emissiveIntensity: 0.35 }),
+};
+/* 8 个极靴各自独立材质:发光颜色 = 极性(红 N / 蓝 S),强度 ∝ 相电流 */
+const poleMats = [];
+for (let k = 0; k < 8; k++) poleMats.push(mat(0xaeb8c4, { roughness: 0.4, metalness: 0.6 }));
+
+/* ---------------- 电机参数(真实物理量) ----------------
+   两相混合式:转子 50 齿,定子 8 极,整步 1.8°,200 步/圈
+   保持转矩 NEMA17 典型 0.4-0.6 N·m(取 0.48);电气频率 = 整步频率/4 */
+const NTEETH = 50, T_HOLD = 0.48, KT = T_HOLD;
+const J = 6.0e-5, DAMP = 8e-3, FC_EL = 70, HSTEP = 2e-4;
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let scopeOn = true, fieldOn = true;
+let div = 16, targetRate = 200, loadPct = 20;          // 细分 / 整步每秒 / 负载 %保持转矩
+let thCmd = 0, acc = 0;                                 // 指令电角度(连续)+ 微步累加器
+let thM = 0, w = 0;                                     // 转子机械角(rad,连续)+ 角速度
+let iA = 1, iB = 0, Ieff = 1, delta = 0;                // 相电流(标幺)与负载角(电弧度)
+let lost = 0, prevLost = 0, slipFlash = 0, lostDiff = 0;
+let dAvg = 0, dOsc = 0, resAmp = 0;                     // 负载角振荡 → 共振检测
+let demo = null, et = 0;
+let scenario = 0;
+let warnKind = null, warnDiffN = 0;                      // 失步/丢步/共振 警告状态(每帧计算)
+
+/* ---------------- 场景装配 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 0.06, 48), M.ground);
+ground.position.y = -1.08;
+scene.add(ground);
+for (const pz of [-0.30, 0.30]) {
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.26, 0.14), M.housing);
+  foot.position.set(0, -0.94, pz);
+  scene.add(foot);
+}
+
+/* 壳体:留顶缺口(剖切),可见定子极与转子 */
+const GAP0 = 315 * Math.PI / 180, GAPLEN = 270 * Math.PI / 180;
+function shell(r, len, matl) {
+  const g = new THREE.CylinderGeometry(r, r, len, 48, 1, true, GAP0, GAPLEN);
+  const m = new THREE.Mesh(g, matl);
+  m.rotation.x = Math.PI / 2;
+  return m;
+}
+scene.add(shell(0.86, 0.85, M.housing));
+scene.add(shell(0.795, 0.85, M.housing));
+scene.add(shell(0.75, 0.72, M.yoke));                    // 定子轭(叠片背面)
+for (const bz of [-0.445, 0.445]) {
+  const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.87, 0.87, 0.07, 48, 1, true), M.housing);
+  bell.rotation.x = Math.PI / 2;
+  bell.position.z = bz;
+  scene.add(bell);
+}
+
+/* 定子 8 极:每极 = 极身 + 极靴 + 3 个小齿 + 铜绕组;相序 A,B,A,B… 极性 N,N,S,S… */
+const PHASE = [], DIR = [];
+for (let k = 0; k < 8; k++) { PHASE.push(k % 2 === 0 ? 'A' : 'B'); DIR.push(k < 2 || k > 5 ? 1 : -1); }
+const shoeMeshes = [];
+for (let k = 0; k < 8; k++) {
+  const g = new THREE.Group();
+  g.rotation.z = k * Math.PI / 4;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.11, 0.62), M.pole);
+  body.position.x = 0.645;
+  g.add(body);
+  const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.60), poleMats[k]);
+  shoe.position.x = 0.53;
+  g.add(shoe);
+  for (const ty of [-0.058, 0, 0.058]) {
+    const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.026, 0.60), poleMats[k]);
+    tooth.position.set(0.485, ty, 0);
+    g.add(tooth);
+  }
+  const coil = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.115, 0.115, 0.34, 20, 1, true),
+    PHASE[k] === 'A' ? M.coilA : M.coilB);
+  coil.rotation.z = Math.PI / 2;
+  coil.position.x = 0.65;
+  g.add(coil);
+  shoeMeshes.push(shoe);
+  scene.add(g);
+}
+
+/* 转子:双铁芯杯各 50 齿(错开半齿距)+ 轴向永磁 N/S + 轴 */
+function gearShape(rRoot, rTip, n) {
+  const p = TAU / n, pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = i * p;
+    const push = (r, ang) => pts.push(new THREE.Vector2(r * Math.cos(ang), r * Math.sin(ang)));
+    push(rRoot, a); push(rRoot, a + 0.22 * p);
+    push(rTip, a + 0.30 * p); push(rTip, a + 0.70 * p);
+    push(rRoot, a + 0.78 * p);
+  }
+  return new THREE.Shape(pts);
+}
+const rotorG = new THREE.Group();
+scene.add(rotorG);
+const cupGeo = new THREE.ExtrudeGeometry(gearShape(0.385, 0.45, NTEETH), { depth: 0.26, bevelEnabled: false });
+const cupF = new THREE.Mesh(cupGeo, M.cup);
+cupF.position.z = 0.10;
+rotorG.add(cupF);
+const cupB = new THREE.Mesh(cupGeo, M.cup);
+cupB.rotation.z = Math.PI / NTEETH;                      // 两杯错开半个齿距(混合式特征)
+cupB.position.z = -0.36;
+rotorG.add(cupB);
+const magN = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.20, 32), M.magN);
+magN.rotation.x = Math.PI / 2;
+rotorG.add(magN);
+const magS = magN.clone();
+magS.material = M.magS;
+rotorG.add(magS);
+const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 1.55, 24), M.shaft);
+shaft.rotation.x = Math.PI / 2;
+rotorG.add(shaft);
+
+/* 磁场矢量箭头:琥珀 = 合成磁场(电角度,转速 = 转子 × 50);白 = 转子齿电角度。两者夹角 = δ */
+const arrowRoot = new THREE.Group();
+arrowRoot.position.set(0, 0, 0.52);
+scene.add(arrowRoot);
+function axisArrow(len, color, op) {
+  const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op });
+  const g = new THREE.Group();
+  const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, len, 10), m);
+  sh.rotation.z = -Math.PI / 2;
+  sh.position.x = len / 2;
+  g.add(sh);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.11, 12), m);
+  tip.rotation.z = -Math.PI / 2;
+  tip.position.x = len + 0.05;
+  g.add(tip);
+  return { g, m };
+}
+const arrowF = axisArrow(0.80, 0xffc964, 0.95);
+const arrowR = axisArrow(0.52, 0xe8ecf2, 0.75);
+arrowRoot.add(arrowF.g);
+arrowRoot.add(arrowR.g);
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, visFn) {
+  const divEl = document.createElement('div');
+  divEl.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(divEl);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow, vis: visFn });
+  divEl.textContent = textFn();
+  return o;
+}
+addLabel(() => L('定子 8 极 · 两相 A/B', 'stator: 8 poles, phases A/B'), () => 'st', new THREE.Vector3(-0.18, 0.98, 0.18));
+addLabel(() => L('极靴小齿 · 齿对齿 = 稳定点', 'pole-shoe teeth: aligned = stable'), () => 'w', new THREE.Vector3(0.52, -0.55, 0.36));
+addLabel(() => L('转子 50 齿 · 两杯错开半齿距', 'rotor: 50 teeth, cups offset half pitch'), () => 'g', new THREE.Vector3(0.24, -0.18, 0.46));
+addLabel(() => L('轴向永磁体 N/S', 'axial magnet N/S'), () => '', new THREE.Vector3(0.02, 0.60, 0.02));
+const fieldLbl = addLabel(() => L('磁场矢量(电角度 ×50)', 'field vector (electrical, x50)'), () => 'e',
+  new THREE.Vector3(0.9, 0.2, 0.52),
+  p => { const a = wrap(thCmd); p.set(Math.cos(a) * 0.98, Math.sin(a) * 0.98, 0.52); },
+  () => fieldOn);
+const rotorLbl = addLabel(() => L('转子电角度', 'rotor electrical angle'), () => '',
+  new THREE.Vector3(-0.55, -0.35, 0.52),
+  p => { const a = wrap(NTEETH * thM); p.set(Math.cos(a) * 0.66, Math.sin(a) * 0.66, 0.52); },
+  () => fieldOn);
+const warnLbl = addLabel(
+  () => warnKind === 'stall' ? L('失步!磁场甩开转子', 'lost sync — field escaped the rotor')
+    : warnKind === 'slip' ? L(`丢步 −${warnDiffN} 步!`, `−${warnDiffN} steps lost!`)
+    : L('共振区 · 抖振', 'resonance zone · vibration'),
+  () => warnKind === 'res' ? 'w' : 'bad',
+  new THREE.Vector3(0, 1.32, 0), null,
+  () => warnKind !== null);
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'teeth', tgt: [0.30, 0.35, 0.30], pre: { div: 1, rate: 0, load: 0 },
+    b: '齿对齿:电磁齿轮的稳定点', be: 'Tooth-to-tooth: the electromagnetic gear',
+    d: '转子两端铁芯杯各开 50 个小齿,定子 8 个磁极的极靴上也布满同样齿距的小齿。齿对齿时磁阻最小,转子被"电磁齿轮"锁住——这就是不开电也有定位转矩、通电后有保持转矩(NEMA17 典型 0.4-0.6 N·m)的原因。',
+    de: 'Both rotor cups carry 50 small teeth, and the eight stator pole shoes are toothed at the same pitch. Tooth-to-tooth alignment minimizes magnetic reluctance, so the rotor is locked by an "electromagnetic gear" - the source of detent torque when unpowered and holding torque (typically 0.4-0.6 N·m for a NEMA17) when energized.' },
+  { hl: 'coil', tgt: [0, 0.15, 0.42], pre: { div: 1, rate: 6, load: 0 },
+    b: '两相轮流通电:整步 1.8°', be: 'Two-phase excitation: full steps of 1.8°',
+    d: '双相通电 A+B+ → A−B+ → A−B− → A+B−(或单四拍轮流单相),每拍磁场跳 90° 电角度,转子跟进 1/50 齿距 = 1.8° 机械角。步距角 = 360°/(50 齿×4 拍) = 1.8°,每圈恰好 200 整步。看磁场箭头一格一格跳,转子一格格咬合前进。',
+    de: 'Two-phase-on sequencing A+B+ → A−B+ → A−B− → A+B− (or single-phase, wave drive): each state jumps the field 90 electrical degrees and the rotor follows by 1/50 of a tooth pitch = 1.8°. Step angle = 360°/(50 teeth x 4 states) = 1.8°, exactly 200 full steps per rev. Watch the field arrow tick and the teeth lock in.' },
+  { hl: 'coil', tgt: [0, 0.15, 0.42], pre: { div: 2, rate: 12, load: 0 },
+    b: '半步:0.9°,400 步/圈', be: 'Half-stepping: 0.9°, 400 steps/rev',
+    d: '整步与双相状态交替(A+ → A+B+ → B+ → …),电流矢量停在 8 个位置,磁场每 45° 电角度一跳,步距角减半为 0.9°、每圈 400 步。注意示波条:电流幅值在 1 与 0.71 之间交替——半步更细腻,但转矩有轻微波动。',
+    de: 'Alternate one-phase and two-phase states (A+ → A+B+ → B+ → …): the current vector parks at 8 positions, the field jumps every 45 electrical degrees, and the step angle halves to 0.9° - 400 steps per rev. On the scope, current amplitude alternates between 1 and 0.71: finer motion, with slight torque ripple.' },
+  { hl: 'field', tgt: [0, 0.30, 0.52], pre: { div: 256, rate: 150, load: 15 },
+    b: 'sin/cos 细分:256 微步', be: 'sin/cos microstepping: 256 microsteps',
+    d: '细分驱动让两相电流按 i_A=I·cos θcmd、i_B=I·sin θcmd 连续变化——合成磁场矢量匀速旋转,转子平滑跟随。256 细分时每微步 1.8°/256 ≈ 0.007°,每圈 51200 微步。看示波条:阶梯波逼近正弦,细分越多台阶越细,共振与噪声也越小。',
+    de: 'A microstepping driver ramps the currents as i_A = I·cos θcmd, i_B = I·sin θcmd, so the resultant field vector sweeps smoothly and the rotor follows. At 256 microsteps each step is 1.8°/256 ≈ 0.007° - 51,200 microsteps per rev. On the scope, staircases approach sine waves: finer steps, less vibration and noise.' },
+  { hl: 'delta', tgt: [0.22, 0.28, 0.52], pre: { div: 16, rate: 300, load: 65 },
+    b: 'T = K·I·sinδ 与失步', be: 'T = K·I·sin δ and lost steps',
+    d: '转子落后磁场一个负载角 δ,转矩 T = K·I·sinδ,δ=90° 时最大。负载再大、δ 超过约 2 个整步(180° 电角度),转子就跟不上磁场——失步:磁场继续转,转子被甩开几个整步。开环对此毫无察觉,没有编码器就无法报警;3D 打印的层错位多源于此。拉高负载转矩试试,或点"失步演示"。',
+    de: 'The rotor lags the field by the load angle δ, and torque is T = K·I·sin δ, peaking at δ = 90°. Beyond about 2 full steps (180 electrical degrees) the rotor can no longer follow - it loses steps: the field sweeps on, the rotor is left behind. Open-loop drives never notice; without an encoder there is no alarm - the classic source of shifted layers in 3D prints. Raise the load torque, or hit the stall demo.' },
+  { hl: 'res', tgt: [0, 0.15, 0.42], pre: { div: 1, rate: 100, load: 8 },
+    b: '矩频曲线与共振区', be: 'Torque-speed curve and the resonance zone',
+    d: '整步频率 50-150 Hz(与转子-负载固有频率一致)时,每步冲击激起振荡——抖振、嗡鸣、甚至周期性丢步,这是矩频曲线上的凹谷;细分通电可显著抑制。转速再升高,反电动势+绕组电感让电流来不及建立,约 1 kHz 后转矩跌到 20-30%:曲线的右肩。',
+    de: 'At full-step rates of 50-150 Hz - the natural frequency of rotor plus load - every step kick rings the system: vibration, whining, even periodic lost steps: the dip in the torque-speed curve. Microstepping suppresses it strongly. At higher speed, back-EMF plus winding inductance starve the current; beyond ~1 kHz torque sags to 20-30% - the right shoulder of the curve.' },
+  { hl: 'drive', tgt: [0, 0.32, 0.24], pre: { div: 8, rate: 500, load: 30 },
+    b: '斩波恒流:全桥 + PWM', be: 'Chopper drive: full bridge + PWM',
+    d: '驱动器用 H 桥对每相绕组 PWM 斩波:电流低于阈值开通、高于阈值关断,把绕组电流稳在指令值——这正是细分得以实现的前提。保持转矩由此只取决于设定电流;提高供电电压,电流上升更快,高速转矩更好。这就是"斩波恒流"驱动。',
+    de: 'The drive chops each winding with an H-bridge: PWM switches on when current dips below a threshold and off above it, regulating the winding current to the commanded value - the enabling trick behind microstepping. Holding torque then depends only on the set current; a higher supply voltage raises current faster and improves high-speed torque.' },
+  { hl: 'drive', tgt: [0, 0, 0.32], pre: { div: 16, rate: 400, load: 40 },
+    b: '3D 打印机:80 步/mm', be: '3D printers: 80 steps/mm',
+    d: '打印机 X/Y 轴用 NEMA17 + 20 齿 GT2 同步带轮(周长 40 mm):200 整步 ÷ 40 mm = 5 步/mm,16 细分后恰好 80 微步/mm、分辨率 12.5 µm。固件只需数步数就能定位,不需要编码器;代价是丢了步只能从打印件上发现。CNC、相机云台、扫描仪同理。',
+    de: 'Printer X/Y axes pair a NEMA17 with a 20-tooth GT2 pulley (40 mm circumference): 200 steps / 40 mm = 5 steps per mm; 16 microsteps make exactly 80 microsteps/mm - 12.5 µm resolution. Firmware just counts steps, no encoder needed; the price is that lost steps only show up in the failed print. Same story for CNC, camera gimbals and scanners.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function applyPreset(p) {
+  div = p.div; targetRate = p.rate; loadPct = p.load;
+  elRate.value = p.rate;
+  elLoad.value = p.load;
+  updateRateLabel();
+  updateLoadLabel();
+  markDiv();
+}
+let tgtVec = new THREE.Vector3(0, 0.05, 0);
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  demo = null;
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  applyPreset(STEPS[scenario].pre);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function fmtStepAng() {
+  const a = 1.8 / div;
+  return a.toFixed(a >= 0.9 ? 1 : a >= 0.05 ? 3 : 4);
+}
+function updateFormula() {
+  const fEl = targetRate / 4;
+  const dDeg = (wrap(delta) * DEG).toFixed(0);
+  const tout = (Math.sin(wrap(delta)) * Ieff * 100).toFixed(0);
+  formulaEl.innerHTML =
+    L(`步距角 = 360°/(50 齿 × 4 拍) = <b>1.8°</b> · 细分 ×${div} → <b>${fmtStepAng()}°</b>/微步 · <b>${200 * div}</b> 微步/圈`,
+      `step angle = 360°/(50 teeth × 4 states) = <b>1.8°</b> · divide ×${div} → <b>${fmtStepAng()}°</b>/microstep · <b>${200 * div}</b> µsteps/rev`) +
+    '<br>' +
+    L(`i_A = I·cos θcmd · i_B = I·sin θcmd → 磁场矢量连续旋转(256 细分每微步 ≈ <b>0.007°</b>)`,
+      `i_A = I·cos θcmd · i_B = I·sin θcmd → field vector sweeps continuously (256 µsteps: ≈ <b>0.007°</b> each)`) +
+    '<br>' +
+    L(`T = K·I·sinδ,δ = θ_场 − 50·θ_转子 → 当前 δ = <b>${dDeg}°</b> · T ≈ <b>${tout}%</b> 保持转矩(0.48 N·m × I_eff)`,
+      `T = K·I·sin δ, δ = θ_field − 50·θ_rotor → now δ = <b>${dDeg}°</b> · T ≈ <b>${tout}%</b> of holding torque (0.48 N·m × I_eff)`) +
+    '<br>' +
+    L(`高速衰减:f_el = <b>${fEl.toFixed(0)} Hz</b> → I_eff ≈ <b>${(Ieff * 100).toFixed(0)}%</b>(反电动势+电感)· NEMA17:20 齿带轮 × 16 细分 = <b>80 步/mm</b>`,
+      `high-speed droop: f_el = <b>${fEl.toFixed(0)} Hz</b> → I_eff ≈ <b>${(Ieff * 100).toFixed(0)}%</b> (back-EMF + inductance) · NEMA17: 20-tooth pulley × 16 µsteps = <b>80 steps/mm</b>`);
+}
+
+/* ---------------- 物理仿真:磁场角指令 vs 转子动力学 ----------------
+   指令:细分 N → 磁场角按 90°/N 电角度台阶推进;i_A=cosθ, i_B=sinθ
+   转子:J·θ̈ = K·I_eff·sin(θ_场 − 50·θ) − 摩擦 − 阻尼;丢步 = δ 滑过整圈电角度 */
+function physStep(h, wantSample) {
+  const grid = (Math.PI / 2) / div;
+  acc += targetRate * h;
+  if (acc >= 1) { const n = Math.floor(acc); acc -= n; thCmd += n * grid; }
+  const thF = Math.round(thCmd / grid) * grid;         // 驱动器实际输出台阶
+  const fEl = targetRate / 4;                          // 电气频率 = 整步频率/4
+  Ieff = 1 / Math.sqrt(1 + (fEl / FC_EL) ** 2);        // 反电动势+电感 → 电流上升受限
+  iA = Math.cos(thF) * Ieff;
+  iB = Math.sin(thF) * Ieff;
+  const dUw = thF - NTEETH * thM;                      // 电角度失配(连续)
+  delta = wrap(dUw);
+  const Tq = KT * Ieff * Math.sin(delta);              // T = K·I·sinδ
+  const TL = (loadPct / 100) * T_HOLD;
+  const Tf = -TL * Math.tanh(w / 0.03);                // 库仑型负载(平滑)
+  w += (Tq + Tf - DAMP * w) / J * h;
+  thM += w * h;
+  lost = Math.round(dUw / TAU) * 4;                    // 每滑 1 圈电角度 = 丢 4 整步
+  if (wantSample) {
+    scopeBuf.push(iA, iB);
+    if (scopeBuf.length > 520) scopeBuf.splice(0, scopeBuf.length - 520);
+  }
+}
+function resetMachine() {
+  thCmd = 0; acc = 0; thM = 0; w = 0; lost = 0; prevLost = 0; lostDiff = 0;
+  slipFlash = 0; dAvg = 0; dOsc = 0; resAmp = 0; demo = null;
+  scopeBuf.length = 0;
+  applyPreset({ div: 16, rate: 200, load: 20 });
+  updateFormula();
+}
+/* 失步演示:先稳速,再在 1.6 s 内把负载拉到 118% → 打滑丢步,随后卸载看转子重新咬合 */
+function startStallDemo() {
+  div = 8; targetRate = 300;
+  elRate.value = '300';
+  updateRateLabel();
+  markDiv();
+  demo = { type: 'stall', t: 0, base: lost, fired: false, tFire: 0 };
+  if (!playing) { playing = true; setPlayLabel(); }
+}
+function demoStep(dt) {
+  if (!demo || demo.type !== 'stall') return;
+  demo.t += dt;
+  const t = demo.t;
+  if (!demo.fired) {
+    if (t < 0.4) { loadPct = 30; }
+    else loadPct = 30 + 88 * E2((t - 0.4) / 1.6);
+    if (lost > demo.base) { demo.fired = true; demo.tFire = t; }
+    if (t > 3.5) { demo = null; loadPct = 40; }
+  } else {
+    const u = t - demo.tFire;
+    loadPct = u < 0.4 ? 118 : 118 - 93 * E2((u - 0.4) / 0.8);
+    if (u > 1.6) { demo = null; loadPct = 25; }
+  }
+  elLoad.value = Math.round(loadPct);
+  updateLoadLabel();
+}
+
+/* ---------------- 电流示波条 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+const scopeBuf = [];
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 56 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, ch / 2);
+  scopeCtx.lineTo(cw, ch / 2);
+  scopeCtx.stroke();
+  const n = scopeBuf.length / 2;
+  if (n < 2) return;
+  const plot = (off, color) => {
+    scopeCtx.strokeStyle = color;
+    scopeCtx.lineWidth = Math.max(1.2, cw / 300);
+    scopeCtx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const x = (i / 259) * cw;
+      const y = ch / 2 - scopeBuf[i * 2 + off] * (ch / 2 - 4);
+      i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+    }
+    scopeCtx.stroke();
+  };
+  plot(0, '#ff8a70');
+  plot(1, '#6fb7ff');
+  scopeCtx.font = `${Math.round(ch * 0.2)}px system-ui`;
+  scopeCtx.fillStyle = '#ff8a70';
+  scopeCtx.fillText('iA', 4, ch * 0.24);
+  scopeCtx.fillStyle = '#6fb7ff';
+  scopeCtx.fillText('iB', 4, ch * 0.94);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elRate = document.getElementById('rate'), elRateVal = document.getElementById('rateVal');
+const elLoad = document.getElementById('load'), elLoadVal = document.getElementById('loadVal');
+const elDivSeg = document.getElementById('divSeg');
+const tglScope = document.getElementById('tglScope');
+const tglField = document.getElementById('tglField');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;   // r170 CSS2DRenderer 每帧重写 display,须切 visible
+}
+function updateRateLabel() {
+  elRateVal.textContent = L(`${Math.round(targetRate)} 步/s`, `${Math.round(targetRate)} st/s`);
+}
+function updateLoadLabel() {
+  elLoadVal.textContent = `${Math.round(loadPct)}%`;
+}
+function markDiv() {
+  for (const b of elDivSeg.children) b.classList.toggle('on', +b.dataset.div === div);
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elRate.addEventListener('input', () => { targetRate = +elRate.value; updateRateLabel(); });
+elLoad.addEventListener('input', () => { loadPct = +elLoad.value; updateLoadLabel(); });
+elDivSeg.addEventListener('click', e => {
+  const b = e.target.closest('.abtn');
+  if (!b) return;
+  div = +b.dataset.div;
+  markDiv();
+  updateFormula();
+});
+document.getElementById('btnStall').addEventListener('click', startStallDemo);
+document.getElementById('btnReset').addEventListener('click', resetMachine);
+tglScope.addEventListener('change', () => { scopeOn = tglScope.checked; scope.style.display = scopeOn ? 'block' : 'none'; if (scopeOn) sizeScope(); });
+tglField.addEventListener('change', () => { fieldOn = tglField.checked; arrowRoot.visible = fieldOn; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stStepAng = document.getElementById('stStepAng'), stPos = document.getElementById('stPos'),
+  stDelta = document.getElementById('stDelta'), stTorq = document.getElementById('stTorq'),
+  stLost = document.getElementById('stLost'), stSt = document.getElementById('stSt');
+function updateStats() {
+  stStepAng.innerHTML = fmtStepAng() + '<small>° · 1.8°/' + div + '</small>';
+  stStepAng.className = 'v ok';
+  const deg = ((thM * DEG) % 360 + 360) % 360;
+  const fullSteps = Math.floor(thCmd / (Math.PI / 2));
+  stPos.innerHTML = deg.toFixed(1) + '<small>° · ' + (((fullSteps % 200) + 200) % 200) + '/200 ' + L('整步', 'full') + '</small>';
+  stPos.className = 'v ok';
+  const dDeg = wrap(delta) * DEG;
+  stDelta.innerHTML = dDeg.toFixed(0) + '<small>°</small>';
+  stDelta.className = 'v ' + (Math.abs(dDeg) > 120 ? 'bad' : Math.abs(dDeg) > 60 ? 'warn' : 'ok');
+  const margin = clamp01(Math.cos(delta)) * Ieff * 100;
+  stTorq.innerHTML = margin.toFixed(0) + '<small>%</small>';
+  stTorq.className = 'v ' + (margin < 15 ? 'bad' : margin < 35 ? 'warn' : 'ok');
+  stLost.innerHTML = Math.abs(lost) + '<small>' + L(' 整步', ' full') + '</small>';
+  stLost.className = 'v ' + (lost !== 0 ? 'bad' : 'ok');
+  let txt, cls = 'v ok';
+  if (warnKind === 'stall') { txt = L('失步!磁场甩开转子', 'lost sync!'); cls = 'v bad'; }
+  else if (warnKind === 'slip') { txt = L(`丢步 −${warnDiffN} 步!`, `−${warnDiffN} steps lost!`); cls = 'v bad'; }
+  else if (warnKind === 'res') { txt = L('共振区 · 抖振', 'resonance · vibration'); cls = 'v warn'; }
+  else if (Math.abs(dDeg) > 75) { txt = L('负载角过大 · 接近失步', 'load angle high · near stall'); cls = 'v warn'; }
+  else if (targetRate === 0 && Math.abs(w) < 0.05) { txt = L('保持转矩锁定', 'holding torque lock'); }
+  else { txt = L('同步跟随磁场', 'locked on field'); }
+  stSt.textContent = txt;
+  stSt.className = cls;
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const dts = dt * speed;
+  et += dt;
+  slipFlash = Math.max(0, slipFlash - dt);
+  if (playing) {
+    demoStep(dt);
+    const nSub = clamp(Math.ceil(dts / HSTEP), 1, 400);
+    const hEff = dts / nSub;
+    const stride = Math.max(1, Math.floor(nSub / 6));
+    for (let s = 0; s < nSub; s++) physStep(hEff, s % stride === 0);
+    if (lost !== prevLost) { lostDiff = Math.abs(lost - prevLost); warnDiffN = lostDiff; slipFlash = 1.6; prevLost = lost; }
+    dAvg += (delta - dAvg) * Math.min(1, dt * 3);
+    dOsc += ((delta - dAvg) ** 2 - dOsc) * Math.min(1, dt * 4);
+    resAmp = Math.sqrt(Math.max(dOsc, 0));
+  }
+  warnKind = Math.abs(delta) > 2.7 ? 'stall'
+    : slipFlash > 0 ? 'slip'
+    : resAmp > 0.45 ? 'res' : null;
+  /* 变换 */
+  rotorG.rotation.z = thM;
+  arrowF.g.rotation.z = wrap(thCmd);
+  arrowR.g.rotation.z = wrap(NTEETH * thM);
+  /* 极靴极性发光:红 N / 蓝 S,亮度 ∝ 相电流 */
+  for (let k = 0; k < 8; k++) {
+    const flux = DIR[k] * (PHASE[k] === 'A' ? iA : iB);
+    const m = poleMats[k];
+    m.emissive.setHex(flux >= 0 ? 0xff4444 : 0x3d6bff);
+    m.emissiveIntensity = 0.05 + 0.95 * Math.abs(flux);
+  }
+  M.coilA.emissiveIntensity = 0.08 + 0.55 * Math.abs(iA);
+  M.coilB.emissiveIntensity = 0.08 + 0.55 * Math.abs(iB);
+  /* 步骤高亮脉动 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.pole, M.cup, M.shaft]) m.emissiveIntensity = 0.05;
+  const boost = m => { m.emissiveIntensity = 0.4 + 0.3 * hlK; };
+  if (hl === 'teeth') { boost(M.cup); boost(M.pole); }
+  else if (hl === 'coil') { M.coilA.emissiveIntensity += 0.25 + 0.2 * hlK; M.coilB.emissiveIntensity += 0.25 + 0.2 * hlK; }
+  else if (hl === 'field' || hl === 'delta') { boost(M.cup); arrowF.m.opacity = 0.6 + 0.35 * hlK; }
+  else if (hl === 'res') { boost(M.cup); boost(M.pole); }
+  else if (hl === 'drive') { boost(M.shaft); M.coilA.emissiveIntensity += 0.15; M.coilB.emissiveIntensity += 0.15; }
+  if (hl !== 'field' && hl !== 'delta') arrowF.m.opacity = 0.95;
+  /* 箭头可见性(其标签由 labelReg 的 vis 统一处理) */
+  arrowRoot.visible = fieldOn;
+  arrowF.g.visible = fieldOn;
+  arrowR.g.visible = fieldOn;
+  controls.target.lerp(tgtVec, 0.05);
+  for (const r of labelReg) {
+    r.o.visible = labelsOn && (!r.vis || r.vis());
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (scopeOn) drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+markDiv();
+updateRateLabel();
+updateLoadLabel();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

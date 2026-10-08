@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>随机森林与集成学习 · Bootstrap + 特征随机 + 投票平均</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; } .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; } .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; } #stats .v.warn { color: #ffa94d; } #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #voteWrap { margin-top: 5px; padding-top: 4px; border-top: 1px dashed var(--panel-border); }
+  #voteWrap .vt { font-size: 11px; color: var(--text2); } #voteHist { width: 100%; height: 52px; display: block; margin-top: 3px; }
+  .imp { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+  .imp .ilabel { font-size: 11px; color: var(--text2); flex: 0 0 56px; } .imp .ibarWrap { flex: 1; height: 9px; background: var(--hover); border-radius: 5px; overflow: hidden; }
+  .imp .ibar { height: 100%; width: 0%; background: var(--acc); border-radius: 5px; transition: width .35s; } .imp .ibar.alt { background: #6fbf8f; }
+  .imp .ival { font-size: 10.5px; color: var(--text3); flex: 0 0 86px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; } #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; } #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; } .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; } #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); } #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; } #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="随机森林与集成学习:bootstrap 重采样 · mtry 去相关 · B 棵投票平均" data-en="Random Forests &amp; Ensembles: bootstrap, feature randomness, voting">随机森林与集成学习:bootstrap 重采样 · mtry 去相关 · B 棵投票平均</h1>
+  <div class="sub" data-zh="单棵深决策树只要换 10% 训练样本,结构与边界就大变——偏差小、方差大。Breiman(2001)的随机森林用三重随机降方差:bootstrap 有放回抽 B 份(每份约 63.2% 唯一样本、36.8% 袋外 OOB)各训一棵;每次分裂只从 mtry≈√p 个随机特征里选最优,让树与树去相关;B 棵树分类投票、回归取平均。方差分解 Var=ρσ²+(1−ρ)σ²/B,B→∞ 只剩 ρσ²;OOB 误差≈交叉验证,置换重要度看打乱特征后 OOB 涨多少;Boosting 串行拟合残差降偏差,与森林可叠用 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A single deep decision tree flips its whole shape when just 10% of training samples change - low bias, huge variance. Breiman (2001) tames it with threefold randomness: bootstrap B same-size samples with replacement (~63.2% unique points per bag, 36.8% out-of-bag), one tree per bag; each split sees only mtry~sqrt(p) random features so trees decorrelate; B trees then vote or average. Var = ρσ² + (1−ρ)σ²/B - as B→∞ only ρσ² remains; the OOB error is free and tracks cross-validation; permutation importance shuffles a feature and watches OOB error climb; boosting fits residuals serially to cut bias, and the two stack · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">单棵深决策树只要换 10% 训练样本,结构与边界就大变——偏差小、方差大。Breiman(2001)的随机森林用三重随机降方差:bootstrap 有放回抽 B 份(每份约 63.2% 唯一样本、36.8% 袋外 OOB)各训一棵;每次分裂只从 mtry≈√p 个随机特征里选最优,让树与树去相关;B 棵树分类投票、回归取平均。方差分解 Var=ρσ²+(1−ρ)σ²/B,B→∞ 只剩 ρσ²;OOB 误差≈交叉验证,置换重要度看打乱特征后 OOB 涨多少;Boosting 串行拟合残差降偏差,与森林可叠用 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="树数 B" data-en="trees B">树数 B</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="OOB 错误率" data-en="OOB error">OOB 错误率</span><span class="v" id="stOOB">—</span>
+  <span class="k" data-zh="树间相关 ρ" data-en="tree corr ρ">树间相关 ρ</span><span class="v" id="stRho">—</span>
+  <span class="k" data-zh="方差项 Var" data-en="variance term">方差项 Var</span><span class="v" id="stVar">—</span>
+  <span class="k" data-zh="查询得票" data-en="query vote">查询得票</span><span class="v" id="stVote">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="类 0 数据点" data-en="class 0 points">类 0 数据点</span>
+    <span class="chip r" data-zh="类 1 数据点" data-en="class 1 points">类 1 数据点</span>
+    <span class="chip g" data-zh="森林概率场 · 0.5 等高线" data-en="forest field · 0.5 contour">森林概率场 · 0.5 等高线</span>
+    <span class="chip o" data-zh="分裂墙 · 重采样叠块 · OOB" data-en="split walls · bootstrap stacks · OOB">分裂墙 · 重采样叠块 · OOB</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnResample" data-zh="重采样" data-en="resample">重采样</button>
+    <button class="abtn" id="btnPerturb" data-zh="换 10% 重训" data-en="swap 10% + retrain">换 10% 重训</button>
+    <button class="abtn" id="btnReplay" data-zh="重放生长" data-en="replay growth">重放生长</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+    <button class="abtn on" id="ds0" data-zh="双螺旋" data-en="spiral">双螺旋</button>
+    <button class="abtn" id="ds1" data-zh="半月" data-en="moons">半月</button>
+    <button class="abtn" id="ds2" data-zh="高斯团" data-en="blobs">高斯团</button>
+    <button class="abtn" id="btnView" data-zh="单树 / 森林视图" data-en="single / forest view">单树 / 森林视图</button>
+  </div>
+  <div class="row"><label data-zh="树数 B" data-en="trees B">树数 B</label><input id="b" type="range" min="1" max="101" step="1" value="21"><span class="val" id="bVal">21</span></div>
+  <div class="row"><label data-zh="最大深度" data-en="max depth">最大深度</label><input id="depth" type="range" min="2" max="15" step="1" value="12"><span class="val" id="depthVal">12</span></div>
+  <div class="row"><label data-zh="mtry 特征数" data-en="mtry features">mtry 特征数</label><input id="mtry" type="range" min="1" max="2" step="1" value="1"><span class="val" id="mtryVal">1 / 2</span></div>
+  <div id="voteWrap">
+    <div class="vt"><span data-zh="B 棵树对查询针的投票分布(虚线 p=0.5)" data-en="votes of the B trees for the query pin (dashed p=0.5)">B 棵树对查询针的投票分布(虚线 p=0.5)</span></div>
+    <canvas id="voteHist"></canvas>
+  </div>
+  <div id="impRow" style="display:none">
+    <div class="imp"><span class="ilabel" data-zh="打乱 x₀" data-en="shuffle x₀">打乱 x₀</span><div class="ibarWrap"><div class="ibar" id="imp0bar"></div></div><span class="ival" id="imp0val">—</span></div>
+    <div class="imp"><span class="ilabel" data-zh="打乱 x₁" data-en="shuffle x₁">打乱 x₁</span><div class="ibarWrap"><div class="ibar alt" id="imp1bar"></div></div><span class="ival" id="imp1val">—</span></div>
+  </div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglDrag" type="checkbox" checked> <span data-zh="拖动查询针" data-en="drag query pin">拖动查询针</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../decision-tree/" data-zh="决策树与信息增益" data-en="decision trees and information gain">决策树与信息增益</a>
+    <a href="../overfitting/" data-zh="过拟合与正则化" data-en="overfitting and regularization">过拟合与正则化</a>
+    <a href="../svm-margin/" data-zh="支持向量机与最大间隔" data-en="SVM and maximum margin">支持向量机与最大间隔</a>
+    <a href="../k-means/" data-zh="K-Means 聚类" data-en="K-Means clustering">K-Means 聚类</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const gauss = rnd => { let u = 0, v = 0; while (!u) u = rnd(); while (!v) v = rnd();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.2831853 * v); };
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const scene = new THREE.Scene();
+const fog = new THREE.Fog(0x0f1216, 8, 14);
+scene.fog = fog;
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4); fog.color.set(dark ? 0x0f1216 : 0xeff1f4);
+  M.base.color.set(dark ? 0x1b202a : 0xd7dce3); M.frameM.color.set(dark ? 0x39424f : 0x8d99a8);
+  M.gridC.color.set(dark ? 0x2c3542 : 0xa8b2bf); M.contour.color.set(dark ? 0xffd28a : 0x8a5f12);
+  M.wall.color.set(dark ? 0xffc964 : 0xa3742a);
+  voteDirty = true;
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => { el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh; });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('随机森林与集成学习 · Bootstrap + 特征随机 + 投票平均', 'Random Forests & Ensembles · Bootstrap, Feature Randomness, Voting');
+  buildSteps(); setPlayLabel(); markStep(); updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => { THEME = THEME === 'dark' ? 'light' : 'dark'; localStorage.setItem('htw-theme', THEME); applyTheme(); });
+document.getElementById('langBtn').addEventListener('click', () => { LANG = LANG === 'zh' ? 'en' : 'zh'; localStorage.setItem('htw-lang', LANG); applyLang(); });
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(2.6, 2.35, 3.3);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.32, 0);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.minDistance = 1.2; controls.maxDistance = 11;
+controls.maxPolarAngle = 1.45; controls.autoRotateSpeed = 0.25;
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.8));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.7); keyLight.position.set(4, 8, 5); scene.add(keyLight);
+const fillLight = new THREE.DirectionalLight(0x8fb0ff, 0.45); fillLight.position.set(-5, 3, -4); scene.add(fillLight);
+/* ---------------- 材质 ---------------- */
+const mat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.25, emissive: color, emissiveIntensity: 0.05, ...opts });
+const M = {
+  base: mat(0x1b202a, { roughness: 0.95, metalness: 0 }), frameM: mat(0x39424f, { roughness: 0.6, metalness: 0.35 }),
+  gridC: new THREE.LineBasicMaterial({ color: 0x2c3542, transparent: true, opacity: 0.5 }),
+  contour: new THREE.LineBasicMaterial({ color: 0xffd28a, transparent: true, opacity: 0.95 }),
+  field: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.05, transparent: true, opacity: 0.97 }),
+  terr: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.05, transparent: true, opacity: 0.88 }),
+  dupe: mat(0xffc964, { roughness: 0.4, metalness: 0.1, emissiveIntensity: 0.5 }),
+  wall: new THREE.MeshBasicMaterial({ color: 0xffc964, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false }),
+  oobRing: new THREE.MeshBasicMaterial({ color: 0xff5252, transparent: true, opacity: 0.9 }),
+};
+const cB = new THREE.Color(0x3f8cff), cR = new THREE.Color(0xff5d5d), cN = new THREE.Color(0xb9c2cf), cWhite = new THREE.Color(0xffffff),
+  cGray = new THREE.Color(0x8a93a0), cTmp = new THREE.Color(), cH = new THREE.Color(), _c2 = new THREE.Color();
+function pColor(p, out) {
+  out = out || cTmp;
+  if (p < 0.5) out.lerpColors(cB, cN, p * 2); else out.lerpColors(cN, cR, (p - 0.5) * 2);
+  return out;
+}
+/* ---------------- 状态 / 常量 ---------------- */
+const H = 1.75, N = 200, G = 25, GT = 36, FIELD_AMP = 0.9, GSTEP = 2 * H / (G - 1);
+const INBAG = (100 * (1 - Math.exp(-1))).toFixed(1);   // 63.2
+const OOBP = (100 * Math.exp(-1)).toFixed(1);          // 36.8
+let DS = clamp(qsFloat('ds', 0) | 0, 0, 2);
+let B = clamp(qsFloat('b', 21) | 0, 1, 101);
+let MAXD = clamp(qsFloat('depth', 12) | 0, 2, 15);
+let MTRY = clamp(qsFloat('mtry', 1) | 0, 1, 2);
+const dX = new Float32Array(N), dX2 = new Float32Array(N), dY = new Uint8Array(N);
+const trees = [];
+let trainedCount = 0, boostTree = null;
+const gridSum = new Float32Array(G * G), gridSqSum = new Float32Array(G * G);
+const oobSum = new Float32Array(N), oobCnt = new Uint16Array(N);
+let sigma2 = 0, rho = 0, oobErr = 0;
+let rnd = mulberry32(20260);
+let view = 'forest', bagView = false, growing = false, growK = 0, growT = 0, curDur = 0.5;
+let qx = 0.45, qz = 0.25, dragging = false, voteDirty = true;
+const tgtVec = new THREE.Vector3(0, 0.4, 0);
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let tour = true, dwell = 0, scenario = 0;
+let labelsOn = qsBool('labels', true);
+/* ---------------- 数据集:双螺旋 / 半月 / 高斯团 ---------------- */
+function genData() {
+  const r = mulberry32(1000 + DS * 77), half = N / 2;
+  if (DS === 0) {          // 双螺旋
+    for (let c = 0; c < 2; c++) for (let i = 0; i < half; i++) {
+      const t = i / (half - 1), a = t * 3.0 * Math.PI + c * Math.PI + gauss(r) * 0.05,
+        rr = clamp(0.14 + 0.8 * t + gauss(r) * 0.03, 0.02, 0.98);
+      dX[c * half + i] = clamp(rr * Math.cos(a), -1, 1); dX2[c * half + i] = clamp(rr * Math.sin(a), -1, 1);
+      dY[c * half + i] = c;
+    }
+  } else if (DS === 1) {   // 半月
+    for (let c = 0; c < 2; c++) for (let i = 0; i < half; i++) {
+      const t = Math.PI * i / (half - 1),
+        cx = c === 0 ? Math.cos(t) : 1 - Math.cos(t), cy = c === 0 ? Math.sin(t) : 0.5 - Math.sin(t);
+      dX[c * half + i] = clamp(0.66 * (cx - 0.5) + gauss(r) * 0.055, -1, 1); dX2[c * half + i] = clamp(0.85 * (cy - 0.25) + gauss(r) * 0.055, -1, 1);
+      dY[c * half + i] = c;
+    }
+  } else {                 // 高斯团(XOR 四团)
+    const cs = [[-0.52, -0.52, 0], [0.52, 0.52, 0], [-0.52, 0.52, 1], [0.52, -0.52, 1]];
+    for (let i = 0; i < N; i++) {
+      const c = cs[i % 4];
+      dX[i] = clamp(c[0] + gauss(r) * 0.24, -1, 1); dX2[i] = clamp(c[1] + gauss(r) * 0.24, -1, 1);
+      dY[i] = c[2];
+    }
+  }
+}
+/* ---------------- CART 决策树(基尼分裂,真实训练) ---------------- */
+function predict(t, x0, x1) {
+  let nd = t;
+  while (!nd.leaf) { const v = nd.f === 0 ? x0 : x1; nd = v <= nd.thr ? nd.L : nd.R; }
+  return nd.p;
+}
+function trainTree(idx, r) {
+  function build(ix, dep) {
+    let ones = 0; for (let k = 0; k < ix.length; k++) ones += dY[ix[k]];
+    const nd = { L: null, R: null, f: -1, thr: 0, p: ones / ix.length, leaf: true, d: dep };
+    if (dep >= MAXD || ix.length < 4 || ones === 0 || ones === ix.length) return nd;
+    let bestG = 1e9, bestF = -1, bestT = 0;
+    const fs = MTRY === 2 ? [0, 1] : [(r() < 0.5 ? 0 : 1)];
+    for (const f of fs) {
+      const arr = []; for (const i of ix) arr.push([f === 0 ? dX[i] : dX2[i], dY[i]]);
+      arr.sort((a, b) => a[0] - b[0]);
+      let c1 = 0;
+      for (let j = 0; j < arr.length - 1; j++) {
+        c1 += arr[j][1]; if (arr[j][0] === arr[j + 1][0]) continue;
+        const nL = j + 1, nR = arr.length - nL; if (nL < 2 || nR < 2) continue;
+        const pL = c1 / nL, pR = (ones - c1) / nR,
+          g = (nL * 2 * pL * (1 - pL) + nR * 2 * pR * (1 - pR)) / arr.length;
+        if (g < bestG) { bestG = g; bestF = f; bestT = (arr[j][0] + arr[j + 1][0]) / 2; }
+      }
+    }
+    if (bestF < 0) return nd;
+    nd.f = bestF; nd.thr = bestT; nd.leaf = false;
+    const il = [], ir = [];
+    for (const i of ix) ((bestF === 0 ? dX[i] : dX2[i]) <= bestT ? il : ir).push(i);
+    if (!il.length || !ir.length) { nd.leaf = true; return nd; }
+    nd.L = build(il, dep + 1); nd.R = build(ir, dep + 1);
+    return nd;
+  }
+  return build(idx, 0);
+}
+function collectSplits(t) {
+  const segs = [];
+  (function walk(nd, a0, a1, b0, b1) {
+    if (nd.leaf) return;
+    segs.push({ f: nd.f, thr: nd.thr, a0, a1, b0, b1, d: nd.d });
+    if (nd.f === 0) { walk(nd.L, a0, nd.thr, b0, b1); walk(nd.R, nd.thr, a1, b0, b1); }
+    else { walk(nd.L, a0, a1, b0, nd.thr); walk(nd.R, a0, a1, nd.thr, b1); }
+  })(t, -1, 1, -1, 1);
+  return segs;
+}
+function trainBoost() {  // 2 层浅树:Boosting 的弱学习器(全数据,无重采样)
+  const md = MAXD, mt = MTRY; MAXD = 2; MTRY = 2;
+  const t = trainTree(Array.from({ length: N }, (_, i) => i), mulberry32(7));
+  MAXD = md; MTRY = mt; t.segs = collectSplits(t);
+  return t;
+}
+/* ---------------- 场景装配 ---------------- */
+const addMesh = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); scene.add(o); return o; };
+addMesh(new THREE.BoxGeometry(2 * H + 0.9, 0.24, 2 * H + 0.9), M.base, 0, -0.121, 0);
+const BW = 2 * H + 0.16;
+for (const [bx, bz, sx, sz] of [[0, -H - 0.04, BW, 0.08], [0, H + 0.04, BW, 0.08], [-H - 0.04, 0, 0.08, BW], [H + 0.04, 0, 0.08, BW]])
+  addMesh(new THREE.BoxGeometry(sx, 0.08, sz), M.frameM, bx, 0.005, bz);
+const gridPts = [];
+for (let i = 0; i <= 10; i++) { const t = -H + i * (2 * H / 10); gridPts.push(-H, 0.006, t, H, 0.006, t, t, 0.006, -H, t, 0.006, H); }
+const gridGeo = new THREE.BufferGeometry(); gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(gridPts, 3));
+scene.add(new THREE.LineSegments(gridGeo, M.gridC));
+/* 森林平均概率场(低分辨率网格 + 顶点着色)+ 0.5 等高线 */
+const fieldGeo = new THREE.PlaneGeometry(2 * H, 2 * H, G - 1, G - 1);
+fieldGeo.rotateX(-Math.PI / 2); fieldGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(G * G * 3), 3));
+const fieldMesh = new THREE.Mesh(fieldGeo, M.field); scene.add(fieldMesh);
+const contourGeo = new THREE.BufferGeometry(); contourGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((G - 1) * (G - 1) * 12), 3));
+const contourLine = new THREE.LineSegments(contourGeo, M.contour); scene.add(contourLine);
+/* 单树阶梯地形(instanced boxes)/ 分裂墙 / 数据点 / 叠块 / OOB 红圈 */
+const terrain = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), M.terr, GT * GT); scene.add(terrain);
+const MAXSEG = 320;
+const cutWalls = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), M.wall, MAXSEG);
+cutWalls.count = 0; scene.add(cutWalls);
+const pts = new THREE.InstancedMesh(new THREE.SphereGeometry(0.048, 10, 8), new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.1 }), N);
+scene.add(pts);
+const dupes = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.05, 0.05, 0.05, 10), M.dupe, 380);
+dupes.count = 0; scene.add(dupes);
+const oobG = new THREE.InstancedMesh(new THREE.TorusGeometry(0.08, 0.014, 6, 20), M.oobRing, N);
+oobG.count = 0; oobG.visible = false; scene.add(oobG);
+/* 查询针(可拖动) */
+const queryG = new THREE.Group();
+const pinStick = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.5, 8), M.frameM); pinStick.position.y = 0.25; queryG.add(pinStick);
+const queryTop = new THREE.Mesh(new THREE.SphereGeometry(0.055, 14, 10), M.dupe); queryTop.position.y = 0.56; queryG.add(queryTop);
+queryG.position.set(qx * H, 0, qz * H); scene.add(queryG);
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _v = new THREE.Vector3();
+const QFLAT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+/* ---------------- 可视化刷新 ---------------- */
+function refreshField() {
+  const pos = fieldGeo.attributes.position, col = fieldGeo.attributes.color;
+  for (let iy = 0; iy < G; iy++) for (let ix = 0; ix < G; ix++) {
+    const i = iy * G + ix, p = trainedCount ? gridSum[i] / trainedCount : 0.5;
+    pos.setY(i, (p - 0.5) * FIELD_AMP);
+    pColor(p, cH); col.setXYZ(i, cH.r, cH.g, cH.b);
+  }
+  pos.needsUpdate = true; col.needsUpdate = true; fieldGeo.computeVertexNormals();
+  updateContour();
+}
+function updateContour() {  // 0.5 等高线(marching squares)
+  let n = 0;
+  const pos = contourGeo.attributes.position.array;
+  if (trainedCount) for (let iy = 0; iy < G - 1; iy++) for (let ix = 0; ix < G - 1; ix++) {
+    const i00 = iy * G + ix, Bn = trainedCount,
+      v00 = gridSum[i00] / Bn - 0.5, v10 = gridSum[i00 + 1] / Bn - 0.5,
+      v01 = gridSum[i00 + G] / Bn - 0.5, v11 = gridSum[i00 + G + 1] / Bn - 0.5,
+      x0 = -H + ix * GSTEP, x1 = x0 + GSTEP, z0 = -H + iy * GSTEP, z1 = z0 + GSTEP, pp = [];
+    if (v00 * v10 < 0) pp.push([x0 + GSTEP * (v00 / (v00 - v10)), z0]);
+    if (v10 * v11 < 0) pp.push([x1, z0 + GSTEP * (v10 / (v10 - v11))]); if (v01 * v11 < 0) pp.push([x0 + GSTEP * (v01 / (v01 - v11)), z1]);
+    if (v00 * v01 < 0) pp.push([x0, z0 + GSTEP * (v00 / (v00 - v01))]);
+    for (let k = 0; k + 1 < pp.length && n + 6 <= pos.length; k += 2) {
+      pos[n++] = pp[k][0]; pos[n++] = 0.015; pos[n++] = pp[k][1]; pos[n++] = pp[k + 1][0]; pos[n++] = 0.015; pos[n++] = pp[k + 1][1];
+    }
+  }
+  contourGeo.setDrawRange(0, n / 3); contourGeo.attributes.position.needsUpdate = true;
+}
+function refreshTerrainTree(t) {  // 单树阶梯地形:高度=置信度,颜色=类别
+  const cs = 2 * H / GT;
+  for (let iy = 0; iy < GT; iy++) for (let ix = 0; ix < GT; ix++) {
+    const i = iy * GT + ix, p = t ? predict(t, ix / (GT - 1) * 2 - 1, iy / (GT - 1) * 2 - 1) : 0.5,
+      h = 0.04 + Math.abs(p - 0.5) * 0.85;
+    _m4.compose(_v.set(-H + (ix + 0.5) * cs, h / 2, -H + (iy + 0.5) * cs), _q, _s.set(cs * 0.96, h, cs * 0.96)); terrain.setMatrixAt(i, _m4);
+    pColor(p, cH); cH.lerp(cWhite, 0.95 - Math.abs(p - 0.5) * 1.7);
+    terrain.setColorAt(i, cH);
+  }
+  terrain.instanceMatrix.needsUpdate = true; if (terrain.instanceColor) terrain.instanceColor.needsUpdate = true;
+}
+function showCuts(t, maxDepth, frac) {  // 分裂墙:从中心向两端长出
+  let n = 0;
+  if (t) for (const s of t.segs) {
+    if (s.d > maxDepth || n >= MAXSEG) continue;
+    const k = clamp(frac, 0, 1);
+    if (s.f === 0) _m4.compose(_v.set(s.thr * H, 0.26 * k, (s.b0 + s.b1) / 2 * H), _q, _s.set(0.016, 0.52 * k, (s.b1 - s.b0) * H));
+    else _m4.compose(_v.set((s.a0 + s.a1) / 2 * H, 0.26 * k, s.thr * H), _q, _s.set((s.a1 - s.a0) * H, 0.52 * k, 0.016));
+    cutWalls.setMatrixAt(n++, _m4);
+  }
+  cutWalls.count = n; cutWalls.instanceMatrix.needsUpdate = true;
+}
+function refreshPtsPos() {
+  for (let i = 0; i < N; i++) {
+    _m4.compose(_v.set(dX[i] * H, 0.05, dX2[i] * H), _q, _s.set(1, 1, 1)); pts.setMatrixAt(i, _m4);
+  }
+  pts.instanceMatrix.needsUpdate = true;
+}
+function refreshPoints(bag) {  // 入袋提亮,OOB 灰化
+  for (let i = 0; i < N; i++) {
+    _c2.copy(dY[i] ? cR : cB); if (bag) { if (bag[i]) _c2.lerp(cWhite, 0.45); else _c2.copy(cGray); }
+    pts.setColorAt(i, _c2);
+  }
+  if (pts.instanceColor) pts.instanceColor.needsUpdate = true;
+}
+function refreshDupes(bag, lift) {  // 重复抽中的点向上叠块
+  let n = 0;
+  if (bag && lift > 0.02) for (let i = 0; i < N && n < 380; i++)
+    for (let c = 1; c < bag[i] && n < 380; c++) {
+      _m4.compose(_v.set(dX[i] * H, 0.1 + c * 0.056, dX2[i] * H), _q, _s.set(1, lift, 1));
+      dupes.setMatrixAt(n++, _m4);
+    }
+  dupes.count = n; dupes.instanceMatrix.needsUpdate = true;
+}
+function refreshOobMarks() {  // 森林 OOB 投票投错的点画红圈
+  let n = 0;
+  for (let i = 0; i < N; i++)
+    if (oobCnt[i] && ((oobSum[i] / oobCnt[i] > 0.5) !== (dY[i] === 1))) {
+      _m4.compose(_v.set(dX[i] * H, 0.03, dX2[i] * H), QFLAT, _s.set(1, 1, 1)); oobG.setMatrixAt(n++, _m4);
+    }
+  oobG.count = n; oobG.instanceMatrix.needsUpdate = true;
+}
+/* ---------------- 森林训练(逐棵生长) ---------------- */
+function computeStats() {  // σ²、树间相关 ρ(网格上估计)与 OOB 误差
+  const Bn = trainedCount;
+  if (Bn < 2) { sigma2 = 0; rho = 0; }
+  else {
+    let s2 = 0;
+    for (let i = 0; i < G * G; i++) { const m = gridSum[i] / Bn; s2 += Math.max(0, (gridSqSum[i] - Bn * m * m) / (Bn - 1)); }
+    sigma2 = s2 / (G * G);
+    const vDen = Math.max(1e-9, s2), P = Math.min(8, (Bn * (Bn - 1) / 2) | 0);
+    let cs = 0;
+    for (let p = 0; p < P; p++) {
+      const a = (rnd() * Bn) | 0; let b = (rnd() * Bn) | 0;
+      if (b === a) b = (b + 1) % Bn;
+      const ga = trees[a].grid, gb = trees[b].grid;
+      let cab = 0; for (let i = 0; i < G * G; i++) cab += (ga[i] - gridSum[i] / Bn) * (gb[i] - gridSum[i] / Bn);
+      cs += (Bn * cab + vDen) / vDen;   // 无偏化:E[Σ(ga−m)(gb−m)] = (Σc − Σσ²)/B
+    }
+    rho = P ? clamp(cs / P, 0, 0.99) : 0;
+  }
+  let w = 0, tot = 0; for (let i = 0; i < N; i++) if (oobCnt[i]) { tot++; if ((oobSum[i] / oobCnt[i] > 0.5) !== (dY[i] === 1)) w++; }
+  oobErr = tot ? w / tot : 0;
+}
+function growOneTree() {
+  const bag = new Uint16Array(N);
+  for (let i = 0; i < N; i++) bag[(rnd() * N) | 0]++;
+  const idx = [];
+  for (let i = 0; i < N; i++) for (let c = 0; c < bag[i]; c++) idx.push(i);
+  const t = trainTree(idx, rnd);
+  t.bag = bag; t.segs = collectSplits(t); t.oob = [];
+  for (let i = 0; i < N; i++) if (!bag[i]) t.oob.push(i);
+  t.grid = new Float32Array(G * G);
+  for (let iy = 0; iy < G; iy++) for (let ix = 0; ix < G; ix++) {
+    const p = predict(t, ix / (G - 1) * 2 - 1, iy / (G - 1) * 2 - 1); t.grid[iy * G + ix] = p;
+    gridSum[iy * G + ix] += p; gridSqSum[iy * G + ix] += p * p;
+  }
+  for (const i of t.oob) { oobSum[i] += predict(t, dX[i], dX2[i]); oobCnt[i]++; }
+  trees.push(t); trainedCount++;
+  computeStats(); refreshField(); refreshOobMarks();
+  if (view === 'single') { refreshTerrainTree(t); showCuts(t, 99, 0); }
+  refreshPoints(bag); refreshDupes(bag, 0);
+  voteDirty = true;
+}
+const revealDur = () => clamp(2.4 / Math.max(1, B), 0.06, 0.85);
+function startGrowth() {
+  trees.length = 0; trainedCount = 0;
+  gridSum.fill(0); gridSqSum.fill(0); oobSum.fill(0); oobCnt.fill(0);
+  sigma2 = 0; rho = 0; oobErr = 0; growK = 0; growT = 0; curDur = revealDur(); growing = true;
+  refreshField(); refreshTerrainTree(null); showCuts(null, 0, 0);
+  refreshPtsPos(); refreshPoints(null); refreshDupes(null, 0); refreshOobMarks();
+  growOneTree(); voteDirty = true;
+}
+function afterGrow() {
+  growing = false; growK = Math.max(0, trainedCount - 1);
+  showCuts(null, 0, 0); refreshDupes(null, 0); refreshPoints(null); refreshOobMarks(); refreshField();
+  if (view === 'single' && trainedCount) { refreshTerrainTree(trees[0]); showCuts(trees[0], 99, 1); }
+  else if (view === 'boost') { refreshTerrainTree(boostTree); showCuts(boostTree, 99, 1); }
+  voteDirty = true;
+}
+function fastForward() { growing = false; while (trainedCount < B) growOneTree(); afterGrow(); }
+function applyB() {
+  if (trainedCount > B) { startGrowth(); if (!playing) fastForward(); }
+  else { growing = true; curDur = revealDur(); if (!playing) fastForward(); }
+}
+/* ---------------- 视图 ---------------- */
+const elBtnView = document.getElementById('btnView');
+function setView(v) {
+  view = v;
+  terrain.visible = v !== 'forest';
+  fieldMesh.visible = v === 'forest';
+  contourLine.visible = v === 'forest';
+  if (v === 'single') {
+    const t = growing && trees[growK] ? trees[growK] : (trainedCount ? trees[0] : null);
+    refreshTerrainTree(t); showCuts(t, 99, 1);
+  } else if (v === 'boost') { refreshTerrainTree(boostTree); showCuts(boostTree, 99, 1); }
+  else showCuts(null, 0, 0);
+  elBtnView.classList.toggle('on', v !== 'forest');
+}
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos); scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+function queryStats() {
+  let s = 0, v = 0;
+  for (let k = 0; k < trainedCount; k++) { const p = predict(trees[k], qx, qz); s += p; if (p > 0.5) v++; }
+  return trainedCount ? { p: s / trainedCount, vote: v / trainedCount } : null;
+}
+addLabel(() => {
+  const q = queryStats();
+  return q ? L(`森林投票 ${(q.vote * 100).toFixed(0)}% · p̄=${q.p.toFixed(2)}`, `forest vote ${(q.vote * 100).toFixed(0)}% · p̄=${q.p.toFixed(2)}`) : L('拖动我', 'drag me');
+}, () => 'e', new THREE.Vector3(0.7, 0.8, 0.5), v => v.set(qx * H, 0.78, qz * H));
+addLabel(() => view === 'single' ? L(`单棵深树 · 阶梯状边界 · 深度 ${MAXD}`, `single deep tree · stepped boundary · depth ${MAXD}`)
+  : view === 'boost' ? L('2 层浅树 · 高偏差 · Boosting 的起点', '2-level shallow tree · high bias · where boosting starts')
+  : L(`森林平均概率场 · ${trainedCount} 棵树`, `forest average probability field · ${trainedCount} trees`),
+  () => 'st', new THREE.Vector3(0, 1.05, 0));
+addLabel(() => {
+  const t = growing && trees[growK] ? trees[growK] : (trainedCount ? trees[0] : null);
+  if (!t) return '';
+  const k = t.oob.length;
+  return L(`OOB 袋外 ${k}/${N}(${(k / N * 100).toFixed(1)}%)≈36.8%`, `OOB ${k}/${N} (${(k / N * 100).toFixed(1)}%) ~ 36.8%`);
+}, () => 'w', new THREE.Vector3(-1.05, 0.42, 1.05));
+addLabel(() => L(`Var = ρσ² + (1−ρ)σ²/B · ρ=${trainedCount >= 2 ? rho.toFixed(2) : '—'} · B=${trainedCount}`,
+  `Var = ρσ² + (1−ρ)σ²/B · ρ=${trainedCount >= 2 ? rho.toFixed(2) : '-'} · B=${trainedCount}`),
+  () => 'g', new THREE.Vector3(1.1, 0.42, -1.1));
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { tgt: [0.75, 0.42, 0.75], dur: 10, b: '单棵深树:锯齿状过拟合', be: 'One deep tree: jagged overfitting',
+    d: '让一棵决策树放任长到十几层深,它会把 200 个训练点一个个记住:双螺旋的边界呈锯齿阶梯状,连噪声都被切了进去。此时偏差很小、方差极大——点"换 10% 重训",只改 10% 的标签,树的结构与边界就面目全非。', de: 'Let a decision tree grow a dozen levels deep and it memorizes all 200 training points: on the double spiral the boundary becomes a jagged staircase that cuts noise into the rules. Bias is tiny but variance huge - press "swap 10% + retrain": changing just 10% of the labels reshapes the whole tree.' },
+  { tgt: [-0.85, 0.3, 0.7], dur: 9, b: 'Bootstrap 重采样:63.2% 入袋,36.8% 袋外', be: 'Bootstrap resampling: 63.2% in-bag, 36.8% OOB',
+    d: '有放回地抽一份与原集等大小(200 个)的样本训一棵树:每个点约 36.8% 概率一次都不被抽中——这就是袋外(OOB)。金色叠块是被重复抽中的次数,灰色半透明点是这一份的 OOB 样本。', de: 'Draw a same-size sample of 200 with replacement to train one tree: each point has about a 36.8% chance of never being drawn - the out-of-bag (OOB) set. Gold stacks mark repeat draws; translucent gray points are the OOB samples of this bag.' },
+  { tgt: [0, 0.5, 0], dur: 9, b: '特征随机 mtry:让树与树去相关', be: 'Random features (mtry): decorrelate the trees',
+    d: '第二重随机:每次分裂只从 mtry 个随机特征里挑最优(分类约 √p,回归 p/3;此处 p=2)。mtry=1 时一半的分裂被迫用次优特征,重放生长动画可见相邻两棵树的切割墙大不相同——去相关正是森林的威力来源。', de: 'The second randomness: each split picks the best of only mtry random features (~sqrt(p) for classification, p/3 for regression; here p=2). With mtry=1 many splits are forced onto second-best features, so consecutive trees cut the plane very differently - replay the growth and watch: decorrelation is where the forest gets its power.' },
+  { tgt: [0.5, 0.32, 0.5], dur: 9, b: 'B 棵树投票 / 平均', be: 'B trees vote / average',
+    d: '训练 B 棵树(滑杆最多 101 棵),分类逐点投票、回归取平均。拖动金色查询针,下方直方图是 B 棵树各自输出的概率:过半数票即森林的结论。若各树误差独立,平均后方差降为 σ²/B。', de: 'Train B trees (up to 101): classification votes per point, regression averages. Drag the gold query pin - the histogram shows the probabilities output by the B trees; majority wins. If tree errors were independent, averaging would cut variance to sigma2/B.' },
+  { tgt: [0, 0.55, 0], dur: 9, b: '方差分解:Var = ρσ² + (1−ρ)σ²/B', be: 'Variance decomposition: Var = ρσ² + (1−ρ)σ²/B',
+    d: '树间并非独立:相关系数 ρ>0,所以 B→∞ 时方差不会归零,而是收敛到 ρσ²。看公式区的实测值:加大 B 只能消掉 (1−ρ)σ²/B 项;想压低极限,必须用特征随机压低 ρ——把 mtry 从 2 拨回 1,看 ρ 与 Var 一起下降。', de: 'Trees are not independent: with correlation rho>0, variance never reaches zero as B grows - it converges to rho*sigma2. Watch the live numbers: raising B only removes the (1-rho)*sigma2/B term; to lower the floor you must lower rho via feature randomness - move mtry from 2 back to 1 and watch rho and Var drop together.' },
+  { tgt: [-0.5, 0.3, 0.5], dur: 8, b: 'OOB:白送的验证集', be: 'OOB: a free validation set',
+    d: '每棵树没抽到的约 36.8% 样本正好当它的私人验证集:汇总所有树的袋外投票得到 OOB 误差,红圈标出被投错的点。OOB 误差与 K 折交叉验证高度接近,却不用任何额外训练——bagging 白送的模型评估。', de: 'The ~36.8% each tree never saw become its private validation set: aggregating the out-of-bag votes of all trees gives the OOB error, and red rings mark misclassified points. OOB error tracks K-fold cross-validation closely at zero extra cost - a free evaluation that bagging throws in.' },
+  { tgt: [0, 0.6, 0], dur: 8, b: '置换特征重要度', be: 'Permutation feature importance',
+    d: '把某列特征的取值随机打乱,若 OOB 误差明显上升,说明森林真的在依赖它。面板两根柱子是 x₀、x₁ 分别打乱后的 ΔOOB:双螺旋上两个方向都很重要;高斯团上若某特征无用,打乱它误差几乎不变。', de: 'Shuffle one feature column: if OOB error jumps, the forest truly relies on it. The two bars show the OOB increase after shuffling x0 and x1 separately: on the spiral both axes matter; on the blobs a useless feature barely moves the error when shuffled.' },
+  { tgt: [0, 0.5, 0], dur: 9, b: '对照 Boosting:降方差 vs 降偏差', be: 'Contrast with boosting: variance vs bias',
+    d: '图中这棵 2 层浅树是另一族的起点:边界只能切成粗糙方块——偏差大、方差小。Boosting(XGBoost/LightGBM)让每棵新树串行拟合前面所有树的残差,一步步降偏差;随机森林并行投票降方差。两条路不互斥,实践中可以叠用。', de: 'This 2-level shallow tree starts the other family: its boundary is a few crude blocks - high bias, low variance. Boosting (XGBoost/LightGBM) fits each new tree to the residuals of all previous ones, cutting bias step by step; random forests vote in parallel to cut variance. The routes are complementary and often stacked.' },
+];
+function markStep() { [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario)); }
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function applyStepVisuals(i) {
+  bagView = i === 1; if (i !== 1) { refreshPoints(null); refreshDupes(null, 0); }
+  if (i <= 1) {
+    setView('single');
+    if (i === 1 && trainedCount && !growing) { refreshPoints(trees[0].bag); refreshDupes(trees[0].bag, 1); showCuts(trees[0], 99, 1); }
+  } else if (i === 2) { setView('single'); startGrowth(); if (!playing) fastForward(); }
+  else if (i <= 5) setView('forest');
+  else if (i === 6) { setView('forest'); refreshImp(); }
+  else setView('boost');
+  if (i >= 3 && trainedCount < B) fastForward();
+  oobG.visible = i === 5 && oobG.count > 0; impRow.style.display = i === 6 ? '' : 'none'; voteDirty = true;
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1); dwell = 0;
+  tgtVec.fromArray(STEPS[scenario].tgt); markStep(); syncPhase(); applyStepVisuals(scenario); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps'); el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => { tour = false; activateStep(i); });
+    el.appendChild(li);
+  });
+}
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const varNow = trainedCount ? sigma2 * (rho + (1 - rho) / trainedCount) : 0;
+  formulaEl.innerHTML =
+    L(`方差分解 <b>Var = ρσ² + (1−ρ)·σ²/B</b>:实测 ρ=${trainedCount >= 2 ? rho.toFixed(2) : '—'},σ²=${sigma2.toFixed(2)},B=${trainedCount} → Var=${varNow.toFixed(3)};B→∞ 只剩 ρσ²=${(rho * sigma2).toFixed(3)}`,
+      `variance decomposition <b>Var = ρσ² + (1−ρ)·σ²/B</b>: measured ρ=${trainedCount >= 2 ? rho.toFixed(2) : '-'}, σ²=${sigma2.toFixed(2)}, B=${trainedCount} → Var=${varNow.toFixed(3)}; B→∞ leaves ρσ²=${(rho * sigma2).toFixed(3)}`) + '<br>' +
+    L(`bootstrap 有放回:每份唯一样本 ${INBAG}%≈63.2%,OOB=${OOBP}%≈36.8%(=(1−1/n)ⁿ);实测 OOB 误差 <b>${(oobErr * 100).toFixed(1)}%</b> ≈ K 折交叉验证`,
+      `bootstrap with replacement: ${INBAG}% unique samples per bag, OOB=${OOBP}% (=(1−1/n)ⁿ); measured OOB error <b>${(oobErr * 100).toFixed(1)}%</b> ≈ K-fold CV`) + '<br>' +
+    L(`每次分裂只看 mtry 个随机特征:分类 ≈<b>√p</b>(p=2→1-2),回归 p/3 · Breiman 2001 · Boosting(XGBoost/LightGBM)串行拟合残差降<b>偏差</b>,森林并行投票降<b>方差</b>,可叠用`,
+      `each split sees only mtry random features: ~<b>sqrt(p)</b> for classification (p=2 → 1-2), p/3 for regression · Breiman 2001 · boosting (XGBoost/LightGBM) fits residuals serially to cut <b>bias</b>, forests vote in parallel to cut <b>variance</b> - they stack`);
+}
+/* ---------------- 投票直方图 / 置换重要度 ---------------- */
+const histCv = document.getElementById('voteHist'), histCtx = histCv.getContext('2d');
+function drawHist() {
+  const w = histCv.clientWidth || 300, hh = 52;
+  if (histCv.width !== Math.round(w * 2)) { histCv.width = Math.round(w * 2); histCv.height = 104; }
+  histCtx.setTransform(2, 0, 0, 2, 0, 0); histCtx.clearRect(0, 0, w, hh);
+  const nb = 11, bins = new Array(nb).fill(0); for (let k = 0; k < trainedCount; k++) bins[Math.min(nb - 1, (predict(trees[k], qx, qz) * nb) | 0)]++;
+  const mx = Math.max(1, ...bins), bw = w / nb;
+  for (let b = 0; b < nb; b++) {
+    pColor((b + 0.5) / nb, cH); histCtx.fillStyle = '#' + cH.getHexString();
+    const bh = bins[b] / mx * (hh - 6); histCtx.globalAlpha = 0.9;
+    histCtx.fillRect(b * bw + 1.5, hh - bh, bw - 3, bh);
+  }
+  histCtx.globalAlpha = 1;
+  histCtx.strokeStyle = THEME === 'dark' ? 'rgba(232,201,143,.9)' : 'rgba(138,95,18,.9)';
+  histCtx.setLineDash([4, 3]);
+  histCtx.beginPath(); histCtx.moveTo(w / 2, 2); histCtx.lineTo(w / 2, hh - 2); histCtx.stroke();
+  histCtx.setLineDash([]);
+  histCtx.fillStyle = histCtx.strokeStyle; histCtx.font = '9px system-ui';
+  histCtx.fillText('p=0.5', w / 2 + 4, 10);
+}
+function permImportance() {  // 打乱某特征后,各树 OOB 样本的平均错误率
+  const out = [0, 0]; if (!trainedCount) return out;
+  for (let f = 0; f < 2; f++) {
+    const perm = new Uint16Array(N); for (let i = 0; i < N; i++) perm[i] = i;
+    for (let i = N - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; const tp = perm[i]; perm[i] = perm[j]; perm[j] = tp; }
+    let tot = 0, cnt = 0;
+    for (const t of trees) {
+      if (!t.oob.length) continue;
+      let w = 0;
+      for (const i of t.oob) {
+        const a0 = f === 0 ? dX[perm[i]] : dX[i], a1 = f === 1 ? dX2[perm[i]] : dX2[i];
+        if ((predict(t, a0, a1) > 0.5) !== (dY[i] === 1)) w++;
+      }
+      tot += w / t.oob.length; cnt++;
+    }
+    out[f] = cnt ? tot / cnt : 0;
+  }
+  return out;
+}
+const impRow = document.getElementById('impRow'),
+  elImp0bar = document.getElementById('imp0bar'), elImp1bar = document.getElementById('imp1bar'),
+  elImp0val = document.getElementById('imp0val'), elImp1val = document.getElementById('imp1val');
+function refreshImp() {
+  const r = permImportance(), d0 = Math.max(0, r[0] - oobErr), d1 = Math.max(0, r[1] - oobErr), mx = Math.max(1e-6, d0, d1);
+  elImp0bar.style.width = (d0 / mx * 100).toFixed(0) + '%'; elImp1bar.style.width = (d1 / mx * 100).toFixed(0) + '%';
+  elImp0val.textContent = 'ΔOOB +' + (d0 * 100).toFixed(1) + ' pt'; elImp1val.textContent = 'ΔOOB +' + (d1 * 100).toFixed(1) + ' pt';
+}
+/* ---------------- 查询针拖动 ---------------- */
+const tglDrag = document.getElementById('tglDrag');
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitV = new THREE.Vector3();
+const setNDC = e => ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+function moveQuery(x0, x1) { qx = x0; qz = x1; queryG.position.set(qx * H, 0, qz * H); voteDirty = true; }
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (!tglDrag.checked || !trainedCount) return;
+  setNDC(e); ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(dragPlane, hitV)) return;
+  const hx = clamp(hitV.x / H, -1, 1), hz = clamp(hitV.z / H, -1, 1);
+  if (Math.hypot(hx - qx, hz - qz) > 0.42) return;  // 只抓针附近,其余交给轨道控制
+  dragging = true; controls.enabled = false; tour = false;
+  moveQuery(hx, hz);
+});
+addEventListener('pointermove', e => {
+  if (!dragging) return;
+  setNDC(e); ray.setFromCamera(ndc, camera);
+  if (ray.ray.intersectPlane(dragPlane, hitV)) moveQuery(clamp(hitV.x / H, -1, 1), clamp(hitV.z / H, -1, 1));
+});
+addEventListener('pointerup', () => { if (dragging) { dragging = false; controls.enabled = true; } });
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elB = document.getElementById('b'), elBVal = document.getElementById('bVal');
+const elDepth = document.getElementById('depth'), elDepthVal = document.getElementById('depthVal');
+const elMtry = document.getElementById('mtry'), elMtryVal = document.getElementById('mtryVal');
+const elDs0 = document.getElementById('ds0'), elDs1 = document.getElementById('ds1'), elDs2 = document.getElementById('ds2');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() { for (const r of labelReg) r.o.visible = labelsOn; }  // r170 CSS2D 每帧重写 display,须切 visible
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => { tour = false; activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1))); });
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elB.addEventListener('input', () => { B = +elB.value; elBVal.textContent = B; tour = false; applyB(); });
+elDepth.addEventListener('input', () => { MAXD = +elDepth.value; elDepthVal.textContent = MAXD; tour = false; startGrowth(); if (!playing) fastForward(); });
+elMtry.addEventListener('input', () => { MTRY = +elMtry.value; elMtryVal.textContent = MTRY + ' / 2'; tour = false; startGrowth(); if (!playing) fastForward(); });
+function setDS(v) {
+  DS = v; [elDs0, elDs1, elDs2].forEach((b, i) => b.classList.toggle('on', i === DS));
+  genData(); boostTree = trainBoost();
+  startGrowth(); if (!playing) fastForward();
+}
+elDs0.addEventListener('click', () => setDS(0));
+elDs1.addEventListener('click', () => setDS(1));
+elDs2.addEventListener('click', () => setDS(2));
+document.getElementById('btnResample').addEventListener('click', () => {
+  rnd = mulberry32((Math.random() * 2 ** 31) | 0); startGrowth(); if (!playing) fastForward();
+});
+document.getElementById('btnPerturb').addEventListener('click', () => {  // 换 10% 标签重训:方差演示
+  const r2 = mulberry32((Math.random() * 2 ** 31) | 0);
+  for (let k = 0; k < Math.round(N * 0.1); k++) dY[(r2() * N) | 0] ^= 1;
+  startGrowth(); if (!playing) fastForward();
+});
+document.getElementById('btnReplay').addEventListener('click', () => { startGrowth(); if (!playing) fastForward(); });
+document.getElementById('btnReset').addEventListener('click', () => { setDS(DS); });
+elBtnView.addEventListener('click', () => { tour = false; setView(view === 'forest' ? 'single' : 'forest'); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); labelRenderer.setSize(innerWidth, innerHeight);
+});
+/* ---------------- stats 刷新 ---------------- */
+const stB = document.getElementById('stB'), stOOB = document.getElementById('stOOB'),
+  stRho = document.getElementById('stRho'), stVar = document.getElementById('stVar'),
+  stVote = document.getElementById('stVote');
+function updateStats() {
+  stB.innerHTML = trainedCount + '<small> / ' + B + '</small>';
+  stOOB.innerHTML = trainedCount ? (oobErr * 100).toFixed(1) + '<small> %</small>' : '—';
+  stOOB.className = 'v ' + (trainedCount ? (oobErr > 0.25 ? 'bad' : oobErr > 0.12 ? 'warn' : 'ok') : '');
+  stRho.textContent = trainedCount >= 2 ? rho.toFixed(2) : '—'; const varNow = trainedCount ? sigma2 * (rho + (1 - rho) / trainedCount) : 0;
+  stVar.innerHTML = trainedCount ? varNow.toFixed(3) + '<small> σ²=' + sigma2.toFixed(2) + '</small>' : '—';
+  const q = queryStats(); if (q) {
+    stVote.innerHTML = (q.vote * 100).toFixed(0) + '<small> % · p̄=' + q.p.toFixed(2) + '</small>';
+    stVote.className = 'v ' + (Math.abs(q.vote - 0.5) > 0.4 ? 'ok' : 'warn');
+  } else { stVote.textContent = '—'; stVote.className = 'v'; }
+}
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05); et += dt;
+  /* 逐棵生长动画 */
+  if (growing && playing) {
+    growT += dt * speed;
+    let guard = 0;
+    while (growing && growT >= curDur && guard++ < 8) {
+      growT -= curDur;
+      if (growK + 1 >= B) { afterGrow(); break; }
+      growK++;
+      if (trainedCount === growK) growOneTree();
+      curDur = revealDur();
+    }
+    if (growing && trees[growK]) {
+      const t = trees[growK];
+      showCuts(t, 99, clamp(growT / (curDur * 0.55), 0, 1));
+      refreshDupes(t.bag, clamp(growT / (curDur * 0.4), 0, 1));
+      dwell = 0;
+    }
+  }
+  /* 自动导览 */
+  if (playing && tour && !growing) {
+    dwell += dt;
+    if (dwell > STEPS[scenario].dur) { dwell = 0; activateStep((scenario + 1) % STEPS.length); }
+  }
+  /* 高亮脉动 */
+  const hlK = 0.5 + 0.25 * Math.sin(et * 5);
+  M.wall.opacity = 0.3 + 0.22 * hlK; M.dupe.emissiveIntensity = 0.3 + 0.4 * hlK;
+  M.oobRing.opacity = oobG.visible ? 0.55 + 0.45 * hlK : 0; queryTop.scale.setScalar(1 + 0.1 * Math.sin(et * 4));
+  /* 步骤 1:常驻展示第 1 棵树的 bootstrap 袋 */
+  if (!growing && bagView && trainedCount) { refreshPoints(trees[0].bag); refreshDupes(trees[0].bag, 1); }
+  /* 相机目标缓动 + 标签 */
+  controls.target.lerp(tgtVec, 0.05);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text(); r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  /* stats + formula 节流刷新 */
+  const now = performance.now(); if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats(); updateFormula();
+    if (voteDirty) { voteDirty = false; drawHist(); }
+  }
+  controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+/* ---------------- 初始化 ---------------- */
+applyTheme(); genData(); boostTree = trainBoost();
+startGrowth(); if (!playing) fastForward(); applyLang();
+elB.value = B; elBVal.textContent = B;
+elDepth.value = MAXD; elDepthVal.textContent = MAXD;
+elMtry.value = MTRY; elMtryVal.textContent = MTRY + ' / 2';
+elSpeed.value = Math.round(speed * 10); elSpeedVal.textContent = speed.toFixed(1) + '×';
+[elDs0, elDs1, elDs2].forEach((b, i) => b.classList.toggle('on', i === DS));
+const autoRot = qsBool('spin', true); controls.autoRotate = autoRot; tglRotate.checked = autoRot;
+if (!labelsOn) refreshLabels();
+const t0 = parseInt(qs.get('t'), 10);
+activateStep(Number.isFinite(t0) && t0 >= 1 ? clamp(t0 - 1, 0, STEPS.length - 1) : 0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c); btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c); try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */ fade.className = 'panelFade'; panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null; try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
