@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>拜占庭容错 · n≥3f+1,忠诚多数淹没叛徒</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#2f9e77;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#0b7a5a;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  .lbl.a { border-color: rgba(255,159,67,.9); color: #ffd9a8; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(25,113,194,.9); color: #1971c2; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+  :root[data-theme="light"] .lbl.a { border-color: rgba(230,119,0,.9); color: #a34e00; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.s { color: #ffe9c4; border-color: rgba(216,179,106,.8); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  :root[data-theme="light"] .chip.s { color:#8a6d00; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(47,158,119,.65); background: rgba(47,158,119,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(11,122,90,.55); background: rgba(11,122,90,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(47,158,119,.10); border-color: rgba(47,158,119,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(11,122,90,.08); border-color: rgba(11,122,90,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #b5e3d2; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="拜占庭容错与叛徒将军:2f+1 张诚实票淹没 f 张假票" data-en="Byzantine Fault Tolerance: 2f+1 honest votes drown f forged ones">拜占庭容错与叛徒将军:2f+1 张诚实票淹没 f 张假票</h1>
+  <div class="sub" data-zh="将军们只能靠信使传令,叛徒会对不同人发不同命令 — Lamport 1982:有 f 个叛徒,诚实节点必须 n ≥ 3f+1、交换 f+1 轮消息才能达成一致;口头消息协议 = 每人把听到的命令原样转告所有人,再逐节点多数表决,2f+1 张诚实票淹没 f 张假票;2/3 是容错硬上限;两军问题证明无可靠信道的确定性共识不可行,PBFT 用三阶段把它做进工业,比特币用工作量证明换概率版一致 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Generals pass orders only by messenger, and a traitor tells different people different things — Lamport 1982: with f traitors, honest nodes need n ≥ 3f+1 and f+1 rounds of messages to agree; the oral-messages protocol = everyone relays exactly what they heard, then each node takes a majority vote, and 2f+1 honest votes drown the f forged ones; one third is the hard fault-tolerance ceiling; the two-generals problem rules out deterministic consensus on unreliable channels, PBFT industrializes it in three phases, Bitcoin trades work for probabilistic agreement · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">将军们只能靠信使传令,叛徒会对不同人发不同命令 — Lamport 1982:有 f 个叛徒,诚实节点必须 n ≥ 3f+1、交换 f+1 轮消息才能达成一致;口头消息协议 = 每人把听到的命令原样转告所有人,再逐节点多数表决,2f+1 张诚实票淹没 f 张假票;2/3 是容错硬上限;两军问题证明无可靠信道的确定性共识不可行,PBFT 用三阶段把它做进工业,比特币用工作量证明换概率版一致 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="总节点数 n" data-en="total nodes n">总节点数 n</span><span class="v" id="stN">—</span>
+  <span class="k" data-zh="叛徒数 f" data-en="traitors f">叛徒数 f</span><span class="v" id="stF">—</span>
+  <span class="k" data-zh="已转发轮数" data-en="rounds relayed">已转发轮数</span><span class="v" id="stR">—</span>
+  <span class="k" data-zh="一致度" data-en="agreement">一致度</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="当前共识" data-en="consensus">当前共识</span><span class="v" id="stC">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip s" data-zh="指挥官(金)" data-en="commander (gold)">指挥官(金)</span>
+    <span class="chip g" data-zh="诚实将军" data-en="loyal general">诚实将军</span>
+    <span class="chip r" data-zh="叛徒将军" data-en="traitor general">叛徒将军</span>
+    <span class="chip o" data-zh="进攻消息" data-en="attack message">进攻消息</span>
+    <span class="chip b" data-zh="撤退消息" data-en="retreat message">撤退消息</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnRound" data-zh="单轮推进" data-en="one round">单轮推进</button>
+    <button class="abtn on" id="btnAll" data-zh="全员转发" data-en="relay all">全员转发</button>
+    <button class="abtn hot" id="btnVote" data-zh="投票结算" data-en="tally votes">投票结算</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="叛徒数 f" data-en="traitors f">叛徒数 f</label><input id="ft" type="range" min="0" max="2" step="1" value="1"><span class="val" id="ftVal">f=1 · n=7</span></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+        <label><input id="tglMsg" type="checkbox" checked> <span data-zh="消息内容" data-en="msg text">消息内容</span></label>
+        <label><input id="tglTraj" type="checkbox" checked> <span data-zh="标注叛徒" data-en="mark traitors">标注叛徒</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../raft-consensus/" data-zh="Raft 共识" data-en="Raft consensus">Raft 共识</a>
+    <a href="../blockchain/" data-zh="区块链" data-en="blockchain">区块链</a>
+    <a href="../mutex-race/" data-zh="互斥锁与竞态" data-en="mutex and race">互斥锁与竞态</a>
+    <a href="../error-correction/" data-zh="纠错编码" data-en="error correction">纠错编码</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const valTxt = v => v === 'A' ? L('进攻', 'attack') : L('撤退', 'retreat');
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeff1f4 : 0x0f1216);
+  M.ground.color.set(THEME === 'light' ? 0xd7dce3 : 0x1b202a);
+  M.base.color.set(THEME === 'light' ? 0x8b98a8 : 0x3a4250);
+  M.bN.color.set(THEME === 'light' ? 0x9aa3ad : 0x5a6472);
+  EM.ring.color.set(THEME === 'light' ? 0xaab4c4 : 0x3a4557);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('拜占庭容错 · n≥3f+1,忠诚多数淹没叛徒', 'Byzantine Fault Tolerance · n≥3f+1 drowns the traitor');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  updateFormula();
+  elFtVal.textContent = 'f=' + F + ' · n=' + N;
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 200);
+camera.position.set(0, 4, 7.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.5;
+controls.maxDistance = 16;
+controls.autoRotateSpeed = 0.2;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 1.9);
+key.position.set(4, 8, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.4,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: new THREE.MeshStandardMaterial({ color: 0x1b202a, roughness: 0.95, metalness: 0 }),
+  base: mat(0x3a4250, { roughness: 0.5, metalness: 0.6 }),
+  tentL: mat(0x93a7ba, { roughness: 0.4, metalness: 0.45 }),
+  tentC: mat(0xd8b36a, { emissive: 0x8a6a20, emissiveIntensity: 0.55, roughness: 0.35, metalness: 0.5 }),
+  tentT: mat(0xa84f6e, { emissive: 0x6e1f3a, emissiveIntensity: 0.55, roughness: 0.4, metalness: 0.4 }),
+  pole: mat(0xd8dee8, { metalness: 0.85, roughness: 0.25 }),
+  bN: new THREE.MeshStandardMaterial({ color: 0x5a6472, roughness: 0.6, metalness: 0.2 }),
+  bA: mat(0xff9f43, { emissive: 0xd8772a, emissiveIntensity: 0.9, roughness: 0.35 }),
+  bR: mat(0x4d9fdc, { emissive: 0x2288dd, emissiveIntensity: 0.8, roughness: 0.35 }),
+  dotA: mat(0xffb066, { emissive: 0xff8c1a, emissiveIntensity: 1.2, metalness: 0.2, roughness: 0.3 }),
+  dotR: mat(0x74b9e8, { emissive: 0x2f8fdd, emissiveIntensity: 1.2, metalness: 0.2, roughness: 0.3 }),
+};
+const EM = { ring: new THREE.LineBasicMaterial({ color: 0x3a4557, transparent: true, opacity: 0.35 }) };
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.06, 64), M.ground);
+ground.position.y = -0.035;
+scene.add(ground);
+
+/* ---------------- Lamport 口头消息协议 OM(f) ---------------- */
+let F = 1, N = 7, plan = 'A', traitors = new Set();
+let msgs = [], roundList = [], bucketInfo = [], traitorMark = true;
+const flip = v => v === 'A' ? 'R' : 'A';
+
+function simulate() {
+  N = 3 * F + 4;
+  traitors = new Set();
+  for (let i = 0; i < F; i++) traitors.add(N - 1 - i);
+  plan = Math.random() < 0.5 ? 'A' : 'R';
+  msgs = [];
+  /* 递归 OM(m):cmd 把 val 发给其他参与者;叛徒按收件人奇偶伪造两种命令 */
+  function run(nodes, cmd, m, val, round) {
+    const others = nodes.filter(x => x !== cmd);
+    const sent = new Map();
+    for (const to of others) {
+      const v = traitors.has(cmd) ? ((to % 2 === 0) ? flip(plan) : plan) : val;
+      sent.set(to, v);
+      msgs.push({ r: round, from: cmd, to, v, spawn: Infinity, curve: null });
+    }
+    const fin = (to, bucket) => {
+      const a = bucket.reduce((s, x) => s + (x === 'A' ? 1 : 0), 0);
+      const d = a >= bucket.length - a ? 'A' : 'R';
+      if (round === 1) bucketInfo[to] = { a, r: bucket.length - a, dec: d };
+      return d;
+    };
+    if (m === 0) {
+      const dec = new Map();
+      for (const to of others) dec.set(to, fin(to, [sent.get(to)]));
+      return dec;
+    }
+    const subs = new Map();
+    for (const to of others) subs.set(to, run(others, to, m - 1, sent.get(to), round + 1));
+    const dec = new Map();
+    for (const to of others) {
+      const bucket = [sent.get(to)];
+      for (const [j, dm] of subs) if (j !== to) bucket.push(dm.get(to));
+      dec.set(to, fin(to, bucket));
+    }
+    return dec;
+  }
+  bucketInfo = Array.from({ length: N }, () => null);
+  run(Array.from({ length: N }, (_, i) => i), 0, F, plan, 1);
+  roundList = [];
+  for (let r = 1; r <= F + 1; r++) roundList.push(msgs.filter(m => m.r === r));
+}
+
+/* ---------------- 营地布局 ---------------- */
+let campGroup = null, camp = [];
+let tgtVec = new THREE.Vector3(0, 0.2, 0);
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+const gBase = new THREE.CylinderGeometry(0.3, 0.34, 0.1, 20);
+const gTent = new THREE.ConeGeometry(0.24, 0.42, 14);
+const gPole = new THREE.CylinderGeometry(0.012, 0.012, 0.62, 6);
+const gBanner = new THREE.BoxGeometry(0.18, 0.12, 0.02);
+const gRing = new THREE.TorusGeometry(0.42, 0.02, 8, 36);
+
+function buildCamp() {
+  if (campGroup) {
+    campGroup.traverse(o => { if (o.isCSS2DObject) o.element.remove(); if (o.geometry && o.geometry !== gBase && o.geometry !== gTent && o.geometry !== gPole && o.geometry !== gBanner && o.geometry !== gRing) o.geometry.dispose(); });
+    scene.remove(campGroup);
+  }
+  for (const r of labelReg) { scene.remove(r.o); r.o.element.remove(); }
+  labelReg.length = 0;
+  campGroup = new THREE.Group();
+  scene.add(campGroup);
+  camp = [];
+  const Rn = 2.3 + N * 0.05;
+  for (let i = 0; i < N; i++) {
+    const a = Math.PI / 2 + i * TAU / N;      // 指挥官(index 0)朝向默认相机
+    const pos = new THREE.Vector3(Rn * Math.cos(a), 0, Rn * Math.sin(a));
+    const g = new THREE.Group();
+    g.position.copy(pos);
+    const isCmd = i === 0, isT = traitors.has(i);
+    const base = new THREE.Mesh(gBase, M.base);
+    base.position.y = 0.05;
+    g.add(base);
+    const tent = new THREE.Mesh(gTent, isCmd ? M.tentC : isT ? M.tentT : M.tentL);
+    tent.position.y = 0.31;
+    tent.scale.setScalar(isCmd ? 1.25 : 1);
+    g.add(tent);
+    const pole = new THREE.Mesh(gPole, M.pole);
+    pole.position.y = 0.62;
+    g.add(pole);
+    const banner = new THREE.Mesh(gBanner, M.bN);
+    banner.position.set(0.11, 0.78, 0);
+    g.add(banner);
+    if (isCmd) {
+      const ring = new THREE.Mesh(gRing, M.tentC);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.12;
+      g.add(ring);
+    }
+    campGroup.add(g);
+    camp.push({ pos, banner, isCmd, isT: isT });
+    /* 节点标签 */
+    const textFn = () => {
+      if (i === 0) return L(`指挥官 · 命令:${valTxt(plan)}`, `commander · order: ${valTxt(plan)}`);
+      const bi = bucketInfo[i];
+      let s = (isT && traitorMark ? L('叛徒 ', 'traitor ') : '') + 'G' + i;
+      if (voted && bi) s += L(` · ${valTxt(bi.dec)} ${bi.a}:${bi.r}`, ` · ${valTxt(bi.dec)} ${bi.a}:${bi.r}`);
+      return s;
+    };
+    const clsFn = () => {
+      if (i === 0) return 'st';
+      if (isT) return traitorMark ? 'bad' : 'w';
+      return voted ? 'g' : '';
+    };
+    addLabel(textFn, clsFn, new THREE.Vector3(pos.x, 1.28, pos.z));
+  }
+  const pts = [];
+  for (let i = 0; i <= 96; i++) {
+    const a = i / 96 * TAU;
+    pts.push(new THREE.Vector3(Rn * Math.cos(a), 0.02, Rn * Math.sin(a)));
+  }
+  campGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), EM.ring));
+  ground.scale.setScalar(Rn + 1.4);
+  camera.position.set(0, Rn * 1.35 + 1.2, Rn * 1.55 + 0.8);
+  tgtVec.set(0, 0.2, 0);
+}
+
+/* ---------------- 信使飞线消息池 ---------------- */
+const SLOTS = 110, LSEG = 22, LIFE = 1.15;
+const slots = [], freeSlots = [];
+const gDot = new THREE.SphereGeometry(0.05, 10, 8);
+for (let i = 0; i < SLOTS; i++) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((LSEG + 1) * 3), 3));
+  const lmat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0 });
+  const line = new THREE.Line(geo, lmat);
+  line.visible = false;
+  line.frustumCulled = false;
+  scene.add(line);
+  const dot = new THREE.Mesh(gDot, M.dotA);
+  dot.visible = false;
+  scene.add(dot);
+  const div = document.createElement('div');
+  div.className = 'lbl';
+  div.style.display = 'none';
+  const lbl = new CSS2DObject(div);
+  scene.add(lbl);
+  slots.push({ geo, mat: lmat, line, dot, lbl, msg: null });
+  freeSlots.push(i);
+}
+function allocSlot(m) {
+  const idx = freeSlots.pop();
+  if (idx === undefined) return;
+  const s = slots[idx];
+  s.msg = m;
+  if (!m.curve) {
+    const a = camp[m.from].pos, b = camp[m.to].pos;
+    const mid = new THREE.Vector3((a.x + b.x) / 2, 0, (a.z + b.z) / 2);
+    mid.y = 0.5 + Math.hypot(a.x - b.x, a.z - b.z) * 0.18;
+    m.curve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(a.x, 0.55, a.z), mid, new THREE.Vector3(b.x, 0.55, b.z));
+  }
+  const p = s.geo.attributes.position.array;
+  for (let i = 0; i <= LSEG; i++) {
+    const q = m.curve.getPoint(i / LSEG);
+    p[i * 3] = q.x; p[i * 3 + 1] = q.y; p[i * 3 + 2] = q.z;
+  }
+  s.geo.attributes.position.needsUpdate = true;
+  s.mat.color.setHex(m.v === 'A' ? 0xff9f43 : 0x4d9fdc);
+  s.dot.material = m.v === 'A' ? M.dotA : M.dotR;
+  s.line.visible = true;
+  s.dot.visible = true;
+  s.lbl.element.textContent = valTxt(m.v);
+  s.lbl.element.className = 'lbl ' + (m.v === 'A' ? 'a' : 'r');
+  s.lbl.element.style.display = msgLblOn ? '' : 'none';
+}
+function freeSlot(s) {
+  s.msg = null;
+  s.line.visible = false;
+  s.dot.visible = false;
+  s.lbl.element.style.display = 'none';
+  freeSlots.push(slots.indexOf(s));
+}
+
+/* ---------------- 轮次状态机 ---------------- */
+let phase = 0, roundEnd = 0, mPtr = 0, voted = false, voteAt = 0, consensus = null, agree = 0;
+function startRound(r, t0) {
+  if (r > F + 1) return;
+  const list = roundList[r - 1];
+  const dur = clamp(list.length * 0.055, 2.4, 7.5);
+  const span = Math.max(0.001, dur - LIFE);
+  list.forEach((m, i) => { m.spawn = t0 + span * (list.length === 1 ? 0 : i / (list.length - 1)); });
+  phase = r;
+  roundEnd = t0 + dur + 0.2;
+}
+function forwardAll() {
+  let t = performance.now();
+  while (phase < F + 1) { startRound(phase + 1, t); t = roundEnd; }
+  voteAt = roundEnd + 1.6;
+}
+function vote() {
+  if (!msgs.length) return;
+  if (phase < F + 1) forwardAll();
+  voteAt = 0;
+  voted = true;
+  for (let i = 0; i < N; i++) {
+    const bi = bucketInfo[i];
+    if (bi) camp[i].banner.material = bi.dec === 'A' ? M.bA : M.bR;
+  }
+  const loyal = [];
+  for (let i = 1; i < N; i++) if (!traitors.has(i)) loyal.push(i);
+  const cA = loyal.filter(i => bucketInfo[i].dec === 'A').length;
+  consensus = cA >= loyal.length - cA ? 'A' : 'R';
+  agree = loyal.filter(i => bucketInfo[i].dec === consensus).length / loyal.length;
+  updateFormula();
+}
+function resetSim() {
+  for (const s of slots) if (s.msg) freeSlot(s);
+  mPtr = 0; phase = 0; roundEnd = 0; voted = false; voteAt = 0; consensus = null; agree = 0;
+  for (const c of camp) c.banner.material = M.bN;
+  updateFormula();
+}
+function newRun() { simulate(); resetSim(); }   // 同一布局重开一局:重掷命令与叛徒话术
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { act: 'reset', dur: 8, t: () => [camp[0].pos.x * 0.6, 0.5, camp[0].pos.z * 0.6 + 1],
+    b: '营地与信使:没有电话,只有信使', be: 'Camps and messengers: no phones, just riders',
+    d: '营地围成一圈,指挥官(金色)决定进攻或撤退,命令只能写在信上交给信使骑马送达 — 消息可能迟到、可能被篡改。分布式系统里的节点,处境一模一样:只靠网络传消息。',
+    de: 'Camps stand in a ring; the commander (gold) decides attack or retreat, and the order travels only by rider — it can be late or tampered with. Nodes in a distributed system live the same life: nothing but messages on a network.' },
+  { act: 'traitor', dur: 9, t: () => { const ti = [...traitors][0]; const p = camp[ti] ? camp[ti].pos : camp[1].pos; return [p.x, 0.5, p.z + 0.8]; },
+    b: '叛徒的离间:同一道命令,两种说法', be: 'The traitor: one order, two stories',
+    d: '紫红色营地是叛徒:他对一半人说"进攻",对另一半说"撤退" — 看两种颜色的飞线同时从他那里飞出。若大家各自相信第一句话,军队就自己分裂,这就是拜占庭错误。',
+    de: 'The purple camp is the traitor: he tells half "attack" and half "retreat" — watch arcs of both colors leave his camp at once. If everyone believed the first message they heard, the army would split by itself. That is a Byzantine fault.' },
+  { act: 'rounds', dur: 12, t: () => [0, 1.8, 0.01],
+    b: '全量转发:把自己听到的原样转告', be: 'Full relay: tell everyone what you heard',
+    d: '口头消息协议:收到命令后,每个将军把自己收到的命令原样转告所有其他将军;有 f 个叛徒就必须转发 f+1 轮。n=10、f=2 时要送 585 条消息,但每份证词都被交叉记录。',
+    de: 'The oral-messages protocol: after receiving the order, every general relays exactly what he heard to every other general; f traitors force f+1 rounds. With n=10 and f=2 that is 585 messages — but every testimony is cross-recorded.' },
+  { act: 'vote', dur: 9, t: () => [0, 0.4, 0],
+    b: '多数表决:诚实票把假票淹掉', be: 'Majority vote: honest votes drown the fakes',
+    d: '转发结束后,每个节点对收到的所有证词计票取多数:忠诚节点的证词彼此一致,叛徒的假票被 2f+1 张诚实票包围淹没。看旗帜:所有诚实营地翻成同一种颜色,叛徒孤立无援。',
+    de: 'After relaying, every node tallies its testimony and takes the majority: loyal testimony agrees with itself, and the fakes are drowned by 2f+1 honest votes. Watch the banners: every loyal camp flips to the same color, the traitor stands alone.' },
+  { act: 'none', dur: 9, t: () => [0, 2.6, 0.01],
+    b: '为什么是 n ≥ 3f+1 与 f+1 轮', be: 'Why n ≥ 3f+1 and f+1 rounds',
+    d: '3f+1 是硬边界:要让"诚实多数"在表决里既压过叛徒、又承受住叛徒制造的分裂,诚实节点必须严格多于 2f,f 个叛徒最多只能由 3f+1 个节点兜住;少于 f+1 轮,假话就来不及被交叉证伪。',
+    de: '3f+1 is a hard bound: the honest majority must both outnumber the traitors and absorb the split they create, so honest nodes must exceed 2f — f traitors are tolerable only from 3f+1 nodes; with fewer than f+1 rounds, lies are never cross-refuted in time.' },
+  { act: 'none', dur: 9, t: () => [camp[0].pos.x * 0.4, 0.5, camp[0].pos.z * 0.4],
+    b: '两军问题与 PBFT、比特币', be: 'Two generals, PBFT and Bitcoin',
+    d: '若信道本身不可靠且无同步,两军问题证明确定性共识在信息论上不可行;PBFT 用 pre-prepare/prepare/commit 三阶段把口头协议做进工业(n=3f+1);比特币换思路:用工作量证明让作恶成本高过收益,换取概率性一致。',
+    de: 'If the channel itself is unreliable and unsynchronized, the two-generals problem proves deterministic consensus is information-theoretically impossible; PBFT industrializes the oral protocol in three phases (pre-prepare/prepare/commit, n=3f+1); Bitcoin trades work for probabilistic agreement instead.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  dwell = 0;
+  const s = STEPS[scenario];
+  if (s.act === 'reset') newRun();
+  else if (s.act === 'traitor') {
+    newRun();
+    traitorMark = true;
+    document.getElementById('tglTraj').checked = true;
+  } else if (s.act === 'rounds') { newRun(); forwardAll(); }
+  else if (s.act === 'vote') vote();
+  tgtVec.fromArray(s.t());
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`可容叛徒数:n ≥ 3f+1 → 当前 n=<b>${N}</b>, f=<b>${F}</b>(3f+1=<b>${3 * F + 1}</b>,余量 +${N - 3 * F - 1})`,
+      `tolerable traitors: n ≥ 3f+1 → here n=<b>${N}</b>, f=<b>${F}</b> (3f+1=<b>${3 * F + 1}</b>, margin +${N - 3 * F - 1})`) +
+    '<br>' +
+    L(`口头消息协议:轮数 ≥ f+1 = <b>${F + 1}</b> · 消息量 O(n^(f+1)):本次共 <b>${msgs.length}</b> 条`,
+      `oral-messages protocol: rounds ≥ f+1 = <b>${F + 1}</b> · messages O(n^(f+1)): <b>${msgs.length}</b> total`) +
+    '<br>' +
+    L(`逐节点多数表决:诚实 ≥ <b>${N - 1 - F}</b> 票 vs 假票 ≤ <b>${F}</b> 票(含己票 2f+1=${2 * F + 1} > f+1=${F + 1})→ 假票翻不了盘`,
+      `per-node majority: honest ≥ <b>${N - 1 - F}</b> votes vs ≤ <b>${F}</b> forged (with own vote 2f+1=${2 * F + 1} > f+1=${F + 1}) → fakes never win`);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elFt = document.getElementById('ft'), elFtVal = document.getElementById('ftVal');
+const stN = document.getElementById('stN'), stF = document.getElementById('stF'),
+  stR = document.getElementById('stR'), stA = document.getElementById('stA'), stC = document.getElementById('stC');
+let labelsOn = qsBool('labels', true), msgLblOn = true;
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.element.style.display = labelsOn ? '' : 'none';
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elFt.addEventListener('input', () => {
+  F = +elFt.value;
+  elFtVal.textContent = 'f=' + F + ' · n=' + (3 * F + 4);
+  tour = false;
+  simulate();
+  buildCamp();
+  resetSim();
+});
+document.getElementById('btnRound').addEventListener('click', () => {
+  tour = false;
+  if (phase < F + 1 && performance.now() > roundEnd) startRound(phase + 1, performance.now());
+});
+document.getElementById('btnAll').addEventListener('click', () => { tour = false; forwardAll(); });
+document.getElementById('btnVote').addEventListener('click', () => { tour = false; vote(); });
+document.getElementById('btnReset').addEventListener('click', () => newRun());
+document.getElementById('tglLabels').addEventListener('change', e => { labelsOn = e.target.checked; refreshLabels(); });
+document.getElementById('tglRotate').addEventListener('change', e => { controls.autoRotate = e.target.checked; });
+document.getElementById('tglMsg').addEventListener('change', e => {
+  msgLblOn = e.target.checked;
+  for (const s of slots) if (s.msg) s.lbl.element.style.display = msgLblOn ? '' : 'none';
+});
+document.getElementById('tglTraj').addEventListener('change', e => { traitorMark = e.target.checked; });
+controls.autoRotate = qsBool('spin', true);
+document.getElementById('tglRotate').checked = controls.autoRotate;
+if (!qsBool('labels', true)) { labelsOn = false; document.getElementById('tglLabels').checked = false; }
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------- stats 刷新 ---------------- */
+function updateStats() {
+  stN.innerHTML = N + '<small> 营</small>';
+  stF.innerHTML = F + '<small> · 需 n≥' + (3 * F + 1) + '</small>';
+  stF.className = 'v ok';
+  const done = Math.min(phase, F + 1);
+  stR.innerHTML = done + '<small> / ' + (F + 1) + ' 轮</small>';
+  stR.className = 'v ' + (done >= F + 1 ? 'ok' : 'warn');
+  if (voted) {
+    stA.innerHTML = Math.round(agree * 100) + '<small> %</small>';
+    stA.className = 'v ' + (agree >= 1 ? 'ok' : 'warn');
+    stC.textContent = valTxt(consensus);
+    stC.className = 'v ' + (consensus === 'A' ? 'ok' : 'warn');
+  } else {
+    stA.textContent = '—';
+    stA.className = 'v';
+    stC.textContent = L('表决前', 'pre-vote');
+    stC.className = 'v warn';
+  }
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0, scenario = 0, dwell = 0, tour = true;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const now = performance.now();
+  /* 信使飞线:按 spawn 时间窗口推进 */
+  while (mPtr < msgs.length && msgs[mPtr].spawn <= now) allocSlot(msgs[mPtr++]);
+  for (const s of slots) {
+    if (!s.msg) continue;
+    const u = (now - s.msg.spawn) / LIFE;
+    if (u >= 1) { freeSlot(s); continue; }
+    const p = s.msg.curve.getPoint(clamp01(u * 1.12));
+    s.dot.position.copy(p);
+    s.mat.opacity = 0.8 * Math.sin(Math.PI * clamp01(u));
+    s.lbl.position.set(p.x, p.y + 0.14, p.z);
+  }
+  /* 自动推进:发完一轮接一轮,最后一轮结束后自动表决 */
+  if (playing) {
+    if (phase < F + 1 && now > roundEnd) startRound(phase + 1, now);
+    else if (phase >= F + 1 && !voted && roundEnd > 0 && now > roundEnd + 0.7) vote();
+  }
+  if (voteAt && now > voteAt) { voteAt = 0; vote(); }
+  if (playing && tour) {
+    dwell += dt;
+    if (dwell > STEPS[scenario].dur * (speed > 0 ? 1 / speed : 1)) activateStep((scenario + 1) % STEPS.length);
+  }
+  controls.target.lerp(tgtVec, 0.05);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (now - lastStatsT > 150) { lastStatsT = now; updateStats(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+simulate();
+buildCamp();
+resetSim();
+applyTheme();
+applyLang();
+refreshLabels();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

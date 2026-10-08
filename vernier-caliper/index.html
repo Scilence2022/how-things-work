@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>游标卡尺与千分尺 · 把 0.02 mm 变成一对对齐的线</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#a8863f;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8a6e33;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(25,113,194,.9); color: #1971c2; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(168,134,63,.65); background: rgba(168,134,63,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(138,110,51,.55); background: rgba(138,110,51,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #pvwrap { margin-top: 4px; border: 1px dashed var(--panel-border); border-radius: 8px; padding: 3px; }
+  #pvCanvas { display: block; width: 100%; height: 96px; }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(168,134,63,.10); border-color: rgba(168,134,63,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(138,110,51,.08); border-color: rgba(138,110,51,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e0cba0; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; }
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="游标卡尺与千分尺:把 0.02 mm 变成一对对齐的线" data-en="Vernier Caliper and Micrometer: 0.02 mm becomes a pair of aligned lines">游标卡尺与千分尺:把 0.02 mm 变成一对对齐的线</h1>
+  <div class="sub" data-zh="主尺 1 mm 一格,肉眼只能估到 0.5 mm;游标把 49 mm 摊成 50 格,每格与主格差 0.02 mm——找「哪两条线对齐」,就把余数读了出来;千分尺走另一条路:0.5 mm 螺距拧一圈,套筒 50 格把 0.5 mm 放大成 0.01 mm 一格,摩擦棘轮限定 5–10 N 测力;卡尺违反阿贝原则(标尺与被测线不共线),千分尺遵守——导轨偏摆 10″、阿贝臂 50 mm 就引入 2.4 μm · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Main scale: 1 mm per line, the eye interpolates only to 0.5 mm. The vernier spreads 49 mm over 50 divisions, each 0.02 mm short of a main division — finding which pair aligns reads the remainder. The micrometer takes the other road: a 0.5 mm screw pitch turns once per 50 thimble divisions, amplifying 0.5 mm into 0.01 mm steps, with a friction ratchet holding 5-10 N. The caliper violates Abbe's principle (scale off the measured line), the micrometer honors it — a 10-second tilt on a 50 mm arm adds 2.4 μm · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">主尺 1 mm 一格,肉眼只能估到 0.5 mm;游标把 49 mm 摊成 50 格,每格与主格差 0.02 mm——找「哪两条线对齐」,就把余数读了出来;千分尺走另一条路:0.5 mm 螺距拧一圈,套筒 50 格把 0.5 mm 放大成 0.01 mm 一格,摩擦棘轮限定 5–10 N 测力;卡尺违反阿贝原则(标尺与被测线不共线),千分尺遵守——导轨偏摆 10″、阿贝臂 50 mm 就引入 2.4 μm · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="被测直径" data-en="measured dia.">被测直径</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="主尺读数" data-en="main reading">主尺读数</span><span class="v" id="stMain">—</span>
+  <span class="k" data-zh="游标对齐线" data-en="aligned line">游标对齐线</span><span class="v" id="stVn">—</span>
+  <span class="k" data-zh="卡尺读数" data-en="caliper">卡尺读数</span><span class="v" id="stCal">—</span>
+  <span class="k" data-zh="千分尺读数" data-en="micrometer">千分尺读数</span><span class="v" id="stMic">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="主尺(1 mm 格)" data-en="main scale (1 mm)">主尺(1 mm 格)</span>
+    <span class="chip o" data-zh="游标(50 格=49 mm)" data-en="vernier (50 div = 49 mm)">游标(50 格=49 mm)</span>
+    <span class="chip g" data-zh="对齐线对" data-en="aligned pair">对齐线对</span>
+    <span class="chip r" data-zh="被测轴 / 测力点" data-en="rod / ratchet">被测轴 / 测力点</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnZoom" data-zh="对齐特写" data-en="alignment close-up">对齐特写</button>
+    <button class="abtn hot" id="btnStep" data-zh="0.02 mm 微调" data-en="nudge 0.02 mm">0.02 mm 微调</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="被测直径 d" data-en="diameter d">被测直径 d</label><input id="dia" type="range" min="5" max="25" step="0.02" value="12.34"><span class="val" id="diaVal">12.34 mm</span></div>
+  <div id="pvwrap"><canvas id="pvCanvas" width="368" height="96"></canvas></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="相位" data-en="Phase">相位</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglMic" type="checkbox" checked> <span data-zh="显示千分尺" data-en="micrometer">显示千分尺</span></label>
+        <label><input id="tglAbbe" type="checkbox" checked> <span data-zh="阿贝臂标注" data-en="Abbe arm">阿贝臂标注</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox"> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../screw-jack/" data-zh="螺旋千斤顶" data-en="screw jack">螺旋千斤顶</a>
+    <a href="../abbe-limit/" data-zh="阿贝衍射极限" data-en="Abbe diffraction limit">阿贝衍射极限</a>
+    <a href="../bolt-preload/" data-zh="螺栓预紧" data-en="bolt preload">螺栓预紧</a>
+    <a href="../combination-lock/" data-zh="转盘密码锁" data-en="combination lock">转盘密码锁</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeff1f4 : 0x0f1216);
+  M.ground.color.set(THEME === 'light' ? 0xd7dce3 : 0x1b202a);
+  M.beam.color.set(THEME === 'light' ? 0x8d99a8 : 0x39424f);
+  scaleInk = THEME === 'light' ? '#16202c' : '#e8edf4';
+  drawScales();
+  drawPV();
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('游标卡尺与千分尺 · 把 0.02 mm 变成一对对齐的线', 'Vernier Caliper and Micrometer');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(1.5, 6.5, 12);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.4, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.6;
+controls.maxDistance = 30;
+controls.autoRotateSpeed = 0.2;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.8));
+const key = new THREE.DirectionalLight(0xffffff, 1.8);
+key.position.set(5, 9, 6);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.45);
+fill.position.set(-6, 4, -5);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.6,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x1b202a, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  beam: mat(0x39424f, { roughness: 0.5, metalness: 0.62 }),
+  slide: mat(0x4e5f78, { roughness: 0.38, metalness: 0.72 }),
+  rod: mat(0x9a8468, { roughness: 0.32, metalness: 0.75, emissive: 0x2a2012, emissiveIntensity: 0.5 }),
+  mic: mat(0x50585f, { roughness: 0.42, metalness: 0.66 }),
+  acc: mat(0xd0aa5e, { roughness: 0.35, metalness: 0.7, emissive: 0x6b5420, emissiveIntensity: 0.4 }),
+};
+
+/* ---------------- 场景搭建(1 场景单位 = 1 cm) ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(16, 16, 0.06, 48), M.ground);
+ground.position.y = -0.5;
+scene.add(ground);
+/* 卡尺:X 轴为主尺方向,量爪向下伸 −y */
+const FIXX = -7.5;                       // 固定量爪测量面 x(cm)
+const BEAM_L = 17;
+const calG = new THREE.Group();
+scene.add(calG);
+const beam = new THREE.Mesh(new THREE.BoxGeometry(BEAM_L, 0.28, 0.7), M.beam);
+beam.position.set(FIXX + BEAM_L / 2, 0.9, 0);
+calG.add(beam);
+/* 固定量爪 */
+const fixJaw = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.6, 0.7), M.beam);
+fixJaw.position.set(FIXX + 0.25, -0.1, 0);
+calG.add(fixJaw);
+/* 主尺刻度贴面(主尺顶面) */
+let scaleInk = '#e8edf4';
+function makeScaleTexture(draw, w = 2048, h = 128) {
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  draw(cv.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(cv);
+  t.anisotropy = 8;
+  return t;
+}
+/* 主尺:17 cm 范围画 1 mm 格,每 cm 长线+数字 */
+const PXMM = 2048 / 175;
+const mainTex = makeScaleTexture((c, w, h) => drawMain(c, w, h));
+function drawMain(c, w, h) {
+  c.clearRect(0, 0, w, h);
+  c.fillStyle = scaleInk;
+  for (let mm = 0; mm <= 170; mm++) {
+    const x = 8 + mm * PXMM;
+    const long = mm % 10 === 0, mid = mm % 5 === 0;
+    c.fillRect(x, h - (long ? 52 : mid ? 40 : 26), 1.6, long ? 52 : mid ? 40 : 26);
+    if (long && mm / 10 < 17) {
+      c.font = '22px sans-serif';
+      c.fillText(String(mm / 10), x - 8, 34);
+    }
+  }
+}
+const mainPlane = new THREE.Mesh(new THREE.PlaneGeometry(BEAM_L - 0.4, 0.24),
+  new THREE.MeshBasicMaterial({ map: mainTex, transparent: true }));
+mainPlane.rotation.x = -Math.PI / 2;
+mainPlane.position.set(FIXX + BEAM_L / 2, 1.05, 0);
+calG.add(mainPlane);
+/* 滑动游标框 + 副爪 */
+const slideG = new THREE.Group();
+calG.add(slideG);
+const slideBody = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.55, 0.9), M.slide);
+slideBody.position.y = 1.0;
+slideG.add(slideBody);
+const slideJaw = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.6, 0.7), M.slide);
+slideG.add(slideJaw);
+/* 游标刻度(50 格 = 49 mm,贴在游标框斜面/正面) */
+const VER_PXMM = PXMM;                       // 游标与主尺同像素比例(几何一致)
+const verTex = makeScaleTexture((c, w, h) => drawVernier(c, w, h));
+function drawVernier(c, w, h) {
+  c.clearRect(0, 0, w, h);
+  c.fillStyle = '#ffd27a';
+  for (let n = 0; n <= 50; n++) {
+    const x = w - 8 - n * 49 * PXMM / 50 * (PXMM / PXMM);   // 从右往左 49 mm/50 格
+    const xx = w - 8 - n * (49 / 50) * PXMM;
+    const long = n % 5 === 0;
+    c.fillRect(xx, 8, 1.8, long ? 46 : 30);
+    if (long) {
+      c.font = '20px sans-serif';
+      c.fillText(String(n), xx - 7, h - 8);
+    }
+  }
+}
+const verPlane = new THREE.Mesh(new THREE.PlaneGeometry(4.9 + 0.2, 0.5),
+  new THREE.MeshBasicMaterial({ map: verTex, transparent: true }));
+verPlane.rotation.x = -Math.PI / 2;
+verPlane.position.set(-2.45 + 0.02, 1.32, 0);
+slideG.add(verPlane);
+verPlane.scale.set(1.02, 1, 1);
+/* 主题切换时重绘刻度(墨色随主题) */
+function drawScales() {
+  drawMain(mainTex.image.getContext('2d'), mainTex.image.width, mainTex.image.height);
+  mainTex.needsUpdate = true;
+  drawVernier(verTex.image.getContext('2d'), verTex.image.width, verTex.image.height);
+  verTex.needsUpdate = true;
+}
+/* 对齐高亮片(在主尺上,位于对齐线处) */
+const alignHi = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.3),
+  new THREE.MeshBasicMaterial({ color: 0x7bd88f, transparent: true, opacity: 0.95 }));
+alignHi.position.y = 1.08;
+calG.add(alignHi);
+/* 被测轴:立在两爪之间(直径 d,沿 z) */
+const rod = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1.6, 40), M.rod);
+rod.rotation.x = Math.PI / 2;                // 轴向沿 z
+rod.position.y = -0.75;
+calG.add(rod);
+/* 千分尺(0–25 mm):尺架+测砧+测微螺杆+套筒+棘轮 */
+const micG = new THREE.Group();
+micG.position.set(6.5, 0, 0);
+scene.add(micG);
+const frameC = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.22, 12, 32, Math.PI), M.mic);
+frameC.rotation.z = 0;
+frameC.position.y = 0.6;
+micG.add(frameC);
+const anvil = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.9, 16), M.acc);
+anvil.rotation.z = Math.PI / 2;
+anvil.position.set(-1.5, 0.6 + 1.5, 0);
+anvil.position.set(-1.5, 2.1, 0);
+micG.add(anvil);
+const spindle = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 2.2, 16), M.acc);
+spindle.rotation.z = Math.PI / 2;
+micG.add(spindle);
+const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 1.5, 24), M.mic);
+barrel.rotation.z = Math.PI / 2;
+barrel.position.set(1.45, 2.1, 0);
+micG.add(barrel);
+const thimble = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.1, 28), M.slide);
+thimble.rotation.z = Math.PI / 2;
+micG.add(thimble);
+const ratchet = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.4, 20), M.acc);
+ratchet.rotation.z = Math.PI / 2;
+ratchet.position.x = 3.05;
+micG.add(ratchet);
+/* 阿贝臂标注:卡尺标尺线与测量线的偏置 */
+const abbeArm = new THREE.Mesh(new THREE.BoxGeometry(0.02, 2.0, 0.02),
+  new THREE.MeshBasicMaterial({ color: 0xff8f6b, transparent: true, opacity: 0.9 }));
+abbeArm.position.set(FIXX, 0, 0);
+calG.add(abbeArm);
+
+/* ---------------- 测量状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let d = clamp(qsFloat('d', 12.34), 5, 25);            // 被测直径 mm
+let scenario = 0, dwell = 0, tour = true;
+let labelsOn = qsBool('labels', true);
+let micOn = true, abbeOn = true;
+let zoomed = false, stepAnim = 0;
+const VISK = 0.0045;
+const CAM_WIDE = new THREE.Vector3(0.5, 8.5, 15), TGT_WIDE = new THREE.Vector3(-0.5, 0.4, 0);
+/* 游标读数:d 整数部分 + 余数 r → 第 n 线对齐(n = r/0.02 四舍五入) */
+const readMain = () => Math.floor(d);
+const readN = () => Math.round((d - readMain()) / 0.02) % 50;
+const readCal = () => (readMain() + readN() * 0.02).toFixed(2);
+const readMic = () => {
+  const sleeve = Math.floor(d / 0.5) * 0.5;
+  const thim = Math.round((d - sleeve) / 0.01);
+  return (sleeve + thim * 0.01).toFixed(2);
+};
+function syncMeas() {
+  const xv = FIXX + d / 10;                            // cm
+  slideG.position.x = xv - 0.25;
+  slideJaw.position.y = -0.1;
+  rod.position.x = FIXX + d / 20;
+  rod.scale.set(d / 20, 1, 1);
+  /* 千分尺:测量面间隙 = d;螺杆位置/套筒旋转 */
+  const gap = d / 10;                                  // cm
+  spindle.position.x = -1.5 + gap / 2 + 0.45;
+  thimble.position.x = spindle.position.x + 1.1 + 0.45;
+  ratchet.position.x = thimble.position.x + 0.75;
+  thimble.rotation.x = -(d % 0.5) / 0.5 * TAU;
+  /* 对齐高亮:主尺上第 readMain()+n? — 高亮在游标 0 线右侧 n×0.98 mm 处 */
+  const n = readN();
+  const xAlign = xv + (n * 0.98) / 10 - 0.25;
+  alignHi.position.x = xAlign;
+  alignHi.visible = n !== 0 || true;
+}
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, cond) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn || (() => ''), follow, cond });
+  div.textContent = textFn();
+  return o;
+}
+const lblMain = addLabel(() => L('主尺:1 mm 一格,肉眼估到 0.5 mm 为止', 'main scale: 1 mm lines, eye to 0.5 mm'), () => 'b',
+  new THREE.Vector3(FIXX + 3, 1.6, 0));
+const lblVer = addLabel(() => L(`游标:50 格 = 49 mm · 每格短 0.02 mm`, `vernier: 50 div = 49 mm · each 0.02 mm short`), () => 'w',
+  new THREE.Vector3(0, 2.1, 0),
+  v => v.set(slideG.position.x + 1.5, 2.1, 0));
+const lblAlign = addLabel(() => L(`第 ${readN()} 线对齐 → 余数 ${(readN() * 0.02).toFixed(2)} mm`, `line ${readN()} aligns → remainder ${(readN() * 0.02).toFixed(2)} mm`), () => 'g',
+  new THREE.Vector3(0, 1.9, 0),
+  v => v.set(alignHi.position.x, 1.9, 0));
+const lblRod = addLabel(() => L(`被测轴 Ø${d.toFixed(2)} mm`, `rod Ø${d.toFixed(2)} mm`), () => 'e',
+  new THREE.Vector3(0, -1.9, 0),
+  v => v.set(rod.position.x, -1.9, 0));
+const lblMic = addLabel(() => L(`千分尺:${readMic()} mm(螺距 0.5 × 50 格)`, `micrometer: ${readMic()} mm (0.5 pitch × 50 div)`), () => 'st',
+  new THREE.Vector3(6.5, 3.3, 0), null, () => micOn);
+const lblRat = addLabel(() => L('棘轮:5–10 N 恒定测力,过载打滑', 'ratchet: 5-10 N constant force, slips past'), () => 'bad',
+  new THREE.Vector3(9.7, 1.3, 0), null, () => micOn);
+const lblAbbe = addLabel(() => L('阿贝臂 2.6 cm:标尺与被测线不共线(卡尺的原罪)', 'Abbe arm 2.6 cm: scale off the measured line (caliper sin)'), () => 'bad',
+  new THREE.Vector3(FIXX - 0.2, 0.2, 0), null, () => abbeOn);
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { tgt: [0, 0.4, 0], zoom: false, dur: 8,
+    b: '直读的极限:1 mm 一格', be: 'The limit of direct reading',
+    d: '钢尺把长度直接摊成 1 mm 一格,读数靠数格子 + 肉眼内插;内插极限约 1/2 格——0.5 mm。要可靠地读出 0.02 mm,得把「余数」从格子的缝隙里请出来。',
+    de: 'A steel rule lays length out 1 mm at a time; you count divisions and interpolate by eye, good to about half a division — 0.5 mm. To read 0.02 mm reliably, the remainder has to be pulled out of the grid.' },
+  { tgt: [0, 0.4, 0], zoom: true, dur: 9,
+    b: '游标:49 mm 摊成 50 格', be: 'The vernier: 49 mm into 50 divisions',
+    d: '游标把 49 mm 刻成 50 格:每格 0.98 mm,比主格短 0.02 mm。游标随量爪滑动,50 条线像一把「游动的梳子」扫过主尺——总有一对线齐平,齐平的位置就是余数。',
+    de: 'The vernier squeezes 49 mm into 50 divisions: each 0.98 mm, 0.02 mm short of a main division. Sliding with the jaw, its 50 lines sweep the scale like a comb — some pair always aligns, and where it aligns is the remainder.' },
+  { tgt: [0, 1.0, 0], zoom: true, dur: 10,
+    b: '对齐线 = 余数读数', be: 'The aligned line reads the remainder',
+    d: '点「0.02 mm 微调」:每次把 d 加 0.02 mm,游标整体挪 0.02,对齐线从 n 挪到 n+1——n×0.02 mm 就是余数。总读数 = 主尺整数 + n×0.02,分辨率 0.02 mm。',
+    de: 'Press "nudge 0.02 mm": each step slides the vernier 0.02 and the aligned line advances from n to n+1 — the remainder is n×0.02 mm. Total = main integer + n×0.02: resolution 0.02 mm.' },
+  { tgt: [6.5, 1.4, 0], zoom: false, dur: 9,
+    b: '千分尺:螺旋放大', be: 'Micrometer: amplification by screw',
+    d: '另一条路:测微螺杆螺距 0.5 mm,拧一圈前进半毫米;套筒斜面摊 50 格——0.5 mm 被放大成 50 格,分辨率 0.01 mm,还能估读到 0.001。螺旋把「平移」翻译成「角度」。',
+    de: 'The other road: a 0.5 mm pitch screw advances half a millimetre per turn; the thimble spreads that turn over 50 divisions — 0.5 mm amplified to 0.01 mm per line, estimable to 0.001. The screw translates motion into angle.' },
+  { tgt: [9.5, 1.0, 0], zoom: false, dur: 8,
+    b: '棘轮:恒定测力', be: 'The ratchet: constant measuring force',
+    d: '测力过大会把薄壁件挤变形、把量面磨出偏差;棘轮摩擦副在 5–10 N 打滑——「咔咔」两声就是标准测力,不同人量同一件才拿得到同一读数。',
+    de: 'Too much force distorts thin walls and wears the faces; the friction ratchet slips at 5-10 N — two clicks is the standard force, so different hands get the same reading.' },
+  { tgt: [-6, 0.4, 0], zoom: false, dur: 9,
+    b: '阿贝原则:标尺要共线', be: 'Abbe principle: keep the scale in line',
+    d: '卡尺的标尺悬在测量线上方 2.6 cm——滑框一偏摆,误差=臂×角,50 mm 阿贝臂、10″ 偏摆就吃掉 2.4 μm;千分尺的标尺(螺杆)与测量线共线,天然遵守阿贝原则——这就是它更准的另一半原因。',
+    de: 'The caliper scale rides 2.6 cm above the measuring line; any slide tilt costs arm×angle — 10 seconds on a 50 mm arm eats 2.4 μm. The micrometer\'s scale (the screw itself) is collinear with the measurement: Abbe honored, the other half of its accuracy.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+let tgtVec = TGT_WIDE.clone();
+function applyZoom(z) {
+  zoomed = z;
+  const xv = slideG.position.x;
+  tgtVec.copy(z ? new THREE.Vector3(xv + 1.2, 0.9, 0) : TGT_WIDE);
+  if (z) camera.position.set(xv + 1.2, 2.2, 3.4);
+  else camera.position.copy(CAM_WIDE);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  dwell = 0;
+  const s = STEPS[scenario];
+  tgtVec.fromArray(s.zoom ? [slideG.position.x + 1.2, 0.9, 0] : s.tgt);
+  if (s.zoom !== undefined && s.zoom !== zoomed) applyZoom(s.zoom);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const n = readN();
+  formulaEl.innerHTML =
+    L(`游标分辨率 = 主格/格数差 = 1 mm − 49/50 mm = <b>0.02 mm</b>;读数 = ${readMain()} + ${n}×0.02 = <b>${readCal()} mm</b>(实测 ${d.toFixed(2)})`,
+      `vernier resolution = 1 − 49/50 = <b>0.02 mm</b>; reading = ${readMain()} + ${n}×0.02 = <b>${readCal()} mm</b> (true ${d.toFixed(2)})`) +
+    '<br>' +
+    L(`千分尺分辨率 = 螺距/套筒格数 = 0.5/50 = <b>0.01 mm</b> → 读数 <b>${readMic()} mm</b>;测力棘轮 5–10 N`,
+      `micrometer resolution = 0.5/50 = <b>0.01 mm</b> → ${readMic()} mm; ratchet force 5-10 N`) +
+    '<br>' +
+    L(`阿贝误差 e = 臂 L × 偏摆 θ = 50 mm × 10″ ≈ <b>2.4 μm</b>(卡尺违反 / 千分尺遵守)`,
+      `Abbe error e = L×θ = 50 mm × 10″ ≈ <b>2.4 μm</b> (caliper violates / micrometer honors)`);
+}
+
+/* ---------------- 游标对齐图(canvas) ---------------- */
+const pvCanvas = document.getElementById('pvCanvas');
+const pvCtx = pvCanvas.getContext('2d');
+function drawPV() {
+  const c = pvCtx, W = pvCanvas.width, H = pvCanvas.height;
+  const ink = THEME === 'dark' ? '#8fa0b4' : '#5b6b7d';
+  c.clearRect(0, 0, W, H);
+  c.font = '9px sans-serif';
+  c.fillStyle = ink;
+  const n = readN(), r = d - readMain();
+  /* 窗口:r−0.6 … r+2.4 mm 内画主尺毫米格与游标线(几何真实:0.98 间距) */
+  const x0 = readMain() + r - 0.5, x1 = x0 + 3.4;
+  const X = v => 10 + (v - x0) / (x1 - x0) * (W - 20);
+  /* 主尺(上排):每 0.1 mm 一格放大示意 */
+  c.strokeStyle = ink;
+  for (let mm = Math.ceil(x0 * 10) / 10; mm <= x1; mm += 0.1) {
+    const x = X(mm), isMM = Math.abs(mm - Math.round(mm)) < 1e-6;
+    c.globalAlpha = isMM ? 1 : 0.35;
+    c.beginPath(); c.moveTo(x, 22); c.lineTo(x, isMM ? 40 : 32); c.stroke();
+    if (isMM) { c.globalAlpha = 1; c.fillText(mm.toFixed(0), x - 3, 18); }
+  }
+  c.globalAlpha = 1;
+  /* 游标(下排):0.98 mm 间距 */
+  c.strokeStyle = '#d0aa5e';
+  const vOrigin = readMain() + r;                      // 游标 0 线
+  for (let k = 0; k <= 3; k++) {
+    const x = X(vOrigin + k * 0.98);
+    if (x < 8 || x > W - 8) continue;
+    const aligned = k === n;
+    c.lineWidth = aligned ? 2.5 : 1.2;
+    c.strokeStyle = aligned ? '#7bd88f' : '#d0aa5e';
+    c.beginPath(); c.moveTo(x, 52); c.lineTo(x, 70); c.stroke();
+    if (aligned) {
+      c.fillStyle = '#7bd88f';
+      c.fillText(`${k} ✓`, x - 5, 82);
+    }
+  }
+  c.lineWidth = 1;
+  c.fillStyle = ink;
+  c.fillText(L('主尺(主格 1 mm)', 'main scale (1 mm)'), 10, 12);
+  c.fillStyle = '#d0aa5e';
+  c.fillText(L('游标(0.98 mm)', 'vernier (0.98 mm)'), 10, 64);
+  c.fillStyle = '#7bd88f';
+  c.fillText(L(`对齐 → 余数 = ${(n * 0.02).toFixed(2)} mm`, `aligned → remainder = ${(n * 0.02).toFixed(2)} mm`), 120, 64);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elDia = document.getElementById('dia'), elDiaVal = document.getElementById('diaVal');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+const tglMic = document.getElementById('tglMic');
+const tglAbbe = document.getElementById('tglAbbe');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elDia.addEventListener('input', () => {
+  d = +elDia.value;
+  elDiaVal.textContent = d.toFixed(2) + ' mm';
+  syncMeas();
+  tour = false;
+  updateFormula();
+});
+document.getElementById('btnZoom').addEventListener('click', e => {
+  applyZoom(!zoomed);
+  e.currentTarget.classList.toggle('on', zoomed);
+  tour = false;
+});
+document.getElementById('btnStep').addEventListener('click', () => {
+  stepAnim = 0.001;
+  tour = false;
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+  d = 12.34;
+  elDia.value = '12.34'; elDiaVal.textContent = '12.34 mm';
+  syncMeas();
+  applyZoom(false);
+  document.getElementById('btnZoom').classList.add('on');
+  updateFormula();
+});
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+tglMic.addEventListener('change', () => { micOn = tglMic.checked; micG.visible = micOn; });
+tglAbbe.addEventListener('change', () => { abbeOn = tglAbbe.checked; abbeArm.visible = abbeOn; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stD = document.getElementById('stD'), stMain = document.getElementById('stMain'),
+  stVn = document.getElementById('stVn'), stCal = document.getElementById('stCal'), stMic = document.getElementById('stMic');
+function updateStats() {
+  stD.innerHTML = d.toFixed(2) + '<small> mm</small>';
+  stMain.innerHTML = readMain() + '<small> mm</small>';
+  stVn.innerHTML = readN() + '<small> /50</small>';
+  stCal.innerHTML = readCal() + '<small> mm</small>';
+  stCal.className = 'v ok';
+  stMic.innerHTML = readMic() + '<small> mm</small>';
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const dts = dt * speed;
+  et += dt;
+  if (playing) {
+    /* 0.02 微调动画:每 0.45 s 一步,共 8 步后回原值 */
+    if (stepAnim > 0) {
+      stepAnim += dts;
+      const phase = Math.floor(stepAnim / 0.45);
+      if (phase <= 8) {
+        const target = clamp(12.34 + 0.02 * phase, 5, 25);
+        if (Math.abs(d - target) > 1e-9) {
+          d = target;
+          elDia.value = d.toFixed(2);
+          elDiaVal.textContent = d.toFixed(2) + ' mm';
+          syncMeas();
+        }
+      } else { stepAnim = 0; }
+    }
+    /* 特写时对齐高亮脉动 */
+    alignHi.material.opacity = 0.7 + 0.3 * Math.sin(et * 5);
+    if (tour) {
+      dwell += dt;
+      if (dwell > STEPS[scenario].dur) activateStep((scenario + 1) % STEPS.length);
+    }
+  }
+  controls.target.lerp(tgtVec, 0.06);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+    r.o.visible = labelsOn && (!r.cond || r.cond());
+  }
+  const now = performance.now();
+  if (now - lastStatsT > 150) { lastStatsT = now; updateStats(); drawPV(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+elDia.value = d.toFixed(2);
+elDiaVal.textContent = d.toFixed(2) + ' mm';
+syncMeas();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
