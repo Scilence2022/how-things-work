@@ -1489,7 +1489,7 @@
 - [x] 激素负反馈(TRH→TSH→T3/T4 负反馈；Graves 病自身抗体绕开反馈；TSH 降到近零) ✅ **hormone-feedback/**
 - [x] 表观遗传学(CpG 甲基化→沉默；H3K27me3 压实；H3K9ac 打开；DNMT1 维持复制后模式) ✅ **epigenetics/**
 - [x] 霍尔效应(V_H=IB/(nqt)；n 型负、p 型正；无刷电机换向感知；ABS 轮速；电流钳) ✅ **hall-effect/**
-- [x] 驻波与共鸣(y=2A cos(kx) sin(ωt)；波节永不振，波腹翻倍；f_n=nv/2L；共振持续增幅) ✅ **standing-waves/**
+- [x] 驻波与共鸣(y=2A cos(kx) sin(ωt)；波节永不振，波腹翻倍；f_n=nv/2L；共振持续增幅) ✅ **standing-waves/** (注:该条目首页卡片与 Phase 5「驻波与乐器」重复指向同一页面,重复卡片已于 2026-10 移除,分区计数随之修正)
 - [x] 霍金辐射(虚粒子对分裂；T_H∝1/M；末期爆发；信息悖论未解) ✅ **blackhole-evaporation/**
 - [x] 伯努利效应(A₁v₁=A₂v₂；p+½ρv²=常数；文丘里流量计；皮托管测速) ✅ **bernoulli-effect/**
 - [x] 水跃(Fr=v/√(gd)>1 突变亚临界；共轭水深公式；消能池工程应用) ✅ **hydraulic-jump/**
