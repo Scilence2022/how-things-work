@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>环形激光陀螺 · 萨格纳克效应测转速</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="环形激光陀螺:萨格纳克效应把转速变成拍频" data-en="Ring Laser Gyro: the Sagnac Effect Turns Rotation into a Beat Frequency">环形激光陀螺:萨格纳克效应把转速变成拍频</h1>
+  <div class="sub" data-zh="1913 年萨格纳克发现:环形光路中两束反向传播的光,在装置以 Ω 旋转时行程不等;做成环形激光腔,光程差变成频率劈裂 Δf = 4A·Ω/(λ·P)。A=100 cm²、P=60 cm、λ=633 nm(He-Ne)时,标度因数 K=4A/(λP)≈1.05×10⁵ Hz/(rad/s)≈0.51 Hz per °/h——地球自转 15 °/h 就有 Δf≈7.6 Hz;腔镜背散射在低速造成锁模死区,靠 ~100 角秒 · ~400 Hz 机械抖动偏频穿越;三只正交环构成捷联惯导的姿态核心,导航级零偏稳定性 0.001-0.01°/h · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="In 1913 Sagnac showed that two counter-propagating beams in a loop take unequal paths when the device rotates at Ω; close it into a ring laser cavity and the path difference becomes a frequency split Δf = 4A·Ω/(λ·P). With A=100 cm², P=60 cm and λ=633 nm (He-Ne), the scale factor K=4A/(λP)≈1.05×10⁵ Hz/(rad/s)≈0.51 Hz per °/h - Earth's own 15 °/h spin beats at Δf≈7.6 Hz. Mirror backscatter mode-locks the beams at low rates (the dead band), broken by a mechanical dither of ~100 arcsec at ~400 Hz. Three orthogonal rings form the attitude core of strapdown inertial navigation with 0.001-0.01°/h bias stability · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">1913 年萨格纳克发现:环形光路中两束反向传播的光,在装置以 Ω 旋转时行程不等;做成环形激光腔,光程差变成频率劈裂 Δf = 4A·Ω/(λ·P)。A=100 cm²、P=60 cm、λ=633 nm(He-Ne)时,标度因数 K=4A/(λP)≈1.05×10⁵ Hz/(rad/s)≈0.51 Hz per °/h——地球自转 15 °/h 就有 Δf≈7.6 Hz;腔镜背散射在低速造成锁模死区,靠 ~100 角秒 · ~400 Hz 机械抖动偏频穿越;三只正交环构成捷联惯导的姿态核心,导航级零偏稳定性 0.001-0.01°/h · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="环面积 A" data-en="ring area A">环面积 A</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="腔周长 P" data-en="cavity perimeter P">腔周长 P</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="标度因数 K" data-en="scale factor K">标度因数 K</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="当前转速 Ω" data-en="input rate Ω">当前转速 Ω</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="拍频 Δf" data-en="beat Δf">拍频 Δf</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="零偏稳定性" data-en="bias stability">零偏稳定性</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip o" data-zh="玻璃腔 · 角镜(银)" data-en="glass cavity · corner mirrors (silver)">玻璃腔 · 角镜(银)</span>
+    <span class="chip r" data-zh="顺时针束 CW(红)" data-en="clockwise beam CW (red)">顺时针束 CW(红)</span>
+    <span class="chip b" data-zh="逆时针束 CCW(蓝)" data-en="counter-clockwise beam CCW (blue)">逆时针束 CCW(蓝)</span>
+    <span class="chip g" data-zh="合束器 · 条纹 / 抖动(金)" data-en="combiner · fringes / dither (gold)">合束器 · 条纹 / 抖动(金)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnEarth" data-zh="地球自转 15°/h" data-en="Earth rotation 15°/h">地球自转 15°/h</button>
+    <button class="abtn" id="btnTurn" data-zh="飞机转弯 200°/h" data-en="aircraft turn 200°/h">飞机转弯 200°/h</button>
+    <button class="abtn" id="btnDead" data-zh="死区与抖动偏频" data-en="dead band & dither">死区与抖动偏频</button>
+    <button class="abtn" id="btnTriax" data-zh="三轴姿态演示" data-en="3-axis attitude demo">三轴姿态演示</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="转速 Ω" data-en="rate Ω">转速 Ω</label><input id="rate" type="range" min="-500" max="500" step="5" value="15"><span class="val" id="rateVal">15 °/h</span></div>
+  <div class="row"><label data-zh="环面积 A" data-en="ring area A">环面积 A</label><input id="area" type="range" min="25" max="400" step="5" value="100"><span class="val" id="areaVal">100 cm²</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglDither" type="checkbox"> <span data-zh="抖动偏频" data-en="dither bias">抖动偏频</span></label>
+        <label><input id="tglTriax" type="checkbox"> <span data-zh="三轴环" data-en="3-axis rings">三轴环</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../michelson-interferometer/" data-zh="迈克耳孙干涉仪" data-en="Michelson interferometer">迈克耳孙干涉仪</a>
+    <a href="../mems-accelerometer/" data-zh="MEMS 加速度计" data-en="MEMS accelerometer">MEMS 加速度计</a>
+    <a href="../gyroscopic-precession/" data-zh="陀螺进动" data-en="gyroscopic precession">陀螺进动</a>
+    <a href="../optical-stabilization/" data-zh="光学防抖" data-en="optical stabilization">光学防抖</a>
+    <a href="../atomic-clock/" data-zh="原子钟" data-en="atomic clock">原子钟</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);          // 网格线
+  M.base.color.set(dark ? 0x39414c : 0x5d6774);          // 转台底座
+  M.frame.color.set(dark ? 0x46556a : 0x74879c);         // 支撑柱
+  M.mirror.color.set(dark ? 0xc2ccd8 : 0x9aa6b4);        // 角镜
+  M.tube.color.set(dark ? 0x8fb8d8 : 0x7fa0b8);          // 玻璃腔管
+  M.gain.color.set(dark ? 0xff7aa8 : 0xd95f8e);          // He-Ne 增益管
+  M.beamR.color.set(dark ? 0xff5a4d : 0xd93a30);         // 顺时针束(红)
+  M.beamB.color.set(dark ? 0x4da3ff : 0x2f7fd9);         // 逆时针束(蓝)
+  M.det.color.set(dark ? 0x5fb89a : 0x3f9878);           // 合束器/探测器
+  M.dither.color.set(dark ? 0xd8b25c : 0xc09a45);        // 抖动机构(金)
+  M.imu.color.set(dark ? 0xb3873e : 0x8f6a25);           // 惯性测量组合
+  M.ring23.color.set(dark ? 0x9fb0c3 : 0x6b7c90);        // 三轴附加环
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('环形激光陀螺 · 萨格纳克效应测转速', 'Ring Laser Gyro · Sagnac Effect Turns Rotation into Frequency');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateRate();
+  updateArea();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(4.8, 3.7, 6.2);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.05, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.6;
+controls.maxDistance = 30;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  base: mat(0x39414c, { roughness: 0.5, metalness: 0.7 }),
+  frame: mat(0x46556a, { roughness: 0.5, metalness: 0.6 }),
+  mirror: mat(0xc2ccd8, { roughness: 0.12, metalness: 0.95 }),
+  tube: new THREE.MeshStandardMaterial({ color: 0x8fb8d8, roughness: 0.15, metalness: 0.1,
+    transparent: true, opacity: 0.22, depthWrite: false, emissive: 0x8fb8d8, emissiveIntensity: 0.12 }),
+  gain: mat(0xff7aa8, { roughness: 0.3, metalness: 0.2, emissiveIntensity: 0.8 }),
+  beamR: mat(0xff5a4d, { emissiveIntensity: 1.5 }),
+  beamB: mat(0x4da3ff, { emissiveIntensity: 1.5 }),
+  det: mat(0x5fb89a, { roughness: 0.4, metalness: 0.4 }),
+  dither: mat(0xd8b25c, { roughness: 0.35, metalness: 0.65 }),
+  imu: mat(0xb3873e, { roughness: 0.45, metalness: 0.6 }),
+  ring23: mat(0x9fb0c3, { roughness: 0.3, metalness: 0.5, transparent: true, opacity: 0.55 }),
+  fringe: mat(0x7bd88f, { roughness: 0.4, metalness: 0, emissiveIntensity: 0.45 }),
+};
+const BASE_EI = { beamR: 1.5, beamB: 1.5, gain: 0.8, fringe: 0.45, tube: 0.12 };  // 步骤高亮的基准发光
+
+/* ---------------- 萨格纳克物理(数字不得改动) ----------------
+   Δf = 4A·Ω/(λ·P);A=100 cm²、P=60 cm、λ=633 nm 时
+   K = 4A/(λP) ≈ 1.05×10⁵ Hz/(rad/s) ≈ 0.51 Hz per °/h → 地球 15 °/h ⇒ 7.6 Hz */
+const LAMBDA = 633e-9;                    // He-Ne 波长 633 nm
+const P_M = 0.60;                         // 腔周长 60 cm(定值)
+const DEAD = 10;                          // 演示用死区半宽(°/h)
+const RAD_DPH = Math.PI / 180 / 3600;     // 1 °/h 对应的 rad/s
+let areaCm2 = 100, rateDph = 15, ditherOn = false, triaxOn = false;
+const K_dph = () => 4 * (areaCm2 * 1e-4) / (LAMBDA * P_M) * RAD_DPH;   // Hz per °/h
+const isLocked = () => !ditherOn && Math.abs(rateDph) >= 0.5 && Math.abs(rateDph) < DEAD;
+const beatHz = () => isLocked() ? 0 : K_dph() * rateDph;
+
+/* ---------------- 场景装配:地面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(140, 0.1, 140), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(60, 30, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* ---------------- 转台:整个装置随转速 Ω 旋转 ---------------- */
+const rig = new THREE.Group();
+scene.add(rig);
+const base = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.8, 0.15, 48), M.base);
+base.position.y = 0.075;
+rig.add(base);
+
+/* ---------------- 三角环形激光腔 ---------------- */
+const HY = 1.05;                                       // 腔面高度
+const Rc = 1.45, LE = Rc * Math.sqrt(3), Pw = 3 * LE;  // 外接圆半径 / 边长 / 周长
+const V = [];
+for (let k = 0; k < 3; k++) {
+  const a = -Math.PI / 2 + k * TAU / 3;
+  V.push(new THREE.Vector3(Math.cos(a) * Rc, 0, Math.sin(a) * Rc));
+}
+const cavG = new THREE.Group();
+cavG.position.y = HY;
+rig.add(cavG);
+
+function tubeBetween(a, b, r, m) {
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, a.distanceTo(b), 14), m);
+  mesh.position.copy(a).add(b).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(UP, new THREE.Vector3().subVectors(b, a).normalize());
+  return mesh;
+}
+/* 三面角镜 */
+for (let k = 0; k < 3; k++) {
+  const a = -Math.PI / 2 + k * TAU / 3;
+  const mir = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.08), M.mirror);
+  mir.position.set(V[k].x + Math.cos(a) * 0.12, 0, V[k].z + Math.sin(a) * 0.12);
+  mir.rotation.y = Math.PI / 2 - a;
+  cavG.add(mir);
+}
+/* 三段玻璃腔管 + He-Ne 增益管(背边) */
+for (let i = 0; i < 3; i++) cavG.add(tubeBetween(V[i], V[(i + 1) % 3], 0.075, M.tube));
+cavG.add(tubeBetween(V[1], V[2], 0.095, M.gain));
+/* 支撑柱(边中点下方,属转台) */
+for (let i = 0; i < 3; i++) {
+  const mid = new THREE.Vector3().addVectors(V[i], V[(i + 1) % 3]).multiplyScalar(0.5);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, HY - 0.15, 10), M.frame);
+  post.position.set(mid.x, (0.15 + HY) / 2, mid.z);
+  rig.add(post);
+}
+/* 合束器 + 透镜 + 光电探测器 + 条纹指示灯(v0 角外侧) */
+const splitter = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), M.mirror);
+splitter.position.set(0, 0, V[0].z + 0.3);
+cavG.add(splitter);
+const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.04, 16), M.det);
+lens.rotation.x = Math.PI / 2;
+lens.position.set(0, 0, V[0].z - 0.18);
+cavG.add(lens);
+const detBox = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.3, 0.14), M.det);
+detBox.position.set(0, 0, V[0].z - 0.4);
+cavG.add(detBox);
+const fringe = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.025, 20), M.fringe);
+fringe.rotation.x = Math.PI / 2;
+fringe.position.set(0, 0.24, V[0].z - 0.4);
+cavG.add(fringe);
+/* 抖动机构(v1 角下方的压电块) */
+const ditherBlk = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.36), M.dither);
+ditherBlk.position.set(V[1].x, -0.22, V[1].z);
+cavG.add(ditherBlk);
+/* 输入轴:垂直于环面 */
+const axisArrow = new THREE.ArrowHelper(UP, new THREE.Vector3(0, 0.1, 0), 1.05, 0xffa94d, 0.13, 0.08);
+cavG.add(axisArrow);
+
+/* 两束反向行波(红=顺时针 CW,蓝=逆时针 CCW)+ 拖尾 */
+function makeBeam(m) {
+  const arr = [];
+  for (const r of [0.055, 0.04, 0.028]) {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), m);
+    cavG.add(s);
+    arr.push(s);
+  }
+  return arr;
+}
+const bR = makeBeam(M.beamR), bB = makeBeam(M.beamB);
+function posAt(s, out) {                  // 周长弧长坐标 → 腔内位置(局部坐标)
+  s = ((s % Pw) + Pw) % Pw;
+  let i = Math.floor(s / LE);
+  if (i > 2) i = 2;
+  return out.lerpVectors(V[i], V[(i + 1) % 3], (s - i * LE) / LE);
+}
+function placeBeam(arr, s, dir) {
+  for (let i = 0; i < 3; i++) posAt(s - dir * i * 0.16, arr[i].position);
+}
+
+/* ---------------- 三轴捷联环(另两只正交环,默认隐藏) ---------------- */
+function buildSimpleRing() {
+  const g = new THREE.Group();
+  for (let i = 0; i < 3; i++) g.add(tubeBetween(V[i], V[(i + 1) % 3], 0.05, M.ring23));
+  const spin = new THREE.Group();
+  const d1 = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 8), M.beamR);
+  d1.position.set(V[0].x, 0, V[0].z);
+  const d2 = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 8), M.beamB);
+  d2.position.set(-V[0].x, 0, -V[0].z);
+  spin.add(d1, d2);
+  g.add(spin);
+  return { g, spin };
+}
+const triaxG = new THREE.Group();
+triaxG.position.y = HY;
+triaxG.visible = false;
+rig.add(triaxG);
+const imuBox = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.46, 0.32), M.imu);
+triaxG.add(imuBox);
+const r2 = buildSimpleRing(); r2.g.rotation.x = Math.PI / 2; r2.g.scale.setScalar(0.92); triaxG.add(r2.g);  // 法线 = z
+const r3 = buildSimpleRing(); r3.g.rotation.z = Math.PI / 2; r3.g.scale.setScalar(0.92); triaxG.add(r3.g);  // 法线 = x
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let scenario = 0, et = 0;
+let sR = 0, sB = Pw / 2;                  // 两束沿周长的相位
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent, triax) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow, triax: !!triax });
+  div.textContent = textFn();
+  return o;
+}
+addLabel(() => L('顺时针束 CW · 追着旋转跑', 'clockwise beam CW · chases the rotation'), () => 'e',
+  new THREE.Vector3(0, 0, 0), p => { posAt(sR, p); p.y += 0.32; }, cavG);
+addLabel(() => L('逆时针束 CCW · 迎着旋转跑', 'counter-clockwise beam CCW · meets the rotation'), () => 'b',
+  new THREE.Vector3(0, 0, 0), p => { posAt(sB, p); p.y -= 0.36; }, cavG);
+addLabel(() => L('合束器 · 光电探测器数条纹', 'combiner · photodetector counts fringes'), () => 'g',
+  new THREE.Vector3(0, 0.72, V[0].z - 0.5), null, cavG);
+addLabel(() => L('抖动机构 ~100 角秒 · ~400 Hz', 'dither ~100 arcsec · ~400 Hz'), () => 'w',
+  new THREE.Vector3(V[1].x + 0.38, -0.3, V[1].z + 0.32), null, cavG);
+addLabel(() => isLocked()
+    ? L('拍频 Δf = 0 · 死区锁死', 'beat Δf = 0 · locked in dead band')
+    : L(`拍频 Δf = ${beatHz().toFixed(2)} Hz`, `beat Δf = ${beatHz().toFixed(2)} Hz`),
+  () => isLocked() ? 'bad' : 'st',
+  new THREE.Vector3(0, 0.95, 0), null, cavG);
+addLabel(() => L('三只正交环 = x/y/z 三轴陀螺(捷联惯导)', 'three orthogonal rings = x/y/z gyros (strapdown INS)'), () => 'e',
+  new THREE.Vector3(0, 1.35, 0), null, triaxG, true);
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'beam', tgt: [0.9, HY, 0.5],
+    b: '旋转盘上的光:两束走得不一样', be: 'Light on a rotating disk: two paths differ',
+    d: '1913 年萨格纳克做了一个环形光路实验:分束器把光分成顺、逆时针两束,绕行后汇合。当整个装置以角速度 Ω 旋转时,一束要「追」着前方的镜子跑,另一束迎着镜子跑——绕一圈的时间不再相等,光程差 ΔL = 4AΩ/c。看红束与蓝束反向绕行:转台越快,两束的「步调差」越大。光速从没变,变的是路径。',
+    de: 'In 1913 Georges Sagnac split one beam into clockwise and counter-clockwise loops that recombine. Spin the whole device at Ω: one beam chases the mirrors ahead while the other runs into them, so the transit times split and the path difference is ΔL = 4AΩ/c. Watch the red and blue beams race in opposite directions - the faster the turntable, the larger their slip. Light never slowed down; the paths did.' },
+  { hl: 'formula', tgt: [0, 1.5, 0],
+    b: '萨格纳克公式与标度因数', be: 'The Sagnac formula and scale factor',
+    d: '把环形光路做成激光谐振腔,光程差就变成谐振频率的劈裂:Δf = 4A·Ω/(λ·P),频差正比角速度。取 A=100 cm²(0.01 m²)、P=60 cm、λ=633 nm:K = 4A/(λP) ≈ 1.05×10⁵ Hz/(rad/s),即 0.51 Hz per °/h——地球自转 15 °/h 就能打出 7.6 Hz 的拍频。拖动「环面积」滑块:面积翻倍,标度因数也翻倍,这就是陀螺量转速的「尺子刻度」。',
+    de: 'Close the loop into a laser cavity and the path difference becomes a resonance split: Δf = 4A·Ω/(λ·P), frequency proportional to rate. Take A=100 cm² (0.01 m²), P=60 cm, λ=633 nm: K = 4A/(λP) ≈ 1.05×10⁵ Hz/(rad/s), i.e. 0.51 Hz per °/h - Earth\'s 15 °/h spin alone beats at 7.6 Hz. Drag the area slider: double the area, double the scale factor. That is the gyro\'s ruler.' },
+  { hl: 'cavity', tgt: [0, HY, 0.73],
+    b: 'He-Ne 环形腔与拍频读出', be: 'He-Ne ring cavity and beat readout',
+    d: '实物的环形腔由三面高质量角镜和一支氦氖增益管组成,谐振在 633 nm。两束反向行波各自锁定在自己的谐振频率上,装置一转,两个频率就被推开。在合束器上叠加两束光,光电探测器看到明暗交替的条纹——每秒闪过多少条就是多少 Hz 拍频,乘以标度因数直接读出角速度。探测器旁绿灯的闪烁频率正比于拍频。',
+    de: 'A real cavity is three ultra-polished corner mirrors plus a He-Ne gain tube, resonating at 633 nm. The two counter-propagating waves each lock to their own resonance, and rotation pushes the frequencies apart. Superposed on the combiner they beat: the photodetector sees fringes flickering at exactly Δf - multiply by the scale factor and you read rotation. The green lamp flickers in proportion to the beat.' },
+  { hl: 'dither', tgt: [V[1].x, 1.0, 0.95],
+    b: '死区与抖动偏频', be: 'Dead band and mechanical dither',
+    d: '低速是环形激光陀螺的软肋:腔镜的微小背散射把两束光耦合起来发生锁模,|Ω| 落进死区时拍频干脆恒为零——陀螺「瞎」了。对策是机械抖动偏频:压电机构让整个腔块以约 400 Hz、约 100 角秒的振幅持续抖动,让工作点扫过死区不停留,拍频恢复线性,解算时再扣除已知的抖动分量。点「死区与抖动偏频」预设,再打开「抖动偏频」开关对比。',
+    de: 'Low rates are the weakness: tiny backscatter from the mirrors couples the two waves into mode lock, and inside the dead band the beat sits at exactly zero - the gyro goes blind. The fix is mechanical dither biasing: a piezo shaker wobbles the whole block at ~400 Hz with ~100 arcsec amplitude, so the operating point sweeps through the band instead of stalling; the beat stays linear and the known dither is subtracted in the solver. Try the dead-band preset, then flip the dither switch.' },
+  { hl: 'triax', tgt: [0, 1.15, 0],
+    b: '三轴捷联惯导:从拍频到姿态', be: 'Three-axis strapdown INS: from beat to attitude',
+    d: '一只陀螺只测一个轴的角速度。把三只环形激光陀螺互相垂直地刚性捆扎在机体上——这就是捷联惯导:三环分别敏感滚转、俯仰、偏航,对拍频做时间积分得到姿态角,再配上加速度计积分出速度与位置。飞机、导弹、潜艇的航向姿态都靠这套没有旋转部件的「光学神经」:启动即用、抗过载、寿命长。打开「三轴环」看三环联动。',
+    de: 'One gyro senses one axis. Bolt three ring laser gyros mutually perpendicular, rigidly strapped to the airframe - strapdown INS: the three rings sense roll, pitch and yaw; integrating their beats gives attitude, and accelerometers complete velocity and position. Aircraft, missiles and submarines navigate on this optical nervous system with no spinning parts - instant start, shock-hard, long-lived. Toggle "3-axis rings".' },
+  { hl: 'family', tgt: [0, 1.55, -0.9],
+    b: '家族:FOG / MEMS 与地球自转实测', be: 'The family: FOG, MEMS, and measuring Earth itself',
+    d: '家族成员各有绝活:光纤陀螺 FOG 用几公里长的光纤线圈放大有效面积,原理同是萨格纳克,精度可媲美激光陀螺;MEMS 陀螺只要几美元,但漂移 10-100°/h,只能服务手机与消费级。而周长米级的大环激光器反客为主:装置不动,直接测地球自转的萨格纳克频差,检验洛伦兹对称性、监测地球自转的微小起伏——这把尺子还在变长。',
+    de: 'The family has its specialists: fiber-optic gyros coil kilometres of fiber to enlarge the effective area - same Sagnac physics, accuracy rivaling the ring laser gyro; MEMS gyros cost a few dollars but drift 10-100°/h, fine for phones and consumer gear. And metre-scale ring lasers flip the roles: the instrument stands still and measures Earth\'s own Sagnac beat, testing Lorentz symmetry and tracking tiny fluctuations of Earth\'s spin - the ruler keeps growing.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, HY, 0);            // 步骤目标(rig 局部坐标)
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const K = K_dph(), Krad = K / RAD_DPH, df = beatHz();
+  const kSci = Krad >= 1e5 ? (Krad / 1e5).toFixed(2) + '×10⁵' : (Krad / 1e4).toFixed(2) + '×10⁴';
+  formulaEl.innerHTML =
+    L(`萨格纳克频差:Δf = 4A·Ω/(λ·P) = <b>${df.toFixed(2)} Hz</b>(A=${areaCm2} cm² = ${(areaCm2 * 1e-4).toFixed(4)} m²、P=60 cm、λ=633 nm He-Ne、Ω=${rateDph} °/h)`,
+      `Sagnac beat: Δf = 4A·Ω/(λ·P) = <b>${df.toFixed(2)} Hz</b> (A=${areaCm2} cm² = ${(areaCm2 * 1e-4).toFixed(4)} m², P=60 cm, λ=633 nm He-Ne, Ω=${rateDph} °/h)`) +
+    '<br>' +
+    L(`标度因数 K = 4A/(λP) = <b>${kSci} Hz/(rad/s)</b> = <b>${K.toFixed(3)} Hz per °/h</b>;基准算例(A=100 cm²、P=60 cm):地球自转 15 °/h ⇒ Δf ≈ 7.6 Hz`,
+      `Scale factor K = 4A/(λP) = <b>${kSci} Hz/(rad/s)</b> = <b>${K.toFixed(3)} Hz per °/h</b>; baseline (A=100 cm², P=60 cm): Earth's 15 °/h ⇒ Δf ≈ 7.6 Hz`) +
+    '<br>' +
+    (ditherOn
+      ? L(`抖动偏频 开:腔体以 ~100 角秒 · ~400 Hz 抖动扫过死区,拍频恢复线性;导航级零偏稳定性 0.001-0.01 °/h`,
+          `Dither ON: the block shakes ~100 arcsec at ~400 Hz to sweep through the dead band - linear beat restored; nav-grade bias stability 0.001-0.01 °/h`)
+      : (isLocked()
+          ? L(`抖动偏频 关:|Ω| < ${DEAD} °/h 时腔镜背散射锁模,Δf = 0 —— 点「死区与抖动偏频」或打开开关解救`,
+              `Dither OFF: below ${DEAD} °/h mirror backscatter mode-locks the beams, Δf = 0 - hit "dead band & dither" or flip the switch`)
+          : L(`抖动偏频 关:工作在线性区;当心低速死区(演示半宽 ${DEAD} °/h)`,
+              `Dither OFF: linear region; beware the low-rate dead band (demo half-width ${DEAD} °/h)`)));
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnEarth = document.getElementById('btnEarth'), btnTurn = document.getElementById('btnTurn'),
+  btnDead = document.getElementById('btnDead'), btnTriax = document.getElementById('btnTriax'),
+  btnReset = document.getElementById('btnReset');
+const PRESETS = {
+  earth: { rate: 15, dither: false },     // 地球自转 15 °/h → Δf ≈ 7.6 Hz
+  turn:  { rate: 200, dither: true },     // 飞机转弯(导航级标配抖动)
+  dead:  { rate: 5, dither: false },      // 落进死区:拍频锁零,待抖动解救
+};
+const presetBtns = { earth: btnEarth, turn: btnTurn, dead: btnDead };
+function setDither(v) { ditherOn = v; tglDither.checked = v; updateFormula(); }
+function setTriax(v) { triaxOn = v; tglTriax.checked = v; btnTriax.classList.toggle('on', v); triaxG.visible = v; }
+function setPreset(id) {
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === id);
+  const p = PRESETS[id];
+  if (!p) return;
+  rateDph = p.rate;
+  elRate.value = p.rate;
+  updateRate();
+  setDither(p.dither);
+}
+function resetAll() {
+  setPreset(null);
+  areaCm2 = 100; elArea.value = 100; updateArea();
+  rateDph = 15; elRate.value = 15; updateRate();
+  setDither(false);
+  setTriax(false);
+  rig.rotation.y = 0; sR = 0; sB = Pw / 2;
+  updateFormula();
+}
+btnEarth.addEventListener('click', () => setPreset('earth'));
+btnTurn.addEventListener('click', () => setPreset('turn'));
+btnDead.addEventListener('click', () => setPreset('dead'));
+btnTriax.addEventListener('click', () => setTriax(!triaxOn));
+btnReset.addEventListener('click', resetAll);
+
+/* ---------------- 拍频-转速曲线(示波器:死区可见) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const K = K_dph(), maxF = Math.max(1e-9, K * 500);
+  const px = r => (r / 1000 + 0.5) * cw;
+  const py = f => ch * (0.5 - 0.4 * clamp(f / maxF, -1.05, 1.05));
+  if (!ditherOn) {                        // 死区阴影
+    scopeCtx.fillStyle = 'rgba(255,107,107,.14)';
+    scopeCtx.fillRect(px(-DEAD), 0, px(DEAD) - px(-DEAD), ch);
+  }
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, py(0)); scopeCtx.lineTo(cw, py(0));
+  scopeCtx.stroke();
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText('Δf', 4 * dpr, 10 * dpr);
+  scopeCtx.fillStyle = 'rgba(150,160,175,.55)';
+  scopeCtx.fillText(L('转速 Ω (°/h)', 'rate Ω (°/h)'), cw - 66 * dpr, ch - 4 * dpr);
+  if (!ditherOn) {
+    scopeCtx.fillStyle = 'rgba(255,150,150,.9)';
+    scopeCtx.fillText(L('死区', 'dead'), px(0) - 9 * dpr, py(0) - 4 * dpr);
+  }
+  scopeCtx.strokeStyle = 'rgba(123,216,143,.95)';   // 传递曲线 Δf–Ω
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  for (let r = -500; r <= 500; r += 10) {
+    const f = (!ditherOn && Math.abs(r) < DEAD) ? 0 : K * r;
+    const x = px(r), y = py(f);
+    r === -500 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+  }
+  scopeCtx.stroke();
+  scopeCtx.fillStyle = '#ffd43b';                   // 当前工作点
+  scopeCtx.beginPath();
+  scopeCtx.arc(px(clamp(rateDph, -500, 500)), py(beatHz()), 3.2 * dpr, 0, TAU);
+  scopeCtx.fill();
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elRate = document.getElementById('rate'), elRateVal = document.getElementById('rateVal');
+const elArea = document.getElementById('area'), elAreaVal = document.getElementById('areaVal');
+const tglDither = document.getElementById('tglDither');
+const tglTriax = document.getElementById('tglTriax');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateRate() {
+  rateDph = +elRate.value;
+  elRateVal.textContent = rateDph + ' °/h';
+  updateFormula();
+}
+function updateArea() {
+  areaCm2 = +elArea.value;
+  elAreaVal.textContent = areaCm2 + ' cm²';
+  cavG.scale.setScalar(clamp(Math.sqrt(areaCm2 / 100), 0.6, 1.5));   // 腔体视觉随面积缩放
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elRate.addEventListener('input', updateRate);
+elArea.addEventListener('input', updateArea);
+tglDither.addEventListener('change', () => setDither(tglDither.checked));
+tglTriax.addEventListener('change', () => setTriax(tglTriax.checked));
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const K = K_dph(), df = beatHz(), locked = isLocked();
+  const bias = ditherOn ? 0.005 : (locked ? 0.5 : 0.05);   // 零偏稳定性(示意):抖动开→导航级
+  stA.innerHTML = areaCm2 + '<small> cm²</small>';
+  stA.className = 'v ok';
+  stB.innerHTML = '60<small> cm</small>';
+  stB.className = 'v ok';
+  stC.innerHTML = K.toFixed(3) + '<small> Hz per °/h</small>';
+  stC.className = 'v ok';
+  stD.innerHTML = rateDph + '<small> °/h</small>';
+  stD.className = 'v ' + (locked ? 'bad' : 'ok');
+  stE.innerHTML = df.toFixed(2) + '<small> Hz</small>';
+  stE.className = 'v ' + (locked ? 'bad' : Math.abs(df) > 0.05 && Math.abs(df) < 1 ? 'warn' : 'ok');
+  stF.innerHTML = bias.toFixed(3) + '<small> °/h</small>';
+  stF.className = 'v ' + (bias <= 0.01 ? 'ok' : bias <= 0.05 ? 'warn' : 'bad');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const on = clamp(rateDph / 500, -1, 1);
+  /* 装置随 Ω 旋转(视觉放大)+ 两束反向行波(频差→速差,示意) */
+  if (playing) {
+    const wv = Math.abs(rateDph) < 0.5 ? 0 : Math.sign(rateDph) * (0.05 + Math.abs(rateDph) / 500 * 1.3);
+    rig.rotation.y += wv * dt * speed;
+    sR += 1.55 * (1 + 0.35 * on) * dt * speed;
+    sB -= 1.55 * (1 - 0.35 * on) * dt * speed;
+    if (triaxOn) {
+      const sw = clamp(beatHz() / 8, -3, 3);
+      r2.spin.rotation.y += sw * dt * speed * 1.6;
+      r3.spin.rotation.y += sw * dt * speed * 1.6;
+    }
+  }
+  /* 抖动偏频:腔体小幅高频抖动(视觉 ~5.5 Hz,实机 ~400 Hz) */
+  cavG.rotation.y = (ditherOn && playing) ? 0.02 * Math.sin(et * TAU * 5.5) : cavG.rotation.y * 0.9;
+  placeBeam(bR, sR, 1);
+  placeBeam(bB, sB, -1);
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  for (const k in M) { const mm = M[k]; if (mm.emissive) mm.emissiveIntensity = BASE_EI[k] || 0.05; }
+  const boost = k => { M[k].emissiveIntensity = (BASE_EI[k] || 0.05) + 0.3 * hlK; };
+  const hl = STEPS[scenario].hl;
+  if (hl === 'beam') { boost('beamR'); boost('beamB'); }
+  else if (hl === 'formula') { boost('mirror'); boost('tube'); }
+  else if (hl === 'cavity') boost('gain');
+  else if (hl === 'dither') boost('dither');
+  else if (hl === 'triax') { boost('ring23'); boost('imu'); }
+  else if (hl === 'family') { boost('det'); boost('imu'); }
+  /* 条纹闪烁:拍频越高闪得越快;死区锁死时无信号 */
+  const dfNow = beatHz();
+  if (isLocked()) M.fringe.emissiveIntensity = 0.06 + 0.02 * Math.sin(et * 2);
+  else if (Math.abs(dfNow) < 0.05) M.fringe.emissiveIntensity = 0.3;
+  else M.fringe.emissiveIntensity = 0.5 + 0.45 * Math.sin(et * TAU * clamp(Math.abs(dfNow) * 0.4, 0.8, 7));
+  /* 相机目标:随步骤移动(计入转台朝向) */
+  tmpV.copy(tgtVec).applyAxisAngle(UP, rig.rotation.y);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.visible = labelsOn && (!r.triax || triaxOn);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

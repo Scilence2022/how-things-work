@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>溃缩吸能 · 用行程换生存的碰撞缓冲</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="溃缩吸能:用 0.7 m 行程吃掉 182 kJ 动能" data-en="Crumple Zones: 0.7 m of Stroke Eats 182 kJ of Kinetic Energy">溃缩吸能:用 0.7 m 行程吃掉 182 kJ 动能</h1>
+  <div class="sub" data-zh="1500 kg 的汽车以 56 km/h(15.6 m/s)撞向刚性墙,动能 ½mv² ≈ 182 kJ 必须全部被变形力做功吃掉:F·s = ΔE,0.6–0.8 m 溃缩行程 × 平均 300 kN ≈ 180 kJ,车身减速度 F/m ≈ 20 g;行程缩到 0.3 m,力翻倍、约 40 g。前端「软」:吸能盒 80–150 kJ + 波浪引导压溃纵梁(比随机弯折多吸 2–3 倍);乘员舱「硬」:1500 MPa 热成型钢 B 柱/门槛。60–100 ms 约束接力:预紧 0–10 ms → 限力 3–5 kN → 气囊 30–50 ms;约束良好 30–40 g 短时可存活,无约束 40 km/h 撞墙≈致命 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A 1500 kg car at 56 km/h (15.6 m/s) into a rigid wall carries ½mv² ≈ 182 kJ that must all be absorbed by crushing work: F·s = ΔE — a 0.6-0.8 m stroke at an average 300 kN ≈ 180 kJ, deceleration F/m ≈ 20 g; cut the stroke to 0.3 m and force doubles to ~40 g. Front soft: crash boxes 80-150 kJ plus wavy guided-crush rails (2-3x more than random buckling); cabin hard: 1500 MPa hot-stamped steel B-pillars and sills. A 60-100 ms restraint relay: pretension 0-10 ms → limiter 3-5 kN → airbag 30-50 ms; restrained, 30-40 g is survivable; unrestrained, 40 km/h into a wall is near-fatal · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">1500 kg 的汽车以 56 km/h(15.6 m/s)撞向刚性墙,动能 ½mv² ≈ 182 kJ 必须全部被变形力做功吃掉:F·s = ΔE,0.6–0.8 m 溃缩行程 × 平均 300 kN ≈ 180 kJ,车身减速度 F/m ≈ 20 g;行程缩到 0.3 m,力翻倍、约 40 g。前端「软」:吸能盒 80–150 kJ + 波浪引导压溃纵梁(比随机弯折多吸 2–3 倍);乘员舱「硬」:1500 MPa 热成型钢 B 柱/门槛。60–100 ms 约束接力:预紧 0–10 ms → 限力 3–5 kN → 气囊 30–50 ms;约束良好 30–40 g 短时可存活,无约束 40 km/h 撞墙≈致命 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="碰撞速度" data-en="impact speed">碰撞速度</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="动能 KE" data-en="kinetic energy">动能 KE</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="溃缩行程" data-en="crush stroke">溃缩行程</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="平均变形力" data-en="avg crush force">平均变形力</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="车身减速度" data-en="deceleration">车身减速度</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="乘员舱侵入" data-en="cabin intrusion">乘员舱侵入</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip g" data-zh="吸能盒(软·先塌)" data-en="crash box (soft, first)">吸能盒(软·先塌)</span>
+    <span class="chip o" data-zh="引导压溃纵梁" data-en="guided crush rails">引导压溃纵梁</span>
+    <span class="chip b" data-zh="生存舱(硬·1500 MPa)" data-en="survival cell (hard)">生存舱(硬·1500 MPa)</span>
+    <span class="chip r" data-zh="侵入警示" data-en="intrusion alert">侵入警示</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnRigid" data-zh="硬撞无溃缩" data-en="rigid, no crumple">硬撞无溃缩</button>
+    <button class="abtn" id="btnStd" data-zh="标准溃缩" data-en="standard crumple">标准溃缩</button>
+    <button class="abtn" id="btnZone" data-zh="软硬分区对比" data-en="soft/hard zoning">软硬分区对比</button>
+    <button class="abtn" id="btnSeq" data-zh="约束时序慢放" data-en="restraint slow-mo">约束时序慢放</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="碰撞速度" data-en="impact speed">碰撞速度</label><input id="vspd" type="range" min="20" max="80" step="1" value="56"><span class="val" id="vspdVal">56 km/h</span></div>
+  <div class="row"><label data-zh="溃缩行程" data-en="crush stroke">溃缩行程</label><input id="strk" type="range" min="0.3" max="0.9" step="0.05" value="0.7"><span class="val" id="strkVal">0.70 m</span></div>
+  <div class="row"><label data-zh="平均变形力" data-en="crush force">平均变形力</label><input id="frc" type="range" min="150" max="450" step="10" value="300"><span class="val" id="frcVal">300 kN</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="力-位移曲线" data-en="F–s curve">力-位移曲线</span></label>
+        <label><input id="tglSlow" type="checkbox"> <span data-zh="碰撞慢放" data-en="slow-motion">碰撞慢放</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox"> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../seatbelt/" data-zh="安全带" data-en="seatbelt">安全带</a>
+    <a href="../airbag/" data-zh="安全气囊" data-en="airbag">安全气囊</a>
+    <a href="../helmet/" data-zh="头盔吸能" data-en="helmet">头盔吸能</a>
+    <a href="../stress-strain/" data-zh="应力-应变" data-en="stress-strain">应力-应变</a>
+    <a href="../honeycomb/" data-zh="蜂窝结构" data-en="honeycomb">蜂窝结构</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- 工具 / 主题 / 语言 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.body.color.set(dark ? 0x46556a : 0x74879c);
+  M.hub.color.set(dark ? 0x39414c : 0x5d6774);
+  M.boxM.color.set(dark ? 0x2f9e63 : 0x2b8a3e);
+  M.railM.color.set(dark ? 0xd8b25c : 0xc09a45);
+  M.cabin.color.set(dark ? 0x3b7dd8 : 0x1864ab);
+  M.glass.color.set(dark ? 0x86c8ec : 0x6fa8c8);
+  M.wall.color.set(dark ? 0x70767e : 0xb6bec6);
+  M.stripe.color.set(dark ? 0xd64045 : 0xc92a2a);
+  M.chrome.color.set(dark ? 0xc2ccd8 : 0x9aa6b4);
+  M.occ.color.set(dark ? 0xffa94d : 0xe8590c);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => { el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh; });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('溃缩吸能 · 用行程换生存的碰撞缓冲', 'Crumple Zones · Trading Stroke for Survival');
+  buildSteps(); setPlayLabel(); markStep(); syncPhase();
+  refreshV(); refreshStroke(); refreshForce(); updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => { THEME = THEME === 'dark' ? 'light' : 'dark'; localStorage.setItem('htw-theme', THEME); applyTheme(); });
+document.getElementById('langBtn').addEventListener('click', () => { LANG = LANG === 'zh' ? 'en' : 'zh'; localStorage.setItem('htw-lang', LANG); applyLang(); });
+
+/* ---------------- 渲染器 / 相机 / 灯光 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 300);
+camera.position.set(-8.8, 4.6, 9.2);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(-13.2, 1.2, 0);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.minDistance = 2.2; controls.maxDistance = 45;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9); keyLight.position.set(6, 10, 5); scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5); fill.position.set(-7, 5, -6); scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  body: mat(0x46556a, { roughness: 0.5, metalness: 0.6 }),
+  hub: mat(0x39414c, { roughness: 0.42, metalness: 0.72 }),
+  boxM: mat(0x2f9e63, { roughness: 0.45, metalness: 0.35 }),
+  railM: mat(0xd8b25c, { roughness: 0.4, metalness: 0.55 }),
+  cabin: mat(0x3b7dd8, { roughness: 0.35, metalness: 0.6 }),
+  glass: mat(0x86c8ec, { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.4, emissiveIntensity: 0.02 }),
+  wall: mat(0x70767e, { roughness: 0.9, metalness: 0.05, emissiveIntensity: 0.02 }),
+  stripe: mat(0xd64045, { roughness: 0.7, metalness: 0.1, emissiveIntensity: 0.04 }),
+  chrome: mat(0xc2ccd8, { roughness: 0.25, metalness: 0.85 }),
+  rubber: mat(0x252a31, { roughness: 0.9, metalness: 0.05 }),
+  occ: mat(0xffa94d, { roughness: 0.6, metalness: 0.15 }),
+  bag: mat(0xf1f3f5, { roughness: 0.65, metalness: 0.02, emissiveIntensity: 0.04 }),
+  belt: mat(0x2b3038, { roughness: 0.8, metalness: 0.1, emissive: 0x000000 }),
+};
+
+/* ---------------- 物理模型(1 单位 = 1 m;F·s = ΔE 分段恒力) ---------------- */
+const MASS = 1500;                        // kg
+const STACK = 0.75, GAP = 0.06;           // 前部可压溃栈总长 / 与乘员舱间隙
+const VISK = STACK / 0.9;                 // 溃缩行程(m)→ 视觉压缩量
+let vKmh = 56, stroke = 0.70, forceKN = 300, rigidMode = false;
+let scenario = 0, st = 'approach', carX = -14.5, simT = 0, doneT = 0;
+let exc = 0, insVis = 0, curC = 0, curG = 0, et = 0, CR = null;
+const vMps = () => vKmh / 3.6;
+const KE = () => 0.5 * MASS * vMps() * vMps();
+const sEff = () => rigidMode ? 0.04 : stroke;
+const gAvg = () => forceKN * 1000 / MASS / 9.81;
+const gPeak = () => (CR && CR.def ? 5 * forceKN : forceKN) * 1000 / MASS / 9.81;
+/* 分段恒力:变形力 F 压溃行程 sa;能量有缺口则乘员舱以 5F 硬扛 → 侵入 */
+function calcCrash() {
+  const v = vMps(), F = forceKN * 1e3, sa = sEff(), a1 = F / MASS;
+  const sStop = v * v / (2 * a1);
+  if (sStop <= sa) return { def: false, v2: 0, a1, a2: 0, t1: v / a1, t2: 0, c1: sStop, c2: 0, tTot: v / a1, g1: a1 / 9.81, g2: 0 };
+  const v2 = Math.sqrt(v * v - 2 * a1 * sa), a2 = 5 * F / MASS, t1 = (v - v2) / a1, t2 = v2 / a2;
+  return { def: true, v2, a1, a2, t1, t2, c1: sa, c2: v2 * v2 / (2 * a2), tTot: t1 + t2, g1: a1 / 9.81, g2: a2 / 9.81 };
+}
+function updatePhysics() { CR = calcCrash(); }
+function restartCrash() { st = 'approach'; carX = -14.5; simT = 0; doneT = 0; exc = 0; insVis = 0; }
+
+/* ---------------- 地面 / 刚性墙 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(160, 0.1, 60), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(60, 30, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+const wall = new THREE.Mesh(new THREE.BoxGeometry(0.7, 2.4, 4.6), M.wall);
+wall.position.set(0.35, 1.2, 0);
+scene.add(wall);
+const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.42, 4.64), M.stripe);
+stripe.position.set(0.35, 2.02, 0);
+scene.add(stripe);
+
+/* ---------------- 车身:前部可压溃栈(bumper→吸能盒→纵梁)+ 乘员舱 ---------------- */
+const carG = new THREE.Group();
+scene.add(carG);
+const frontParts = [];
+function addFront(meshes, len, alt) { frontParts.push({ m: meshes, len, cap: len, alt }); }
+const bumper = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.26, 1.62), M.chrome);
+bumper.position.y = 0.62;
+carG.add(bumper);
+addFront([bumper], 0.12, 0);
+const boxL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.24, 0.3), M.boxM);
+const boxR = boxL.clone();
+boxL.position.y = 0.62; boxR.position.y = 0.62;
+boxL.position.z = 0.52; boxR.position.z = -0.52;
+carG.add(boxL, boxR);
+addFront([boxL, boxR], 0.2, 0);
+for (let i = 0; i < 4; i++) {
+  const rl = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.13, 0.1), M.railM);
+  const rr = rl.clone();
+  rl.position.y = 0.4; rr.position.y = 0.4;
+  rl.position.z = 0.45; rr.position.z = -0.45;
+  carG.add(rl, rr);
+  addFront([rl, rr], 0.1075, i % 2 ? 1 : -1);
+}
+const cabinG = new THREE.Group();
+carG.add(cabinG);
+const shell = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.78, 1.56), M.cabin);
+shell.position.set(-0.925, 1.06, 0);
+const glass = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.4, 1.46), M.glass);
+glass.position.set(-0.95, 1.64, 0);
+const roof = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.08, 1.5), M.cabin);
+roof.position.set(-0.95, 1.9, 0);
+const fire = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.86, 1.5), M.cabin);
+fire.position.set(-0.045, 0.72, 0);
+const floor = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.08, 1.3), M.body);
+floor.position.set(-1.25, 0.3, 0);
+const deck = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.58, 1.5), M.body);
+deck.position.set(-2.22, 0.8, 0);
+const rBump = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.24, 1.56), M.chrome);
+rBump.position.set(-2.66, 0.55, 0);
+cabinG.add(shell, glass, roof, fire, floor, deck, rBump);
+for (const sz of [1, -1]) {
+  const pil = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.92, 0.1), M.cabin);
+  pil.position.set(-1.05, 1.26, sz * 0.76);
+  cabinG.add(pil);
+}
+const seat = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.42, 0.46), M.hub);
+seat.position.set(-1.18, 0.56, 0);
+const seatBk = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.52, 0.46), M.hub);
+seatBk.position.set(-1.42, 0.9, 0);
+const belt = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.045, 0.05), M.belt);
+belt.position.set(-1.02, 1.08, 0.17); belt.rotation.z = 0.62;
+cabinG.add(seat, seatBk, belt);
+const occG = new THREE.Group();
+occG.position.set(-1.05, 0.8, 0);
+const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.3, 4, 10), M.occ);
+torso.position.y = 0.3;
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 10), M.occ);
+head.position.set(0.03, 0.72, 0);
+const lap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.34), M.occ);
+lap.position.set(0.18, 0.06, 0);
+occG.add(torso, head, lap);
+cabinG.add(occG);
+const bag = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 14), M.bag);
+bag.position.set(-0.42, 1.0, 0);
+bag.scale.setScalar(0.02);
+cabinG.add(bag);
+const wheelWraps = [];
+function mkWheel(x, z) {
+  const wrap = new THREE.Group();
+  wrap.position.set(x, 0.33, z);
+  const tyre = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.24, 20), M.rubber);
+  tyre.rotation.x = Math.PI / 2;
+  const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.07, 0.25), M.hub);
+  wrap.add(tyre, spoke);
+  cabinG.add(wrap);
+  wheelWraps.push(wrap);
+}
+mkWheel(0.4, 0.8); mkWheel(0.4, -0.8); mkWheel(-1.8, 0.8); mkWheel(-1.8, -0.8);
+
+/* 压溃重排:rc 依次吃掉 bumper→吸能盒→纵梁各段预算,乘员舱前移;侵入则压缩舱体 */
+function applyCrush(cVis, insV) {
+  let xCur = 0, rc = Math.max(0, cVis);
+  for (const p of frontParts) {
+    const use = Math.min(p.cap, rc); rc -= use;
+    const k = use / p.cap, len = p.len * (1 - 0.9 * k);
+    for (const m of p.m) {
+      m.scale.x = len / p.len;
+      m.position.x = xCur - len / 2;
+      m.rotation.z = p.alt * k * 0.55;
+    }
+    xCur -= len;
+  }
+  const cv = Math.min(cVis, STACK);
+  cabinG.position.x = -(GAP + STACK - cv);
+  const ins = clamp(insV, 0, 1);
+  shell.scale.x = 1 - 0.28 * ins; shell.position.x = -0.925 - 0.24 * ins;
+  glass.scale.x = 1 - 0.28 * ins; glass.position.x = -0.95 - 0.24 * ins;
+  roof.position.x = -0.95 - 0.24 * ins;
+}
+
+/* ---------------- 矢量箭头 ---------------- */
+const velArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0xffc95c, 0.16, 0.1);
+scene.add(velArrow);
+const forceArrow = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(), 0.6, 0xff6b6b, 0.14, 0.09);
+scene.add(forceArrow);
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, parent, cond) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, cond });
+  div.textContent = textFn();
+  return o;
+}
+addLabel(() => L(`动能账本:½mv² = ${(KE() / 1000).toFixed(0)} kJ(1500 kg @ ${vKmh} km/h)`,
+  `energy ledger: ½mv² = ${(KE() / 1000).toFixed(0)} kJ (1500 kg @ ${vKmh} km/h)`), () => 'st',
+  new THREE.Vector3(-0.2, 2.6, 0), carG);
+addLabel(() => L(`吸能盒:容量 80–150 kJ · 第一道先塌`, `crash box: 80-150 kJ · crushes first`), () => 'g',
+  new THREE.Vector3(-0.22, 1.32, 0.95), carG);
+addLabel(() => L(`纵梁引导压溃:已吸 ${(forceKN * Math.min(curC, sEff())).toFixed(0)} / ${(forceKN * sEff()).toFixed(0)} kJ`,
+  `guided rails: ${(forceKN * Math.min(curC, sEff())).toFixed(0)} / ${(forceKN * sEff()).toFixed(0)} kJ absorbed`), () => 'w',
+  new THREE.Vector3(-0.5, 0.98, -1.05), carG);
+addLabel(() => L(`生存舱:1500 MPa 热成型钢 B 柱/门槛 · 侵入 ${((CR ? CR.c2 * insVis : 0) * 1000).toFixed(0)} mm`,
+  `survival cell: 1500 MPa hot-stamped steel · intrusion ${((CR ? CR.c2 * insVis : 0) * 1000).toFixed(0)} mm`), () => 'b',
+  new THREE.Vector3(-1.85, 2.32, 0), carG);
+addLabel(() => L(`⚠ 乘员舱侵入 ${((CR ? CR.c2 * insVis : 0) * 1000).toFixed(0)} mm — 超限!`,
+  `⚠ cabin intrusion ${((CR ? CR.c2 * insVis : 0) * 1000).toFixed(0)} mm — over limit!`), () => 'bad',
+  new THREE.Vector3(-0.9, 1.95, 0), carG, () => insVis > 0.03);
+addLabel(() => {
+  if (st === 'crash' || st === 'done') {
+    const ms = simT * 1000;
+    return L(`t = ${ms.toFixed(0)} ms:预紧${ms > 2 ? '✓' : '…'} → 限力 3–5 kN${ms > 3 ? '✓' : '…'} → 气囊${ms < 30 ? '待发' : ms < 50 ? '展开中' : '✓'}${ms > 70 ? ' → 回泄' : ''}`,
+      `t = ${ms.toFixed(0)} ms: pretension${ms > 2 ? '✓' : '…'} → limiter 3-5 kN${ms > 3 ? '✓' : '…'} → airbag${ms < 30 ? ' armed' : ms < 50 ? ' deploying' : '✓'}${ms > 70 ? ' → vent' : ''}`);
+  }
+  return L('约束接力:预紧 0–10 ms → 限力 3–5 kN → 气囊 30–50 ms → 回泄(60–100 ms)',
+    'restraint relay: pretension 0-10 ms → limiter 3-5 kN → airbag 30-50 ms → vent (60-100 ms)');
+}, () => 'st', new THREE.Vector3(-0.85, 1.55, 1.2), cabinG);
+addLabel(() => L(`a = F/m ≈ ${curG.toFixed(0)} g${CR && CR.def ? ' · 行程不足,乘员舱硬扛!' : ' · 行程内刹停 ✓'}`,
+  `a = F/m ≈ ${curG.toFixed(0)} g${CR && CR.def ? ' · stroke exhausted - cabin takes the hit!' : ' · stops within stroke ✓'}`), () => 'e',
+  new THREE.Vector3(0.1, 0.95, -1.05), carG);
+addLabel(() => L('刚性墙:无限刚,把反力原样奉还', 'rigid wall: infinitely stiff, returns every newton'), () => 'w',
+  new THREE.Vector3(0.5, 2.85, 0), null);
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'ledger', tgt: [-0.7, 1.6, 0],
+    b: '动能账本:182 kJ 必须有去处', be: 'The energy ledger: 182 kJ has to go somewhere',
+    d: '1500 kg 的轿车以 56 km/h(15.6 m/s)撞上刚性墙,动能 ½mv² ≈ 182 kJ。能量从不凭空消失:车要停下来,就必须有力在一段距离上做功,把这些能量吃掉。若车身不变形,这份账单只能转嫁给乘员的身体——骨骼和内脏根本付不起。',
+    de: "A 1500 kg car hitting a rigid wall at 56 km/h (15.6 m/s) carries ½mv² ≈ 182 kJ. Energy never vanishes: to stop, a force must do work over a distance to soak it up. If the body will not deform, the passenger's body pays the whole bill - and bone and organs cannot afford it." },
+  { hl: 'fs', tgt: [-0.5, 0.6, 0],
+    b: 'F·s = ΔE:用行程换生存', be: 'F·s = ΔE: trade stroke for survival',
+    d: '变形力 × 溃缩行程 = 吸收的能量。0.6–0.8 m 行程配平均 300 kN 变形力,约吸 180–210 kJ,恰好盖住 182 kJ;车身减速度 a = F/m ≈ 20 g。行程被砍到 0.3 m,变形力就得翻倍,过载飙到约 40 g——行程就是拿车身空间买减速时间。',
+    de: 'Crush force × crush stroke = energy absorbed. A 0.6-0.8 m stroke at an average 300 kN soaks up 180-210 kJ, covering the 182 kJ, with deceleration a = F/m ≈ 20 g. Cut the stroke to 0.3 m and the force must double, spiking the load to ~40 g - stroke is bodywork space traded for stopping time.' },
+  { hl: 'zone', tgt: [-1.55, 1.4, 0],
+    b: '软硬分区:吸能区 vs 生存舱', be: 'Soft front, hard cell: crush zone vs survival space',
+    d: '前端刻意做「软」:吸能盒最先压溃,承担 80–150 kJ;纵梁随后引导压溃吃掉大头。乘员舱必须「硬」:B 柱、门槛用 1500 MPa 热成型钢,侵入量按毫米控制。顺序不能反——先守住生存空间,再谈吸能效率。',
+    de: 'The front is deliberately soft: crash boxes crush first, taking 80-150 kJ, then the rails do the bulk of the work in a controlled fold. The cabin must be hard: B-pillars and sills use 1500 MPa hot-stamped steel with intrusion measured in millimetres. The order is non-negotiable - secure the survival space first.' },
+  { hl: 'fold', tgt: [-0.4, 0.75, 0],
+    b: '引导压溃:力-位移曲线要高而平', be: 'Guided crush: keep the force-stroke curve high and flat',
+    d: '纵梁壁压出波浪形触发结构,撞击时按设计逐段折叠:力-位移曲线高而平,同样行程吸能最多,比随机弯折多吸 2–3 倍。峰值力越低、行程用得越满,人体过载越小;失控皱折会先顶出力峰、又早早压实,行程白白浪费。',
+    de: 'Wavy trigger beads pressed into the rail wall make it fold segment by segment as designed: a high, flat force-stroke curve absorbs the most energy per stroke - 2-3 times more than random buckling. The lower the peak force and the fuller the stroke, the gentler the load on the body.' },
+  { hl: 'restraint', tgt: [-1.25, 1.35, 0],
+    b: '约束时序:60–100 ms 的接力', be: 'Restraint relay: a 60-100 ms choreography',
+    d: '整个碰撞只有 0.1–0.15 s:0–10 ms 安全带预紧器收紧乘客;限力器把带子载荷拧在 3–5 kN;30–50 ms 气囊充满成形,接住前冲的头部;随后排气卸力。车身减速与约束系统像接力赛交接,乘员才能顺着减速曲线「骑」下来。',
+    de: 'The whole crash lasts 0.1-0.15 s: at 0-10 ms the pretensioner cinches the occupant back; the load limiter holds belt force at 3-5 kN; at 30-50 ms the airbag is fully inflated to catch the head, then vents. Body deceleration and restraints hand over like a relay so the occupant rides the curve down.' },
+  { hl: 'human', tgt: [0.0, 1.4, 0],
+    b: '人体耐受:每降 10 g 都珍贵', be: 'Human tolerance: every 10 g shaved off counts',
+    d: '约束良好时,30–40 g 的短时过载可以存活;而无约束的 40 km/h 撞墙已接近致命——身体要在几十毫秒内从行驶速度减到零。溃缩区把减速度压平拉长:每降 10 g,胸部冲击与重伤概率都大幅下降。这就是「车毁」换来「人全」。',
+    de: 'With good restraints, a brief 30-40 g load is survivable; unrestrained, a 40 km/h wall impact is near-fatal - the body must be stopped within tens of milliseconds. Crumple zones flatten and stretch the deceleration: every 10 g saved sharply cuts chest loading and injury risk. The car sacrifices itself so the person walks away.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  if (!CR) updatePhysics();
+  const kJ = KE() / 1000, capKJ = forceKN * sEff(), okCap = capKJ * 1000 >= KE();
+  const gap = Math.max(0, kJ - capKJ);
+  formulaEl.innerHTML =
+    L(`动能账本:KE = ½mv² = 0.5 × 1500 × ${vMps().toFixed(1)}² = <b>${kJ.toFixed(0)} kJ</b>,必须全部被变形力做功吃掉`,
+      `Energy ledger: KE = ½mv² = 0.5 × 1500 × ${vMps().toFixed(1)}² = <b>${kJ.toFixed(0)} kJ</b>, all of it absorbed by crushing work`) + '<br>' +
+    L(`F·s = ΔE:${forceKN} kN × ${sEff().toFixed(2)} m = <b>${capKJ.toFixed(0)} kJ</b>${okCap ? ' ≥ KE ✓ 行程内刹停' : ' < KE ✗ 缺口 ' + gap.toFixed(0) + ' kJ 砸向乘员舱'}`,
+      `F·s = ΔE: ${forceKN} kN × ${sEff().toFixed(2)} m = <b>${capKJ.toFixed(0)} kJ</b>${okCap ? ' ≥ KE ✓ stops within stroke' : ' < KE ✗ shortfall ' + gap.toFixed(0) + ' kJ hits the cabin'}`) + '<br>' +
+    L(`a = F/m = ${forceKN} kN / 1500 kg ≈ <b>${gAvg().toFixed(0)} g</b>(峰值 <b>${gPeak().toFixed(0)} g</b>);碰撞时长 ≈ <b>${(CR.tTot * 1000).toFixed(0)} ms</b>(0.1–0.15 s 量级),乘员舱侵入 <b>${(CR.c2 * 1000).toFixed(0)} mm</b>`,
+      `a = F/m = ${forceKN} kN / 1500 kg ≈ <b>${gAvg().toFixed(0)} g</b> (peak <b>${gPeak().toFixed(0)} g</b>); crash duration ≈ <b>${(CR.tTot * 1000).toFixed(0)} ms</b> (0.1-0.15 s scale), cabin intrusion <b>${(CR.c2 * 1000).toFixed(0)} mm</b>`) + '<br>' +
+    L(`软硬分区:吸能盒 80–150 kJ 先塌 + 波浪纵梁引导压溃(多吸 2–3×)| 生存舱 1500 MPa 热成型钢;约束:预紧 0–10 ms → 限力 3–5 kN → 气囊 30–50 ms`,
+      `Zoning: crash box 80-150 kJ first + wavy guided rails (2-3x more) | survival cell 1500 MPa steel; restraints: pretension 0-10 ms → limiter 3-5 kN → airbag 30-50 ms`);
+}
+
+/* ---------------- 滑块 / 预设 ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elV = document.getElementById('vspd'), elStrk = document.getElementById('strk'), elFrc = document.getElementById('frc');
+const tglCurve = document.getElementById('tglCurve'), tglSlow = document.getElementById('tglSlow');
+const tglLabels = document.getElementById('tglLabels'), tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() { for (const r of labelReg) r.o.visible = labelsOn; }
+function refreshV() { vKmh = +elV.value; document.getElementById('vspdVal').textContent = vKmh + ' km/h'; }
+function refreshStroke() { stroke = +elStrk.value; document.getElementById('strkVal').textContent = stroke.toFixed(2) + ' m'; }
+function refreshForce() { forceKN = +elFrc.value; document.getElementById('frcVal').textContent = forceKN + ' kN'; }
+function onParam() { rigidMode = false; markPreset(null); restartCrash(); updatePhysics(); updateFormula(); }
+elV.addEventListener('input', () => { refreshV(); onParam(); });
+elStrk.addEventListener('input', () => { refreshStroke(); onParam(); });
+elFrc.addEventListener('input', () => { refreshForce(); onParam(); });
+const btnRigid = document.getElementById('btnRigid'), btnStd = document.getElementById('btnStd'),
+  btnZone = document.getElementById('btnZone'), btnSeq = document.getElementById('btnSeq'),
+  btnReset = document.getElementById('btnReset');
+const presetBtns = { rigid: btnRigid, std: btnStd, zone: btnZone, seq: btnSeq };
+function markPreset(id) { for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === id); }
+function setSl(v, s, f) { elV.value = v; elStrk.value = s; elFrc.value = f; refreshV(); refreshStroke(); refreshForce(); }
+function runCrash() { restartCrash(); updatePhysics(); updateFormula(); }
+btnRigid.addEventListener('click', () => { rigidMode = true; markPreset('rigid'); runCrash(); activateStep(1); });
+btnStd.addEventListener('click', () => { rigidMode = false; setSl(56, 0.7, 300); markPreset('std'); runCrash(); activateStep(3); });
+btnZone.addEventListener('click', () => { rigidMode = false; setSl(56, 0.9, 150); markPreset('zone'); runCrash(); activateStep(2); });
+btnSeq.addEventListener('click', () => { rigidMode = false; setSl(56, 0.7, 300); tglSlow.checked = true; markPreset('seq'); runCrash(); activateStep(4); });
+btnReset.addEventListener('click', () => { rigidMode = false; tglSlow.checked = false; setSl(56, 0.7, 300); markPreset(null); runCrash(); activateStep(0); });
+
+/* ---------------- 示波器:左 F–s(面积=吸能,虚线=随机弯折)| 右 g–t ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  if (!CR) return;
+  const dpr = Math.min(devicePixelRatio, 2), cw = scope.width, ch = scope.height, half = cw / 2;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  fsPanel(0, half, ch, dpr);
+  gtPanel(half, half, ch, dpr);
+}
+function fsPanel(x0, w, ch, dpr) {
+  const c = scopeCtx, pad = 6 * dpr, pt = 8 * dpr, pb = 13 * dpr;
+  const X = x0 + pad, W = w - pad - 4 * dpr, Y = pt, H = ch - pt - pb;
+  const Fcab = forceKN * 5, Fmax = Fcab * 1.12, smax = Math.max(CR.c1 + CR.c2, sEff(), 0.1) * 1.12;
+  const mx = s => X + s / smax * W, my = f => Y + H - f / Fmax * H;
+  c.strokeStyle = 'rgba(128,140,160,.35)'; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(X, Y + H); c.lineTo(X + W, Y + H); c.moveTo(X, Y); c.lineTo(X, Y + H); c.stroke();
+  const pts = [[0, 0], [Math.min(0.05, CR.c1 * 0.4), forceKN]];
+  for (let i = 1; i <= 22; i++) { const s = pts[1][0] + (CR.c1 - pts[1][0]) * i / 22; pts.push([s, forceKN * (1 + 0.05 * Math.sin(s * 46))]); }
+  if (CR.def) { pts.push([CR.c1, Fcab]); for (let i = 1; i <= 8; i++) { const s = CR.c1 + CR.c2 * i / 8; pts.push([s, Fcab * (1 + 0.04 * Math.sin(s * 40 + 1))]); } }
+  c.beginPath(); c.moveTo(mx(0), my(0));
+  for (const p of pts) c.lineTo(mx(p[0]), my(p[1]));
+  c.lineTo(mx(pts[pts.length - 1][0]), my(0)); c.closePath();
+  c.fillStyle = CR.def ? 'rgba(255,107,107,.22)' : 'rgba(123,216,143,.24)'; c.fill();
+  c.strokeStyle = 'rgba(232,201,143,.95)'; c.lineWidth = Math.max(1.3, 1.3 * dpr);
+  c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(mx(p[0]), my(p[1])) : c.moveTo(mx(p[0]), my(p[1]))); c.stroke();
+  c.setLineDash([4 * dpr, 3 * dpr]); c.strokeStyle = 'rgba(150,160,175,.75)'; c.beginPath();
+  for (let i = 0; i <= 40; i++) {
+    const s = CR.c1 * i / 40, f = Math.max(0, forceKN * 0.42 * (1 + 0.32 * Math.sin(s * 57 + 2) + 0.12 * Math.sin(s * 231)));
+    i ? c.lineTo(mx(s), my(f)) : c.moveTo(mx(s), my(f));
+  }
+  c.stroke(); c.setLineDash([]);
+  const cm = st !== 'approach' ? Math.min(curC, smax) : 0;
+  if (cm > 0) { c.strokeStyle = 'rgba(255,255,255,.5)'; c.beginPath(); c.moveTo(mx(cm), Y); c.lineTo(mx(cm), Y + H); c.stroke(); }
+  c.font = `${Math.round(9 * dpr)}px system-ui`;
+  c.fillStyle = 'rgba(150,160,175,.9)'; c.fillText(L('F–s 面积=吸能', 'F–s area=energy'), X + 3 * dpr, Y + 10 * dpr);
+  c.fillStyle = 'rgba(150,160,175,.55)'; c.fillText(L('虚线=随机弯折', 'dash=random buckle'), X + 3 * dpr, Y + H - 4 * dpr);
+}
+function gtPanel(x0, w, ch, dpr) {
+  const c = scopeCtx, pad = 6 * dpr, pt = 8 * dpr, pb = 13 * dpr;
+  const X = x0 + pad, W = w - pad - 4 * dpr, Y = pt, H = ch - pt - pb;
+  const tmax = Math.max(CR.tTot, 0.001) * 1.15, gmax = Math.max(CR.g1, CR.g2) * 1.25;
+  const mx = t => X + t / tmax * W, my = g => Y + H - g / gmax * H;
+  c.strokeStyle = 'rgba(128,140,160,.35)'; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(X, Y + H); c.lineTo(X + W, Y + H); c.moveTo(X, Y); c.lineTo(X, Y + H); c.stroke();
+  c.fillStyle = 'rgba(123,216,143,.28)';
+  c.fillRect(X, my(CR.g1), Math.max(1, mx(CR.t1) - X), Y + H - my(CR.g1));
+  if (CR.def && CR.t2 > 0) {
+    c.fillStyle = 'rgba(255,107,107,.32)';
+    c.fillRect(mx(CR.t1), my(CR.g2), Math.max(1, mx(CR.tTot) - mx(CR.t1)), Y + H - my(CR.g2));
+  }
+  c.strokeStyle = 'rgba(255,169,77,.95)'; c.lineWidth = Math.max(1.2, 1.2 * dpr); c.beginPath(); c.moveTo(X, my(CR.g1));
+  if (CR.def && CR.t2 > 0) { c.lineTo(mx(CR.t1), my(CR.g1)); c.lineTo(mx(CR.t1), my(CR.g2)); c.lineTo(mx(CR.tTot), my(CR.g2)); }
+  else c.lineTo(mx(CR.tTot), my(CR.g1));
+  c.stroke();
+  const tm = st === 'crash' ? simT : st === 'done' ? CR.tTot : 0;
+  if (tm > 0) { c.strokeStyle = 'rgba(255,255,255,.5)'; c.beginPath(); c.moveTo(mx(tm), Y); c.lineTo(mx(tm), Y + H); c.stroke(); }
+  c.font = `${Math.round(9 * dpr)}px system-ui`;
+  c.fillStyle = 'rgba(150,160,175,.9)'; c.fillText(L('减速度 g–t', 'decel g–t'), X + 3 * dpr, Y + 10 * dpr);
+  c.fillStyle = 'rgba(150,160,175,.55)';
+  c.fillText(`${CR.g1.toFixed(0)}g${CR.def ? '/' + CR.g2.toFixed(0) + 'g' : ''}`, X + 3 * dpr, Y + H - 4 * dpr);
+}
+
+/* ---------------- UI ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(parseFloat(qs.get('speed')) || 1, 0.2, 3);
+let labelsOn = qsBool('labels', true);
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1))));
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglSlow.addEventListener('change', () => {});
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  stA.innerHTML = vKmh + '<small> km/h</small>'; stA.className = 'v ok';
+  stB.innerHTML = (KE() / 1000).toFixed(0) + '<small> kJ</small>'; stB.className = 'v ok';
+  stC.innerHTML = curC.toFixed(2) + '<small>/' + sEff().toFixed(2) + ' m</small>';
+  stC.className = 'v ' + (rigidMode ? 'warn' : 'ok');
+  stD.innerHTML = forceKN + '<small> kN</small>'; stD.className = 'v ok';
+  const g = (st === 'crash' || st === 'done') ? Math.max(curG, 0.1) : CR.g1;
+  stE.innerHTML = g.toFixed(0) + '<small> g</small>';
+  stE.className = 'v ' + (g < 25 ? 'ok' : g < 40 ? 'warn' : 'bad');
+  const mm = CR.c2 * 1000;
+  stF.innerHTML = mm.toFixed(0) + '<small> mm</small>';
+  stF.className = 'v ' + (mm < 1 ? 'ok' : mm < 50 ? 'warn' : 'bad');
+}
+
+/* ---------------- 主循环:接近 → 压溃 → 侵入 → 复位循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+const hlPool = [M.body, M.chrome, M.boxM, M.railM, M.cabin, M.wall, M.occ, M.bag];
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05); et += dt;
+  if (playing) {
+    if (st === 'approach') {
+      carX += vMps() * 0.35 * speed * dt;
+      if (carX >= 0) { carX = 0; st = 'crash'; simT = 0; }
+    } else if (st === 'crash') {
+      simT += dt * speed * (tglSlow.checked ? 34 : 14);
+      if (simT >= CR.tTot) { simT = CR.tTot; st = 'done'; doneT = 0; }
+    } else { doneT += dt * speed; if (doneT > 2.4) restartCrash(); }
+  }
+  carG.position.x = carX;
+  let cVis = 0, aNow = 0; insVis = 0;
+  if (st === 'crash' || st === 'done') {
+    const t = st === 'done' ? CR.tTot : simT;
+    if (t <= CR.t1) { aNow = CR.a1; cVis = 0.5 * CR.a1 * t * t * VISK; }
+    else {
+      const tau = t - CR.t1; aNow = CR.a2;
+      cVis = (CR.c1 + CR.v2 * tau - 0.5 * CR.a2 * tau * tau) * VISK;
+      insVis = CR.t2 > 0 ? clamp(tau / CR.t2, 0, 1) : 0;
+    }
+  }
+  curC = cVis / VISK; curG = aNow / 9.81;
+  applyCrush(cVis, insVis);
+  const rollV = st === 'approach' ? vMps() * 0.35 * speed : 0;
+  for (const w of wheelWraps) w.rotation.z -= rollV / 0.33 * dt;
+  if (st === 'crash') { const tau = Math.max(0, simT - 0.004); exc = Math.min(0.22, 150 * tau * tau); }
+  else if (st === 'approach') exc = 0;
+  const eN = exc / 0.22;
+  torso.rotation.z = -0.55 * eN; head.position.x = 0.03 + 0.17 * eN;
+  lap.position.x = 0.18 + 0.08 * eN; occG.position.x = -1.05 + 0.09 * eN;
+  const bAge = (st === 'crash' || st === 'done') ? simT : 0;
+  bag.scale.setScalar(bAge < 0.03 ? 0.02 : bAge < 0.05 ? 0.02 + 0.98 * (bAge - 0.03) / 0.02 : bAge < 0.1 ? 1 : 0.88);
+  velArrow.visible = st === 'approach';
+  if (velArrow.visible) { velArrow.position.set(carX - 0.8, 2.45, 0); velArrow.setLength(0.5 + vKmh * 0.03, 0.16, 0.1); }
+  forceArrow.visible = st === 'crash' || st === 'done';
+  if (forceArrow.visible) {
+    const amax = Math.max(CR.g1, CR.g2) * 9.81;
+    forceArrow.position.set(0.05, 0.62, 0);
+    forceArrow.setLength(0.45 + 1.1 * clamp(aNow / amax, 0, 1), 0.14, 0.09);
+  }
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5), hl = STEPS[scenario].hl;
+  for (const m of hlPool) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.22);
+  const boost = m => { m.emissiveIntensity = 0.5 + 0.3 * hlK; };
+  if (hl === 'ledger') { boost(M.body); boost(M.chrome); }
+  else if (hl === 'fs') boost(M.railM);
+  else if (hl === 'zone') { boost(M.cabin); boost(M.boxM); }
+  else if (hl === 'fold') { boost(M.boxM); boost(M.railM); }
+  else if (hl === 'restraint') { boost(M.occ); boost(M.bag); }
+  else if (hl === 'human') { boost(M.wall); boost(M.cabin); }
+  tmpV.fromArray(STEPS[scenario].tgt); tmpV.x += carG.position.x;
+  controls.target.lerp(tmpV, 0.05);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.visible = labelsOn && (!r.cond || r.cond());
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) { lastStatsT = now; updateStats(); updateFormula(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+updatePhysics();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+applyCrush(0, 0);
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+tglRotate.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
