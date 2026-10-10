@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客舱增压与压差控制 · 引气、外流阀与舱高程序</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#3d9bc4;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1d7aa3;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(61,155,196,.65); background: rgba(61,155,196,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  .abtn.hot.on { background: rgba(255,107,107,.14); }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(29,122,163,.55); background: rgba(29,122,163,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(61,155,196,.10); border-color: rgba(61,155,196,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(29,122,163,.08); border-color: rgba(29,122,163,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #a8d8f0; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="客舱增压与压差控制:引气、外流阀与舱高程序" data-en="Cabin Pressurization: Bleed Air, Outflow Valve and the Cabin-Altitude Schedule">客舱增压与压差控制:引气、外流阀与舱高程序</h1>
+  <div class="sub" data-zh="巡航 11 km 外压只有 ~0.22 atm(−57 °C),客舱却维持 ~2400 m 当量(舱压 ~0.75 atm)——压差 ~8 psi(0.55 bar)全由蒙皮扛;气源是发动机压气机引气,经空调组件降温后送入舱内;外流阀是一只电动可调排气口,按飞行剖面程序控制排出量,舱压跟着走:起飞后 30 s 内增压到场压、巡航保 ΔP≈8 psi、下降按 300-500 ft/min 的「舱高下降率」减压让耳朵舒服;舱高超 14000 ft 自动掉氧面罩;快速失压时 35000 ft 的有效清醒时间只有 ~30 s · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="At 11 km cruise the outside pressure is ~0.22 atm (-57 °C), yet the cabin holds a ~2400 m equivalent (~0.75 atm) - a ΔP of ~8 psi (0.55 bar) carried entirely by the skin. The air source is engine compressor bleed, cooled by the packs before entering the cabin; the outflow valve is a motor-driven adjustable exhaust, scheduled along the flight profile: pressurized to field pressure within 30 s after takeoff, ΔP≈8 psi in cruise, descending at a 300-500 ft/min cabin rate so ears stay comfortable; above 14000 ft cabin altitude the masks drop automatically; after rapid decompression the useful consciousness at 35000 ft is ~30 s · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">巡航 11 km 外压只有 ~0.22 atm(−57 °C),客舱却维持 ~2400 m 当量(舱压 ~0.75 atm)——压差 ~8 psi(0.55 bar)全由蒙皮扛;气源是发动机压气机引气,经空调组件降温后送入舱内;外流阀是一只电动可调排气口,按飞行剖面程序控制排出量,舱压跟着走:起飞后 30 s 内增压到场压、巡航保 ΔP≈8 psi、下降按 300-500 ft/min 的「舱高下降率」减压让耳朵舒服;舱高超 14000 ft 自动掉氧面罩;快速失压时 35000 ft 的有效清醒时间只有 ~30 s · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="舱内压力" data-en="cabin P">舱内压力</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="外界压力" data-en="outside P">外界压力</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="压差 ΔP" data-en="ΔP">压差 ΔP</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="舱内高度" data-en="cabin alt">舱内高度</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="飞行高度" data-en="aircraft alt">飞行高度</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="状态" data-en="status">状态</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip o" data-zh="引气管道:发动机→组件→客舱" data-en="bleed duct: engine → packs → cabin">引气管道:发动机→组件→客舱</span>
+    <span class="chip b" data-zh="外流阀:电动可调排气口" data-en="outflow valve: motorized exhaust">外流阀:电动可调排气口</span>
+    <span class="chip g" data-zh="绿=舱高 · 琥珀=飞行高度" data-en="green = cabin alt · amber = aircraft alt">绿=舱高 · 琥珀=飞行高度</span>
+    <span class="chip r" data-zh="失压:面罩掉落" data-en="depressurization: masks drop">失压:面罩掉落</span>
+  </div>
+  <div id="actions">
+    <button class="abtn hot" id="btnBoom" data-zh="失压模拟(外流阀卡全开)" data-en="depressurize (valve stuck open)">失压模拟(外流阀卡全开)</button>
+    <button class="abtn on" id="btnAuto" data-zh="恢复自动程序" data-en="restore AUTO schedule">恢复自动程序</button>
+    <button class="abtn" id="btnMasks" data-zh="手动放面罩" data-en="drop masks manually">手动放面罩</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="飞行剖面" data-en="flight profile">飞行剖面</label><input id="prof" type="range" min="0" max="1000" step="1" value="0"><span class="val" id="profVal">0%</span></div>
+  <div class="row"><label data-zh="外流阀开度" data-en="outflow open">外流阀开度</label><input id="valve" type="range" min="0" max="100" step="1" value="42"><span class="val" id="valveVal">42%</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglBleed" type="checkbox" checked> <span data-zh="引气流光" data-en="bleed glow">引气流光</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../pressure-cooker/" data-zh="高压锅:同款压差" data-en="pressure cooker: the same ΔP">高压锅:同款压差</a>
+    <a href="../relief-valve/" data-zh="安全阀:压差守门员" data-en="relief valve: the ΔP gatekeeper">安全阀:压差守门员</a>
+    <a href="../jet-engine/" data-zh="喷气发动机:引气从哪来" data-en="jet engine: where bleed comes from">喷气发动机:引气从哪来</a>
+    <a href="../decompression-sickness/" data-zh="减压病:气泡从哪来" data-en="decompression sickness: where bubbles form">减压病:气泡从哪来</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+const KPA2PSI = 0.145038;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xe4ecf3 : 0x0f1216);
+  M.ground.color.set(THEME === 'light' ? 0xc9d2dc : 0x161b22);
+  M.frame.color.set(THEME === 'light' ? 0x8a94a2 : 0x4a5560);
+  M.skin.opacity = THEME === 'light' ? 0.11 : 0.14;
+  M.dialFace.color.set(THEME === 'light' ? 0xf4f6f8 : 0xe8ecf0);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('客舱增压与压差控制 · 引气、外流阀与舱高程序', 'Cabin Pressurization · Bleed Air, Outflow Valve, Cabin Altitude Schedule');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateProfLabel();
+  updateValveLabel();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(3.4, 1.6, 4.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.6, -0.1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.0;
+controls.maxDistance = 14;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(5, 9, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-6, 3, -5);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x161b22, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  skin: new THREE.MeshStandardMaterial({ color: 0x9fb8cc, roughness: 0.15, metalness: 0.3,
+    transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false }),
+  frame: mat(0x4a5560, { roughness: 0.5, metalness: 0.6 }),
+  floor: mat(0x3a4550, { roughness: 0.7, metalness: 0.3 }),
+  seat: mat(0x54677d, { roughness: 0.7, metalness: 0.1 }),
+  duct: mat(0xd8b25c, { roughness: 0.35, metalness: 0.7 }),
+  valve: mat(0x69a7c9, { roughness: 0.4, metalness: 0.5 }),
+  dialFace: mat(0xe8ecf0, { roughness: 0.5, metalness: 0.05 }),
+  needle: mat(0xd94f4f, { roughness: 0.4, metalness: 0.3 }),
+  mask: mat(0xf2d449, { roughness: 0.5, metalness: 0.1 }),
+  engine: mat(0x8f9aa8, { roughness: 0.35, metalness: 0.75 }),
+};
+
+/* ---------------- 物理模型(真实量纲)----------------
+   标准大气:p = 101.325·(1−2.25577e−5·h)^5.2559 kPa:11 km → 22.7 kPa ≈ 0.224 atm;
+   巡航舱高 2400 m → 75.6 kPa ≈ 0.75 atm;ΔP = 52.9 kPa ≈ 7.7 psi ≈ 8 psi(结构上限 ~9.1);
+   剖面:滑行 0 m → 爬升 11 000 m → 巡航 → 下降,prog 0..1;
+   舱高程序:爬升跟随,下降按 −2.0 m/s ≈ −400 ft/min「舱高下降率」;
+   外流阀:开度 42% 为平衡点:d(舱高)/dt = (开度−42)/12 m/s(示意线性);
+   失压:舱压向外界松弛 τ≈4 s;舱高 >3048 m(10000 ft)警戒、>4267 m(14000 ft)掉面罩;
+   TUC:10 500 m(≈34 500 ft)~30 s;引气:压气机 5-9 级,~200 °C,空调组件降到 15-25 °C */
+function pAtm(altM) { return 101.325 * Math.pow(Math.max(0.05, 1 - 2.25577e-5 * altM), 5.2559) / 101.325; }
+function pKpa(altM) { return pAtm(altM) * 101.325; }
+function profAlt(p) {                     // 0..12000 m
+  if (p < 0.08) return 0;
+  if (p < 0.30) return 11000 * E2((p - 0.08) / 0.22);
+  if (p < 0.72) return 11000;
+  if (p < 0.95) return 11000 * (1 - E2((p - 0.72) / 0.23));
+  return 0;
+}
+function schedCabin(p) {                  // 计划舱高 m
+  if (p < 0.08) return 0;
+  if (p < 0.30) return 2400 * E2((p - 0.08) / 0.22);
+  if (p < 0.72) return 2400;
+  if (p < 0.95) return 2400 * (1 - E2((p - 0.72) / 0.23));
+  return 0;
+}
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let scenario = 0, et = 0;
+let prog = 0.01;                          // 飞行剖面 0..1
+let cabinAlt = 0;                          // 舱高 m
+let autoMode = true, valveMan = 42, fail = false;
+let masksDown = false, maskT = 0;
+let aAlt = 0, pOut = 0.224 * 101.325, pCab = 101.325, dPpsi = 0, valveEff = 42;
+function effValve() {
+  if (fail) return 100;
+  if (autoMode) {
+    const need = clamp((schedCabin(prog) - cabinAlt) * 0.4, -2.0, 2.5);
+    return clamp(42 + need * 12, 2, 98);
+  }
+  return valveMan;
+}
+function tucText() {
+  if (aAlt > 10500) return L('~30 s', '~30 s');
+  if (aAlt > 9000) return L('~1-2 min', '~1-2 min');
+  if (aAlt > 7000) return L('~3-5 min', '~3-5 min');
+  return L('—', '—');
+}
+
+/* ---------------- 场景装配 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(4.0, 4.0, 0.06, 56), M.ground);
+ground.position.y = -2.3;
+scene.add(ground);
+
+/* 机身:上半部切开(保留 ~250°),地板 + 座椅排 */
+const shellGeo = new THREE.CylinderGeometry(1.0, 1.0, 4.4, 40, 1, true, -2.15, 4.3);
+const fuselage = new THREE.Mesh(shellGeo, M.skin);
+fuselage.rotation.x = Math.PI / 2;
+fuselage.position.y = 0;
+scene.add(fuselage);
+for (const z of [-2.2, 2.2]) {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.01, 0.026, 8, 48), M.frame);
+  ring.position.z = z;
+  scene.add(ring);
+}
+const floor = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.06, 4.3), M.floor);
+floor.position.y = -0.18;
+scene.add(floor);
+const seatRows = [];
+for (let i = 0; i < 5; i++) {
+  const z = -1.5 + i * 0.75;
+  const rowG = new THREE.Group();
+  rowG.position.z = z;
+  scene.add(rowG);
+  for (const sx of [-1, 1]) {
+    const cush = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.10, 0.36), M.seat);
+    cush.position.set(sx * 0.42, -0.02, 0);
+    rowG.add(cush);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.42, 0.08), M.seat);
+    back.position.set(sx * 0.42, 0.20, 0.15);
+    rowG.add(back);
+  }
+  seatRows.push(rowG);
+}
+/* 氧气面罩组件:每排顶部一个四联面罩,默认收起 */
+const maskUnits = [];
+for (let i = 0; i < 5; i++) {
+  const unitG = new THREE.Group();
+  unitG.position.set(0, 0.62, -1.5 + i * 0.75);
+  scene.add(unitG);
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.12), M.frame);
+  unitG.add(box);
+  const cups = [];
+  for (let k = 0; k < 4; k++) {
+    const cupG = new THREE.Group();
+    cupG.position.set(-0.11 + k * 0.075, -0.02, 0);
+    cupG.visible = false;
+    unitG.add(cupG);
+    const lanyard = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.16, 4),
+      new THREE.MeshBasicMaterial({ color: 0xdde4ec }));
+    lanyard.position.y = -0.08;
+    cupG.add(lanyard);
+    const cup = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.05, 10), M.mask);
+    cup.position.y = -0.19;
+    cup.rotation.x = Math.PI;
+    cupG.add(cup);
+    cups.push(cupG);
+  }
+  maskUnits.push({ unitG, cups });
+}
+/* 发动机(引气源)+ 挂架 + 短舱 */
+const engine = new THREE.Group();
+engine.position.set(1.75, -0.85, 0.6);
+scene.add(engine);
+const nacelle = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.20, 0.72, 20), M.engine);
+nacelle.rotation.x = Math.PI / 2;
+engine.add(nacelle);
+const nacCore = new THREE.Mesh(new THREE.TorusGeometry(0.21, 0.02, 8, 28), M.frame);
+nacCore.position.z = 0.37;
+engine.add(nacCore);
+const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 0.3), M.engine);
+pylon.position.set(-0.35, 0.45, 0);
+engine.add(pylon);
+/* 引气管道:发动机 → 舱内顶部沿客舱 */
+const bleedCurve = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(1.7, -0.8, 0.6), new THREE.Vector3(1.15, -0.45, 0.5),
+  new THREE.Vector3(0.7, 0.1, 0.3), new THREE.Vector3(0.35, 0.45, -0.2),
+  new THREE.Vector3(0.35, 0.45, -1.6),
+]);
+const bleedDuct = new THREE.Mesh(new THREE.TubeGeometry(bleedCurve, 40, 0.042, 10, false), M.duct);
+scene.add(bleedDuct);
+/* 外流阀:腹鳍后部电动排气口(铰接鱼鳞片)+ 作动器 */
+const valveHinge = new THREE.Group();
+valveHinge.position.set(0.35, -1.0, 1.35);
+scene.add(valveHinge);
+const valveFlap = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.03, 0.34), M.valve);
+valveFlap.position.z = 0.17;
+valveHinge.add(valveFlap);
+const valveAct = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.10, 0.14), M.frame);
+valveAct.position.set(0.35, -0.92, 1.18);
+scene.add(valveAct);
+/* 高度标尺:0-12 km,双标记 */
+const tape = new THREE.Mesh(new THREE.BoxGeometry(0.05, 2.6, 0.03), M.frame);
+tape.position.set(-2.7, 0, 0);
+scene.add(tape);
+for (let k = 0; k <= 4; k++) {
+  const tick = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.015, 0.05), M.frame);
+  tick.position.set(-2.7, -1.3 + k * 0.65, 0);
+  scene.add(tick);
+}
+const acMk = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.06), mat(0xffb84d, { roughness: 0.4 }));
+acMk.position.set(-2.7, -1.3, 0.02);
+scene.add(acMk);
+const cabMk = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.06), mat(0x51cf66, { roughness: 0.4 }));
+cabMk.position.set(-2.7, -1.3, 0.02);
+scene.add(cabMk);
+
+/* 双气压表:舱内 / 外界(表盘 + 指针) */
+function makeDial(x, y) {
+  const g = new THREE.Group();
+  g.position.set(x, y, -0.6);
+  scene.add(g);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.022, 10, 40), M.frame);
+  g.add(rim);
+  const face = new THREE.Mesh(new THREE.CircleGeometry(0.29, 40), M.dialFace);
+  g.add(face);
+  for (let i = 0; i <= 10; i++) {
+    const a = (120 - 240 * i / 10) * Math.PI / 180;
+    const tick = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.05, 0.01), M.frame);
+    tick.position.set(Math.sin(a) * 0.25, Math.cos(a) * 0.25, 0.01);
+    tick.rotation.z = -a;
+    g.add(tick);
+  }
+  const pivot = new THREE.Group();
+  pivot.position.z = 0.02;
+  g.add(pivot);
+  const needle = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.24, 0.008), M.needle);
+  needle.position.y = 0.10;
+  pivot.add(needle);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.015, 12), M.frame);
+  hub.rotation.x = Math.PI / 2;
+  pivot.add(hub);
+  return { g, pivot };
+}
+const dialCab = makeDial(2.55, 1.05);
+const dialOut = makeDial(2.55, -0.35);
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, vis) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow, vis });
+  div.textContent = textFn();
+  return o;
+}
+function statusInfo() {
+  if (fail) return { t: L(`快速失压!外压 ${pKpa(aAlt).toFixed(0)} kPa,有效清醒时间 ${tucText()}`, `rapid decompression! outside ${pKpa(aAlt).toFixed(0)} kPa, TUC ${tucText()}`), c: 'bad' };
+  if (cabinAlt > 4267) return { t: L('舱高 >14000 ft:氧气面罩已落下', 'cabin alt >14000 ft: masks dropped'), c: 'bad' };
+  if (cabinAlt > 3048) return { t: L('舱高 >10000 ft:座舱高度警告', 'cabin alt >10000 ft: cabin altitude warning'), c: 'w' };
+  if (!autoMode) return { t: L('手动阀模式:舱压由你的开度决定', 'manual valve: you set the cabin pressure'), c: 'w' };
+  if (prog > 0.30 && prog < 0.72) return { t: L(`巡航:ΔP ${(dPpsi).toFixed(1)} psi 由蒙皮扛`, `cruise: skin carries ΔP ${dPpsi.toFixed(1)} psi`), c: 'g' };
+  if (prog >= 0.72) return { t: L(`下降:舱高下降率 ${cabRate().toFixed(0)} ft/min`, `descent: cabin rate ${cabRate().toFixed(0)} ft/min`), c: 'g' };
+  return { t: L('客舱增压控制器:程序模式', 'cabin pressure controller: AUTO'), c: 'st' };
+}
+function cabRate() {   // 当前舱高下降率 ft/min(数值微分)
+  return clamp((schedCabin(Math.min(1, prog + 0.01)) - cabinAlt) * 60 * 3.28 / 0.6, -2000, 2000);
+}
+addLabel(() => L(`发动机引气:压气机 5-9 级,~200 °C → 空调组件降温`, `engine bleed: compressor stages 5-9, ~200 °C → packs cool it`),
+  () => 'o', new THREE.Vector3(2.6, -1.35, 0.8), p => p.set(1.75, -1.25, 0.6),
+  () => prog > 0.03 && prog < 0.99 && !fail);
+addLabel(() => L(`外流阀:电动排气口,开度 ${valveEff.toFixed(0)}%`, `outflow valve: motorized exhaust, ${valveEff.toFixed(0)}% open`),
+  () => fail ? 'bad' : 'b', new THREE.Vector3(1.9, -1.75, 1.6), p => p.set(0.55, -1.15, 1.45));
+addLabel(() => L(`气压表:舱内 ${pKpaMm().toFixed(1)} kPa`, `gauge: cabin ${pKpaMm().toFixed(1)} kPa`),
+  () => 'g', new THREE.Vector3(3.3, 1.5, -0.6), p => p.set(dialCab.g.position.x, dialCab.g.position.y + 0.42, dialCab.g.position.z));
+addLabel(() => L(`气压表:外界 ${pKpa(aAlt).toFixed(1)} kPa`, `gauge: outside ${pKpa(aAlt).toFixed(1)} kPa`),
+  () => 'st', new THREE.Vector3(3.3, -0.85, -0.6), p => p.set(dialOut.g.position.x, dialOut.g.position.y + 0.42, dialOut.g.position.z));
+addLabel(() => L(`飞行高度 ${aAlt.toFixed(0)} m`, `aircraft ${aAlt.toFixed(0)} m`),
+  () => 'w', new THREE.Vector3(-3.5, 1.35, 0), p => p.set(-2.7, acMk.position.y + 0.14, 0));
+addLabel(() => L(`舱内高度 ${cabinAlt.toFixed(0)} m`, `cabin ${cabinAlt.toFixed(0)} m`),
+  () => masksDown ? 'bad' : 'g', new THREE.Vector3(-3.5, -0.6, 0), p => p.set(-2.7, cabMk.position.y - 0.14, 0));
+addLabel(() => fail
+  ? L('⚠ 阀卡全开:舱压≈外压,面罩落下!', '⚠ valve stuck open: cabin ≈ outside, masks down!')
+  : L('氧气面罩:舱高 >14000 ft 自动落下(化学氧 12-15 min)',
+    'oxygen masks: auto-drop above 14000 ft cabin alt (chemical O2, 12-15 min)'),
+  () => 'bad', new THREE.Vector3(0.7, 0.8, 0.35), null, () => masksDown);
+addLabel(() => statusInfo().t, () => statusInfo().c, new THREE.Vector3(0.2, 2.25, 0));
+function pKpaMm() { return pKpa(cabinAlt); }
+
+/* ---------------- 讲解步骤 ---------------- */
+let camTween = null;
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]),
+    t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+const STEPS = [
+  { hl: 'gauges', tgt: [0.9, 0.1, 0], cam: [3.4, 1.6, 4.4],
+    b: '为什么增压:11 km 高空的 0.22 atm', be: 'Why pressurize: 0.22 atm at 11 km',
+    d: '巡航 11 000 m:外界只有 22.7 kPa(0.22 atm)、−57 °C——人最多几分钟就会缺氧昏迷。客舱维持 ~2400 m 当量(75.6 kPa ≈ 0.75 atm):两只气压表读数之差就是 ΔP≈8 psi(0.55 bar),全部由蒙皮扛——宽体机蒙皮 ~1.5-2 mm 铝,每平方米顶 ~5.5 t。拖动「飞行剖面」滑块看两表分道扬镳。',
+    de: 'At 11 000 m cruise: outside 22.7 kPa (0.22 atm) at −57 °C — unassisted consciousness lasts minutes. The cabin holds ~2400 m equivalent (75.6 kPa ≈ 0.75 atm); the difference between the two gauges is ΔP≈8 psi (0.55 bar), carried by the skin alone — ~1.5-2 mm aluminum taking ~5.5 t per m². Drag the profile slider and watch the gauges split.' },
+  { hl: 'bleed', tgt: [1.5, -0.6, 0.6], cam: [3.1, 0.1, 2.9],
+    b: '气源:不是氧气罐,是发动机引气', be: 'The source: not oxygen tanks - engine bleed',
+    d: '增压用的空气来自发动机压气机第 5-9 级引气:几百 kPa、~200 °C,经空调组件(空调循环机/换热器)降到 15-25 °C 后送入客舱。发动机每秒吞进上百公斤空气,「漏」一点给座舱毫无压力;发动机熄火才轮到 APU 或地面气源。',
+    de: 'Pressurization air comes from compressor stages 5-9: a few hundred kPa at ~200 °C, cooled to 15-25 °C by the air-conditioning packs before entering the cabin. The engine swallows hundreds of kg of air per second - a small bleed costs nothing; on ground or with engines out, the APU takes over.' },
+  { hl: 'valve', tgt: [0.4, -1.0, 1.5], cam: [1.9, -1.35, 3.1],
+    b: '外流阀:一只电动排气口管住舱压', be: 'The outflow valve: one electric exhaust runs the show',
+    d: '进气的流量大致恒定,舱压由「排多少」决定:外流阀是一只电机驱动的可调鱼鳞片排气口,控制器按飞行剖面调度开度——开度大→排得多→舱压降、舱高升。拖动「外流阀开度」滑块(手动模式)亲手把舱压调来调去;旁边还有正负释压安全阀兜底(ΔP 限 ~9.1 psi / 负压防憋)。',
+    de: 'Inflow is roughly constant, so the cabin pressure is set by how much leaves: the outflow valve, a motor-driven adjustable flap. The controller schedules its opening along the flight profile - more open, more outflow, lower cabin pressure, higher cabin altitude. Drag the valve slider into manual mode and fly the pressure yourself; positive/negative relief valves back it up (~9.1 psi limit / negative-dump protection).' },
+  { hl: 'climb', tgt: [0, 0.35, 0], cam: [2.8, 1.3, 4.0],
+    b: '增压程序:起飞后 30 s 到场压', be: 'The schedule: field pressure within 30 s',
+    d: '起飞滑跑时控制器先微微预压(防起飞瞬间「砰」);离地后 30 s 内增压到场压,爬升中舱高缓升、ΔP 限制在 ~8 psi 以内(蒙皮疲劳限值,单程一次循环);到巡航锁定舱高 2400 m。看曲线:琥珀色(飞行高度)与绿色(舱高)在爬升段拉开、巡航段平行。',
+    de: 'During taxi the controller pre-pressurizes slightly (no thud at rotation); within 30 s after liftoff the cabin is at field pressure; in the climb cabin altitude rises gently with ΔP held under ~8 psi - the skin-fatigue limit, one cycle per flight. At cruise it locks at 2400 m. On the chart, amber (aircraft) and green (cabin) split in the climb and run parallel in cruise.' },
+  { hl: 'descent', tgt: [0, 0.2, -0.6], cam: [2.6, 1.0, 3.2],
+    b: '下降:舱高按 300-500 ft/min 减压', be: 'Descent: cabin descends at 300-500 ft/min',
+    d: '飞机以 ~2000-3000 ft/min 下降,舱高却只按 300-500 ft/min「下降」——外流阀逐渐收小、舱压缓慢回升,让中耳有时间平衡,落地时舱压≈场压,开门不会「砰」。这就是为什么落地后耳朵闷一下而不是疼一下。拖剖面滑块到下降段,读「舱高下降率」。',
+    de: 'The aircraft descends at 2000-3000 ft/min but the cabin only at 300-500 ft/min: the valve closes gradually, cabin pressure rises slowly, and the middle ear has time to equalize - at touchdown cabin pressure equals field pressure and the door opens without a bang. Slide the profile into descent and read the cabin rate.' },
+  { hl: 'masks', tgt: [0, 0.65, 0.3], cam: [2.2, 1.5, 3.0],
+    b: '14000 ft:面罩自动落下', be: '14000 ft: the masks drop automatically',
+    d: '舱高超 10 000 ft(3048 m)触发座舱高度警告;超 14 000 ft(4267 m)旅客氧气面罩自动落下——化学氧烛供 12-15 min,刚好够应急下降到 10 000 ft。把「外流阀开度」拉到 80-90%(或先看下一步的失压),看舱高飙升、面罩掉落、状态变红。',
+    de: 'Above 10 000 ft cabin altitude the warning horn sounds; above 14 000 ft passenger masks drop automatically - chemical oxygen candles last 12-15 min, exactly enough for an emergency descent to 10 000 ft. Push the valve to 80-90% (or wait for the next step), watch cabin altitude soar and the masks fall.' },
+  { hl: 'boom', tgt: [0.4, -0.95, 1.4], cam: [2.4, 0.6, 3.6],
+    b: '快速失压:35000 ft 只有 ~30 s', be: 'Rapid decompression: ~30 s at 35000 ft',
+    d: '点「失压模拟」:外流阀卡在全开,舱压在几秒内跌到外界值——舱高≈飞行高度,温度骤降、会有雾气。10 500 m 的有效清醒时间(TUC)只有 ~30 s:先给自己戴面罩再帮别人,不是自私是物理。下降到 10 000 ft 以下即可摘下面罩;点「恢复自动程序」复位。',
+    de: 'Hit depressurize: the valve jams open and cabin pressure falls to ambient within seconds - cabin altitude equals aircraft altitude, temperature plunges, a fog forms. Time of useful consciousness at 10 500 m: ~30 s. Donning your own mask first is physics, not selfishness; below 10 000 ft the masks can come off. Press AUTO to restore.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  const st = STEPS[scenario];
+  flyTo(st.cam, st.tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((st, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(st.b, st.be)}</b>　${L(st.d, st.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const st = statusInfo();
+  formulaEl.innerHTML =
+    L(`标准大气:p = 101.325·(1−2.25577e−5·h)^5.2559 kPa → 11 km 外压 <b>22.7 kPa(0.22 atm)</b>,舱高 2400 m → <b>75.6 kPa</b>`, `ISA: p = 101.325·(1−2.25577e−5·h)^5.2559 kPa → at 11 km <b>22.7 kPa (0.22 atm)</b>; cabin 2400 m → <b>75.6 kPa</b>`) +
+    '<br>' +
+    L(`ΔP = ${(pCab - pKpa(aAlt)).toFixed(1)} kPa = <b>${dPpsi.toFixed(2)} psi</b>(结构限 ~9.1);d(舱高)/dt = (阀开度−42)/12 m/s(示意线性,42% 为平衡)`, `ΔP = ${(pCab - pKpa(aAlt)).toFixed(1)} kPa = <b>${dPpsi.toFixed(2)} psi</b> (limit ~9.1); d(cabin alt)/dt = (valve−42)/12 m/s (schematic, 42% = balance)`) +
+    '<br>' +
+    L(`警戒线:舱高 <b>10 000 ft(3048 m)</b> 告警、<b>14 000 ft(4267 m)</b> 掉面罩(化学氧 12-15 min);失压后 35 000 ft TUC <b>~30 s</b>`, `Limits: <b>10 000 ft</b> warning, <b>14 000 ft</b> masks (chemical O2 12-15 min); after decompression TUC at 35 000 ft <b>~30 s</b>`) +
+    '<br>' +
+    L(`实时:舱 ${pCab.toFixed(1)} kPa · 外 ${pKpa(aAlt).toFixed(1)} kPa · 舱高 <b>${cabinAlt.toFixed(0)} m(${(cabinAlt * 3.28).toFixed(0)} ft)</b> · 阀 <b>${valveEff.toFixed(0)}%</b> · ${st.t}`,
+      `live: cabin ${pCab.toFixed(1)} kPa · outside ${pKpa(aAlt).toFixed(1)} kPa · cabin alt <b>${cabinAlt.toFixed(0)} m (${(cabinAlt * 3.28).toFixed(0)} ft)</b> · valve <b>${valveEff.toFixed(0)}%</b> · ${st.t}`);
+}
+
+/* ---------------- 飞行剖面曲线 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const px = p => (0.06 + 0.90 * p) * cw;
+  const yAlt = a => ch - (0.10 + 0.62 * clamp01(a / 12000)) * ch;
+  const yDP = d => ch - (0.10 + 0.62 * clamp01(d / 9.5)) * ch;
+  scopeCtx.font = `${Math.round(10 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('高度/ΔP', 'alt/ΔP'), 6 * dpr, 10 * dpr);
+  scopeCtx.fillText(L('剖面→', 'profile→'), cw - 40 * dpr, ch - 4 * dpr);
+  /* 计划舱高(绿)与飞行高度(琥珀) */
+  for (const [fn, col, key] of [[profAlt, 'rgba(255,184,77,.9)', 'ac'], [schedCabin, 'rgba(81,207,102,.9)', 'cab']]) {
+    scopeCtx.strokeStyle = col;
+    scopeCtx.lineWidth = Math.max(1.3, 1.2 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i <= 140; i++) {
+      const p = i / 140, v = fn(p);
+      i === 0 ? scopeCtx.moveTo(px(p), yAlt(v)) : scopeCtx.lineTo(px(p), yAlt(v));
+    }
+    scopeCtx.stroke();
+  }
+  /* ΔP 曲线(计划,青) */
+  scopeCtx.strokeStyle = 'rgba(96,190,255,.8)';
+  scopeCtx.beginPath();
+  for (let i = 0; i <= 140; i++) {
+    const p = i / 140;
+    const d = (pKpa(schedCabin(p)) - pKpa(profAlt(p))) * KPA2PSI;
+    i === 0 ? scopeCtx.moveTo(px(p), yDP(d)) : scopeCtx.lineTo(px(p), yDP(d));
+  }
+  scopeCtx.stroke();
+  scopeCtx.fillStyle = 'rgba(255,184,77,.9)';
+  scopeCtx.fillText(L('飞行高度', 'aircraft'), px(0.10), yAlt(11300) - 3 * dpr);
+  scopeCtx.fillStyle = 'rgba(81,207,102,.9)';
+  scopeCtx.fillText(L('计划舱高', 'sched cabin'), px(0.30), yAlt(2100) + 11 * dpr);
+  scopeCtx.fillStyle = 'rgba(96,190,255,.9)';
+  scopeCtx.fillText('ΔP', px(0.47), yDP(8.9));
+  /* 当前位置竖线 + 实际舱高点 */
+  scopeCtx.strokeStyle = 'rgba(200,210,225,.5)';
+  scopeCtx.setLineDash([3 * dpr, 3 * dpr]);
+  scopeCtx.beginPath(); scopeCtx.moveTo(px(prog), ch * 0.08); scopeCtx.lineTo(px(prog), ch * 0.92); scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  scopeCtx.fillStyle = '#8fe3b0';
+  scopeCtx.beginPath();
+  scopeCtx.arc(px(prog), yAlt(cabinAlt), Math.max(2.5, 2.5 * dpr), 0, TAU);
+  scopeCtx.fill();
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elProf = document.getElementById('prof'), elProfVal = document.getElementById('profVal');
+const elValve = document.getElementById('valve'), elValveVal = document.getElementById('valveVal');
+const btnBoom = document.getElementById('btnBoom'), btnAuto = document.getElementById('btnAuto'),
+  btnMasks = document.getElementById('btnMasks');
+const tglBleed = document.getElementById('tglBleed');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && (!r.vis || r.vis());
+}
+function updateProfLabel() { elProfVal.textContent = (prog * 100).toFixed(0) + '%'; }
+function updateValveLabel() { elValveVal.textContent = effValve().toFixed(0) + '%'; }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elProf.addEventListener('input', () => { prog = (+elProf.value) / 1000; updateProfLabel(); });
+elValve.addEventListener('input', () => {
+  valveMan = +elValve.value;
+  if (!fail) { autoMode = false; btnAuto.classList.remove('on'); }
+  updateValveLabel();
+});
+btnBoom.addEventListener('click', () => {
+  fail = !fail;
+  btnBoom.classList.toggle('on', fail);
+  if (fail) { autoMode = true; btnAuto.classList.add('on'); }
+});
+btnAuto.addEventListener('click', () => {
+  fail = false; autoMode = true;
+  btnBoom.classList.remove('on'); btnAuto.classList.add('on');
+});
+btnMasks.addEventListener('click', () => { masksDown = true; });
+document.getElementById('btnReset').addEventListener('click', () => {
+  prog = 0.01; cabinAlt = 0; fail = false; autoMode = true; masksDown = false; maskT = 0;
+  btnBoom.classList.remove('on'); btnAuto.classList.add('on');
+  for (const mu of maskUnits) for (const c of mu.cups) c.visible = false;
+  updateProfLabel();
+});
+tglBleed.addEventListener('change', () => { if (!tglBleed.checked) M.duct.emissiveIntensity = 0.08; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+controls.addEventListener('start', () => { camTween = null; });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const st = statusInfo();
+  stA.innerHTML = pCab.toFixed(1) + '<small> kPa</small>';
+  stA.className = 'v ' + (cabinAlt > 3048 ? 'warn' : 'ok');
+  stB.innerHTML = pKpa(aAlt).toFixed(1) + '<small> kPa</small>';
+  stB.className = 'v';
+  stC.innerHTML = dPpsi.toFixed(2) + '<small> psi</small>';
+  stC.className = 'v ' + (dPpsi > 8.9 ? 'bad' : dPpsi > 8.2 ? 'warn' : fail ? 'bad' : 'ok');
+  stD.innerHTML = cabinAlt.toFixed(0) + '<small> m</small>';
+  stD.className = 'v ' + (cabinAlt > 4267 ? 'bad' : cabinAlt > 3048 ? 'warn' : 'ok');
+  stE.innerHTML = aAlt.toFixed(0) + '<small> m</small>';
+  stE.className = 'v';
+  stF.textContent = fail ? L('快速失压', 'DECOMPRESS') : cabinAlt > 4267 ? L('面罩已放', 'MASKS') :
+    cabinAlt > 3048 ? L('舱高警戒', 'ALERT') : autoMode ? L('自动程序', 'AUTO') : L('手动阀', 'MANUAL');
+  stF.className = 'v ' + (fail || cabinAlt > 4267 ? 'bad' : cabinAlt > 3048 || !autoMode ? 'warn' : 'ok');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function simStep(dt) {
+  if (playing) prog = (prog + dt * speed / 60) % 1;
+  aAlt = profAlt(prog);
+  valveEff = effValve();
+  if (playing) {
+    if (fail) {
+      cabinAlt += (aAlt - cabinAlt) * clamp(dt * speed / 4, 0, 1);   // τ≈4 s 向外界松弛
+    } else {
+      const dot = (valveEff - 42) / 12;
+      cabinAlt = clamp(cabinAlt + dot * dt * speed, 0, Math.max(0, aAlt + 30));
+    }
+  }
+  pCab = pKpa(cabinAlt);
+  pOut = pKpa(aAlt);
+  dPpsi = (pCab - pOut) * KPA2PSI;
+  if (cabinAlt > 4267 && !masksDown) masksDown = true;
+}
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  simStep(dt);
+  /* 面罩掉落动画 */
+  if (masksDown && maskT < 1) maskT = Math.min(1, maskT + dt * 0.8);
+  for (const mu of maskUnits) {
+    for (let k = 0; k < mu.cups.length; k++) {
+      const c = mu.cups[k];
+      c.visible = maskT > 0.05 + k * 0.08;
+      c.position.y = -0.02 - 0.17 * E2(clamp01(maskT * 1.3 - k * 0.08));
+      c.rotation.z = 0.15 * Math.sin(et * 2 + k) * maskT;
+    }
+  }
+  /* 外流阀鱼鳞片 */
+  valveHinge.rotation.x = -valveEff / 100 * 1.15;
+  M.valve.emissiveIntensity = fail ? 0.5 + 0.3 * Math.sin(et * 8) : 0.1 + valveEff / 100 * 0.15;
+  /* 引气流光 */
+  const bleedOn = tglBleed.checked && prog > 0.03 && prog < 0.99 && !fail;
+  M.duct.emissiveIntensity = bleedOn ? 0.35 + 0.15 * Math.sin(et * 6) : 0.06;
+  /* 气压表指针:0-1.05 atm → ±120° */
+  const setNeedle = (dial, pAt) => {
+    const frac = clamp01(pAt / 1.05);
+    dial.pivot.rotation.z = (120 - 240 * frac) * Math.PI / 180;
+  };
+  setNeedle(dialCab, pCab);
+  setNeedle(dialOut, pOut);
+  /* 高度标尺标记 */
+  acMk.position.y = -1.3 + 2.6 * clamp01(aAlt / 12000);
+  cabMk.position.y = -1.3 + 2.6 * clamp01(cabinAlt / 12000);
+  cabMk.material.emissiveIntensity = masksDown ? 0.6 + 0.3 * Math.sin(et * 6) : 0.15;
+  /* 座椅/机身微光(状态) */
+  M.floor.emissiveIntensity = masksDown ? 0.12 + 0.08 * Math.sin(et * 5) : 0.06;
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  const boost = (m, k) => { m.emissiveIntensity = Math.max(m.emissiveIntensity, 0.35 + 0.3 * hlK * (k || 1)); };
+  if (hl === 'gauges') { boost(M.dialFace); boost(dialCab.pivot.children[0].material); }
+  else if (hl === 'bleed') { boost(M.duct, 1.4); boost(M.engine); }
+  else if (hl === 'valve') boost(M.valve, 1.4);
+  else if (hl === 'climb' || hl === 'descent') boost(M.frame);
+  else if (hl === 'masks') boost(M.mask, 1.4);
+  else if (hl === 'boom') { boost(M.valve, 1.4); boost(M.mask); }
+  /* 相机飞行 + 标签 */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+    updateValveLabel();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+if (qsFloat('p', -1) >= 0) { prog = clamp01(qsFloat('p', 0.01)); updateProfLabel(); }
+setPlayLabel();
+updateStats();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

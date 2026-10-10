@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>扩散模型 · 加噪千步、学一步去噪</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="扩散模型与逐步去噪:加噪一千步,学成一条反向链" data-en="Diffusion Models: Add Noise 1,000 Steps, Learn the Reverse Chain">扩散模型与逐步去噪:加噪一千步,学成一条反向链</h1>
+  <div class="sub" data-zh="前向过程把一张图逐步泡进高斯噪声:x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε,T=1000 步后 ᾱ→0、纯粹是雪花;训练一个网络 ε_θ(x_t,t) 在每个噪声水平上预测「混进来的噪声是哪一份」,损失就是预测噪声的 MSE;采样从纯噪声出发,每步按预测噪声扣掉一点、再按方差表 σ_t 加回一点随机性,反向链走 1000 步(或蒸馏到 20 步)得到一张全新图;Stable Diffusion / Midjourney 的「思考」就是这条链;同一框架换数据域,就得到视频生成、分子构象、蛋白质设计 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The forward process soaks an image in Gaussian noise: x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε; after T=1000 steps ᾱ→0 and only snow remains. A network ε_θ(x_t,t) is trained to predict which noise was mixed in - the loss is just MSE on that noise. Sampling starts from pure noise, subtracts a bit of predicted noise each step, adds back a schedule-amount σ_t of randomness, and walks the reverse chain for 1,000 steps (or distilled to 20) into a brand-new image. Stable Diffusion / Midjourney 'thinking' is this chain; swap the data domain and you get video, molecular conformers, protein design · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">前向过程把一张图逐步泡进高斯噪声:x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε,T=1000 步后 ᾱ→0、纯粹是雪花;训练一个网络 ε_θ(x_t,t) 在每个噪声水平上预测「混进来的噪声是哪一份」,损失就是预测噪声的 MSE;采样从纯噪声出发,每步按预测噪声扣掉一点、再按方差表 σ_t 加回一点随机性,反向链走 1000 步(或蒸馏到 20 步)得到一张全新图;Stable Diffusion / Midjourney 的「思考」就是这条链;同一框架换数据域,就得到视频生成、分子构象、蛋白质设计 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="噪声步 t" data-en="noise step t">噪声步 t</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="信号占比 ᾱ" data-en="signal ᾱ">信号占比 ᾱ</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="信噪比 SNR" data-en="SNR">信噪比 SNR</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="ε 轴向 RMS" data-en="ε axis RMS">ε 轴向 RMS</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="已去噪步数" data-en="denoise steps">已去噪步数</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="当前盆地(样本)" data-en="basin (sample)">当前盆地(样本)</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="蓝灰点云 = 噪声主导(x_t)" data-en="blue-gray cloud = noise-dominated x_t">蓝灰点云 = 噪声主导(x_t)</span>
+    <span class="chip r" data-zh="彩色 = 收敛中的样本(x₀ 盆地)" data-en="colored = converging sample (x₀ basin)">彩色 = 收敛中的样本(x₀ 盆地)</span>
+    <span class="chip g" data-zh="幻影 = 数据分布(三种形状)" data-en="ghost = data distribution (3 shapes)">幻影 = 数据分布(三种形状)</span>
+    <span class="chip o" data-zh="箭头 = ε_θ 的负梯度方向(演示速度场)" data-en="arrows = −∇ of ε_θ (demo velocity field)">箭头 = ε_θ 的负梯度方向(演示速度场)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnLoop" data-zh="自动循环(去噪→再加噪)" data-en="auto loop (denoise→re-noise)">自动循环(去噪→再加噪)</button>
+    <button class="abtn" id="btnStep" data-zh="单步去噪" data-en="one denoise step">单步去噪</button>
+    <button class="abtn" id="btnNoise" data-zh="加满噪声(t=T)" data-en="full noise (t=T)">加满噪声(t=T)</button>
+    <button class="abtn" id="btnResample" data-zh="新种子重采样" data-en="new seed sample">新种子重采样</button>
+    <button class="abtn" id="btnHeart" data-zh="指定盆地:心形" data-en="basin: heart">指定盆地:心形</button>
+    <button class="abtn" id="btnStar" data-zh="星形" data-en="star">星形</button>
+    <button class="abtn" id="btnSpiral" data-zh="螺旋" data-en="spiral">螺旋</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="跳步(蒸馏)" data-en="stride (distill)">跳步(蒸馏)</label><input id="stride" type="range" min="1" max="50" step="1" value="1"><span class="val" id="strideVal">1000 步</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="噪声 t" data-en="Noise t">噪声 t</span><input id="phase" type="range" min="0" max="1000" value="1000"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglField" type="checkbox" checked> <span data-zh="速度场箭头" data-en="velocity arrows">速度场箭头</span></label>
+        <label><input id="tglGhost" type="checkbox" checked> <span data-zh="目标幻影" data-en="target ghost">目标幻影</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../attention-mechanism/" data-zh="注意力机制" data-en="attention mechanism">注意力机制</a>
+    <a href="../neural-network/" data-zh="神经网络" data-en="neural network">神经网络</a>
+    <a href="../monte-carlo/" data-zh="蒙特卡洛方法" data-en="Monte Carlo">蒙特卡洛方法</a>
+    <a href="../protein-folding/" data-zh="蛋白质折叠" data-en="protein folding">蛋白质折叠</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+let gaussSpare = null;
+function gauss() {   // Box-Muller
+  if (gaussSpare !== null) { const v = gaussSpare; gaussSpare = null; return v; }
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  v = Math.random();
+  const r = Math.sqrt(-2 * Math.log(u));
+  gaussSpare = r * Math.sin(TAU * v);
+  return r * Math.cos(TAU * v);
+}
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.setHex(dark ? 0x161b22 : 0xdde3ea);
+  M.ringMesh.color.setHex(dark ? 0x2c313a : 0xc2cbd6);
+  arrowColor.setHex(dark ? 0xffd57a : 0x8f6a25);
+  for (const a of arrows) a.setColor(arrowColor);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('扩散模型 · 加噪千步、学一步去噪',
+    'Diffusion Model · 1,000 noisy steps, one learned reverse chain');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateStrideLabel();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(3.6, 4.4, 6.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 20;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.3;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
+keyLight.position.set(5, 9, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.4);
+fill.position.set(-6, 4, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+const MODES = ['heart', 'star', 'spiral'];
+const MODE_COL = [0xe07a8a, 0xffc14d, 0x4fd8c4];
+const MODE_ZH = ['心形', '星形', '螺旋'], MODE_EN = ['heart', 'star', 'spiral'];
+const NOISE_COL = new THREE.Color(0x5f7b9e);
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.15,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x161b22, { roughness: 0.94, metalness: 0, emissive: 0x000000 }),
+  ringMesh: mat(0x2c313a, { roughness: 0.8, metalness: 0, emissive: 0x000000 }),
+};
+const arrowColor = new THREE.Color(0xffd57a);
+
+/* ---------------- 数据分布:三种形状的目标点集(XZ 平面) ---------------- */
+const TGT_N = 380;
+function shapePoints(mode) {
+  const pts = [];
+  for (let i = 0; i < TGT_N; i++) {
+    const u = i / TGT_N;
+    let x, z;
+    if (mode === 'heart') {        // 心形参数曲线
+      const th = u * TAU;
+      const s = 1.25;
+      x = s * 16 * Math.pow(Math.sin(th), 3) / 17;
+      z = -s * (13 * Math.cos(th) - 5 * Math.cos(2 * th) - 2 * Math.cos(3 * th) - Math.cos(4 * th)) / 17;
+    } else if (mode === 'star') {  // 五角星轮廓:外内半径交替插值
+      const k = 5, seg = u * k;
+      const i0 = Math.floor(seg), f = seg - i0;
+      const th0 = (i0 / k) * TAU - Math.PI / 2, th1 = ((i0 + 0.5) / k) * TAU - Math.PI / 2;
+      const th2 = ((i0 + 1) / k) * TAU - Math.PI / 2;
+      const rO = 1.45, rI = 0.62;
+      let x1, z1, x2, z2;
+      if (f < 0.5) {
+        const g = f / 0.5;
+        x1 = Math.cos(th0) * rO; z1 = Math.sin(th0) * rO;
+        x2 = Math.cos(th1) * rI; z2 = Math.sin(th1) * rI;
+        x = x1 + (x2 - x1) * g; z = z1 + (z2 - z1) * g;
+      } else {
+        const g = (f - 0.5) / 0.5;
+        x1 = Math.cos(th1) * rI; z1 = Math.sin(th1) * rI;
+        x2 = Math.cos(th2) * rO; z2 = Math.sin(th2) * rO;
+        x = x1 + (x2 - x1) * g; z = z1 + (z2 - z1) * g;
+      }
+    } else {                        // 三叶螺旋 r = a·θ
+      const th = u * 3 * TAU;
+      const r = 0.16 * th;
+      x = Math.cos(th) * r; z = Math.sin(th) * r;
+    }
+    pts.push([x, z]);
+  }
+  return pts;
+}
+const TARGETS = MODES.map(shapePoints);
+
+/* ---------------- 噪声表:cosine 调度(Nichol & Dhariwal 2021) ---------------- */
+const T = 1000, SCHED_S = 0.008;
+const abar = new Float64Array(T + 1);
+{
+  const f0 = Math.cos((SCHED_S / (1 + SCHED_S)) * Math.PI / 2) ** 2;
+  for (let t = 0; t <= T; t++) {
+    const f = Math.cos(((t / T + SCHED_S) / (1 + SCHED_S)) * Math.PI / 2) ** 2;
+    abar[t] = clamp(f / f0, 1e-6, 1);
+  }
+  abar[0] = 1;
+}
+
+/* ---------------- 点云状态 ---------------- */
+const N = 560;
+let cur = new Float32Array(N * 3);       // x_t 当前位置
+let eps = new Float32Array(N * 3);       // 每点固定噪声(前向边缘分布可精确复现)
+let home = new Float32Array(N * 2);      // x₀ 盆地归属(目标点)
+let mode = 0;                            // 当前盆地
+let forcedMode = -1;                     // 指定盆地(-1 = 由种子决定)
+let t = T;                               // 当前噪声步
+let denoiseSteps = 0;
+let holdT = 0;                           // 到 t=0 后的展示停留
+const ptsGeo = new THREE.BufferGeometry();
+ptsGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+ptsGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+const points = new THREE.Points(ptsGeo, new THREE.PointsMaterial({
+  size: 0.055, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false }));
+points.frustumCulled = false;
+scene.add(points);
+
+const modeCols = MODE_COL.map(h => new THREE.Color(h));
+function forwardTo(tt) {
+  t = clamp(Math.round(tt), 0, T);
+  const sa = Math.sqrt(abar[t]), sb = Math.sqrt(1 - abar[t]);
+  for (let i = 0; i < N; i++) {
+    cur[i * 3] = sa * home[i * 2] + sb * eps[i * 3];
+    cur[i * 3 + 1] = sa * 0.12 + sb * eps[i * 3 + 1];
+    cur[i * 3 + 2] = sa * home[i * 2 + 1] + sb * eps[i * 3 + 2];
+  }
+  updateSliderFromT();
+}
+function reseed(forceM = -1) {
+  gaussSpare = null;
+  let cx = 0, cz = 0;
+  for (let i = 0; i < N; i++) {
+    eps[i * 3] = gauss(); eps[i * 3 + 1] = gauss(); eps[i * 3 + 2] = gauss();
+    cx += eps[i * 3]; cz += eps[i * 3 + 2];
+  }
+  cx /= N; cz /= N;
+  mode = forceM >= 0 ? forceM : Math.floor((((Math.atan2(cz, cx) + Math.PI) / TAU) * 3)) % 3;
+  const tg = TARGETS[mode];
+  for (let i = 0; i < N; i++) {
+    const p = tg[(i * 7 + Math.floor(Math.random() * 3)) % TGT_N];
+    home[i * 2] = p[0] + gauss() * 0.02;
+    home[i * 2 + 1] = p[1] + gauss() * 0.02;
+  }
+  buildGhost(mode);
+  denoiseSteps = 0; holdT = 0;
+  forwardTo(T);
+}
+function denoiseOnce() {
+  if (t === 0) return false;
+  const tPrev = t - 1;
+  const alpha = abar[t] / abar[Math.max(0, tPrev)];
+  const beta = 1 - alpha;
+  const sa = Math.sqrt(abar[t]), s1m = Math.sqrt(Math.max(1e-6, 1 - abar[t]));
+  const sAlpha = Math.sqrt(Math.max(1e-6, alpha));
+  const sigma = tPrev === 0 ? 0 : Math.sqrt(beta);
+  for (let i = 0; i < N; i++) {
+    const xt0 = cur[i * 3], xt1 = cur[i * 3 + 1], xt2 = cur[i * 3 + 2];
+    // ε_θ(演示):用「当前 x_t 应属的家」反推混入的噪声 → 学习到的 score 的替身
+    const e0 = (xt0 - sa * home[i * 2]) / s1m;
+    const e1 = (xt1 - sa * 0.12) / s1m;
+    const e2 = (xt2 - sa * home[i * 2 + 1]) / s1m;
+    let nx = (xt0 - beta / s1m * e0) / sAlpha;
+    let ny = (xt1 - beta / s1m * e1) / sAlpha;
+    let nz = (xt2 - beta / s1m * e2) / sAlpha;
+    if (sigma > 0) {
+      nx += sigma * gauss(); ny += sigma * gauss(); nz += sigma * gauss();
+    }
+    cur[i * 3] = nx; cur[i * 3 + 1] = Math.max(0.005, ny); cur[i * 3 + 2] = nz;
+  }
+  t = tPrev;
+  denoiseSteps++;
+  if (t === 0) for (let i = 0; i < N; i++) {
+    cur[i * 3] = home[i * 2]; cur[i * 3 + 1] = 0.12; cur[i * 3 + 2] = home[i * 2 + 1];
+  }
+  updateSliderFromT();
+  return true;
+}
+function denoiseStrided(s) {
+  let did = 0;
+  for (let k = 0; k < s; k++) if (denoiseOnce()) did++;
+  return did;
+}
+
+/* ---------------- 幻影目标 / 地面 / 速度场箭头 ---------------- */
+let ghost = null;
+function buildGhost(m) {
+  if (ghost) { scene.remove(ghost); ghost.geometry.dispose(); }
+  const pos = new Float32Array(TGT_N * 3);
+  for (let i = 0; i < TGT_N; i++) {
+    pos[i * 3] = TARGETS[m][i][0]; pos[i * 3 + 1] = 0.12; pos[i * 3 + 2] = TARGETS[m][i][1];
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  ghost = new THREE.Points(g, new THREE.PointsMaterial({
+    color: MODE_COL[m], size: 0.035, transparent: true, opacity: 0.28, depthWrite: false }));
+  ghost.frustumCulled = false;
+  scene.add(ghost);
+}
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 0.08, 48), M.ground);
+ground.position.y = -0.04;
+scene.add(ground);
+const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.03, 8, 64), M.ringMesh);
+ringMesh.rotation.x = Math.PI / 2;
+ringMesh.position.y = 0.02;
+scene.add(ringMesh);
+for (const r of [1.1, 2.2]) {
+  const rg = new THREE.Mesh(new THREE.TorusGeometry(r, 0.008, 6, 64), M.ringMesh);
+  rg.rotation.x = Math.PI / 2;
+  rg.position.y = 0.02;
+  scene.add(rg);
+}
+const arrows = [];
+const ARROW_N = 12;
+for (let i = 0; i < ARROW_N; i++) {
+  const a = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.5, arrowColor.getHex(), 0.12, 0.06);
+  a.visible = false;
+  scene.add(a);
+  arrows.push(a);
+}
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let stride = 1;
+let loopOn = true;
+let acc = 0, et = 0;
+let statusMsg = { z: '', e: '', t: 0 };
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+function modeName() { return LANG === 'en' ? MODE_EN[mode] : MODE_ZH[mode]; }
+function statusInfo() {
+  if (statusMsg.t > 0) return { t: LANG === 'en' ? statusMsg.e : statusMsg.z, c: 'g' };
+  if (t === 0) return { t: L(`采样完成:${modeName()} · 新样本来自纯噪声 × 学习到的反向链`, `sampling done: ${MODE_EN[mode]} · new sample from pure noise × learned reverse chain`), c: 'g' };
+  if (t > 900) return { t: L('纯噪声:ᾱ≈0,网络从这里开始「脑补」', 'pure noise: ᾱ≈0, the network hallucinates from here'), c: 'bad' };
+  if (t > 400) return { t: L('去噪前期:先定大盘(轮廓/布局),随机性还很大', 'early denoising: global layout first, randomness still large'), c: 'w' };
+  return { t: L('去噪后期:细节浮现,σ_t→0,轨迹被「冻结」', 'late denoising: details emerge, σ_t→0, trajectory freezes'), c: 'e' };
+}
+addLabel(() => statusInfo().t, () => statusInfo().c, new THREE.Vector3(0, 1.6, 0));
+addLabel(() => L(`数据分布:三种形状 = 三个盆地;幻影是本种子落进的「家」(${modeName()})`, `data distribution: 3 shapes = 3 basins; the ghost is this seed's home (${MODE_EN[mode]})`),
+  () => 'g', new THREE.Vector3(-1.9, 0.55, -1.8));
+addLabel(() => L(`x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε,ε~N(0,I):滑「噪声 t」即沿前向边缘分布滑动`, `x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε: drag "noise t" along the forward marginal`),
+  () => 'b', new THREE.Vector3(2.0, 1.15, 1.5));
+addLabel(() => L(`箭头 = −ε_θ 方向:每步「扣掉预测的噪声 + 按方差表 σ_t 加回随机性」(演示用预设速度场近似网络)`, `arrows = −ε_θ: each step subtracts predicted noise, adds σ_t randomness (demo velocity field stands in for the net)`),
+  () => 'o', new THREE.Vector3(0.2, 0.32, 2.2));
+addLabel(() => L(`种子 → 初始噪声质心 → 盆地 → 模式:不同种子,不同样本;20 步蒸馏走的是同一条链`, `seed → noise centroid → basin → mode: different seeds, different samples; 20-step distillation walks the same chain`),
+  () => 'st', new THREE.Vector3(-1.7, 1.3, 1.7));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'data', tgt: [0, 0.3, 0],
+    b: '数据:一张图就是一团点,三个盆地 = 三种样本', be: 'Data: an image is a point cloud; three basins, three samples',
+    d: '演示里「图像」是 XZ 平面上的点云,数据分布由心形/星形/螺旋三个模式组成。真实扩散模型里 x₀ 是百万像素,这里是 560 个点——数学结构完全一样:数据 = 高维空间中的一张「流形」,生成 = 从噪声里把一张全新流形「抠」出来。',
+    de: 'Here an "image" is a 560-point cloud on the XZ plane; the data distribution mixes heart/star/spiral modes. Real diffusion runs on millions of pixels, but the math is identical: data is a manifold in high dimensions, generation claws a fresh one out of noise.' },
+  { hl: 'forward', tgt: [0, 0.6, 0],
+    b: '前向:每步撒一点高斯噪声,1000 步泡成雪花', be: 'Forward: sprinkle Gaussian noise, 1,000 steps to snow',
+    d: '前向是固定公式不是学习:x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε。妙处在于任意 t 的边缘分布可以一步算出(不用迭代),拖「噪声 t」滑块就能瞬间跳到任何噪声水平:ᾱ_t 是信号存活率,从 1 单调衰到 ~0,T=1000 步后 x_T 是标准高斯——「泡进噪声」与「(反向)从噪声恢复」互为镜像。',
+    de: 'The forward process is a fixed formula, not learned: x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε. The trick: any t\'s marginal is closed-form - drag the noise slider to jump anywhere. ᾱ_t is signal survival, decaying 1 → ~0 over T=1000; x_T ends as pure Gaussian. Noising and denoising mirror each other.' },
+  { hl: 'sched', tgt: [0, 0.8, 0],
+    b: '噪声表:cosine 调度,SNR 从 +∞ 崩到 −∞', be: 'The schedule: cosine, SNR from +∞ down to −∞',
+    d: 'ᾱ_t 不是线性的:cosine 调度在前段慢慢泄信号、后段快速淹没,SNR=10·log10(ᾱ/(1−ᾱ)) 从 +∞(t=0)单调崩到 ≈−27 dB(t=1000)。看面板曲线:表就是「多快把图泡烂」的时间表,DDPM 用线性,SD 用 scaled-linear,各自为数据域调的。',
+    de: 'ᾱ_t is not linear: the cosine schedule leaks signal slowly at first, drowns it fast later; SNR = 10·log10(ᾱ/(1−ᾱ)) falls from +∞ at t=0 to ≈−27 dB at t=1000. The curve in the panel is the timetable for how fast the image drowns - DDPM used linear, SD scaled-linear, each tuned per domain.' },
+  { hl: 'train', tgt: [0, 0.4, 0],
+    b: '训练:只学一件事——预测「混进来的噪声是哪份」', be: 'Training: learn one thing - which noise was mixed in',
+    d: '损失出奇地简单:L = ‖ε − ε_θ(x_t, t)‖²。取一个干净样本、随机抽 t、撒一份已知噪声 ε,让网络看着脏图猜出那份 ε,猜错就 MSE 罚。为什么猜噪声而不是直接猜干净图?数学上等价(预测噪声 ⇔ 预测 score −∇log p),但噪声目标的尺度在各 t 下更均匀,训练更稳。',
+    de: 'The loss is disarmingly simple: L = ‖ε − ε_θ(x_t,t)‖². Sample a clean image, draw t, mix in a known ε, ask the net to recover it, penalize MSE. Predicting noise ≡ predicting the score −∇log p, but the noise target stays uniformly scaled across t, so training is stabler.' },
+  { hl: 'sample', tgt: [0, 0.5, 0],
+    b: '采样:扣一点预测噪声,加一点随机性,走反向链', be: 'Sampling: subtract predicted noise, add randomness, walk back',
+    d: '从 x_T~N(0,I) 出发,DDPM  ancestral 采样:x_{t−1} = (x_t − (1−α_t)/√(1−ᾱ_t)·ε_θ)/√α_t + σ_t·z。前半段把「猜到的噪声」扣掉,后半段按方差表加回一份新随机性 z~N(0,I)——这份随机性让每次生成结果都不同;σ_t 随 t→0 收缩,轨迹在低噪声段被「冻结」。点「单步去噪」亲眼看一步。',
+    de: 'Start from x_T~N(0,I). DDPM ancestral sampling: x_{t-1} = (x_t − (1−α_t)/√(1−ᾱ_t)·ε_θ)/√α_t + σ_t·z. First subtract the guessed noise, then re-inject schedule-measured randomness z~N(0,I) - that injection is why every generation differs. σ_t shrinks to 0, freezing the trajectory late. Try "one denoise step".' },
+  { hl: 'seed', tgt: [0, 0.7, 0],
+    b: '种子:不同初始噪声 → 不同盆地 → 不同样本', be: 'Seeds: different noise → different basin → different sample',
+    d: '初始噪声的质心落进哪个扇区,整团点云就被 score 场拽进哪个盆地——本演示里就是心/星/螺旋之一;真实模型里则是「_prompt 相似的不同图」。点「新种子重采样」多试几次;「指定盆地」相当于给生成加条件(conditioning)。步数可以砍:蒸馏/DM 求解器把 1000 步压到 20-50 步,走的是同一条链的粗版本。',
+    de: 'Where the initial noise centroid lands decides which basin the score field drags the cloud into - heart/star/spiral here, different images for the same prompt in real models. Try "new seed"; the basin buttons are conditioning. Steps can be cut: distillation and better solvers squeeze 1,000 to 20-50 coarse steps of the same chain.' },
+  { hl: 'domains', tgt: [0, 0.3, 0],
+    b: '同一框架,换数据域:SD / Midjourney / 视频 / 蛋白质', be: 'Same framework, new domains: SD / Midjourney / video / proteins',
+    d: '把 x₀ 从「像素」换成「潜空间特征」就是 Latent Diffusion(Stable Diffusion,在 64×64 潜空间跑,快一个数量级);换成「视频帧+时间层」是 Sora 类模型;换成「分子坐标」是构象生成;换成「蛋白质骨架」是 RFdiffusion 类设计工具。变的只有数据域与网络结构,「加噪-学反向」这条链一字不改。',
+    de: 'Swap x₀ from pixels to VAE latents and you get Latent Diffusion (Stable Diffusion, ~10× faster in a 64×64 latent space); to video frames + temporal layers for Sora-class models; to molecular coordinates for conformer generation; to protein backbones for RFdiffusion-style design. Only the domain and network change - the noise-learn-reverse chain stays verbatim.' },
+];
+let scenario = 0;
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = String(T - t);
+  elPhaseVal.textContent = L(`t=${t} · ${t === 0 ? '样本' : '噪声'}`, `t=${t} · ${t === 0 ? 'sample' : 'noise'}`);
+}
+function updateSliderFromT() { if (elPhase) syncPhase(); }
+let tgtVec = new THREE.Vector3(0, 0.3, 0);
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  const hl = STEPS[scenario].hl;
+  if (hl === 'forward' || hl === 'sched') forwardTo(hl === 'sched' ? 620 : 380);
+  if (hl === 'sample' && t === 0) forwardTo(T);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const snr = 10 * Math.log10(abar[t] / Math.max(1e-9, 1 - abar[t]));
+  let s2 = 0;
+  for (let i = 0; i < N; i++) s2 += eps[i * 3] * eps[i * 3] + eps[i * 3 + 1] * eps[i * 3 + 1] + eps[i * 3 + 2] * eps[i * 3 + 2];
+  const rms = Math.sqrt(s2 / (N * 3));
+  formulaEl.innerHTML =
+    L(`<b>前向(闭式):</b>x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε,ε~N(0,I);cosine 调度:ᾱ_t = f(t)/f(0),f(t)=cos²(((t/T+s)/(1+s))·π/2) · 当前 t=<b>${t}</b>,ᾱ=<b>${abar[t].toFixed(4)}</b>,SNR=<b>${snr.toFixed(1)} dB</b>`,
+      `<b>Forward (closed form):</b>x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε; cosine schedule: ᾱ_t = f(t)/f(0), f(t)=cos²(((t/T+s)/(1+s))·π/2) · now t=<b>${t}</b>, ᾱ=<b>${abar[t].toFixed(4)}</b>, SNR=<b>${snr.toFixed(1)} dB</b>`) +
+    '<br>' +
+    L(`<b>训练:</b>L = ‖ε − ε_θ(x_t,t)‖²(MSE,预测噪声 ⇔ 预测 score);<b>采样:</b>x_{t−1} = (x_t − (1−α_t)/√(1−ᾱ_t)·ε_θ)/√α_t + σ_t·z,α_t=ᾱ_t/ᾱ_{t−1}`,
+      `<b>Train:</b>L = ‖ε − ε_θ(x_t,t)‖² (MSE; noise ⇔ score);<b>Sample:</b>x_{t−1} = (x_t − (1−α_t)/√(1−ᾱ_t)·ε_θ)/√α_t + σ_t·z, α_t=ᾱ_t/ᾱ_{t−1}`) +
+    '<br>' +
+    L(`<b>实时:</b>盆地=<b>${modeName()}</b> · 已去噪 <b>${denoiseSteps}</b> 步(跳步 ×${stride},全长 ${Math.ceil(T / stride)} 步)· ε 实测 RMS=<b>${rms.toFixed(2)}</b>≈1 · ${t === 0 ? '<b>样本完成</b>' : '反向链进行中'}`,
+      `<b>live:</b>basin=<b>${MODE_EN[mode]}</b> · <b>${denoiseSteps}</b> denoise steps (stride ×${stride}, ${Math.ceil(T / stride)} total) · ε RMS=<b>${rms.toFixed(2)}</b>≈1 · ${t === 0 ? '<b>sample done</b>' : 'reverse chain running'}`);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elStride = document.getElementById('stride'), elStrideVal = document.getElementById('strideVal');
+const btnLoop = document.getElementById('btnLoop'), btnStep = document.getElementById('btnStep'),
+  btnNoise = document.getElementById('btnNoise'), btnResample = document.getElementById('btnResample'),
+  btnHeart = document.getElementById('btnHeart'), btnStar = document.getElementById('btnStar'),
+  btnSpiral = document.getElementById('btnSpiral'), btnReset = document.getElementById('btnReset');
+const tglField = document.getElementById('tglField');
+const tglGhost = document.getElementById('tglGhost');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() { for (const r of labelReg) r.o.visible = labelsOn; }
+function updateStrideLabel() {
+  elStrideVal.textContent = stride === 1 ? '1000 步' : (LANG === 'en' ? `×${stride} → ${Math.ceil(T / stride)} steps` : `×${stride} → ${Math.ceil(T / stride)} 步`);
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  forwardTo(T - parseInt(elPhase.value, 10));
+  holdT = 0;
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elStride.addEventListener('input', () => { stride = +elStride.value; updateStrideLabel(); updateFormula(); });
+btnLoop.addEventListener('click', () => { loopOn = !loopOn; btnLoop.classList.toggle('on', loopOn); });
+btnStep.addEventListener('click', () => {
+  const did = denoiseStrided(stride);
+  if (!did) statusMsg = { z: '已在 t=0:点「加满噪声」或「新种子重采样」再来一轮', e: 'already at t=0: re-noise or resample for another round', t: 2.5 };
+});
+btnNoise.addEventListener('click', () => { forwardTo(T); holdT = 0; });
+btnResample.addEventListener('click', () => { reseed(-1); statusMsg = { z: `新种子:初始噪声质心落入「${modeName()}」盆地`, e: `new seed: noise centroid falls into the ${MODE_EN[mode]} basin`, t: 3 }; });
+for (const [b, m] of [[btnHeart, 0], [btnStar, 1], [btnSpiral, 2]]) {
+  b.addEventListener('click', () => {
+    reseed(m);
+    statusMsg = { z: `条件生成:强制盆地 = ${modeName()}(真实模型里即 prompt/类别条件)`, e: `conditioned: basin forced to ${MODE_EN[mode]} (≈ prompt/class conditioning)`, t: 3 };
+  });
+}
+btnReset.addEventListener('click', () => {
+  reseed(-1);
+  stride = 1; elStride.value = 1; updateStrideLabel();
+  statusMsg = { z: '复位:新种子,跳步 ×1', e: 'reset: fresh seed, stride ×1', t: 2.5 };
+});
+tglField.addEventListener('change', () => { for (const a of arrows) a.visible = false; });
+tglGhost.addEventListener('change', () => { if (ghost) ghost.visible = tglGhost.checked; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- ᾱ 曲线图 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const px = f => (0.05 + 0.9 * f) * cw, py = v => ch - (0.14 + 0.74 * clamp01(v)) * ch;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(px(0), py(0)); scopeCtx.lineTo(px(1), py(0));
+  scopeCtx.moveTo(px(0), py(0)); scopeCtx.lineTo(px(0), py(1));
+  scopeCtx.stroke();
+  scopeCtx.font = `${Math.round(10 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('ᾱ(信号存活率)随 t:0→1000', 'ᾱ (signal survival) vs t: 0→1000'), px(0.28), py(0.94));
+  /* ᾱ 曲线 */
+  scopeCtx.strokeStyle = 'rgba(255,201,100,.9)';
+  scopeCtx.lineWidth = Math.max(1.4, 1.4 * dpr);
+  scopeCtx.beginPath();
+  for (let i = 0; i <= 100; i++) {
+    const tt = Math.round(i / 100 * T);
+    const v = Math.sqrt(abar[tt]);   // 开方更耐看(线性 ᾱ 过快坠崖)
+    i === 0 ? scopeCtx.moveTo(px(i / 100), py(v)) : scopeCtx.lineTo(px(i / 100), py(v));
+  }
+  scopeCtx.stroke();
+  /* 噪声份额填充 */
+  scopeCtx.fillStyle = 'rgba(95,123,158,.18)';
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(px(0), py(0));
+  for (let i = 0; i <= 100; i++) {
+    const tt = Math.round(i / 100 * T);
+    scopeCtx.lineTo(px(i / 100), py(1 - Math.sqrt(abar[tt])));
+  }
+  scopeCtx.lineTo(px(1), py(0));
+  scopeCtx.closePath();
+  scopeCtx.fill();
+  /* 当前 t 标记 */
+  const f = t / T;
+  scopeCtx.strokeStyle = 'rgba(255,107,107,.85)';
+  scopeCtx.setLineDash([4 * dpr, 3 * dpr]);
+  scopeCtx.beginPath(); scopeCtx.moveTo(px(f), py(0)); scopeCtx.lineTo(px(f), py(1)); scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  scopeCtx.fillStyle = '#8fe3b0';
+  scopeCtx.beginPath();
+  scopeCtx.arc(px(f), py(Math.sqrt(abar[t])), Math.max(2.5, 2.5 * dpr), 0, TAU);
+  scopeCtx.fill();
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText('0', px(0) - 6 * dpr, ch - 3 * dpr);
+  scopeCtx.fillText('t=1000', px(0.94), ch - 3 * dpr);
+}
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const snr = 10 * Math.log10(abar[t] / Math.max(1e-9, 1 - abar[t]));
+  let s2 = 0;
+  for (let i = 0; i < N; i++) s2 += eps[i * 3] * eps[i * 3] + eps[i * 3 + 1] * eps[i * 3 + 1] + eps[i * 3 + 2] * eps[i * 3 + 2];
+  const rms = Math.sqrt(s2 / (N * 3));
+  stA.innerHTML = t + '<small> /' + T + '</small>';
+  stA.className = 'v ' + (t === 0 ? 'ok' : t > 900 ? 'bad' : 'warn');
+  stB.innerHTML = abar[t].toFixed(4);
+  stB.className = 'v';
+  stC.innerHTML = snr.toFixed(1) + '<small> dB</small>';
+  stC.className = 'v ' + (snr > 0 ? 'ok' : snr > -15 ? 'warn' : 'bad');
+  stD.innerHTML = rms.toFixed(2) + '<small> ≈1</small>';
+  stD.className = 'v ok';
+  stE.innerHTML = denoiseSteps + '<small> /' + Math.ceil(T / stride) + '</small>';
+  stE.className = 'v ' + (t === 0 ? 'ok' : '');
+  stF.textContent = modeName() + (t === 0 ? L(' ✓', ' ✓') : '…');
+  stF.className = 'v ' + (t === 0 ? 'ok' : '');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  if (statusMsg.t > 0) statusMsg.t -= dt;
+  /* 反向链自动推进:24·speed 步/秒,跳步 stride */
+  if (playing && dt > 0) {
+    if (t > 0) {
+      acc += dt * speed * 24;
+      let guard = 0;
+      while (acc >= 1 && t > 0 && guard < 64) {
+        acc -= 1;
+        denoiseStrided(stride);
+        guard++;
+      }
+      if (acc > 4) acc = 0;
+    } else if (loopOn) {
+      holdT += dt;
+      if (holdT > 1.4) {
+        reseed(-1);
+        statusMsg = { z: `循环:新种子落进「${modeName()}」盆地——同一条反向链,不同终点`, e: `loop: new seed lands in the ${MODE_EN[mode]} basin - same chain, different end`, t: 2.5 };
+      }
+    }
+  }
+  /* 点云上屏 + 颜色随噪声水平插值 */
+  const pos = ptsGeo.attributes.position.array, col = ptsGeo.attributes.color.array;
+  const mixK = Math.pow(1 - t / T, 0.7);          // 越接近数据越彩色
+  for (let i = 0; i < N; i++) {
+    pos[i * 3] = cur[i * 3]; pos[i * 3 + 1] = cur[i * 3 + 1]; pos[i * 3 + 2] = cur[i * 3 + 2];
+    const c = modeCols[mode];
+    const k = clamp01(mixK * (0.75 + 0.25 * Math.sin(et * 2 + i)));
+    col[i * 3] = NOISE_COL.r + (c.r - NOISE_COL.r) * k;
+    col[i * 3 + 1] = NOISE_COL.g + (c.g - NOISE_COL.g) * k;
+    col[i * 3 + 2] = NOISE_COL.b + (c.b - NOISE_COL.b) * k;
+  }
+  ptsGeo.attributes.position.needsUpdate = true;
+  ptsGeo.attributes.color.needsUpdate = true;
+  /* 速度场箭头(去噪中显示) */
+  const showArrows = tglField.checked && t > 0 && t < T;
+  for (let a = 0; a < ARROW_N; a++) {
+    const i = (a * 97) % N;
+    const ar = arrows[a];
+    if (!showArrows) { ar.visible = false; continue; }
+    const dx = home[i * 2] - cur[i * 3], dy = 0.12 - cur[i * 3 + 1], dz = home[i * 2 + 1] - cur[i * 3 + 2];
+    const len = Math.hypot(dx, dy, dz) || 1e-4;
+    ar.position.set(cur[i * 3], cur[i * 3 + 1] + 0.03, cur[i * 3 + 2]);
+    ar.setDirection(new THREE.Vector3(dx / len, dy / len, dz / len));
+    ar.setLength(clamp(len * 0.55, 0.12, 0.7), 0.1, 0.05);
+    ar.visible = true;
+  }
+  /* 幻影随噪声水平淡入 */
+  if (ghost) {
+    ghost.visible = tglGhost.checked;
+    ghost.material.opacity = 0.1 + 0.3 * (1 - t / T);
+  }
+  /* 相机目标缓动 + 标签 */
+  controls.target.lerp(tgtVec, 0.05);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+    syncPhase();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+updateStrideLabel();
+sizeScope();
+stride = clamp(qsFloat('stride', 1) | 0, 1, 50);
+elStride.value = stride; updateStrideLabel();
+reseed(-1);
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
