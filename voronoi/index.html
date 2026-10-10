@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voronoi 图 · 最近邻划分、Delaunay 对偶与 Lloyd 松弛</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="Voronoi 图与最近邻划分:中垂线成界、三圆共点、Lloyd 均匀化" data-en="Voronoi Diagrams: Nearest-Neighbor Tiles, Delaunay Dual, Lloyd Relaxation">Voronoi 图与最近邻划分:中垂线成界、三圆共点、Lloyd 均匀化</h1>
+  <div class="sub" data-zh="给平面撒 n 个站点,每个点只问一句「离谁最近」,答案就把平面切成 n 个凸胞:胞边界必在两站中垂线上、顶点是三个站点的公共外心(空圆:该外接圆内不含任何其他站点);把相邻站点连起来就得到对偶的 Delaunay 三角剖分,n 个点的边数 ≤ 3n−6;应用遍布手机基站服务区、气象站插值、蜂窝结构、机器人路径规划;Lloyd 松弛把每个站点挪到自己胞的质心,迭代 10-20 次后质心偏差 < 0.01,站点近乎均匀——蓝噪声采样的免费做法 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Scatter n sites on a plane, ask every point one question - who is closest? - and the answers cut the plane into n convex cells: cell borders lie on perpendicular bisectors, vertices are circumcenters shared by three sites (empty circle: no other site inside); connecting adjacent sites gives the dual Delaunay triangulation, at most 3n-6 edges. Applications: cell-tower service areas, weather-station interpolation, honeycomb, robot planning. Lloyd relaxation moves each site to its cell centroid; after 10-20 iterations the offset drops below 0.01 and sites are near-uniform - blue noise for free · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">给平面撒 n 个站点,每个点只问一句「离谁最近」,答案就把平面切成 n 个凸胞:胞边界必在两站中垂线上、顶点是三个站点的公共外心(空圆:该外接圆内不含任何其他站点);把相邻站点连起来就得到对偶的 Delaunay 三角剖分,n 个点的边数 ≤ 3n−6;应用遍布手机基站服务区、气象站插值、蜂窝结构、机器人路径规划;Lloyd 松弛把每个站点挪到自己胞的质心,迭代 10-20 次后质心偏差 < 0.01,站点近乎均匀——蓝噪声采样的免费做法 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="站点数 n" data-en="sites n">站点数 n</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="Delaunay 边数" data-en="Delaunay edges">Delaunay 边数</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="Lloyd 迭代" data-en="Lloyd iters">Lloyd 迭代</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="质心平均偏差" data-en="centroid offset">质心平均偏差</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="探针最近距离" data-en="probe dist">探针最近距离</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="状态" data-en="state">状态</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip g" data-zh="站点(可拖动 / 点击加站)" data-en="sites (drag / click to add)">站点(可拖动 / 点击加站)</span>
+    <span class="chip b" data-zh="Voronoi 胞:最近邻分区" data-en="Voronoi cell: nearest zone">Voronoi 胞:最近邻分区</span>
+    <span class="chip o" data-zh="Delaunay 对偶三角网" data-en="Delaunay dual triangles">Delaunay 对偶三角网</span>
+    <span class="chip r" data-zh="空圆:三圆共点顶点" data-en="empty circle at vertices">空圆:三圆共点顶点</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnDela" data-zh="Delaunay 对偶" data-en="Delaunay dual">Delaunay 对偶</button>
+    <button class="abtn on" id="btnCircle" data-zh="空圆演示" data-en="empty circle">空圆演示</button>
+    <button class="abtn" id="btnLloyd1" data-zh="Lloyd ×1" data-en="Lloyd ×1">Lloyd ×1</button>
+    <button class="abtn" id="btnLloyd20" data-zh="Lloyd ×20(蓝噪声)" data-en="Lloyd ×20 (blue noise)">Lloyd ×20(蓝噪声)</button>
+    <button class="abtn" id="btnRand" data-zh="随机撒点" data-en="random scatter">随机撒点</button>
+    <button class="abtn" id="btnGrid" data-zh="网格站点" data-en="grid sites">网格站点</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="倒锥高度比例" data-en="cone height">倒锥高度比例</label><input id="hK" type="range" min="10" max="70" step="1" value="40"><span class="val" id="hKVal">0.40</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglProbe" type="checkbox" checked> <span data-zh="探针巡游" data-en="probe tour">探针巡游</span></label>
+        <label><input id="tglAutoLloyd" type="checkbox"> <span data-zh="自动 Lloyd" data-en="auto Lloyd">自动 Lloyd</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../k-means/" data-zh="K-means 聚类" data-en="k-means clustering">K-means 聚类</a>
+    <a href="../honeycomb/" data-zh="蜂窝结构" data-en="honeycomb">蜂窝结构</a>
+    <a href="../cellular-network/" data-zh="蜂窝网络" data-en="cellular network">蜂窝网络</a>
+    <a href="../shortest-path/" data-zh="最短路径" data-en="shortest path">最短路径</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+const lerp = (a, b, f) => a + (b - a) * f;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.frame.color.setHex(dark ? 0x4a5560 : 0x7c8694);
+  M.cellEdge.color.setHex(dark ? 0xaebdd0 : 0x2c3a48);
+  M.delaLine.color.setHex(dark ? 0xe8c069 : 0x8f6a25);
+  M.circleLine.color.setHex(dark ? 0xff8f6b : 0xc0392b);
+  M.probe.color.setHex(dark ? 0xffd57a : 0xb07d1e);
+  M.probeLine.color.setHex(dark ? 0xffd57a : 0xb07d1e);
+  M.axisGrid.color.setHex(dark ? 0x3a404a : 0xaebac6);
+  refreshPalette();
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('Voronoi 图 · 最近邻划分、Delaunay 对偶与 Lloyd 松弛',
+    'Voronoi Diagram · nearest-neighbor cells, Delaunay dual, Lloyd relaxation');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(4.4, 5.4, 7.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, -0.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 22;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.autoRotateSpeed = 0.35;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.8));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
+keyLight.position.set(5, 9, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.45);
+fill.position.set(-6, 4, -5);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+const PALETTE = [0x2f9e77, 0x3f7fd4, 0xc98a2e, 0xb85450, 0x7a63c2, 0x2e9bb0,
+  0xa8579b, 0x6f9c35, 0xc96a35, 0x4f7fae, 0x8a9c3a, 0xb0476e];
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.1,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  cellEdge: new THREE.LineBasicMaterial({ color: 0xaebdd0, transparent: true, opacity: 0.75 }),
+  delaLine: new THREE.LineBasicMaterial({ color: 0xe8c069, transparent: true, opacity: 0.85 }),
+  circleLine: new THREE.LineBasicMaterial({ color: 0xff8f6b, transparent: true, opacity: 0.9 }),
+  triLine: new THREE.LineBasicMaterial({ color: 0xff8f6b, transparent: true, opacity: 0.55 }),
+  probe: mat(0xffd57a, { roughness: 0.3, metalness: 0.3, emissiveIntensity: 0.9 }),
+  probeLine: new THREE.LineBasicMaterial({ color: 0xffd57a, transparent: true, opacity: 0.8 }),
+  site: mat(0xffffff, { roughness: 0.35, metalness: 0.2 }),
+  frame: mat(0x4a5560, { roughness: 0.7, metalness: 0.3 }),
+  axisGrid: new THREE.GridHelper(20, 20, 0x3a404a, 0x3a404a).material,
+  circleDot: mat(0xff8f6b, { emissiveIntensity: 0.8 }),
+};
+const paletteCols = PALETTE.map(h => new THREE.Color(h));
+function refreshPalette() {
+  const k = THEME === 'light' ? 0.82 : 1.0;
+  for (let i = 0; i < cellMats.length; i++) cellMats[i].color.copy(paletteCols[i]).multiplyScalar(k);
+  surfaceMat.needsUpdate = true;
+}
+const cellMats = PALETTE.map(h => new THREE.MeshStandardMaterial({
+  color: h, roughness: 0.85, metalness: 0, transparent: true, opacity: 0.34,
+  emissive: h, emissiveIntensity: 0.06, side: THREE.DoubleSide, depthWrite: false }));
+const surfaceMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0,
+  flatShading: true, side: THREE.DoubleSide });
+
+/* ---------------- 域与状态 ---------------- */
+const DOM = { x: 3.3, z: 2.3 };            // 平面半宽
+const N_CAP = 48;
+let sites = [];                            // {x, z}
+let cells = [];                            // {poly:[[x,z]..], nbs:[..], centroid:[x,z]|null}
+let delaSet = new Set();                   // "i,j" i<j
+let lloydN = 0;
+let dirty = true;
+let showDela = true, showCircle = true;
+let dragging = -1, downXY = null, moved = false;
+let heightK = 0.40;
+let statusMsg = { z: '', e: '', t: 0 };
+let scenario = 0, lastDev = 0;
+
+/* ---------------- Voronoi:半平面裁剪 ---------------- */
+function clipHalf(poly, ax, az, bx, bz) {
+  // 保留更靠近 a 的一侧:直线 = 中垂线,法向 = b−a
+  const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+  let nx = bx - ax, nz = bz - az;
+  const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+  const out = []; let cut = false;
+  const n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const p = poly[i], q = poly[(i + 1) % n];
+    const dp = (p[0] - mx) * nx + (p[1] - mz) * nz;
+    const dq = (q[0] - mx) * nx + (q[1] - mz) * nz;
+    if (dp <= 0) out.push(p);
+    if ((dp < 0 && dq > 0) || (dp > 0 && dq < 0)) {
+      const t = dp / (dp - dq);
+      out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
+      cut = true;
+    }
+  }
+  return { poly: out, cut };
+}
+function computeCells() {
+  /* 第一遍:纯半平面交,得到每个站点的最终胞 */
+  const polys = sites.map((s, i) => {
+    let poly = [[-DOM.x, -DOM.z], [DOM.x, -DOM.z], [DOM.x, DOM.z], [-DOM.x, DOM.z]];
+    for (let j = 0; j < sites.length; j++) {
+      if (j === i) continue;
+      poly = clipHalf(poly, s.x, s.z, sites[j].x, sites[j].z).poly;
+      if (!poly.length) break;
+    }
+    return poly;
+  });
+  /* 第二遍:相邻 = 最终胞上确有一段边落在 (i,j) 的中垂线上 */
+  cells = polys.map((poly, i) => {
+    const nbs = [];
+    if (poly.length >= 3) {
+      for (let j = 0; j < sites.length; j++) {
+        if (j === i) continue;
+        if (sharesBisectorEdge(poly, sites[i], sites[j])) nbs.push(j);
+      }
+    }
+    return { poly, nbs, centroid: poly.length >= 3 ? centroidOf(poly) : null };
+  });
+  delaSet = new Set();
+  for (let i = 0; i < cells.length; i++) for (const j of cells[i].nbs) delaSet.add(i < j ? i + ',' + j : j + ',' + i);
+}
+function sharesBisectorEdge(poly, a, b) {
+  const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+  let nx = b.x - a.x, nz = b.z - a.z;
+  const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+  const n = poly.length;
+  for (let k = 0; k < n; k++) {
+    const p = poly[k], q = poly[(k + 1) % n];
+    if (Math.abs((p[0] - mx) * nx + (p[1] - mz) * nz) < 1e-6 &&
+        Math.abs((q[0] - mx) * nx + (q[1] - mz) * nz) < 1e-6 &&
+        Math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-5) return true;
+  }
+  return false;
+}
+function centroidOf(poly) {
+  let a = 0, cx = 0, cz = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    const cr = p[0] * q[1] - q[0] * p[1];
+    a += cr; cx += (p[0] + q[0]) * cr; cz += (p[1] + q[1]) * cr;
+  }
+  if (Math.abs(a) < 1e-9) return null;
+  a *= 0.5;
+  return [cx / (6 * a), cz / (6 * a)];
+}
+function circum(a, b, c) {
+  const d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+  if (Math.abs(d) < 1e-9) return null;
+  const a2 = a[0] * a[0] + a[1] * a[1], b2 = b[0] * b[0] + b[1] * b[1], c2 = c[0] * c[0] + c[1] * c[1];
+  const ux = (a2 * (b[1] - c[1]) + b2 * (c[1] - a[1]) + c2 * (a[1] - b[1])) / d;
+  const uy = (a2 * (c[0] - b[0]) + b2 * (a[0] - c[0]) + c2 * (b[0] - a[0])) / d;
+  return [ux, uy, Math.hypot(ux - a[0], uy - a[1])];
+}
+function lloydOnce() {
+  let dev = 0, cnt = 0;
+  for (let i = 0; i < sites.length; i++) {
+    const c = cells[i].centroid;
+    if (!c) continue;
+    dev += Math.hypot(sites[i].x - c[0], sites[i].z - c[1]);
+    cnt++;
+    sites[i].x = c[0]; sites[i].z = c[1];
+  }
+  lloydN++;
+  dirty = true;
+  return cnt ? dev / cnt : 0;
+}
+
+/* ---------------- 场景装配 ---------------- */
+const borderG = new THREE.Group();
+scene.add(borderG);
+function buildBorder() {
+  borderG.clear();
+  const t = 0.05, h = 0.16;
+  const bars = [
+    [0, -DOM.z - t / 2, DOM.x * 2 + t * 2, t], [0, DOM.z + t / 2, DOM.x * 2 + t * 2, t],
+    [-DOM.x - t / 2, 0, t, DOM.z * 2], [DOM.x + t / 2, 0, t, DOM.z * 2]];
+  for (const b of bars) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(b[2], h, b[3]), M.frame);
+    m.position.set(b[0], -h / 2, b[1]);
+    borderG.add(m);
+  }
+}
+buildBorder();
+M.axisGrid.transparent = true; M.axisGrid.opacity = 0.22;
+const gridHelper = new THREE.GridHelper(20, 20, 0x3a404a, 0x3a404a);
+gridHelper.material = M.axisGrid;
+gridHelper.position.y = -2.1;
+scene.add(gridHelper);
+
+/* 胞填充 + 边界 + Delaunay(全部动态重建) */
+const cellsG = new THREE.Group(); scene.add(cellsG);
+const edgesG = new THREE.Group(); scene.add(edgesG);
+const delaG = new THREE.Group(); scene.add(delaG);
+const circleG = new THREE.Group(); scene.add(circleG);
+const sitesG = new THREE.Group(); scene.add(sitesG);
+
+const surfGeo = new THREE.BufferGeometry();
+const SNX = 88, SNZ = 60;
+{
+  const vcount = (SNX + 1) * (SNZ + 1);
+  surfGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vcount * 3), 3));
+  surfGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vcount * 3), 3));
+  const idx = [];
+  for (let iz = 0; iz < SNZ; iz++) for (let ix = 0; ix < SNX; ix++) {
+    const a = iz * (SNX + 1) + ix, b = a + SNX + 1;
+    idx.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  surfGeo.setIndex(idx);
+}
+const surface = new THREE.Mesh(surfGeo, surfaceMat);
+surface.position.y = -0.001;
+scene.add(surface);
+
+let siteSpheres = [];
+function rebuildSiteMeshes() {
+  sitesG.clear();
+  siteSpheres = [];
+  for (let i = 0; i < sites.length; i++) {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 10),
+      mat(PALETTE[i % 12], { roughness: 0.35, metalness: 0.3, emissiveIntensity: 0.55 }));
+    s.position.set(sites[i].x, 0.02, sites[i].z);
+    sitesG.add(s);
+    siteSpheres.push(s);
+  }
+}
+function rebuildAll() {
+  computeCells();
+  /* 胞填充 */
+  cellsG.clear();
+  for (let i = 0; i < cells.length; i++) {
+    let poly = cells[i].poly;
+    if (poly.length < 3 || !cells[i].centroid) continue;
+    // 去掉重复/共线退化点,防止 ShapeGeometry 产生 NaN
+    const clean = [];
+    for (const p of poly) {
+      const q = clean[clean.length - 1];
+      if (!q || Math.abs(p[0] - q[0]) > 1e-7 || Math.abs(p[1] - q[1]) > 1e-7) clean.push(p);
+    }
+    if (clean.length >= 3) {
+      const qb = clean[0];
+      const qe = clean[clean.length - 1];
+      if (Math.abs(qb[0] - qe[0]) <= 1e-7 && Math.abs(qb[1] - qe[1]) <= 1e-7) clean.pop();
+    }
+    poly = clean;
+    if (poly.length < 3) continue;
+    let area2 = 0;
+    for (let k = 0; k < poly.length; k++) {
+      const p = poly[k], q = poly[(k + 1) % poly.length];
+      area2 += p[0] * q[1] - q[0] * p[1];
+    }
+    if (Math.abs(area2) < 1e-6) continue;
+    const shape = new THREE.Shape();
+    shape.moveTo(poly[0][0], poly[0][1]);
+    for (let k = 1; k < poly.length; k++) shape.lineTo(poly[k][0], poly[k][1]);
+    shape.closePath();
+    const g = new THREE.ShapeGeometry(shape);
+    g.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(g, cellMats[i % 12]);
+    m.position.y = 0.006;
+    cellsG.add(m);
+  }
+  /* 胞边界(中垂线段) */
+  edgesG.clear();
+  {
+    const pts = [];
+    for (const c of cells) for (let k = 0; k < c.poly.length; k++) {
+      const p = c.poly[k], q = c.poly[(k + 1) % c.poly.length];
+      pts.push(p[0], 0.014, p[1], q[0], 0.014, q[1]);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    edgesG.add(new THREE.LineSegments(g, M.cellEdge));
+  }
+  /* Delaunay 对偶 */
+  delaG.visible = showDela;
+  delaG.clear();
+  {
+    const pts = [];
+    for (const key of delaSet) {
+      const [i, j] = key.split(',').map(Number);
+      pts.push(sites[i].x, 0.03, sites[i].z, sites[j].x, 0.03, sites[j].z);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    delaG.add(new THREE.LineSegments(g, M.delaLine));
+  }
+  /* 空圆:找 Delaunay 三角形(互相邻接三元组),取外心离原点最近的一个 */
+  circleG.visible = showCircle;
+  circleG.clear();
+  let best = null;
+  for (const key of delaSet) {
+    const [i, j] = key.split(',').map(Number);
+    for (const k of cells[i].nbs) {
+      if (k === j || !cells[j].nbs.includes(k)) continue;
+      const cc = circum(sites[i], sites[j], sites[k]);
+      if (!cc) continue;
+      const [ux, uy, r] = cc;
+      if (!Number.isFinite(ux) || !Number.isFinite(uy) || !Number.isFinite(r)) continue;  // 近共线三形的浮点残渣
+      if (Math.abs(ux) > DOM.x || Math.abs(uy) > DOM.z || r < 0.25 || r > 2.4) continue;
+      const score = Math.hypot(ux, uy) + r * 0.4;
+      if (!best || score < best.score) best = { score, tri: [i, j, k], ux, uy, r };
+    }
+  }
+  if (best) {
+    const seg = 64, cpts = [];
+    for (let s = 0; s <= seg; s++) {
+      const a = s / seg * TAU;
+      cpts.push(best.ux + Math.cos(a) * best.r, 0.035, best.uy + Math.sin(a) * best.r);
+    }
+    const cg = new THREE.BufferGeometry();
+    cg.setAttribute('position', new THREE.Float32BufferAttribute(cpts, 3));
+    circleG.add(new THREE.Line(cg, M.circleLine));
+    const [i, j, k] = best.tri;
+    const tpts = [sites[i].x, 0.03, sites[i].z, sites[j].x, 0.03, sites[j].z,
+      sites[j].x, 0.03, sites[j].z, sites[k].x, 0.03, sites[k].z,
+      sites[k].x, 0.03, sites[k].z, sites[i].x, 0.03, sites[i].z];
+    const tg = new THREE.BufferGeometry();
+    tg.setAttribute('position', new THREE.Float32BufferAttribute(tpts, 3));
+    circleG.add(new THREE.LineSegments(tg, M.triLine));
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), M.circleDot);
+    dot.position.set(best.ux, 0.035, best.uy);
+    circleG.add(dot);
+    circleG.userData.cc = best;
+  } else circleG.userData.cc = null;
+  rebuildSurface();
+  rebuildSiteMeshes();
+  dirty = false;
+}
+function rebuildSurface() {
+  const pos = surfGeo.attributes.position.array, col = surfGeo.attributes.color.array;
+  let ptr = 0;
+  for (let iz = 0; iz <= SNZ; iz++) for (let ix = 0; ix <= SNX; ix++) {
+    const x = -DOM.x + 2 * DOM.x * ix / SNX, z = -DOM.z + 2 * DOM.z * iz / SNZ;
+    let bi = 0, bd = 1e9;
+    for (let s = 0; s < sites.length; s++) {
+      const dx = x - sites[s].x, dz = z - sites[s].z, d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; bi = s; }
+    }
+    const d = Math.sqrt(bd);
+    pos[ptr * 3] = x; pos[ptr * 3 + 1] = -heightK * d; pos[ptr * 3 + 2] = z;
+    const c = paletteCols[bi % 12], k = THEME === 'light' ? 0.8 : 1.0;
+    const sh = clamp(1.1 - 0.34 * d / 2.4, 0.32, 1.1) * k;
+    col[ptr * 3] = c.r * sh; col[ptr * 3 + 1] = c.g * sh; col[ptr * 3 + 2] = c.b * sh;
+    ptr++;
+  }
+  surfGeo.attributes.position.needsUpdate = true;
+  surfGeo.attributes.color.needsUpdate = true;
+  surfGeo.computeVertexNormals();
+}
+
+/* ---------------- 探针(动态:离谁最近) ---------------- */
+const probe = new THREE.Mesh(new THREE.SphereGeometry(0.055, 14, 10), M.probe);
+scene.add(probe);
+const probeGeo = new THREE.BufferGeometry();
+probeGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3));
+const probeLine = new THREE.Line(probeGeo, M.probeLine);
+scene.add(probeLine);
+function nearestSite(x, z) {
+  let bi = 0, bd = 1e9;
+  for (let s = 0; s < sites.length; s++) {
+    const dx = x - sites[s].x, dz = z - sites[s].z, d = dx * dx + dz * dz;
+    if (d < bd) { bd = d; bi = s; }
+  }
+  return { i: bi, d: Math.sqrt(bd) };
+}
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+function statusInfo() {
+  if (statusMsg.t > 0) return { t: LANG === 'en' ? statusMsg.e : statusMsg.z, c: 'w' };
+  if (dragging >= 0) return { t: L('拖动站点:胞实时重算(半平面裁剪)', 'dragging: cells re-clipped live'), c: 'e' };
+  if (lloydN > 0) return { t: L(`Lloyd 已迭代 ${lloydN} 次,偏差 ${(lastDev * 100).toFixed(1)} cx`, `Lloyd ×${lloydN}, offset ${(lastDev * 100).toFixed(1)} cx`), c: 'g' };
+  return { t: L('点击平面加站点 · 拖动站点 · 空格播放', 'click to add · drag sites · Space plays'), c: 'st' };
+}
+addLabel(() => statusInfo().t, () => statusInfo().c, new THREE.Vector3(0, 1.35, 0));
+addLabel(() => L('站点:点集 = 馅料', 'sites: the seeds'),
+  () => 'e', new THREE.Vector3(-1.2, 0.55, -1.4),
+  p => { if (sites[0]) p.set(sites[0].x, 0.22, sites[0].z); });
+addLabel(() => L('胞边界 = 两站中垂线 |P−a|=|P−b|', 'cell edge = perpendicular bisector'),
+  () => 'b', new THREE.Vector3(0.2, 0.45, -2.0),
+  p => {
+    const key = delaSet.values().next();
+    if (key.done || !showDela) { p.set(0.2, 0.45, -2.0); return; }
+    const [i, j] = key.value.split(',').map(Number);
+    p.set((sites[i].x + sites[j].x) / 2, 0.4, (sites[i].z + sites[j].z) / 2);
+  });
+addLabel(() => L('Delaunay 对偶:相邻站点连线,边数 ≤ 3n−6', 'Delaunay dual: ≤ 3n-6 edges'),
+  () => 'o', new THREE.Vector3(2.1, 0.6, 1.6));
+const lblCircle = addLabel(() => {
+  const cc = circleG.userData.cc;
+  return cc ? L(`空圆:半径 ${cc.r.toFixed(2)},圆内无其他站点`, `empty circle: r=${cc.r.toFixed(2)}, no site inside`) : '';
+}, () => 'bad', new THREE.Vector3(0, 0.5, 0),
+  p => {
+    const cc = circleG.userData.cc;
+    if (cc && showCircle) { p.set(cc.ux, 0.42, cc.uy); p.y = 0.42; }
+  });
+addLabel(() => {
+  const n = nearestSite(probe.position.x, probe.position.z);
+  return L(`探针 → 最近站点 #${n.i} · d=${n.d.toFixed(2)}`, `probe → site #${n.i} · d=${n.d.toFixed(2)}`);
+}, () => 'g', new THREE.Vector3(0, 0.9, 0),
+  p => p.set(probe.position.x, 0.42, probe.position.z));
+addLabel(() => L('高度面:z = −到最近站点的距离(倒锥),坡面斜率处处相同', 'height field: z = −distance to nearest site (inverted cones)'),
+  () => 'w', new THREE.Vector3(-1.5, -1.55, 2.2));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'sites', tgt: [0, -0.5, 0],
+    b: '撒点:n 个站点定义一张势力图', be: 'Scatter n sites: seeds of a territory map',
+    d: '一切从 n 个站点(seeds)开始:基站的站址、气象站的位置、蜂窝的晶核。点「随机撒点」或直接点击平面加站(n 上限 48)。站点本身没有任何边界——边界是「最近邻」这条规则的推论。',
+    de: 'Everything starts from n sites (seeds): tower locations, weather stations, honeycomb nuclei. Scatter randomly or click the plane to add (cap 48). The sites define no borders themselves - borders are a consequence of one rule: nearest neighbor.' },
+  { hl: 'near', tgt: [0, 0.6, 0.5],
+    b: '每个点问「离谁最近」:平面被切成 n 个凸胞', be: 'Every point asks who is closest: n convex cells',
+    d: '对平面上任意一点 P,算它到各站点的距离,归给最近的那一站。全体 P 的归属结果就是 Voronoi 胞:每个胞是一个凸多边形(半平面之交必凸),彩色填充即实时分区结果;看探针游走到哪里就归哪一站。',
+    de: 'For any point P, compute distances to all sites and assign P to the nearest one. The resulting ownership regions are Voronoi cells: each is convex (intersection of half-planes). The colored fill is the live partition; the wandering probe always lands in its nearest cell.' },
+  { hl: 'bisector', tgt: [0, -0.2, 0],
+    b: '胞边界 = 中垂线:两站势均力敌的那条线', be: 'Cell edges = perpendicular bisectors',
+    d: '相邻两胞的公共边恰好落在两站连线的中垂线上——那里到两站距离相等,是「势均力敌线」。拖动任意站点:两侧胞边界立刻重算,整张图局部更新,这正是增量式地理划分(基站切换)的几何基础。',
+    de: 'The shared edge of two adjacent cells lies exactly on the perpendicular bisector of their sites - the set of tied points. Drag any site: both cells re-clip instantly and only the neighborhood updates - the geometry behind incremental redistricting and tower handover.' },
+  { hl: 'vertex', tgt: [0, 0.1, 0],
+    b: '顶点 = 三圆共点:空圆性质', be: 'Vertices: three circles meet, the empty-circle property',
+    d: 'Voronoi 顶点是三个站点的公共外心:以它为圆心、到三站等距作圆,圆内不含任何其他站点(空圆)。这是「最近邻划分」与「三角剖分」之间那座桥:三站恰好在此打平。',
+    de: 'A Voronoi vertex is the common circumcenter of three sites: the circle centered there passing through all three contains no other site (empty circle). This is the bridge between nearest-neighbor tiling and triangulation: three sites tie exactly here.' },
+  { hl: 'dela', tgt: [0, 0.2, 0],
+    b: '对偶:Delaunay 三角剖分', be: 'The dual: Delaunay triangulation',
+    d: '把共享一条 Voronoi 边的站点两两连起来,得到 Delaunay 三角剖分:它最大化最小角、避免瘦长三角形,是地形建模与有限元网格的默认选择。对偶关系:n 点平面图的边数 ≤ 3n−6(欧拉公式),本图 n 与 m 实时显示在右上角。',
+    de: 'Connect every pair of sites whose cells share an edge: the Delaunay triangulation, maximizing the minimum angle and avoiding slivers - the default for terrain meshes and FEM. Duality gives the bound m ≤ 3n-6 by Euler\'s formula; live n and m sit in the stats panel.' },
+  { hl: 'apps', tgt: [0.4, -0.3, 0.6],
+    b: '应用:基站服务区、气象插值、蜂窝、机器人', be: 'Applications: towers, weather, honeycomb, robots',
+    d: '基站切换:手机接入信号最强的站,覆盖图就是 Voronoi 胞;气象插值:未知点的降雨量取最近站点(最保守的插值);蜂窝结构:六边形 ≈ 均匀点的大胞;机器人路径:沿 Voronoi 边走 = 离障碍最远的安全线。',
+    de: 'Tower handover: your phone joins the strongest site; coverage is a Voronoi map. Weather interpolation: nearest-neighbor (Thiessen) polygons. Honeycomb: hexagons are what uniform seeds converge to. Robot planning: walking along Voronoi edges maximizes clearance.' },
+  { hl: 'lloyd', tgt: [0, 0, 0],
+    b: 'Lloyd 松弛:挪到质心,免费得到蓝噪声', be: 'Lloyd relaxation: blue noise for free',
+    d: '把每个站点挪到自己胞的质心,再重算、再挪——Lloyd 迭代是不动点过程,通常 10-20 次后质心偏差降到 0.01 以下,站点近似均匀且保留高频蓝噪声特征(无低频斑块)。均匀蜂窝、采样抖动、_halftone 网点全靠它,点「Lloyd ×20」亲眼看收敛。',
+    de: 'Move each site to its cell centroid, recompute, repeat - Lloyd iteration is a fixed-point process; after 10-20 rounds the centroid offset falls below 0.01 and sites are near-uniform while keeping high-frequency blue-noise character (no low-frequency clumps). Uniform honeycombs, stippling and halftone dots all use it.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+let tgtVec = new THREE.Vector3(0, -0.5, 0);
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  const hl = STEPS[scenario].hl;
+  if (hl === 'dela') setDela(true);
+  if (hl === 'vertex') setCircle(true);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const n = sites.length, m = delaSet.size;
+  const cc = circleG.userData.cc;
+  formulaEl.innerHTML =
+    L(`最近邻划分:P 归属 argmin_i |P−s_i|;胞边界 = 中垂线 |P−s_i| = |P−s_j|;半平面之交 ⇒ 胞必为<b>凸多边形</b>`,
+      `Nearest-neighbor rule: P belongs to argmin_i |P-s_i|; cell edges are bisectors |P-s_i| = |P-s_j|; half-plane intersection ⇒ cells are <b>convex</b>`) +
+    '<br>' +
+    L(`顶点 = 三圆共点:Voronoi 顶点是 △(s_i,s_j,s_k) 的外心;空圆性质:该外接圆内无任何其他站点${cc ? L(`,当前圆 r=${cc.r.toFixed(2)}`, `, current r=${cc.r.toFixed(2)}`) : ''}`,
+      `Vertex = circumcenter of △(s_i,s_j,s_k); empty-circle property: no other site inside${cc ? `, r=${cc.r.toFixed(2)}` : ''}`) +
+    '<br>' +
+    L(`对偶 Delaunay:共享胞边的站点相连;n=${n} ⇒ 边数 ≤ 3n−6 = ${3 * n - 6},当前 m=<b>${m}</b>;Lloyd:s_i ← 质心(C_i),已迭代 <b>${lloydN}</b> 次,偏差 <b>${(lastDev * 100).toFixed(1)} cx</b>`,
+      `Delaunay dual: connect sites sharing a cell edge; n=${n} ⇒ m ≤ 3n-6 = ${3 * n - 6}, current m=<b>${m}</b>; Lloyd: s_i ← centroid(C_i), <b>${lloydN}</b> iters, offset <b>${(lastDev * 100).toFixed(1)} cx</b>`);
+}
+
+/* ---------------- 交互:加站 / 拖站 ---------------- */
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+function pickPlane(e) {
+  ndc.x = e.clientX / innerWidth * 2 - 1;
+  ndc.y = -(e.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(ndc, camera);
+  const p = new THREE.Vector3();
+  return ray.ray.intersectPlane(groundPlane, p) ? p : null;
+}
+renderer.domElement.addEventListener('pointerdown', e => {
+  const p = pickPlane(e);
+  if (!p || Math.abs(p.x) > DOM.x || Math.abs(p.z) > DOM.z) return;
+  downXY = [e.clientX, e.clientY]; moved = false;
+  let bi = -1, bd = 0.16 * 0.16;
+  for (let i = 0; i < sites.length; i++) {
+    const dx = p.x - sites[i].x, dz = p.z - sites[i].z, d = dx * dx + dz * dz;
+    if (d < bd) { bd = d; bi = i; }
+  }
+  if (bi >= 0) { dragging = bi; controls.enabled = false; }
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (downXY && Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]) > 6) moved = true;
+  if (dragging < 0) return;
+  const p = pickPlane(e);
+  if (!p) return;
+  sites[dragging].x = clamp(p.x, -DOM.x, DOM.x);
+  sites[dragging].z = clamp(p.z, -DOM.z, DOM.z);
+  dirty = true;
+});
+addEventListener('pointerup', e => {
+  if (dragging < 0 && downXY && !moved) {
+    const p = pickPlane(e);
+    if (p && Math.abs(p.x) <= DOM.x && Math.abs(p.z) <= DOM.z) {
+      if (sites.length < N_CAP) {
+        sites.push({ x: p.x, z: p.z });
+        statusMsg = { z: `已加站点 #${sites.length - 1},共 ${sites.length} 站,胞已重算`, e: `site #${sites.length - 1} added, ${sites.length} total, cells re-clipped`, t: 2.4 };
+      } else {
+        statusMsg = { z: `已达上限 ${N_CAP} 站(演示规模)`, e: `cap ${N_CAP} sites reached (demo scale)`, t: 2.4 };
+      }
+      dirty = true;
+    }
+  }
+  dragging = -1; downXY = null;
+  controls.enabled = true;
+});
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elHK = document.getElementById('hK'), elHKVal = document.getElementById('hKVal');
+const btnDela = document.getElementById('btnDela'), btnCircle = document.getElementById('btnCircle');
+const tglProbe = document.getElementById('tglProbe');
+const tglAutoLloyd = document.getElementById('tglAutoLloyd');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let lloydTimer = 0;
+
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function setDela(v) { showDela = v; delaG.visible = v; btnDela.classList.toggle('on', v); }
+function setCircle(v) { showCircle = v; circleG.visible = v; btnCircle.classList.toggle('on', v); if (!v) circleG.userData.cc = null; }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;   // r170 CSS2DRenderer 每帧重写 display,须切 visible
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elHK.addEventListener('input', () => { heightK = (+elHK.value) / 100; elHKVal.textContent = heightK.toFixed(2); dirty = true; });
+btnDela.addEventListener('click', () => setDela(!showDela));
+btnCircle.addEventListener('click', () => setCircle(!showCircle));
+document.getElementById('btnLloyd1').addEventListener('click', () => { lastDev = lloydOnce(); });
+document.getElementById('btnLloyd20').addEventListener('click', () => {
+  for (let k = 0; k < 20; k++) lastDev = lloydOnce();
+  statusMsg = { z: `Lloyd ×20 完成:偏差 ${(lastDev * 100).toFixed(1)} cx ≈ 均匀(蓝噪声)`, e: `Lloyd ×20 done: offset ${(lastDev * 100).toFixed(1)} cx ≈ uniform (blue noise)`, t: 3 };
+});
+document.getElementById('btnRand').addEventListener('click', () => scatterRandom());
+document.getElementById('btnGrid').addEventListener('click', () => scatterGrid());
+document.getElementById('btnReset').addEventListener('click', () => {
+  scatterRandom();
+  lloydN = 0; lastDev = 0;
+  statusMsg = { z: '复位:随机撒点,Lloyd 计数清零', e: 'reset: random scatter, Lloyd counter cleared', t: 2.4 };
+});
+tglProbe.addEventListener('change', () => { probe.visible = tglProbe.checked; probeLine.visible = tglProbe.checked; });
+tglAutoLloyd.addEventListener('change', () => { lloydTimer = 0; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- 站点布局预设 ---------------- */
+function scatterRandom(n = 16) {
+  sites = [];
+  for (let i = 0; i < n; i++) sites.push({ x: (Math.random() * 2 - 1) * DOM.x * 0.92, z: (Math.random() * 2 - 1) * DOM.z * 0.9 });
+  dirty = true;
+}
+function scatterGrid() {
+  sites = [];
+  const gx = 7, gz = 4;
+  for (let j = 0; j < gz; j++) for (let i = 0; i < gx; i++) {
+    sites.push({
+      x: -DOM.x + (i + 0.5) * 2 * DOM.x / gx + (Math.random() - 0.5) * 0.12,
+      z: -DOM.z + (j + 0.5) * 2 * DOM.z / gz + (Math.random() - 0.5) * 0.12,
+    });
+  }
+  dirty = true;
+}
+
+/* ---------------- 距离剖面图(探针所在横线) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const px = s => (0.06 + 0.9 * s) * cw, py = d => ch - (0.16 + 0.72 * clamp01(d / 3.4)) * ch;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(px(0), py(0)); scopeCtx.lineTo(px(1), py(0));
+  scopeCtx.moveTo(px(0), py(0)); scopeCtx.lineTo(px(0), py(3.4));
+  scopeCtx.stroke();
+  scopeCtx.font = `${Math.round(10 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('探针所在横线的距离剖面 d(x)', 'distance profile d(x) at the probe line'), px(0.18), py(3.1));
+  /* 距离曲线 */
+  scopeCtx.strokeStyle = 'rgba(255,213,122,.9)';
+  scopeCtx.lineWidth = Math.max(1.4, 1.4 * dpr);
+  scopeCtx.beginPath();
+  const NP = 140;
+  for (let i = 0; i <= NP; i++) {
+    const x = -DOM.x + 2 * DOM.x * i / NP;
+    const n = nearestSite(x, probe.position.z);
+    i === 0 ? scopeCtx.moveTo(px(i / NP), py(n.d)) : scopeCtx.lineTo(px(i / NP), py(n.d));
+  }
+  scopeCtx.stroke();
+  /* 站点位置刻度 */
+  scopeCtx.strokeStyle = 'rgba(116,220,132,.6)';
+  for (const s of sites) {
+    if (s.z > probe.position.z - 0.35 && s.z < probe.position.z + 0.35) {
+      const sx = px((s.x + DOM.x) / (2 * DOM.x));
+      scopeCtx.beginPath(); scopeCtx.moveTo(sx, py(0) - 3 * dpr); scopeCtx.lineTo(sx, py(0) + 3 * dpr); scopeCtx.stroke();
+    }
+  }
+  /* 当前探针点 */
+  const nx = px((clamp(probe.position.x, -DOM.x, DOM.x) + DOM.x) / (2 * DOM.x));
+  const n = nearestSite(probe.position.x, probe.position.z);
+  scopeCtx.fillStyle = '#8fe3b0';
+  scopeCtx.beginPath();
+  scopeCtx.arc(nx, py(n.d), Math.max(2.5, 2.5 * dpr), 0, TAU);
+  scopeCtx.fill();
+}
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const n = sites.length, m = delaSet.size;
+  stA.innerHTML = n + '<small> /' + N_CAP + '</small>';
+  stA.className = 'v ' + (n < 4 ? 'warn' : 'ok');
+  stB.innerHTML = m + '<small> ≤' + (3 * n - 6) + '</small>';
+  stB.className = 'v ' + (m <= 3 * n - 6 ? 'ok' : 'bad');
+  stC.innerHTML = String(lloydN) + '<small> ×</small>';
+  stC.className = 'v ' + (lloydN > 0 ? 'ok' : '');
+  stD.innerHTML = (lastDev * 100).toFixed(1) + '<small> cx</small>';
+  stD.className = 'v ' + (lastDev < 0.012 && lloydN > 0 ? 'ok' : lloydN > 0 ? 'warn' : '');
+  const nd = nearestSite(probe.position.x, probe.position.z);
+  stE.innerHTML = nd.d.toFixed(2) + '<small> u</small>';
+  stE.className = 'v ok';
+  const st = statusInfo();
+  stF.textContent = st.t.length > 14 ? (LANG === 'en' ? st.t.split(',')[0] : st.t.slice(0, 12) + '…') : st.t;
+  stF.className = 'v ' + (st.c === 'bad' ? 'bad' : st.c === 'w' ? 'warn' : st.c === 'g' ? 'ok' : '');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  if (statusMsg.t > 0) statusMsg.t -= dt;
+  if (dirty) rebuildAll();
+  /* 探针巡游 */
+  if (playing && tglProbe.checked) {
+    probe.position.x = Math.sin(et * 0.42 * speed) * DOM.x * 0.86;
+    probe.position.z = Math.sin(et * 0.29 * speed + 1.7) * DOM.z * 0.8;
+  }
+  const near = nearestSite(probe.position.x, probe.position.z);
+  const pp = probeGeo.attributes.position.array;
+  pp[0] = probe.position.x; pp[1] = 0.03; pp[2] = probe.position.z;
+  pp[3] = sites.length ? sites[near.i].x : probe.position.x;
+  pp[4] = 0.03; pp[5] = sites.length ? sites[near.i].z : probe.position.z;
+  probeGeo.attributes.position.needsUpdate = true;
+  /* 自动 Lloyd */
+  if (playing && tglAutoLloyd.checked) {
+    lloydTimer += dt * speed;
+    if (lloydTimer > 1.4) { lloydTimer = 0; lastDev = lloydOnce(); }
+  }
+  /* 站点发光脉动 */
+  const pulse = 0.4 + 0.2 * Math.sin(et * 3);
+  for (const s of siteSpheres) s.material.emissiveIntensity = 0.4 + pulse * 0.5;
+  const hl = STEPS[scenario].hl;
+  M.probe.emissiveIntensity = hl === 'near' ? 1.1 + 0.3 * pulse : 0.7;
+  M.delaLine.opacity = hl === 'dela' ? 0.95 + 0.05 * Math.sin(et * 4) : 0.85;
+  if (circleG.visible && circleG.userData.cc) {
+    M.circleLine.opacity = hl === 'vertex' ? 0.7 + 0.3 * Math.sin(et * 4) : 0.9;
+  }
+  lblCircle.visible = labelsOn && showCircle && !!circleG.userData.cc;
+  /* 相机目标缓动 + 标签 */
+  controls.target.lerp(tgtVec, 0.05);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+elHKVal.textContent = heightK.toFixed(2);
+sizeScope();
+scatterRandom(qsFloat('n', 16) | 0 || 16);
+if (qsBool('grid', false)) scatterGrid();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+setDela(true);
+setCircle(true);
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

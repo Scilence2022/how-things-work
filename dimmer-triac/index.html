@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>调光器与可控硅相控 · TRIAC、RC-DIAC 触发与导通角</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#d68f3a;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#a8681c;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(214,143,58,.65); background: rgba(214,143,58,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(168,104,28,.55); background: rgba(168,104,28,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(214,143,58,.10); border-color: rgba(214,143,58,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(168,104,28,.08); border-color: rgba(168,104,28,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #f0c896; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="调光器与可控硅相控:TRIAC、RC-DIAC 触发与导通角" data-en="Dimmer and TRIAC Phase Control: RC-DIAC Trigger, Firing Angle, Lamp Power">调光器与可控硅相控:TRIAC、RC-DIAC 触发与导通角</h1>
+  <div class="sub" data-zh="白炽灯调光旋钮背后是 TRIAC 双向可控硅:每半周从过零点开始它保持关断,RC 移相网络给双向触发二极管充电到 ~30 V 雪崩点才「点着」TRIAC——导通一直持续到半周结束;旋钮改的是 RC 的充电快慢(触发角 α),α 从 0° 扫到 150°,灯上的有效电压从 100% 掉到 ~17%,功率由 P∝V² 骤降到 ~3%;陡峭的导通前沿(dV/dt 数百 V/μs)是无线电干扰源,LC 滤波器专职压它;LED 不是阻性负载,前沿相控会让它每秒闪 100 次——要选后沿相控(逆并联 MOSFET)的调光器 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Behind an incandescent dimmer knob sits a TRIAC: each half-cycle it stays off from the zero crossing until an RC network charges a DIAC to its ~30 V avalanche point and fires the TRIAC - conduction then lasts to the end of the half-cycle. The knob changes how fast the RC charges (firing angle α): sweeping α from 0° to 150° drops the lamp RMS voltage from 100% to ~17% and the power (P∝V²) to ~3%. The steep leading edge (hundreds of V/μs) is an EMI source that an LC filter exists to tame. An LED is not a resistive load: leading-edge phase control makes it flicker 100 times a second - use a trailing-edge (back-to-back MOSFET) dimmer instead · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">白炽灯调光旋钮背后是 TRIAC 双向可控硅:每半周从过零点开始它保持关断,RC 移相网络给双向触发二极管充电到 ~30 V 雪崩点才「点着」TRIAC——导通一直持续到半周结束;旋钮改的是 RC 的充电快慢(触发角 α),α 从 0° 扫到 150°,灯上的有效电压从 100% 掉到 ~17%,功率由 P∝V² 骤降到 ~3%;陡峭的导通前沿(dV/dt 数百 V/μs)是无线电干扰源,LC 滤波器专职压它;LED 不是阻性负载,前沿相控会让它每秒闪 100 次——要选后沿相控(逆并联 MOSFET)的调光器 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="触发角 α" data-en="firing angle α">触发角 α</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="导通角" data-en="conduction">导通角</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="有效电压" data-en="RMS voltage">有效电压</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="灯功率" data-en="lamp power">灯功率</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="亮度" data-en="brightness">亮度</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="前沿 RFI(相对)" data-en="edge RFI (rel.)">前沿 RFI(相对)</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip o" data-zh="TRIAC:每半周从过零憋到 α" data-en="TRIAC: off from zero to α each half-cycle">TRIAC:每半周从过零憋到 α</span>
+    <span class="chip b" data-zh="RC+DIAC:充到 ~30 V 雪崩" data-en="RC+DIAC: charges to ~30 V avalanche">RC+DIAC:充到 ~30 V 雪崩</span>
+    <span class="chip g" data-zh="导通段 = 灯真正吃到的电" data-en="conduction = what the lamp gets">导通段 = 灯真正吃到的电</span>
+    <span class="chip r" data-zh="切除段 + 陡前沿 = RFI" data-en="cut block + steep edge = RFI">切除段 + 陡前沿 = RFI</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnInc" data-zh="白炽灯(阻性)" data-en="incandescent (resistive)">白炽灯(阻性)</button>
+    <button class="abtn" id="btnLed" data-zh="LED 灯(前沿→闪)" data-en="LED (leading edge → flicker)">LED 灯(前沿→闪)</button>
+    <button class="abtn" id="btnFull" data-zh="全亮 α=0°" data-en="full α=0°">全亮 α=0°</button>
+    <button class="abtn" id="btnMid" data-zh="半亮 α=90°" data-en="half α=90°">半亮 α=90°</button>
+    <button class="abtn" id="btnDim" data-zh="最暗 α=150°" data-en="dim α=150°">最暗 α=150°</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="触发角 α" data-en="firing angle α">触发角 α</label><input id="alpha" type="range" min="0" max="150" step="1" value="90"><span class="val" id="alphaVal">90°</span></div>
+  <div class="row"><label data-zh="市电慢放周期" data-en="mains cycle">市电慢放周期</label><input id="cyc" type="range" min="4" max="24" step="1" value="12"><span class="val" id="cycVal">1.2 s</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglDots" type="checkbox" checked> <span data-zh="电流脉冲" data-en="current pulses">电流脉冲</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../buck-converter/" data-zh="Buck 降压:另一种「切」电" data-en="buck converter: another way to slice power">Buck 降压:另一种「切」电</a>
+    <a href="../incandescent-led/" data-zh="白炽 vs LED" data-en="incandescent vs LED">白炽 vs LED</a>
+    <a href="../lc-circuit/" data-zh="LC 回路:滤波本尊" data-en="LC circuit: the filter itself">LC 回路:滤波本尊</a>
+    <a href="../relay/" data-zh="继电器:机械开关对照" data-en="relay: the mechanical contrast">继电器:机械开关对照</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  scene.background = new THREE.Color(THEME === 'light' ? 0xeff1f4 : 0x0f1216);
+  M.ground.color.set(THEME === 'light' ? 0xd7dce3 : 0x161b22);
+  M.frame.color.set(THEME === 'light' ? 0x8a94a2 : 0x4a5560);
+  M.plate.color.set(THEME === 'light' ? 0xe8e4da : 0xd8d2c4);
+  M.glass.opacity = THEME === 'light' ? 0.16 : 0.22;
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('调光器与可控硅相控 · TRIAC 与导通角', 'TRIAC Dimmer · Phase Control and the Firing Angle');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateAlphaLabel();
+  updateCycLabel();
+  updateFormula();
+  syncModeBtns();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(0.4, 0.7, 3.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.05, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.8;
+controls.maxDistance = 10;
+controls.autoRotateSpeed = 0.2;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.75));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(4, 8, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+/* 灯光:随亮度实时变化 */
+const lampLight = new THREE.PointLight(0xffd9a0, 0, 8, 1.6);
+lampLight.position.set(1.6, 0.42, 0);
+scene.add(lampLight);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x161b22, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  frame: mat(0x4a5560, { roughness: 0.5, metalness: 0.6 }),
+  plate: mat(0xd8d2c4, { roughness: 0.5, metalness: 0.1 }),
+  knob: mat(0xc9a24f, { roughness: 0.35, metalness: 0.6 }),
+  board: mat(0x1d4a30, { roughness: 0.7, metalness: 0.15 }),
+  gold: mat(0xd8b25c, { roughness: 0.3, metalness: 0.85 }),
+  wire: mat(0xb0483c, { roughness: 0.5, metalness: 0.3 }),
+  wire2: mat(0x3c6ab0, { roughness: 0.5, metalness: 0.3 }),
+  resistor: mat(0xc9b291, { roughness: 0.6, metalness: 0.1 }),
+  cap: mat(0x3a3f47, { roughness: 0.5, metalness: 0.3 }),
+  diac: mat(0x4f7fd0, { roughness: 0.3, metalness: 0.2 }),
+  triac: mat(0x2c3138, { roughness: 0.5, metalness: 0.4 }),
+  choke: mat(0x8a6db0, { roughness: 0.5, metalness: 0.3 }),
+  glass: new THREE.MeshStandardMaterial({ color: 0xd8e4ec, roughness: 0.08, metalness: 0.05,
+    transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }),
+  fil: mat(0xffc46a, { roughness: 0.4, metalness: 0.5 }),
+  led: mat(0xf4f8ff, { roughness: 0.3, metalness: 0.1 }),
+  dot: new THREE.MeshBasicMaterial({ color: 0xffd27a }),
+};
+
+/* ---------------- 物理参数(真实量纲)----------------
+   市电 220 V rms / 311 V pk / 50 Hz;慢放:1 周期 = 1.2 s(约 60×);
+   相控:V_rms/V = sqrt((2(π−α)+sin2α)/(2π)):α=0°→100%、90°→70.7%、150°→16.9%;
+   功率 P% = (V%)²:α=150° → ~2.9%;DIAC 雪崩 ~30 V(28-36 V),导通维持到半周结束;
+   前沿 dV/dt 数百 V/μs → EMI;RFI 相对幅度 ∝ sin α(点火瞬间市电瞬时值 311·sin α);
+   白炽:灯丝热惯性 τ≈80 ms 抹平 100 Hz 脉冲;LED:瞬时导通直接出光 → 100 Hz 闪烁 */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let scenario = 0, et = 0;
+let alphaDeg = 90;
+let lineTheta = 0, cycleSec = 1.2;        // 慢放相位
+let ledMode = false, lum = 0;             // 灯丝热惯性(白炽)
+const alphaRad = () => alphaDeg * Math.PI / 180;
+function vFrac(a) { const r = a * Math.PI / 180; return Math.sqrt(Math.max(0, (2 * (Math.PI - r) + Math.sin(2 * r)) / (2 * Math.PI))); }
+function pFrac(a) { const v = vFrac(a); return v * v; }
+function isCond() { return (lineTheta % Math.PI) >= alphaRad(); }
+
+/* ---------------- 场景装配 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 0.06, 48), M.ground);
+ground.position.y = -1.55;
+scene.add(ground);
+
+/* 墙面调光面板 + 旋钮(左) */
+const wallPlate = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.8, 0.06), M.plate);
+wallPlate.position.set(-2.25, 0.15, 0);
+scene.add(wallPlate);
+const knobG = new THREE.Group();
+knobG.position.set(-2.25, 0.12, 0.09);
+scene.add(knobG);
+const knobBody = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.13, 28), M.knob);
+knobBody.rotation.x = Math.PI / 2;
+knobG.add(knobBody);
+const knobMark = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.15, 0.03), M.frame);
+knobMark.position.set(0, 0.09, 0.05);
+knobG.add(knobMark);
+
+/* 电路板(剖视)+ 元件:RC 网络、DIAC、TRIAC、LC 滤波 */
+const board = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.0, 0.06), M.board);
+board.position.set(-0.85, -0.1, 0);
+scene.add(board);
+/* R:旋钮带出的电位器 */
+const resBody = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.14, 0.10), M.resistor);
+resBody.position.set(-1.55, 0.28, 0.06);
+scene.add(resBody);
+/* C:充电电容 */
+const capBody = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.2, 16), M.cap);
+capBody.position.set(-1.28, 0.02, 0.12);
+scene.add(capBody);
+/* DIAC:小蓝管 */
+const diacBody = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.13, 12), M.diac);
+diacBody.position.set(-1.08, 0.26, 0.10);
+diacBody.rotation.z = 0.4;
+scene.add(diacBody);
+/* TRIAC:TO-220(黑体+金属散热翼+三脚) */
+const triacG = new THREE.Group();
+triacG.position.set(-0.78, -0.05, 0.10);
+scene.add(triacG);
+const triacTab = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.16, 0.02), M.gold);
+triacTab.position.y = 0.13;
+triacG.add(triacTab);
+const triacBody = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.20, 0.09), M.triac);
+triacG.add(triacBody);
+for (let i = 0; i < 3; i++) {
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.12, 0.015), M.gold);
+  leg.position.set(-0.06 + i * 0.06, -0.15, 0);
+  triacG.add(leg);
+}
+/* LC 滤波:扼流圈(磁环+绕线) */
+const chokeG = new THREE.Group();
+chokeG.position.set(-0.28, 0.18, 0.10);
+scene.add(chokeG);
+const chokeCore = new THREE.Mesh(new THREE.TorusGeometry(0.10, 0.028, 10, 28), M.choke);
+chokeG.add(chokeCore);
+const chokeWire = new THREE.Mesh(new THREE.TorusGeometry(0.128, 0.012, 8, 40), M.gold);
+chokeG.add(chokeWire);
+const capX = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.13, 14), M.cap);
+capX.position.set(-0.28, -0.14, 0.10);
+scene.add(capX);
+
+/* 连线:板→灯 */
+function tubePath(pts, r, m) {
+  return new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 48, r, 8, false), m);
+}
+const wirePath = tubePath([
+  new THREE.Vector3(-0.78, -0.30, 0.08), new THREE.Vector3(-0.6, -0.85, 0.1),
+  new THREE.Vector3(0.3, -1.05, 0.1), new THREE.Vector3(1.2, -0.8, 0.1),
+  new THREE.Vector3(1.6, -0.35, 0), new THREE.Vector3(1.6, -0.02, 0),
+], 0.026, M.wire);
+scene.add(wirePath);
+const wireIn = tubePath([
+  new THREE.Vector3(-2.25, -0.3, 0.05), new THREE.Vector3(-2.0, -0.75, 0.08),
+  new THREE.Vector3(-1.35, -0.75, 0.08), new THREE.Vector3(-0.9, -0.62, 0.08),
+], 0.024, M.wire2);
+scene.add(wireIn);
+
+/* 白炽吊灯(右):吊线 + 灯头 + 玻壳 + 灯丝 */
+const pendG = new THREE.Group();
+pendG.position.set(1.6, 0, 0);
+scene.add(pendG);
+const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.55, 8), M.frame);
+cord.position.y = 0.83;
+pendG.add(cord);
+const socket = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.12, 14), M.gold);
+socket.position.y = 0.50;
+pendG.add(socket);
+const glass = new THREE.Mesh(new THREE.SphereGeometry(0.20, 28, 20), M.glass);
+glass.position.y = 0.28;
+pendG.add(glass);
+const neckG = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.05, 0.09, 14), M.glass);
+neckG.position.y = 0.435;
+pendG.add(neckG);
+/* 灯丝:双螺旋塔 */
+const filMat = new THREE.MeshStandardMaterial({ color: 0xffc46a, roughness: 0.4, metalness: 0.5,
+  emissive: 0xff9a3c, emissiveIntensity: 0.1 });
+function filamentGeo() {
+  const pts = [];
+  for (let k = 0; k < 5; k++) {
+    const x0 = -0.07 + k * 0.035;
+    for (let i = 0; i <= 12; i++) {
+      const t = i / 12;
+      pts.push(new THREE.Vector3(x0, 0.18 + 0.11 * Math.sin(t * Math.PI), (t - 0.5) * 0.024 + Math.sin(t * TAU * 3) * 0.006));
+    }
+  }
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 100, 0.006, 6, false);
+}
+const filament = new THREE.Mesh(filamentGeo(), filMat);
+pendG.add(filament);
+/* LED 模式:平面灯盘(默认隐藏) */
+const ledG = new THREE.Group();
+ledG.position.set(1.6, 0.42, 0);
+ledG.visible = false;
+scene.add(ledG);
+const ledPanel = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.035, 32), M.frame);
+ledG.add(ledPanel);
+const ledMat = new THREE.MeshStandardMaterial({ color: 0xf4f8ff, roughness: 0.3, metalness: 0.05,
+  emissive: 0xdfe9ff, emissiveIntensity: 0.6 });
+const ledDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.185, 0.185, 0.012, 32), ledMat);
+ledDisc.position.y = -0.02;
+ledG.add(ledDisc);
+for (let i = 0; i < 3; i++) {
+  const chip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.016), mat(0x333333));
+  chip.position.set(0, 0.012 + i * 0.05 - 0.05, -0.02);
+  ledG.add(chip);
+}
+/* 吊杆顶板 */
+const ceilingDot = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.04, 20), M.frame);
+ceilingDot.position.set(1.6, 1.12, 0);
+scene.add(ceilingDot);
+
+/* 电流脉冲粒子:沿 wirePath 跑 */
+const dotMeshes = [];
+for (let i = 0; i < 12; i++) {
+  const d = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), M.dot);
+  d.visible = false;
+  scene.add(d);
+  dotMeshes.push({ m: d, u: i / 12 });
+}
+const curveProbe = new THREE.Vector3();
+
+/* ---------------- 标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, vis) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow, vis });
+  div.textContent = textFn();
+  return o;
+}
+function statusInfo() {
+  if (ledMode && alphaDeg > 8) return { t: L('LED + 前沿相控:每个导通脉冲都在闪(100 Hz)', 'LED + leading-edge: every conduction pulse flickers (100 Hz)'), c: 'bad' };
+  if (alphaDeg <= 1) return { t: L('α=0:全导通,等于直通市电', 'α=0: full conduction, straight to mains'), c: 'g' };
+  if (alphaDeg >= 145) return { t: L('α=150°:只剩半周尾巴,功率 ~3%', 'α=150°: a half-cycle tail only, ~3% power'), c: 'w' };
+  return { t: L(`白炽:灯丝热惯性抹平 100 Hz 脉冲`, `incandescent: filament inertia smooths the 100 Hz pulses`), c: 'g' };
+}
+addLabel(() => L('调光旋钮:改 RC 的充电快慢 = 触发角 α', 'dimmer knob: sets RC charge rate = firing angle α'),
+  () => 'e', new THREE.Vector3(-3.1, 0.95, 0), p => p.set(-0.62, 0.80, 0));
+addLabel(() => L('RC 移相网络:每半周从过零开始充电', 'RC phase-shift: charges from each zero crossing'),
+  () => 'b', new THREE.Vector3(-1.7, 0.75, 0), p => p.set(-0.70, 0.62, 0.1));
+addLabel(() => L('DIAC:充到 ~30 V 雪崩,丢一个脉冲点火', 'DIAC: avalanches at ~30 V, dumps a trigger pulse'),
+  () => 'w', new THREE.Vector3(-1.35, 0.75, 0), p => p.set(-0.55, 0.45, 0.1));
+addLabel(() => L('TRIAC:点火后导通到半周结束,每秒点 100 次', 'TRIAC: conducts to the half-cycle end, fired 100×/s'),
+  () => isCond() ? 'e' : 'st', new THREE.Vector3(-0.95, -0.75, 0), p => p.set(-0.55, 0.05, 0.1));
+addLabel(() => L('LC 滤波:专职压陡峭导通前沿(dV/dt)', 'LC filter: tames the steep leading edge (dV/dt)'),
+  () => 'g', new THREE.Vector3(-0.15, 0.75, 0), p => p.set(-0.28, 0.29, 0.1));
+addLabel(() => L('白炽灯:阻性负载,灯丝热惯性 τ≈80 ms', 'incandescent: resistive, filament τ≈80 ms'),
+  () => 'o', new THREE.Vector3(2.5, 1.05, 0), p => p.set(1.6, 0.72, 0), () => !ledMode);
+addLabel(() => L('⚠ LED + 前沿相控:导通脉冲直接出光 → 可见闪烁', '⚠ LED + leading edge: pulses pass straight through → visible flicker'),
+  () => 'bad', new THREE.Vector3(2.55, 1.05, 0), p => p.set(1.72, 1.0, 0), () => ledMode);
+addLabel(() => statusInfo().t, () => statusInfo().c, new THREE.Vector3(0.45, 0.95, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+let camTween = null;
+function flyTo(p, t) {
+  camTween = { p0: camera.position.clone(), p1: new THREE.Vector3(p[0], p[1], p[2]),
+    t0: controls.target.clone(), t1: new THREE.Vector3(t[0], t[1], t[2]), k: 0 };
+}
+const STEPS = [
+  { hl: 'overview', tgt: [0, 0.05, 0], cam: [0.4, 0.7, 3.8],
+    b: '解剖一只调光器', be: 'Anatomy of a dimmer',
+    d: '墙面板+旋钮(是一只 ~500 kΩ 电位器)、RC 移相网络(R+C)、DIAC 双向触发二极管、TRIAC 双向可控硅(TO-220 封装,三脚=T1/T2/G)、LC 滤波,右边是灯。没有变压器、没有耗散大电阻——调光靠「切」波形,元件几乎不发热。',
+    de: 'Wall plate + knob (a ~500 kΩ potentiometer), an RC phase-shift network, a DIAC, the TRIAC (TO-220: T1/T2/gate), an LC filter, and the lamp. No transformer, no big burning resistor - dimming works by slicing the waveform, so the parts stay cool.' },
+  { hl: 'phase', tgt: [-0.85, -0.1, 0], cam: [-0.5, 0.5, 2.7],
+    b: '相控:每半周从过零「憋」到 α', be: 'Phase control: hold off from zero to α',
+    d: '50 Hz 市电每秒有 100 个半周。TRIAC 在每个半周开始时关断,像憋着不放;到触发角 α 才突然导通,并一直导通到半周结束——波形被切掉前一块(红色),只剩后一块(金色)。拖 α 滑块:切掉的越多,灯吃到的电越少。这里放慢 ~60×,真实每半周只有 10 ms。',
+    de: '50 Hz mains has 100 half-cycles per second. The TRIAC stays off at the start of each half-cycle, then fires at angle α and conducts to the end - the waveform loses its front block (red) and keeps the tail (gold). Drag α: the bigger the cut, the less the lamp gets. Shown ~60× slow; each real half-cycle is 10 ms.' },
+  { hl: 'rcdiac', tgt: [-1.25, 0.15, 0], cam: [-1.1, 0.55, 2.0],
+    b: 'RC + DIAC:充到 ~30 V 才点火', be: 'RC + DIAC: charged to ~30 V, then fire',
+    d: '电容从每个过零点经 R(旋钮)充电,V_C 沿指数曲线爬升(看小图);爬到 DIAC 的雪崩点 ~30 V(28-36 V)时,DIAC 突然导通,把电容上的电荷摔进 TRIAC 门极——一发的触发脉冲。旋钮改变 R:充得快 α 小(亮),充得慢 α 大(暗)。看底部小图的锯齿。',
+    de: 'The capacitor charges from each zero crossing through R (the knob), V_C climbing exponentially (watch the mini-chart); at the DIAC avalanche point ~30 V (28-36 V) the DIAC suddenly conducts and dumps the charge into the TRIAC gate - one trigger pulse. The knob changes R: fast charge, small α, bright; slow charge, large α, dim.' },
+  { hl: 'triac', tgt: [-0.8, -0.1, 0], cam: [-0.7, 0.05, 2.0],
+    b: 'TRIAC:导通维持到半周结束', be: 'TRIAC: latched to the end of the half-cycle',
+    d: 'TRIAC 是一对反并联可控硅共用门极:一旦被触发就自锁,不需要继续供电,直到电流过零(自然换向)才关断——所以每个半周只点一次火。有效电压 V_rms/V = sqrt((2(π−α)+sin2α)/(2π)):α=0°→100%,90°→70.7%,150°→16.9%。',
+    de: 'A TRIAC is two anti-parallel SCRs sharing one gate: once fired it latches without gate power until current crosses zero (natural commutation) - so each half-cycle needs only one pulse. RMS: V_rms/V = sqrt((2(π−α)+sin2α)/(2π)): α=0°→100%, 90°→70.7%, 150°→16.9%.' },
+  { hl: 'rfitriangle', tgt: [-1.0, 0.25, 0], cam: [-1.5, 0.75, 2.2],
+    b: '陡前沿 = 无线电干扰', be: 'The steep edge = radio interference',
+    d: '从 ~0 V 一步跳到几百伏,导通前沿 dV/dt 达数百 V/μs——谐波一直铺到几 MHz,AM 收音机里全是「嗡嗡」。点火越晚(α 越大、在电压峰值附近点),跳变幅度越大:RFI ∝ sin α,α=90° 最吵。早年的调光器不装滤波,能让你听见收音机在「报幕」。',
+    de: 'Jumping from ~0 V to hundreds of volts gives a leading edge of hundreds of V/μs - harmonics spread into the MHz range and AM radios buzz. Later firing (large α, near the voltage peak) means a bigger step: RFI ∝ sin α, worst at 90°. Early dimmers without filtering announced themselves on every radio in the house.' },
+  { hl: 'lc', tgt: [-0.28, 0.18, 0], cam: [-0.2, 0.65, 2.2],
+    b: 'LC 滤波器:专职压陡坡', be: 'The LC filter: edge-tamer by trade',
+    d: '扼流圈 + X 电容组成低通:截止频率几十 kHz,让 50 Hz 畅通、把前沿的几 MHz 毛刺压掉 30-40 dB。它也顺带限制 dV/dt 与灯丝的浪涌电流(冷灯丝只有 ~1/10 电阻,点亮瞬间电流可达 10-15 倍额定)。合规调光器必装——成本里几毛钱,买的是邻居收音机的安静。',
+    de: 'A choke + X-cap form a low-pass: corner at tens of kHz passes 50 Hz untouched while cutting MHz edges by 30-40 dB. It also limits dV/dt and the cold-filament inrush (a cold filament is ~1/10 resistance, so switch-on current hits 10-15× rated). Regulators require it - a few cents buying the neighbors\' radio some peace.' },
+  { hl: 'led', tgt: [1.6, 0.4, 0], cam: [2.5, 0.9, 2.8],
+    b: 'LED 为什么闪:后沿相控', be: 'Why LEDs flicker: trailing-edge control',
+    d: '切到 LED 模式:LED 驱动不是阻性负载,整流桥+电容在峰值附近猛灌电流,前沿相控的高 dV/dt 会触发它的保护或直接每半周闪一次(慢放下肉眼可见);白炽的灯丝热惯性 τ≈80 ms 恰好把 100 Hz 脉冲抹成恒定光。所以 LED 要用后沿相控:用 MOSFET 在过零前关断,前沿是平缓的。点「LED 灯」对照看。',
+    de: 'Switch to LED: the driver is not resistive - its rectifier plus capacitor gulps current near the peak, and the leading edge\'s high dV/dt trips protection or flashes every half-cycle (visible at this slow-mo). The incandescent filament\'s τ≈80 ms inertia smooths the 100 Hz pulses into steady light. LEDs want trailing-edge control: a MOSFET that turns off before the zero crossing, with a soft edge. Toggle the LED and compare.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  const st = STEPS[scenario];
+  flyTo(st.cam, st.tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((st, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(st.b, st.be)}</b>　${L(st.d, st.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const v = vFrac(alphaDeg), p = pFrac(alphaDeg);
+  const st = statusInfo();
+  formulaEl.innerHTML =
+    L(`相控调压:V_rms/V = √((2(π−α)+sin 2α)/2π) → α=0°→<b>100%</b>、90°→<b>70.7%</b>、150°→<b>16.9%</b>(220 V 市电)`, `Phase control: V_rms/V = √((2(π−α)+sin 2α)/2π) → α=0°→<b>100%</b>, 90°→<b>70.7%</b>, 150°→<b>16.9%</b> (220 V mains)`) +
+    '<br>' +
+    L(`亮度塌方:P ∝ V² → α=150° 时只剩 <b>${(p * 100).toFixed(1)}%</b> 功率;触发链:RC 充电 → DIAC 雪崩 <b>~30 V</b> → TRIAC 门极,导通到过零`, `Brightness collapse: P ∝ V² → at α=150° only <b>${(p * 100).toFixed(1)}%</b> power; trigger chain: RC charge → DIAC avalanche <b>~30 V</b> → TRIAC gate, on until zero crossing`) +
+    '<br>' +
+    L(`前沿 dV/dt 数百 V/μs → EMI,RFI ∝ <b>sin α</b>(90° 最吵);LC 低通(截止几十 kHz)压 30-40 dB;LED 用<b>后沿相控</b>(MOSFET)`, `Leading edge of hundreds of V/μs → EMI, RFI ∝ <b>sin α</b> (worst at 90°); LC low-pass (tens of kHz) cuts 30-40 dB; LEDs need <b>trailing-edge</b> (MOSFET) dimmers`) +
+    '<br>' +
+    L(`实时:α=<b>${alphaDeg}°</b> · 导通角=<b>${180 - alphaDeg}°</b> · V=<b>${(v * 100).toFixed(0)}%</b> · P=<b>${(p * 100).toFixed(1)}%</b> · 亮度 <b>${(lum * 100).toFixed(0)}%</b> · ${st.t}`,
+      `live: α=<b>${alphaDeg}°</b> · conduction=<b>${180 - alphaDeg}°</b> · V=<b>${(v * 100).toFixed(0)}%</b> · P=<b>${(p * 100).toFixed(1)}%</b> · light <b>${(lum * 100).toFixed(0)}%</b> · ${st.t}`);
+}
+
+/* ---------------- 波形 + RC 充电小图 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const aR = alphaRad();
+  const mainH = ch * 0.68, stripY = ch * 0.74, stripH = ch * 0.22;
+  const px = th => (0.05 + 0.90 * th / (2 * TAU)) * cw;         // 两个周期
+  const pyV = v => mainH * 0.5 - v / 311 * mainH * 0.42;        // ±311 V
+  /* 零线 */
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath(); scopeCtx.moveTo(px(0), pyV(0)); scopeCtx.lineTo(px(2 * TAU), pyV(0)); scopeCtx.stroke();
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText('220 V rms · 50 Hz(慢放)', 6 * dpr, 9 * dpr);
+  /* 完整正弦(虚线幽灵) */
+  scopeCtx.setLineDash([3 * dpr, 3 * dpr]);
+  scopeCtx.strokeStyle = 'rgba(150,165,185,.5)';
+  scopeCtx.beginPath();
+  for (let i = 0; i <= 160; i++) {
+    const th = i / 160 * 2 * TAU;
+    i === 0 ? scopeCtx.moveTo(px(th), pyV(311 * Math.sin(th))) : scopeCtx.lineTo(px(th), pyV(311 * Math.sin(th)));
+  }
+  scopeCtx.stroke();
+  /* 灯实际电压:导通段实线金色 */
+  scopeCtx.setLineDash([]);
+  scopeCtx.strokeStyle = 'rgba(255,201,100,.95)';
+  scopeCtx.lineWidth = Math.max(1.5, 1.4 * dpr);
+  scopeCtx.beginPath();
+  let started = false;
+  for (let i = 0; i <= 320; i++) {
+    const th = i / 320 * 2 * TAU;
+    const on = (th % Math.PI) >= aR;
+    if (on) {
+      const X = px(th), Y = pyV(311 * Math.sin(th));
+      started ? scopeCtx.lineTo(X, Y) : scopeCtx.moveTo(X, Y);
+      started = true;
+    } else {
+      scopeCtx.lineTo(px(th), pyV(0));
+      started = false;
+    }
+  }
+  scopeCtx.stroke();
+  /* 触发脉冲标记(每半周 α 处) */
+  for (let k = 0; k < 4; k++) {
+    const th = k * Math.PI + aR;
+    scopeCtx.strokeStyle = 'rgba(116,220,132,.9)';
+    scopeCtx.beginPath();
+    scopeCtx.moveTo(px(th), pyV(0)); scopeCtx.lineTo(px(th), pyV(340));
+    scopeCtx.stroke();
+  }
+  scopeCtx.fillStyle = 'rgba(140,230,160,.9)';
+  scopeCtx.fillText(L('点火', 'fire'), px(aR) + 3 * dpr, pyV(340) + 8 * dpr);
+  scopeCtx.fillStyle = 'rgba(255,120,120,.9)';
+  scopeCtx.fillText(L('切除', 'cut'), px(Math.PI * 0.45), pyV(311 * Math.sin(Math.PI * 0.28)) - 6 * dpr);
+  /* 运行相位点 */
+  const thNow = lineTheta % (2 * TAU);
+  scopeCtx.fillStyle = '#8fe3b0';
+  scopeCtx.beginPath();
+  scopeCtx.arc(px(thNow), pyV(311 * Math.sin(thNow)), Math.max(2.5, 2.4 * dpr), 0, TAU);
+  scopeCtx.fill();
+  /* RC 充电小图:V_C 从过零爬到 30 V 雪崩 */
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.3)';
+  scopeCtx.strokeRect(px(0), stripY, px(Math.PI) - px(0), stripH);
+  const vRC = phi => 30 * (1 - Math.exp(-2.2 * phi / Math.max(0.02, aR))) / (1 - Math.exp(-2.2));
+  const pyC = v => stripY + stripH - clamp01(v / 34) * stripH;
+  scopeCtx.setLineDash([2 * dpr, 2 * dpr]);
+  scopeCtx.strokeStyle = 'rgba(255,107,107,.7)';
+  scopeCtx.beginPath(); scopeCtx.moveTo(px(0), pyC(30)); scopeCtx.lineTo(px(Math.PI), pyC(30)); scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  scopeCtx.strokeStyle = 'rgba(120,180,255,.95)';
+  scopeCtx.beginPath();
+  for (let i = 0; i <= 80; i++) {
+    const phi = i / 80 * Math.min(Math.PI, Math.max(0.02, aR) * 1.05);
+    i === 0 ? scopeCtx.moveTo(px(phi), pyC(vRC(phi))) : scopeCtx.lineTo(px(phi), pyC(vRC(phi)));
+  }
+  scopeCtx.stroke();
+  scopeCtx.fillStyle = 'rgba(255,140,140,.95)';
+  scopeCtx.fillText(L('DIAC 雪崩 30 V', 'DIAC avalanche 30 V'), px(0.12), pyC(30) - 3 * dpr);
+  scopeCtx.fillStyle = 'rgba(120,180,255,.95)';
+  scopeCtx.fillText('Vc', px(1.06 * Math.PI) + 2 * dpr, stripY + 10 * dpr);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elAlpha = document.getElementById('alpha'), elAlphaVal = document.getElementById('alphaVal');
+const elCyc = document.getElementById('cyc'), elCycVal = document.getElementById('cycVal');
+const btnInc = document.getElementById('btnInc'), btnLed = document.getElementById('btnLed');
+const tglDots = document.getElementById('tglDots');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && (!r.vis || r.vis());
+}
+function updateAlphaLabel() { elAlphaVal.textContent = alphaDeg + '°'; }
+function updateCycLabel() { elCycVal.textContent = cycleSec.toFixed(1) + ' s'; }
+function syncModeBtns() {
+  btnInc.classList.toggle('on', !ledMode);
+  btnLed.classList.toggle('on', ledMode);
+}
+function setMode(led) {
+  ledMode = led;
+  ledG.visible = led;
+  glass.visible = !led;
+  filament.visible = !led;
+  neckG.visible = !led;
+  socket.visible = !led;
+  cord.visible = !led;
+  syncModeBtns();
+  refreshLabels();
+  updateFormula();
+}
+function setAlpha(a) {
+  alphaDeg = clamp(Math.round(a), 0, 150);
+  elAlpha.value = alphaDeg;
+  updateAlphaLabel();
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elAlpha.addEventListener('input', () => setAlpha(+elAlpha.value));
+elCyc.addEventListener('input', () => { cycleSec = (+elCyc.value) / 10; updateCycLabel(); });
+btnInc.addEventListener('click', () => setMode(false));
+btnLed.addEventListener('click', () => setMode(true));
+document.getElementById('btnFull').addEventListener('click', () => setAlpha(0));
+document.getElementById('btnMid').addEventListener('click', () => setAlpha(90));
+document.getElementById('btnDim').addEventListener('click', () => setAlpha(150));
+document.getElementById('btnReset').addEventListener('click', () => {
+  setAlpha(90); cycleSec = 1.2; elCyc.value = 12; updateCycLabel(); setMode(false);
+});
+tglDots.addEventListener('change', () => { if (!tglDots.checked) for (const d of dotMeshes) d.m.visible = false; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+controls.addEventListener('start', () => { camTween = null; });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const v = vFrac(alphaDeg), p = pFrac(alphaDeg);
+  const rfi = Math.sin(clamp(alphaDeg * Math.PI / 180, 0, Math.PI));
+  stA.innerHTML = alphaDeg + '<small>°</small>';
+  stA.className = 'v';
+  stB.innerHTML = (180 - alphaDeg) + '<small>°</small>';
+  stB.className = 'v ' + (alphaDeg > 140 ? 'warn' : 'ok');
+  stC.innerHTML = (v * 100).toFixed(0) + '<small> %</small>';
+  stC.className = 'v ' + (v < 0.25 ? 'warn' : 'ok');
+  stD.innerHTML = (p * 100).toFixed(1) + '<small> %</small>';
+  stD.className = 'v';
+  stE.innerHTML = (lum * 100).toFixed(0) + '<small> %</small>';
+  stE.className = 'v';
+  stF.innerHTML = (rfi * 100).toFixed(0) + '<small> %</small>';
+  stF.className = 'v ' + (rfi > 0.85 ? 'bad' : rfi > 0.5 ? 'warn' : 'ok');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  if (playing) lineTheta += dt * speed * TAU / cycleSec;
+  const cond = isCond();
+  /* 亮度:白炽 = 热惯性低通;LED = 快速低通(仍可见 100 Hz 闪烁) */
+  const pf = pFrac(alphaDeg);
+  if (ledMode) lum += ((cond ? pf : 0) - lum) * clamp(dt * 14, 0, 1);
+  else lum += (pf - lum) * clamp(dt / 0.09, 0, 1);
+  /* 旋钮角度 */
+  knobG.rotation.z = -alphaDeg / 150 * (270 * Math.PI / 180);
+  /* TRIAC / 元件发光 */
+  M.triac.emissive.setHex(cond ? 0xff8c3a : 0x2c3138);
+  M.triac.emissiveIntensity = cond ? 0.85 : 0.06;
+  M.diac.emissiveIntensity = cond ? 0.9 : 0.12;
+  M.cap.emissiveIntensity = 0.06 + 0.5 * clamp01((lineTheta % Math.PI) / Math.max(0.02, alphaRad()));
+  /* 灯:白炽灯丝(热惯性) / LED 盘(脉冲) */
+  if (ledMode) {
+    ledMat.emissiveIntensity = cond ? 0.5 + 2.2 * pf : 0.04;
+    lampLight.intensity = cond ? 1.4 * pf + 0.15 : 0.02;
+  } else {
+    filMat.emissiveIntensity = 0.1 + 3.0 * lum;
+    lampLight.intensity = 3.2 * lum;
+  }
+  /* 电流脉冲:导通时沿导线跑 */
+  for (let i = 0; i < dotMeshes.length; i++) {
+    const d = dotMeshes[i];
+    if (tglDots.checked && cond) {
+      d.m.visible = true;
+      d.u = (d.u + dt * (0.9 + 1.2 * pf)) % 1;
+      d.m.position.copy(wirePath.geometry.parameters.path.getPointAt(d.u, curveProbe));
+    } else d.m.visible = false;
+  }
+  /* 步骤高亮脉动 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  const boost = (m, k) => { m.emissiveIntensity = Math.max(m.emissiveIntensity, 0.35 + 0.3 * hlK * (k || 1)); };
+  if (hl === 'overview') { boost(M.knob); boost(M.triac); boost(filMat); }
+  else if (hl === 'phase') boost(M.triac, 1.4);
+  else if (hl === 'rcdiac') { boost(M.cap, 1.4); boost(M.diac, 1.4); }
+  else if (hl === 'triac') boost(M.triac, 1.4);
+  else if (hl === 'rfitriangle') boost(M.triac, 1.2);
+  else if (hl === 'lc') { boost(M.choke, 1.4); boost(M.cap, 1.2); }
+  else if (hl === 'led') boost(ledMode ? ledMat : filMat, 1.4);
+  /* 相机飞行 + 标签 */
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt * 1.5);
+    const e = 1 - Math.pow(1 - camTween.k, 3);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, e);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, e);
+    if (camTween.k >= 1) camTween = null;
+  }
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+if (qsFloat('a', -1) >= 0) setAlpha(qsFloat('a', 90));
+setPlayLabel();
+refreshLabels();
+updateStats();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

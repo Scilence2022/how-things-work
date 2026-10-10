@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>容积式水表 · 章动盘与十进制计数</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="容积式水表:章动盘把水切成一腔一腔地数" data-en="Nutating Disc Meter: Cutting Water into Chamberfuls and Counting Them">容积式水表:章动盘把水切成一腔一腔地数</h1>
+  <div class="sub" data-zh="偏心安装的圆盘在计量室里不旋转、只章动(像硬币在桌上转着的姿态),把腔体切成四个交替充放的小腔;盘的中心轴颈在锥形导轨里每章动一周恰好排过固定体积(典型 1 L/转),轨道运动被曲柄转成输出轴转动,经齿轮系减速推动十进制计数器——只数「过路体积」,与流速、压力无关:精度 ±2%(R80-R160 量程比,Q3=2.5 m³/h),代价是 0.1-0.6 bar 前后压差 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="An eccentric disc in the measuring chamber doesn't spin - it nutates (a coin wobbling as it settles), splitting the chamber into four cavities that fill and empty in turn. The disc's spindle rides a conical track: one nutation cycle passes exactly one fixed volume (~1 L/rev), an crank turns that orbit into shaft rotation, and a gear train drives a decimal register. It counts volume passing through, indifferent to flow rate or pressure: ±2% accuracy (rangeability R80-R160, Q3=2.5 m³/h) at the cost of 0.1-0.6 bar pressure drop · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">偏心安装的圆盘在计量室里不旋转、只章动(像硬币在桌上转着的姿态),把腔体切成四个交替充放的小腔;盘的中心轴颈在锥形导轨里每章动一周恰好排过固定体积(典型 1 L/转),轨道运动被曲柄转成输出轴转动,经齿轮系减速推动十进制计数器——只数「过路体积」,与流速、压力无关:精度 ±2%(R80-R160 量程比,Q3=2.5 m³/h),代价是 0.1-0.6 bar 前后压差 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="瞬时流量" data-en="flow rate">瞬时流量</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="章动频率" data-en="nutation rate">章动频率</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="单转排量" data-en="volume / rev">单转排量</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="累计计量" data-en="registered">累计计量</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="计量误差" data-en="error">计量误差</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="前后压差" data-en="pressure drop">前后压差</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip o" data-zh="章动盘(只摆不转)" data-en="nutating disc (wobbles, never spins)">章动盘(只摆不转)</span>
+    <span class="chip b" data-zh="四个小腔:充(亮)/放(暗)" data-en="four cavities: filling (bright) / emptying">四个小腔:充(亮)/放(暗)</span>
+    <span class="chip g" data-zh="1 章动周 = 1 L,雷打不动" data-en="1 cycle = 1 L, rain or shine">1 章动周 = 1 L,雷打不动</span>
+    <span class="chip r" data-zh="压差 = 容积式的过路费" data-en="pressure drop = the toll of PD meters">压差 = 容积式的过路费</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnSurge" data-zh="水锤脉冲(流量×3)" data-en="hydraulic surge (Q×3)">水锤脉冲(流量×3)</button>
+    <button class="abtn" id="btnZero" data-zh="计数器清零" data-en="zero the register">计数器清零</button>
+    <button class="abtn" id="btnSlow" data-zh="慢放一个章动周" data-en="slow-mo one cycle">慢放一个章动周</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="流量 Q" data-en="flow Q">流量 Q</label><input id="q" type="range" min="2" max="42" step="1" value="25"><span class="val" id="qVal">25 L/min</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="充放曲线" data-en="fill chart">充放曲线</span></label>
+        <label><input id="tglGear" type="checkbox" checked> <span data-zh="传动与计数器" data-en="gear & register">传动与计数器</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../gear-pump/" data-zh="齿轮泵:同族容积式" data-en="gear pump: same PD family">齿轮泵:同族容积式</a>
+    <a href="../vane-pump/" data-zh="叶片泵" data-en="vane pump">叶片泵</a>
+    <a href="../venturi-flow/" data-zh="文丘里:测流速的反面" data-en="venturi: the inferential opposite">文丘里:测流速的反面</a>
+    <a href="../check-valve/" data-zh="单向阀" data-en="check valve">单向阀</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.base.color.set(dark ? 0x2c333c : 0x9aa5b1);
+  M.frame.color.set(dark ? 0x4a5560 : 0x7c8694);
+  M.disc.color.set(dark ? 0xc9a24f : 0xb3873e);
+  M.wall.opacity = dark ? 0.15 : 0.2;
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('容积式水表 · 章动盘与十进制计数', 'Nutating Disc Meter · positive displacement and the decimal register');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateQ();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.05, 60);
+camera.position.set(3.1, 2.5, 4.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.35, 0.55, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.9;
+controls.maxDistance = 12;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
+keyLight.position.set(4, 7, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-5, 3, -4);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  base: mat(0x2c333c, { roughness: 0.7, metalness: 0.3 }),
+  frame: mat(0x4a5560, { roughness: 0.5, metalness: 0.55 }),
+  steel: mat(0x8b96a3, { roughness: 0.3, metalness: 0.8 }),
+  disc: mat(0xc9a24f, { roughness: 0.3, metalness: 0.75 }),        // 章动盘(金=主角)
+  wall: new THREE.MeshStandardMaterial({ color: 0x8fa2b8, roughness: 0.12, metalness: 0.1,
+    transparent: true, opacity: 0.15, side: THREE.DoubleSide, depthWrite: false }),
+  water: new THREE.MeshStandardMaterial({ color: 0x2f7fd4, roughness: 0.2, metalness: 0,
+    transparent: true, opacity: 0.4, emissive: 0x0e3f7a, emissiveIntensity: 0.4 }),
+  gear: mat(0x6b7684, { roughness: 0.4, metalness: 0.7 }),
+  chrome: mat(0xc2ccd8, { roughness: 0.2, metalness: 0.85 }),
+  red: mat(0xc0392b, { roughness: 0.4, metalness: 0.4 }),
+};
+
+/* ---------------- 计量几何:章动运动学 ----------------
+   盘法线 n(φ) = (sinγ·cosφ, cosγ, sinγ·sinφ),γ=30° 固定倾角;
+   盘心 C = e·s(φ),s=(−sinφ,0,cosφ):盘平面恒过中心枢轴球(0,0,0);
+   轴颈从盘心沿 n 上伸,顶端球在顶盖锥形导轨(半径 rT)里做圆轨道;
+   1 章动周 = 1 输出轴转 = 1 L(真实表中典型值) */
+const GAM = 30 * Math.PI / 180, ECC = 0.28, R_DISC = 1.0, LEN_SP = 0.86;
+const R_CH = 1.1, H_CH = 1.5;
+let phi = 0;                       // 章动相位
+let flowQ = 25;                    // L/min
+let surgeT = 0;                    // 水锤脉冲剩余时间
+let liters = 0;                    // 累计真实体积 L
+let revs = 0;                      // 章动周数
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let et = 0, scenario = 0;
+const ERR = 1.5;                   // 计量误差 %(示意,+1.5 在 ±2 内)
+
+/* ---------------- 场景装配 ---------------- */
+const base = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.24, 3.4), M.base);
+base.position.set(0.4, -1.05, 0);
+scene.add(base);
+const stand1 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.5), M.frame);
+stand1.position.set(-1.35, -0.75, 0.8);
+scene.add(stand1);
+const stand2 = stand1.clone();
+stand2.position.set(2.15, -0.75, 0.8);
+scene.add(stand2);
+
+/* 计量室:透明圆筒 + 顶/底盘 */
+const chamber = new THREE.Group();
+scene.add(chamber);
+const wall = new THREE.Mesh(new THREE.CylinderGeometry(R_CH, R_CH, H_CH, 44, 1, true), M.wall);
+chamber.add(wall);
+const capBot = new THREE.Mesh(new THREE.CylinderGeometry(R_CH + 0.08, R_CH + 0.08, 0.1, 44), M.frame);
+capBot.position.y = -H_CH / 2 - 0.05;
+chamber.add(capBot);
+const capTop = new THREE.Mesh(new THREE.CylinderGeometry(R_CH + 0.08, R_CH + 0.08, 0.1, 44), M.frame);
+capTop.position.y = H_CH / 2 + 0.05;
+chamber.add(capTop);
+/* 中心枢轴球 + 支柱 */
+const pivotBall = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 12), M.chrome);
+chamber.add(pivotBall);
+const pivotPost = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.62, 10), M.chrome);
+pivotPost.position.y = -0.36;
+chamber.add(pivotPost);
+/* 顶盖锥形导轨槽 */
+const track = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.055, 10, 44), M.red);
+track.rotation.x = Math.PI / 2;
+track.position.y = H_CH / 2 - 0.02;
+chamber.add(track);
+
+/* 章动盘 + 盘心毂 + 轴颈(随 φ 重建位姿) */
+const discG = new THREE.Group();
+scene.add(discG);
+const discM = new THREE.Mesh(new THREE.CylinderGeometry(R_DISC, R_DISC, 0.055, 52), M.disc);
+discG.add(discM);
+const discHub = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 10), M.chrome);
+discG.add(discHub);
+const spindle = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, LEN_SP, 10), M.chrome);
+spindle.position.y = LEN_SP / 2;
+discG.add(spindle);
+const spindleBall = new THREE.Mesh(new THREE.SphereGeometry(0.06, 14, 10), M.red);
+spindleBall.position.y = LEN_SP;
+discG.add(spindleBall);
+/* 盘上标记点(证明盘不绕自身轴转:标记走圆轨道而非自旋) */
+const dotMark = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), M.red);
+discG.add(dotMark);
+const nVec = new THREE.Vector3(), sVec = new THREE.Vector3(), cPos = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
+function layoutDisc(p) {
+  nVec.set(Math.sin(GAM) * Math.cos(p), Math.cos(GAM), Math.sin(GAM) * Math.sin(p));
+  sVec.set(-Math.sin(p), 0, Math.cos(p));
+  cPos.copy(sVec).multiplyScalar(ECC);
+  discG.position.copy(cPos);
+  discG.quaternion.setFromUnitVectors(UP, nVec);
+}
+
+/* 四个充放腔:上/下盘各两个半圆腔,随 φ 旋转;透明度=充水程度 */
+const cavMat = k => new THREE.MeshStandardMaterial({ color: 0x2f7fd4, roughness: 0.25, metalness: 0,
+  transparent: true, opacity: 0.15, emissive: 0x0e3f7a, emissiveIntensity: 0.3, side: THREE.DoubleSide, depthWrite: false });
+const cavG = [];
+const cavM = [];
+for (let h = 0; h < 2; h++) {
+  const g = new THREE.Group();
+  scene.add(g);
+  cavG.push(g);
+  for (let s = 0; s < 2; s++) {
+    const th0 = s * Math.PI + 0.07;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 0.62, 18, 1, true, th0, Math.PI - 0.14), cavMat(s));
+    m.position.y = h === 0 ? 0.36 : -0.36;
+    g.add(m);
+    cavM.push(m);
+  }
+}
+function cavFill(p, k) {         // k: 0 上A 1 上B 2 下A 3 下B(相位依次差 π/2)
+  const s = 0.5 + 0.5 * Math.sin(p + (k % 2 === 0 ? 0 : Math.PI) + (k < 2 ? 0 : Math.PI / 2));
+  return clamp01(s);
+}
+
+/* 进/出水口 */
+function pipe(a, b, r, m) {
+  const dir = new THREE.Vector3().subVectors(b, a);
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, dir.length(), 12), m);
+  mesh.position.copy(a).addScaledVector(dir, 0.5);
+  mesh.quaternion.setFromUnitVectors(UP, dir.clone().normalize());
+  scene.add(mesh);
+  return mesh;
+}
+pipe(new THREE.Vector3(-2.35, -0.4, 0), new THREE.Vector3(-R_CH - 0.05, -0.4, 0), 0.14, M.frame);
+pipe(new THREE.Vector3(R_CH + 0.05, 0.4, 0), new THREE.Vector3(2.35, 0.4, 0), 0.14, M.frame);
+const flangeIn = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 18), M.red);
+flangeIn.rotation.z = Math.PI / 2;
+flangeIn.position.set(-2.3, -0.4, 0);
+scene.add(flangeIn);
+const flangeOut = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 18), M.red);
+flangeOut.rotation.z = Math.PI / 2;
+flangeOut.position.set(2.3, 0.4, 0);
+scene.add(flangeOut);
+
+/* 水流粒子:进口 → 腔内螺旋 → 出口 */
+const NFLOW = 150;
+const flowGeo = new THREE.BufferGeometry();
+const flowPos = new Float32Array(NFLOW * 3);
+flowGeo.setAttribute('position', new THREE.BufferAttribute(flowPos, 3));
+const flowPts = new THREE.Points(flowGeo, new THREE.PointsMaterial({ color: 0x74c0fc, size: 0.05,
+  transparent: true, opacity: 0.85, depthWrite: false }));
+flowPts.frustumCulled = false;
+scene.add(flowPts);
+const drops = [];
+function seedFlow() {
+  drops.length = 0;
+  for (let i = 0; i < NFLOW; i++) drops.push({ s: Math.random(), ph: Math.random() * TAU });
+}
+seedFlow();
+
+/* 传动与计数器(可开关):输出轴 → 锥齿轮 → 计数轮排 */
+const driveG = new THREE.Group();
+scene.add(driveG);
+const outShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.66, 10), M.chrome);
+outShaft.position.set(0, H_CH / 2 + 0.33, 0);
+driveG.add(outShaft);
+/* 曲柄销插入轴颈球顶的槽盘(轨道→旋转的转换) */
+const slotPlate = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.1), M.frame);
+slotPlate.position.set(0, H_CH / 2 + 0.06, 0);
+driveG.add(slotPlate);
+const bevel1 = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.1, 20), M.gear);
+bevel1.rotation.x = Math.PI;
+bevel1.position.set(0, H_CH / 2 + 0.68, 0);
+driveG.add(bevel1);
+const hShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.1, 10), M.chrome);
+hShaft.rotation.z = Math.PI / 2;
+hShaft.position.set(0.55, H_CH / 2 + 0.72, 0);
+driveG.add(hShaft);
+const bevel2 = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.09, 18), M.gear);
+bevel2.rotation.z = -Math.PI / 2;
+bevel2.position.set(0.17, H_CH / 2 + 0.72, 0);
+driveG.add(bevel2);
+const gearRed = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.07, 24), M.gear);
+gearRed.rotation.z = Math.PI / 2;
+gearRed.position.set(0.95, H_CH / 2 + 0.72, 0);
+driveG.add(gearRed);
+/* 计数轮 ×5(十进制):最右为升位小数(红) */
+const wheels = [];
+for (let i = 0; i < 5; i++) {
+  const w = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.075, 22),
+    i === 0 ? M.red : M.gear);
+  w.rotation.x = Math.PI / 2;
+  w.position.set(1.35 + i * 0.19, H_CH / 2 + 0.72, 0.16);
+  driveG.add(w);
+  wheels.push(w);
+}
+const counterPlate = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.3, 0.06), M.frame);
+counterPlate.position.set(1.71, H_CH / 2 + 0.72, 0.1);
+driveG.add(counterPlate);
+
+/* 压差表:表盘 + 指针 */
+const gauge = new THREE.Group();
+gauge.position.set(-1.75, 0.75, 0.75);
+scene.add(gauge);
+const gRing = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.03, 8, 32), M.frame);
+gauge.add(gRing);
+const gFace = new THREE.Mesh(new THREE.CircleGeometry(0.29, 32), mat(0xdfe5ec, { roughness: 0.6, metalness: 0 }));
+gFace.position.z = 0.005;
+gauge.add(gFace);
+const gNeedle = new THREE.Group();
+gauge.add(gNeedle);
+const gArm = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.012), M.red);
+gArm.position.y = 0.13;
+gNeedle.add(gArm);
+gNeedle.position.z = 0.02;
+const gStem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.05, 10), M.red);
+gStem.rotation.x = Math.PI / 2;
+gauge.add(gStem);
+function pipe2(a, b) { return pipe(a, b, 0.045, M.frame); }
+pipe2(new THREE.Vector3(-1.6, -0.42, 0.35), new THREE.Vector3(-1.75, 0.45, 0.75));
+pipe2(new THREE.Vector3(1.6, 0.42, 0.35), new THREE.Vector3(-1.55, 0.72, 0.75));
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+const cPosW = new THREE.Vector3();
+addLabel(() => L('章动盘:法线绕铅垂轴进动,盘不绕自身对称轴转', 'the disc: its normal precesses; it never spins about its own axis'), () => 'e',
+  new THREE.Vector3(-1.6, 1.1, -0.8), p => p.set(-1.15, 0.85, -0.5));
+addLabel(() => L('轴颈球在锥形导轨里做圆轨道:1 周 = 恰好 1 L', 'the spindle ball orbits in the conical track: 1 orbit = exactly 1 L'), () => 'w',
+  new THREE.Vector3(0.9, 1.45, -0.5), p => p.set(spindleBall.getWorldPosition(cPosW).x * 0.5, 0.95, -0.3));
+addLabel(() => L('中心枢轴球:盘平面恒过此点(摆动圆心)', 'the central pivot ball: the disc plane always passes through it'), () => 'b',
+  new THREE.Vector3(-1.5, -0.1, 0.9), p => p.set(-0.5, 0.05, 0.6));
+addLabel(() => L('四个小腔:盘把腔切成 4 份,充→放依次差 90°', 'four cavities: fill/empty in turn, 90° apart'), () => 'g',
+  new THREE.Vector3(1.7, -0.55, 0.9), p => p.set(1.2, -0.6, 0.5));
+addLabel(() => L('进水口:上游压力推水进腔', 'inlet: line pressure feeds the chamber'), () => 'b',
+  new THREE.Vector3(-2.35, -0.05, 0), p => p.set(-2.35, -0.12, 0));
+addLabel(() => L('出水口:排出的体积已被「数过」', 'outlet: whatever leaves has been counted'), () => 'b',
+  new THREE.Vector3(2.35, 0.75, 0), p => p.set(2.35, 0.68, 0));
+addLabel(() => L('轨道→旋转:槽盘把轴颈的圆轨道转成输出轴转动', 'orbit → rotation: the slotted plate turns the spindle orbit into shaft rotation'), () => 'e',
+  new THREE.Vector3(-0.9, 1.75, 0.4), p => p.set(0.1, H_CH / 2 + 0.25, 0));
+addLabel(() => L('齿轮系减速 + 十进制计数器:个位轮(红)每 L 跳一格', 'gear train + decimal register: the red litre-wheel ticks once per L'), () => 'w',
+  new THREE.Vector3(1.7, 1.9, 0.2), p => p.set(1.71, H_CH / 2 + 1.0, 0.16));
+addLabel(() => L('压差表:容积式的「过路费」0.1-0.6 bar', 'ΔP gauge: the PD toll, 0.1-0.6 bar'), () => 'r',
+  new THREE.Vector3(-2.5, 1.35, 0.75), p => p.set(-1.75, 1.15, 0.75));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'overview', tgt: [0.3, 0.4, 0],
+    b: '一只水表的全部家当', be: 'All the parts of the meter',
+    d: '透明计量腔 + 偏心章动盘 + 中心枢轴 + 锥形导轨 + 轨道转旋转的槽盘 + 齿轮系 + 十进制计数器 + 压差表。它量的是「体积」不是「速度」:水进来多少体积,就被腔体切成多少份、数走多少个数——流速快慢只改变数的频率,不改变每份的大小。',
+    de: 'A transparent chamber, an eccentric nutating disc, the central pivot, a conical track, the orbit-to-rotation slot plate, a gear train, a decimal register and a ΔP gauge. It measures volume, not velocity: whatever volume enters gets cut into chamberfuls and counted - flow rate only changes the counting frequency, never the size of each portion.' },
+  { hl: 'nutation', tgt: [0, 0.2, 0],
+    b: '章动:只摆不转的圆盘', be: 'Nutation: wobbling without spinning',
+    d: '盘心被偏心约束(C = e·s(φ)),盘面又被枢轴球钉住:法线只能以固定倾角 γ≈30° 绕铅垂轴进动。看盘上的红点标记:它绕轴走大圆轨道,盘却从不绕自身对称轴打转——像一枚在桌上摇晃将倒未倒的硬币。这个单自由度运动被几何完全确定:给 φ,一切位形已知。',
+    de: 'The disc center is eccentrically constrained while the disc plane is pinned on the pivot ball: the normal can only precess at a fixed tilt γ≈30° about the vertical. Watch the red mark: it sweeps a big orbit while the disc never spins about its own axis - a coin wobbling on the table, forever about to fall. One degree of freedom: give φ and the whole geometry follows.' },
+  { hl: 'chambers', tgt: [0, 0, 0.5],
+    b: '四个小腔:充、放,依次差 90°', be: 'Four cavities: filling and emptying, 90° apart',
+    d: '盘面把腔切成「盘上/盘下 × 左/右」四个新月腔。章动一周,每腔各充满一次、排空一次,相位依次差 90°:上游永远有一腔在进水(不倒流),下游永远有一腔在出水(不断流)。四腔亮度 = 实时充水程度,右图四条曲线就是你看到的亮度。',
+    de: 'The disc splits the chamber into four crescent cavities (above/below × left/right). Each cycle, every cavity fills once and empties once, phased 90° apart: upstream always has a cavity admitting water (no backflow), downstream one discharging (no interruption). The cavity brightness is live fill level - the four chart curves are exactly what you see.' },
+  { hl: 'volume', tgt: [0, 0.1, 0],
+    b: '每转定容:1 周 = 1 L', be: 'Fixed displacement: one cycle = 1 L',
+    d: '几何封闭:四个腔的「充+放」体积由腔体与盘的尺寸唯一决定,与转速无关——这是容积式原理的全部:排气量 = 腔的几何体积。真实表按 1 L/转设计(大口径表有 2、10 L/转),误差只来自泄漏缝隙:新表 ±2%,磨损后小流量误差先变负(泄漏占比升高),所以规程要求周期检定。',
+    de: 'Geometric closure: the fill+empty volume of the four cavities is fixed by chamber and disc dimensions, independent of speed - the whole positive-displacement principle: displacement = cavity geometry. Real meters are built to 1 L/rev (2 or 10 L for large lines); error comes only from leakage gaps: ±2% new, drifting negative at low flow as wear opens the gaps - hence mandatory periodic verification.' },
+  { hl: 'track', tgt: [0, 0.9, 0],
+    b: '轴颈与锥形导轨:轨道变旋转', be: 'Spindle and conical track: orbit becomes rotation',
+    d: '盘心轴颈顶着一颗球,球被限制在顶盖的锥形槽里:盘章动,球就走圆轨道。槽盘卡住球,把「公转」转成输出轴「自转」——1:1,每章动一周轴转一圈。没有轴承承受水压差:轴颈球是滚动接触,磨损极小,这正是它比叶轮表耐久的原因之一。',
+    de: 'The disc\'s spindle carries a ball captured in the conical groove of the top plate: as the disc nutates, the ball orbits. A slotted plate turns that revolution into shaft rotation, 1:1 - one shaft turn per nutation cycle. No bearing sees the pressure difference: the ball rolls, wear is minimal - one reason these meters outlast inferential ones.' },
+  { hl: 'counter', tgt: [1.4, 1.3, 0.2],
+    b: '齿轮系与十进制计数', be: 'Gear train and decimal register',
+    d: '输出轴 1 L/转直接太快,经减速齿轮(这里演示 1:1 到计数轮,真实表内是 1 L 个位轮+多级 10:1 进位)推动五位鼓轮:红色个位轮每升一格,十位轮 1/10 圈,依此类推——机械式十进制进位。表上读数是纯机械累积:没电也能走,这是它统治水表 150 年的原因。',
+    de: 'One shaft turn per litre is too fast to read directly, so reduction gears (1:1 to the register here; real meters add decade-carry stages) drive the five drum wheels: the red litre wheel ticks one digit, the tens wheel moves 1/10 turn, and so on - purely mechanical carry. The reading accumulates with no electricity at all, which is how it ruled water metering for 150 years.' },
+  { hl: 'pressure', tgt: [-1.0, 0.7, 0.9],
+    b: '只数体积 + 压差的代价', be: 'Counts volume only - and the price',
+    d: '点「水锤脉冲」:流量瞬间×3,章动频率跟着飙,但每个腔的体积没变——计数与流速、压力完全无关,精度 ±2%(量程比 R80-R160:从 Q3=2.5 m³/h 到 1/80 的小流量都数得清)。代价:水必须推着盘走,前后压差 0.1-0.6 bar(看指针),颗粒杂质会卡腔——所以表前要装滤网。',
+    de: 'Hit the surge button: flow triples, the nutation races, but each cavity still holds the same volume - the count is indifferent to flow rate and pressure, ±2% over R80-R160 rangeability (from Q3=2.5 m³/h down to 1/80 of it). The price: the water must push the disc, costing 0.1-0.6 bar (watch the needle), and grit can jam the chamber - hence the strainer upstream.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+let tgtVec = new THREE.Vector3(0.3, 0.4, 0);
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const pdrop = 0.1 + 0.5 * Math.pow(flowQ / 42, 2);
+  formulaEl.innerHTML =
+    L(`定容原理:V_转 = Σ腔几何体积 = <b>1.00 L/转</b>,与 Q、p 无关;章动频率 n = Q/V = <b>${(flowQ).toFixed(0)} min⁻¹</b>`,
+      `Fixed displacement: V_rev = Σ cavity volumes = <b>1.00 L/rev</b>, independent of Q and p; nutation rate n = Q/V = <b>${flowQ.toFixed(0)} min⁻¹</b>`) +
+    '<br>' +
+    L(`读数 = 真实体积 × (1+ε),ε = <b>+${ERR.toFixed(1)}%</b>(限差 ±2%);量程比 R80-R160(Q3 = 2.5 m³/h)`,
+      `Register = true volume × (1+ε), ε = <b>+${ERR.toFixed(1)}%</b> (limit ±2%); rangeability R80-R160 (Q3 = 2.5 m³/h)`) +
+    '<br>' +
+    L(`压差 ΔP ≈ 0.1 + 0.5(Q/Qmax)² = <b>${pdrop.toFixed(2)} bar</b>(Q=${flowQ} L/min)· 累计 ${(liters / 1000).toFixed(3)} m³`,
+      `ΔP ≈ 0.1 + 0.5(Q/Qmax)² = <b>${pdrop.toFixed(2)} bar</b> (Q=${flowQ} L/min) · total ${(liters / 1000).toFixed(3)} m³`);
+}
+
+/* ---------------- 仿真推进 ---------------- */
+function resetMachine() {
+  phi = 0; liters = 0; revs = 0; surgeT = 0;
+  seedFlow();
+  updateFormula();
+}
+
+/* ---------------- 充放曲线(4 腔 + 累计) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const buf = [];
+let lastSample = 0;
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const t1 = et, WIN = 10;
+  const px = t => (0.05 + 0.9 * clamp01((t - (t1 - WIN)) / WIN)) * cw;
+  /* 累计体积(白,归一化到窗口增量) */
+  scopeCtx.strokeStyle = 'rgba(240,245,250,.85)';
+  scopeCtx.lineWidth = Math.max(1.4, 1.4 * dpr);
+  scopeCtx.beginPath();
+  let started = false;
+  const c0 = buf.length ? buf[0].c : liters;
+  for (const b of buf) {
+    const yy = ch - (0.10 + 0.78 * (b.c - c0) / Math.max(0.2, liters - c0)) * ch;
+    started ? scopeCtx.lineTo(px(b.t), yy) : (scopeCtx.moveTo(px(b.t), yy), started = true);
+  }
+  scopeCtx.stroke();
+  /* 四腔充放 */
+  const cols = ['rgba(255,201,100,.9)', 'rgba(116,220,132,.85)', 'rgba(116,192,252,.85)', 'rgba(255,140,140,.85)'];
+  for (let k = 0; k < 4; k++) {
+    scopeCtx.strokeStyle = cols[k];
+    scopeCtx.lineWidth = Math.max(1.1, 1.1 * dpr);
+    scopeCtx.beginPath();
+    started = false;
+    for (const b of buf) {
+      const yy = ch - (0.14 + 0.72 * b.f[k]) * ch;
+      started ? scopeCtx.lineTo(px(b.t), yy) : (scopeCtx.moveTo(px(b.t), yy), started = true);
+    }
+    scopeCtx.stroke();
+  }
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.85)';
+  scopeCtx.fillText(L('4腔充放 / 累计(白)', '4 cavity fills / total (white)'), px(t1 - WIN) + 4 * dpr, 12 * dpr);
+  /* 当前相位标记 */
+  scopeCtx.fillStyle = '#8fe3b0';
+  scopeCtx.fillRect(px(t1) - 1.5 * dpr, 4 * dpr, 3 * dpr, ch - 8 * dpr);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elQ = document.getElementById('q'), elQVal = document.getElementById('qVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglGear = document.getElementById('tglGear');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateQ() { elQVal.textContent = flowQ + L(' L/min', ' L/min'); }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elQ.addEventListener('input', () => { flowQ = +elQ.value; updateQ(); updateFormula(); });
+document.getElementById('btnSurge').addEventListener('click', () => { surgeT = 2.2; });
+document.getElementById('btnZero').addEventListener('click', () => { liters = 0; });
+document.getElementById('btnSlow').addEventListener('click', () => {
+  phi = Math.floor(phi) + 0.98;
+  if (playing) { playing = false; setPlayLabel(); }
+});
+document.getElementById('btnReset').addEventListener('click', resetMachine);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglGear.addEventListener('change', () => { driveG.visible = tglGear.checked; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function curQ() { return surgeT > 0 ? flowQ * 3 : flowQ; }
+function updateStats() {
+  const q = curQ();
+  stA.innerHTML = q.toFixed(0) + '<small> L/min</small>';
+  stA.className = 'v ' + (surgeT > 0 ? 'warn' : 'ok');
+  stB.innerHTML = q.toFixed(0) + '<small> min⁻¹</small>';
+  stB.className = 'v ok';
+  stC.innerHTML = '1.00<small> L/转</small>';
+  stC.className = 'v ok';
+  stD.innerHTML = (liters / 1000).toFixed(3) + '<small> m³</small>';
+  stD.className = 'v ok';
+  stE.innerHTML = '+' + ERR.toFixed(1) + '<small> %</small>';
+  stE.className = 'v ' + (Math.abs(ERR) <= 2 ? 'ok' : 'bad');
+  const pdrop = 0.1 + 0.5 * Math.pow(flowQ / 42, 2);
+  stF.innerHTML = pdrop.toFixed(2) + '<small> bar</small>';
+  stF.className = 'v ' + (pdrop <= 0.6 ? 'ok' : 'bad');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  if (surgeT > 0) surgeT -= dt;
+  /* 章动推进:1 L/转,φ 为章动相位 */
+  if (playing) {
+    const qNow = curQ();                       // L/min
+    const dphi = qNow / 60 * dt * speed;       // 周
+    const pre = phi;
+    phi += dphi * TAU;
+    liters += qNow / 60 * dt * speed;
+    if (Math.floor(pre / TAU + 1e-9) !== Math.floor(phi / TAU + 1e-9)) revs++;
+  }
+  /* 盘位姿 */
+  layoutDisc(phi);
+  dotMark.position.set(R_DISC * Math.cos(0.9), 0.02, R_DISC * Math.sin(0.9));   // 盘面标记(随盘进动,不自转)
+  /* 四腔充放(腔组随盘方位角旋转) */
+  const fills = [cavFill(phi, 0), cavFill(phi, 1), cavFill(phi, 2), cavFill(phi, 3)];
+  cavG[0].rotation.y = phi;
+  cavG[1].rotation.y = phi;
+  const cLo = new THREE.Color(0x123c66), cHi = new THREE.Color(0x5ab5f0);
+  cavM.forEach((m, i) => {
+    const f = fills[i];
+    m.material.opacity = 0.08 + 0.5 * f;
+    m.material.color.copy(cLo).lerp(cHi, f);
+    m.material.emissiveIntensity = 0.15 + 0.5 * f;
+  });
+  /* 传动:输出轴 = 章动频率(1:1) */
+  outShaft.rotation.y = phi;
+  slotPlate.rotation.y = phi * 0.5;
+  bevel1.rotation.y = phi;
+  hShaft.rotation.x = phi;
+  bevel2.rotation.y = phi * 0.8;
+  gearRed.rotation.x = phi;
+  wheels.forEach((w, i) => { w.rotation.y = -phi / Math.pow(10, i); });
+  /* 压差指针 */
+  const pdrop = 0.1 + 0.5 * Math.pow(flowQ / 42, 2);
+  gNeedle.rotation.z = lerpN(-1.1, 1.1, clamp01((pdrop - 0.05) / 0.6)) + 0.03 * Math.sin(et * 7);
+  /* 水流粒子:进口→腔内(跟随腔旋涡)→出口 */
+  const qn = curQ() / 60 * speed;
+  for (let i = 0; i < NFLOW; i++) {
+    const d = drops[i];
+    d.s += qn * dt * 0.55;
+    if (d.s >= 1) { d.s -= 1; d.ph = Math.random() * TAU; }
+    const t = d.s;
+    let x, y, z;
+    if (t < 0.22) {                             // 进水管
+      const u = t / 0.22;
+      x = lerpN(-2.3, -R_CH + 0.1, u); y = -0.4 + 0.1 * Math.sin(d.ph + u * 9); z = 0.12 * Math.sin(d.ph * 3 + u * 7);
+    } else if (t < 0.78) {                      // 腔内螺旋上升
+      const u = (t - 0.22) / 0.56;
+      const rr = (1.05 - 0.25 * u) * (0.8 + 0.2 * Math.sin(d.ph + u * 12));
+      const aa = phi + u * TAU * 1.5 + d.ph;
+      x = Math.cos(aa) * rr; y = lerpN(-0.45, 0.45, u) + 0.1 * Math.sin(d.ph + u * 6); z = Math.sin(aa) * rr;
+    } else {                                    // 出水管
+      const u = (t - 0.78) / 0.22;
+      x = lerpN(R_CH - 0.1, 2.3, u); y = 0.4 + 0.08 * Math.sin(d.ph + u * 9); z = 0.1 * Math.sin(d.ph * 2 + u * 5);
+    }
+    flowPos[i * 3] = x; flowPos[i * 3 + 1] = y; flowPos[i * 3 + 2] = z;
+  }
+  flowGeo.attributes.position.needsUpdate = true;
+  /* 采样曲线 */
+  if (et - lastSample > 0.08) {
+    lastSample = et;
+    buf.push({ t: et, f: fills, c: liters });
+    while (buf.length && et - buf[0].t > 10.4) buf.shift();
+  }
+  /* 发光 */
+  M.disc.emissiveIntensity = 0.14 + 0.08 * Math.sin(et * 2.5);
+  M.water.emissiveIntensity = 0.3 + 0.2 * Math.sin(et * 3);
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  const boost = m => { m.emissiveIntensity = 0.55 + 0.3 * hlK; };
+  if (hl === 'overview') { boost(M.disc); boost(M.gear); boost(M.red); }
+  else if (hl === 'nutation') boost(M.disc);
+  else if (hl === 'chambers') { M.water.emissiveIntensity = 0.9 + 0.3 * hlK; }
+  else if (hl === 'volume') boost(M.disc);
+  else if (hl === 'track') boost(M.red);
+  else if (hl === 'counter') boost(M.gear);
+  else if (hl === 'pressure') boost(M.red);
+  /* 相机目标缓动 + 标签 */
+  controls.target.lerp(tgtVec, 0.05);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function lerpN(a, b, f) { return a + (b - a) * f; }
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
