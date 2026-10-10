@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蚁群优化 · 信息素正反馈与概率选路</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="蚁群优化:信息素正反馈、挥发与概率选路" data-en="Ant Colony Optimization: Pheromone Feedback, Evaporation and Probabilistic Tours">蚁群优化:信息素正反馈、挥发与概率选路</h1>
+  <div class="sub" data-zh="真实蚂蚁的双桥实验(Deneubourg):巢与食物之间一短一长两座桥,初始上桥 50:50,几分钟后 >85-90% 的蚁流走短桥——靠的只是信息素正反馈;人工蚁群(Dorigo 1992/1996)把它数字化:按 P_ij ∝ τ^α·η^β(η=1/距离)构造回路,走完按 1/L 沉积信息素,再按 ρ 挥发;典型参数 α=1、β=2-5、ρ=0.1-0.5、蚂蚁数=城市数;TSP 50-100 城时常落在最优 1-2% 以内;应用:网络路由、排班、车辆路径 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="In the real double-bridge experiment (Deneubourg), ants choose between a short and a long bridge at 50:50 at first, yet within minutes >85-90% of the traffic takes the short one - driven by nothing but pheromone feedback. Artificial ants (Dorigo 1992/1996) digitize it: build tours by P_ij ∝ τ^α·η^β (η=1/distance), deposit 1/L of pheromone per tour, evaporate by ρ; typical α=1, β=2-5, ρ=0.1-0.5, ants = cities. On 50-100-city TSP it often lands within 1-2% of optimal; used for routing, scheduling, vehicle routing · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">真实蚂蚁的双桥实验(Deneubourg):巢与食物之间一短一长两座桥,初始上桥 50:50,几分钟后 >85-90% 的蚁流走短桥——靠的只是信息素正反馈;人工蚁群(Dorigo 1992/1996)把它数字化:按 P_ij ∝ τ^α·η^β(η=1/距离)构造回路,走完按 1/L 沉积信息素,再按 ρ 挥发;典型参数 α=1、β=2-5、ρ=0.1-0.5、蚂蚁数=城市数;TSP 50-100 城时常落在最优 1-2% 以内;应用:网络路由、排班、车辆路径 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k">迭代代</span><span class="v" id="stA">—</span>
+  <span class="k">best 回路长</span><span class="v" id="stB">—</span>
+  <span class="k">平均回路长</span><span class="v" id="stC">—</span>
+  <span class="k">峰值边占比</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="城市节点 · 完全图细管" data-en="cities · complete-graph tubes">城市节点 · 完全图细管</span>
+    <span class="chip o" data-zh="信息素 τ:亮度 + 半径" data-en="pheromone τ: glow + radius">信息素 τ:亮度 + 半径</span>
+    <span class="chip g" data-zh="蚂蚁(构造回路)" data-en="ants (building tours)">蚂蚁(构造回路)</span>
+    <span class="chip r" data-zh="双桥实验:短桥 / 长桥" data-en="double bridge: short / long">双桥实验:短桥 / 长桥</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnGen" data-zh="运行一代" data-en="run 1 generation">运行一代</button>
+    <button class="abtn" id="btnRun" data-zh="连续运行" data-en="run continuously">连续运行</button>
+    <button class="abtn" id="btnBridge" data-zh="双桥实验" data-en="double-bridge experiment">双桥实验</button>
+    <button class="abtn" id="btnResetPher" data-zh="重置信息素" data-en="reset pheromone">重置信息素</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="α 信息素权重" data-en="α pheromone weight">α 信息素权重</label><input id="alpha" type="range" min="0" max="5" step="0.5" value="1"><span class="val" id="alphaVal">1.0</span></div>
+  <div class="row"><label data-zh="β 启发式权重" data-en="β heuristic weight">β 启发式权重</label><input id="beta" type="range" min="0" max="8" step="0.5" value="3"><span class="val" id="betaVal">3.0</span></div>
+  <div class="row"><label data-zh="ρ 挥发率" data-en="ρ evaporation">ρ 挥发率</label><input id="rho" type="range" min="0.05" max="0.6" step="0.05" value="0.3"><span class="val" id="rhoVal">0.30</span></div>
+  <div class="row"><label data-zh="蚂蚁数" data-en="ant count">蚂蚁数</label><input id="ants" type="range" min="4" max="24" step="2" value="12"><span class="val" id="antsVal">12</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglEdges" type="checkbox" checked> <span data-zh="全部边" data-en="all edges">全部边</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../ant-pheromone/" data-zh="昆虫信息素" data-en="ant pheromone">昆虫信息素</a>
+    <a href="../shortest-path/" data-zh="最短路径" data-en="shortest path">最短路径</a>
+    <a href="../tsp/" data-zh="旅行商 TSP" data-en="TSP">旅行商 TSP</a>
+    <a href="../genetic-algorithm/" data-zh="遗传算法" data-en="genetic algorithm">遗传算法</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const UP = new THREE.Vector3(0, 1, 0);
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x1a2129 : 0xd8dee5);
+  M.node.color.set(dark ? 0x9fb6d0 : 0x4f6d8b);
+  M.ant.color.set(dark ? 0xf2ede2 : 0x4a4438);
+  M.nest.color.set(dark ? 0x6fa8dc : 0x2f6ca8);
+  M.food.color.set(dark ? 0x7bd88f : 0x2b8a3e);
+  M.best.color.set(dark ? 0xffd27a : 0xa67816);
+  M.bridgeS.color.set(dark ? 0x8fb8ff : 0x3f6fb5);
+  M.bridgeL.color.set(dark ? 0x8fb8ff : 0x3f6fb5);
+  updateEdgeVisuals();
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('蚁群优化 · 信息素正反馈与概率选路', 'Ant Colony Optimization · Pheromone Feedback and Probabilistic Tours');
+  btnBridge.textContent = mode === 'bridge' ? L('回到 TSP 地图', 'back to TSP map') : L('双桥实验', 'double-bridge experiment');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateAlpha();
+  updateBeta();
+  updateRho();
+  updateAnts();
+  updateFormula();
+  updateStatsHead();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 120);
+camera.position.set(10.2, 8.8, 12.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.9, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.autoRotateSpeed = 0.3;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 6);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 4, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.5,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x1a2129, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  node: mat(0x9fb6d0, { roughness: 0.35, metalness: 0.6, emissiveIntensity: 0.18 }),
+  ant: mat(0xf2ede2, { roughness: 0.5, metalness: 0.1, emissiveIntensity: 0.15 }),
+  nest: mat(0x6fa8dc, { roughness: 0.4, metalness: 0.3, emissiveIntensity: 0.2 }),
+  food: mat(0x7bd88f, { roughness: 0.4, metalness: 0.3, emissiveIntensity: 0.2 }),
+  best: mat(0xffd27a, { roughness: 0.3, metalness: 0.6, emissiveIntensity: 0.3 }),
+  bridgeS: mat(0x8fb8ff, { roughness: 0.4, metalness: 0.35, emissiveIntensity: 0.2 }),
+  bridgeL: mat(0x8fb8ff, { roughness: 0.4, metalness: 0.35, emissiveIntensity: 0.2 }),
+};
+
+/* ---------------- 几何助手 ---------------- */
+function setAB(mesh, a, b, r) {           // 单位圆柱伸缩摆位
+  const dir = new THREE.Vector3().subVectors(b, a);
+  const len = Math.max(0.001, dir.length());
+  mesh.position.copy(a).addScaledVector(dir, 0.5);
+  mesh.quaternion.setFromUnitVectors(UP, dir.normalize());
+  mesh.scale.set(r, len, r);
+}
+
+/* ---------------- TSP 地图:12 城 + 66 边 ---------------- */
+const tspG = new THREE.Group();
+scene.add(tspG);
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(7.4, 7.4, 0.12, 56), M.ground);
+ground.position.y = -0.06;
+tspG.add(ground);
+
+const NC = 12;
+const rng0 = mulberry32(20261010);
+const cities = [];
+(function placeCities() {
+  let guard = 0;
+  while (cities.length < NC && guard++ < 6000) {
+    const a = rng0() * TAU, r = 1.5 + rng0() * 2.85;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r * 0.8;
+    if (cities.every(c => (c.x - x) ** 2 + (c.z - z) ** 2 > 1.32 ** 2)) cities.push({ x, z });
+  }
+})();
+const CY = 0.42;
+const cityGeo = new THREE.SphereGeometry(0.17, 16, 12);
+const postGeo = new THREE.CylinderGeometry(0.045, 0.045, CY, 8);
+for (const c of cities) {
+  const s = new THREE.Mesh(cityGeo, M.node);
+  s.position.set(c.x, CY, c.z);
+  tspG.add(s);
+  const p = new THREE.Mesh(postGeo, M.node);
+  p.position.set(c.x, CY / 2, c.z);
+  tspG.add(p);
+}
+
+const edges = [];
+const edgeGrid = new Array(NC * NC).fill(null);
+const edgeGeo = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
+for (let i = 0; i < NC; i++) for (let j = i + 1; j < NC; j++) {
+  const dx = cities[i].x - cities[j].x, dz = cities[i].z - cities[j].z;
+  const d = Math.max(0.1, Math.hypot(dx, dz));
+  const material = new THREE.MeshStandardMaterial({ color: 0x4a5462, roughness: 0.5, metalness: 0.15,
+    emissive: 0xffc964, emissiveIntensity: 0.05 });
+  const mesh = new THREE.Mesh(edgeGeo, material);
+  tspG.add(mesh);
+  const e = { i, j, d, tau: 1, mesh, material,
+    a: new THREE.Vector3(cities[i].x, CY, cities[i].z),
+    b: new THREE.Vector3(cities[j].x, CY, cities[j].z) };
+  edges.push(e);
+  edgeGrid[i * NC + j] = e;
+}
+function edgeOf(i, j) { return i < j ? edgeGrid[i * NC + j] : edgeGrid[j * NC + i]; }
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let mode = 'tsp';
+let alpha = 1.0, beta = 3.0, rho = 0.30, antN = 12;
+const MAXN = 24;
+let gen = 0, bestLen = Infinity, avgLen = 0;
+let bestPath = null;
+const bestSet = new Set();
+const histBest = [], histAvg = [], histShare = [];
+let et = 0, scenario = 0, probS = 0.5;
+
+/* ---------------- ACO 核心 ---------------- */
+const tours = [];
+function tourLength(t) {
+  let s = 0;
+  for (let k = 0; k < t.length; k++) s += edgeOf(t[k], t[(k + 1) % t.length]).d;
+  return s;
+}
+function cumLengths(t, out) {
+  out.length = 0; out.push(0);
+  let s = 0;
+  for (let k = 0; k < t.length; k++) {
+    s += edgeOf(t[k], t[(k + 1) % t.length]).d;
+    out.push(s);
+  }
+  return s;
+}
+function constructTour(start) {
+  const unv = [];
+  for (let i = 0; i < NC; i++) if (i !== start) unv.push(i);
+  const tour = [start];
+  let cur = start;
+  while (unv.length) {
+    let sum = 0;
+    const w = unv.map(j => {
+      const e = edgeOf(cur, j);
+      const val = Math.pow(e.tau, alpha) * Math.pow(1 / e.d, beta);
+      sum += val;
+      return val;
+    });
+    let r = Math.random() * sum;
+    let pick = unv[unv.length - 1];
+    for (let k = 0; k < unv.length; k++) {
+      r -= w[k];
+      if (r <= 0) { pick = unv[k]; break; }
+    }
+    tour.push(pick);
+    unv.splice(unv.indexOf(pick), 1);
+    cur = pick;
+  }
+  return tour;
+}
+function buildTours() {
+  tours.length = 0;
+  for (let a = 0; a < MAXN; a++) {
+    const path = constructTour(a % NC);
+    const cum = [];
+    const len = cumLengths(path, cum);
+    tours.push({ path, cum, len });
+  }
+}
+let bestTube = null;
+function rebuildBestTube() {
+  if (bestTube) { bestTube.geometry.dispose(); tspG.remove(bestTube); bestTube = null; }
+  if (!bestPath) return;
+  const pts = bestPath.map(ci => new THREE.Vector3(cities[ci].x, CY + 0.02, cities[ci].z));
+  const curve = new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.55);
+  bestTube = new THREE.Mesh(new THREE.TubeGeometry(curve, 160, 0.052, 10, true), M.best);
+  tspG.add(bestTube);
+}
+const GEN_DUR = 3.2;
+let genT = 0, pendingOne = 0;
+function finishGeneration() {
+  for (const e of edges) e.tau = Math.max(0.02, e.tau * (1 - rho));
+  let sum = 0, bi = -1, bl = Infinity;
+  for (let a = 0; a < antN; a++) {
+    const t = tours[a];
+    sum += t.len;
+    if (t.len < bl) { bl = t.len; bi = a; }
+    const q = 1 / Math.max(0.001, t.len);
+    for (let k = 0; k < t.path.length; k++) {
+      edgeOf(t.path[k], t.path[(k + 1) % t.path.length]).tau += q;
+    }
+  }
+  avgLen = sum / Math.max(1, antN);
+  if (bl < bestLen - 1e-4) {
+    bestLen = bl;
+    bestPath = tours[bi].path.slice();
+    bestSet.clear();
+    for (let k = 0; k < bestPath.length; k++) {
+      bestSet.add(edgeOf(bestPath[k], bestPath[(k + 1) % bestPath.length]));
+    }
+    rebuildBestTube();
+  }
+  gen++;
+  histBest.push(bestLen);
+  histAvg.push(avgLen);
+  if (histBest.length > 90) { histBest.shift(); histAvg.shift(); }
+  buildTours();
+  updateEdgeVisuals();
+}
+function resetPheromone() {
+  for (const e of edges) e.tau = 1;
+  bestLen = Infinity; bestPath = null; avgLen = 0; gen = 0;
+  bestSet.clear();
+  if (bestTube) { bestTube.geometry.dispose(); tspG.remove(bestTube); bestTube = null; }
+  histBest.length = 0; histAvg.length = 0;
+  buildTours();
+  updateEdgeVisuals();
+}
+
+/* 边可视化:亮度 + 半径 ∝ τ */
+const cDim = new THREE.Color(), cHot = new THREE.Color(0xffc964);
+function updateEdgeVisuals() {
+  const dark = THEME === 'dark';
+  cDim.set(dark ? 0x454f5c : 0xb6bfc9);
+  let tauMax = 0.02, tauMin = Infinity;
+  for (const e of edges) { tauMax = Math.max(tauMax, e.tau); tauMin = Math.min(tauMin, e.tau); }
+  const span = Math.max(1e-6, tauMax - tauMin);
+  const hlBoost = STEPS[scenario] && STEPS[scenario].hl === 'pherm' ? 1.8 : 1;
+  for (const e of edges) {
+    const w = clamp01((e.tau - tauMin) / span);
+    e.material.color.copy(cDim).lerp(cHot, Math.pow(w, 1.25));
+    e.material.emissiveIntensity = (0.05 + 1.25 * w * w) * hlBoost;
+    setAB(e.mesh, e.a, e.b, 0.012 + 0.062 * w);
+    e.mesh.visible = tglEdges.checked || w > 0.34 || bestSet.has(e);
+  }
+}
+
+/* 蚂蚁(InstancedMesh,两种模式共用) */
+const antsMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.095, 12, 10), M.ant, MAXN);
+antsMesh.frustumCulled = false;
+scene.add(antsMesh);
+const aObj = new THREE.Object3D();
+function walkPoint(t, f, out) {
+  const total = t.cum[t.cum.length - 1];
+  const target = clamp01(f) * total;
+  let k = 1;
+  while (k < t.cum.length - 1 && t.cum[k] < target) k++;
+  const seg = Math.max(1e-6, t.cum[k] - t.cum[k - 1]);
+  const u = clamp01((target - t.cum[k - 1]) / seg);
+  const p0 = cities[t.path[k - 1]], p1 = cities[t.path[k % t.path.length]];  // k=末段时闭合回起点
+  out.set(p0.x + (p1.x - p0.x) * u, CY + 0.1, p0.z + (p1.z - p0.z) * u);
+}
+
+/* ---------------- 双桥实验 ---------------- */
+const bridgeG = new THREE.Group();
+bridgeG.visible = false;
+scene.add(bridgeG);
+const nest = new THREE.Mesh(new THREE.SphereGeometry(0.42, 20, 16), M.nest);
+nest.position.set(-3.2, 0.55, 0);
+bridgeG.add(nest);
+const food = new THREE.Mesh(new THREE.SphereGeometry(0.5, 20, 16), M.food);
+food.position.set(3.2, 0.55, 0);
+bridgeG.add(food);
+const bCurve = [];
+const bL = [1, 1];
+(function buildBridges() {
+  const sPts = [new THREE.Vector3(-3.2, 0.55, 0), new THREE.Vector3(-1.6, 0.86, 0),
+    new THREE.Vector3(0, 0.98, 0), new THREE.Vector3(1.6, 0.86, 0), new THREE.Vector3(3.2, 0.55, 0)];
+  const cs = new THREE.CatmullRomCurve3(sPts);
+  /* 长桥:圆弧,弧长/弦长 ≈ 2(φ/sinφ=2 → φ≈1.895) */
+  const phi = 1.895, R = 3.2 / Math.sin(phi);
+  const cy = 0.55 + Math.sqrt(Math.max(0.01, R * R - 3.2 * 3.2));
+  const a0 = Math.atan2(0.55 - cy, 3.2);                  // 端点角 ≈ -0.324 rad
+  const lPts = [];
+  for (let k = 0; k <= 24; k++) {
+    const th = a0 + (k / 24) * (Math.PI - 2 * a0);
+    lPts.push(new THREE.Vector3(R * Math.cos(th), cy + R * Math.sin(th), 0));
+  }
+  const cl = new THREE.CatmullRomCurve3(lPts);
+  bCurve.push(cs, cl);
+  bL[0] = Math.max(0.1, cs.getLength());
+  bL[1] = Math.max(0.1, cl.getLength());
+  const ts = new THREE.Mesh(new THREE.TubeGeometry(cs, 64, 0.075, 10, false), M.bridgeS);
+  bridgeG.add(ts);
+  const tl = new THREE.Mesh(new THREE.TubeGeometry(cl, 120, 0.075, 10, false), M.bridgeL);
+  bridgeG.add(tl);
+})();
+let bTau = [1, 1], bTrips = 0;
+const trips = [];
+const bAnts = [];
+for (let a = 0; a < MAXN; a++) bAnts.push({ s: 'go', b: a % 2, t: Math.random() });
+let bShareTimer = 0;
+function tripShare() {
+  if (!trips.length) return 0.5;
+  let s = 0;
+  for (const t of trips) if (t === 0) s++;
+  return s / trips.length;
+}
+function resetBridge() {
+  bTau = [1, 1]; bTrips = 0; trips.length = 0; histShare.length = 0;
+  for (const A of bAnts) { A.s = 'go'; A.b = Math.random() < 0.5 ? 0 : 1; A.t = Math.random() * 0.3; }
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, grp) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow, grp: grp || null });
+  div.textContent = textFn();
+  return o;
+}
+addLabel(() => L('12 城 · 完全图 66 条边 = 细管', '12 cities · 66 edges of the complete graph = thin tubes'),
+  () => 'b', new THREE.Vector3(0, 5.6, 0), null, 'tsp');
+addLabel(() => L('信息素 τ:亮度 + 半径(越亮越被偏爱)', 'pheromone τ: glow + radius (brighter = preferred)'),
+  () => 'e', new THREE.Vector3(-4.6, 3.7, 1.1), null, 'tsp');
+addLabel(() => L(`蚂蚁按 P ∝ τ^${alpha.toFixed(1)}·η^${beta.toFixed(1)} 构造回路`, `ants build tours by P ∝ τ^${alpha.toFixed(1)}·η^${beta.toFixed(1)}`),
+  () => 'g', new THREE.Vector3(4.3, 2.7, 1.7), null, 'tsp');
+addLabel(() => L(`最优回路金色描边 · best = ${bestLen === Infinity ? '—' : bestLen.toFixed(1)}`, `best tour in gold · best = ${bestLen === Infinity ? '—' : bestLen.toFixed(1)}`),
+  () => 'w', new THREE.Vector3(0.3, 1.25, 3.7), null, 'tsp');
+addLabel(() => L(`挥发 ρ=${rho.toFixed(2)}:冷落的路渐渐熄灭`, `evaporation ρ=${rho.toFixed(2)}: neglected roads fade`),
+  () => 'b', new THREE.Vector3(-4.7, 1.35, -2.5), null, 'tsp');
+addLabel(() => L('巢 Nest', 'Nest'), () => 'b', new THREE.Vector3(-3.2, 1.75, 0), null, 'bridge');
+addLabel(() => L('食物 Food', 'Food'), () => 'g', new THREE.Vector3(3.2, 1.75, 0), null, 'bridge');
+addLabel(() => L(`短桥 L=${bL[0].toFixed(1)} · 近 20 次占比 ${(tripShare() * 100).toFixed(0)}%`, `short bridge L=${bL[0].toFixed(1)} · last-20 share ${(tripShare() * 100).toFixed(0)}%`),
+  () => (trips.length > 8 && tripShare() > 0.7 ? 'g' : 'e'), new THREE.Vector3(0, 2.35, 0), null, 'bridge');
+addLabel(() => L(`P(短桥) = τ短^α/(τ短^α+τ长^α) = ${(probS * 100).toFixed(0)}%`, `P(short) = τs^α/(τs^α+τl^α) = ${(probS * 100).toFixed(0)}%`),
+  () => 'b', new THREE.Vector3(-3.9, 3.6, 0), null, 'bridge');
+addLabel(() => L(`长桥 L=${bL[1].toFixed(1)} · 路程约两倍,信息素存不住`, `long bridge L=${bL[1].toFixed(1)} · twice as far, pheromone cannot accumulate`),
+  () => 'w', new THREE.Vector3(0, 5.85, 0), null, 'bridge');
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && (!r.grp || r.grp === mode);
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'bridge', tgt: [0, 2.5, 0],
+    b: '真实蚂蚁:双桥实验', be: 'Real ants: the double-bridge experiment',
+    d: 'Deneubourg 的双桥实验:巢与食物之间架一短一长两座桥,蚂蚁初始 50:50 随机上桥;几分钟后稳定在 >85-90% 走短桥——桥长比越大收敛越快越彻底。没有工头、没有地图、没有谁统计过路程,秩序完全从局部化学信号里长出来。点「双桥实验」现场看。',
+    de: 'Deneubourg\u2019s double bridge: a short and a long bridge between nest and food. Ants pick either at 50:50 at first, yet within minutes >85-90% of traffic takes the short one - the larger the length ratio, the faster and more complete the convergence. No foreman, no map, nobody measured distance: order grows out of a local chemical signal alone. Press the double-bridge button to watch it live.' },
+  { hl: 'pherm', tgt: [-2.5, 1.6, 1.0],
+    b: '信息素:走的人多,路更亮', be: 'Pheromone: the more traffic, the brighter the road',
+    d: '每只蚂蚁往返时都在路上留下信息素:走过的蚂蚁越多,这条边越浓。后来的蚂蚁倾向跟着浓路走,于是「偶然被多走的路」被放大——一个纯化学的正反馈放大器。3D 里每条细管的发光强度和半径就是信息素浓度 τ,金色描边是当前最优回路。',
+    de: 'Every ant deposits pheromone on its way: the more ants use an edge, the stronger it gets, and newcomers prefer stronger edges - so a road that happened to be walked more gets amplified. A purely chemical positive-feedback amplifier. Here each tube\u2019s glow and radius is the pheromone level τ; the gold outline is the current best tour.' },
+  { hl: 'evap', tgt: [2.6, 1.4, -1.4],
+    b: '挥发:给遗忘留一个旋钮', be: 'Evaporation: a knob for forgetting',
+    d: '信息素按比例 ρ 挥发:被冷落的边渐渐变暗。若没有挥发,任何一条早期歪路都会永远霸榜,算法锁死在第一次的运气上;ρ=0.1-0.5 让群体既能记住被反复验证的好路,又能改判——「遗忘」恰恰是探索性的来源。',
+    de: 'Pheromone evaporates at rate ρ: neglected edges dim. Without evaporation, any early wrong road would dominate forever and the colony would freeze on its first luck; ρ=0.1-0.5 lets the swarm keep roads that are repeatedly confirmed while still revising verdicts - forgetting is exactly where exploration comes from.' },
+  { hl: 'choice', tgt: [-1.5, 1.2, 2.2],
+    b: '概率选择:P ∝ τ^α · η^β', be: 'Probabilistic choice: P ∝ τ^α · η^β',
+    d: '人工蚂蚁不是死跟信息素:在城 i 选下一城 j 的概率 P_ij ∝ τ_ij^α · η_ij^β,其中 η=1/距离。τ 是「大家都怎么走」(利用群体经验),η 是「看起来近不近」(个体贪婪);α、β 调两者话语权,典型 α=1、β=2-5。纯随机 + 纯贪婪都不行,混合才有路又好又多样。',
+    de: 'Artificial ants do not blindly follow pheromone: the probability of going from city i to j is P_ij ∝ τ_ij^α · η_ij^β with η=1/distance. τ encodes swarm experience (exploit), η encodes individual greed (appear near); α and β weigh the two, typically α=1, β=2-5. Pure random or pure greedy both fail - the blend gives tours that are good and diverse.' },
+  { hl: 'converge', tgt: [0, 1.5, 0],
+    b: '一代一代:正反馈收敛', be: 'Generation by generation: positive feedback converges',
+    d: '每代蚂蚁走完回路后按 Δτ=1/L 沉积信息素:回路越短,单位长度留下的越多。好路越来越亮 → 更多蚂蚁走 → 更亮。scope 里 best-so-far 曲线一路下探后走平——这就是收敛;峰值边占比从 ~10%(均匀)爬到远高,说明质量集中到少数几条边上。',
+    de: 'After each generation ants deposit Δτ=1/L: the shorter the tour, the more pheromone per unit length. Good roads brighten → more ants take them → brighter still. In the scope, the best-so-far curve dives then flattens - convergence; the top-edge share climbs from ~10% (uniform) far higher, showing weight concentrating on a few edges.' },
+  { hl: 'meta', tgt: [0, 4.4, 0],
+    b: '不是永远最优:元启发式的定位', be: 'Not always optimal: where metaheuristics fit',
+    d: 'ACO 不保证全局最优:TSP 50-100 城时通常落在最优解 1-2% 以内,但拿不到「这已是最优」的证明——那是精确算法(分支定界、动态规划)的活,它们在几百城就爆炸。ACO 属于元启发式(Dorigo 1992/1996):把问题抽象成「在图上构造解 + 正反馈 + 挥发」,换问题只换地图,不换引擎。',
+    de: 'ACO does not guarantee the global optimum: on 50-100-city TSP it typically lands within 1-2% of optimal but cannot prove optimality - that is the job of exact methods (branch and bound, DP), which explode beyond a few hundred cities. ACO is a metaheuristic (Dorigo 1992/1996): abstract the problem as \u201cconstruct solutions on a graph + positive feedback + evaporation\u201d; change the problem, keep the engine.' },
+  { hl: 'apps', tgt: [0, 2.2, 0],
+    b: '应用:路由、排班、TSP', be: 'Applications: routing, scheduling, TSP',
+    d: '凡是能写成「在图上构造一条好路径」的问题都可以试:网络路由(AntNet)、车辆路径与排班(VRP/VRPTW)、车间调度、蛋白质折叠路径、图像分割。要点一句话:正反馈负责放大好解,挥发负责遗忘坏解,随机性负责持续探索——三者缺一不可。',
+    de: 'Anything expressible as \u201cbuild a good path on a graph\u201d is fair game: network routing (AntNet), vehicle routing and scheduling (VRP/VRPTW), job-shop scheduling, protein-folding pathways, image segmentation. In one line: positive feedback amplifies good solutions, evaporation forgets bad ones, randomness keeps exploring - all three are essential.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+let tgtVec = new THREE.Vector3(0, 1.6, 0);
+function setMode(m) {
+  if (mode === m) return;
+  mode = m;
+  tspG.visible = m === 'tsp';
+  bridgeG.visible = m === 'bridge';
+  btnBridge.classList.toggle('on', m === 'bridge');
+  btnBridge.textContent = m === 'bridge' ? L('回到 TSP 地图', 'back to TSP map') : L('双桥实验', 'double-bridge experiment');
+  if (m === 'bridge') tgtVec.set(0, 2.5, 0);
+  else tgtVec.fromArray(STEPS[scenario].tgt);
+  updateStatsHead();
+  refreshLabels();
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  setMode(STEPS[scenario].hl === 'bridge' ? 'bridge' : 'tsp');
+  if (mode === 'tsp') tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+  updateEdgeVisuals();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`选路:P<sub>ij</sub> ∝ τ<sub>ij</sub><sup>α</sup>·η<sub>ij</sub><sup>β</sup>,η=1/d(α=<b>${alpha.toFixed(1)}</b>,β=<b>${beta.toFixed(1)}</b>)`,
+      `Choice: P<sub>ij</sub> ∝ τ<sub>ij</sub><sup>α</sup>·η<sub>ij</sub><sup>β</sup>, η=1/d (α=<b>${alpha.toFixed(1)}</b>, β=<b>${beta.toFixed(1)}</b>)`) +
+    '<br>' +
+    L(`沉积 Δτ=1/L · 挥发 τ←(1−ρ)τ(ρ=<b>${rho.toFixed(2)}</b>,蚂蚁数=<b>${antN}</b>=城市数)`,
+      `Deposit Δτ=1/L · evaporation τ←(1−ρ)τ (ρ=<b>${rho.toFixed(2)}</b>, ants=<b>${antN}</b>=cities)`) +
+    '<br>' +
+    L(`Dorigo 1992/1996 · TSP 50-100 城常落在最优 <b>1-2%</b> 内 · 双桥短桥最终 <b>&gt;85-90%</b>(Deneubourg)`,
+      `Dorigo 1992/1996 · 50-100-city TSP often <b>1-2%</b> off optimal · double bridge settles <b>&gt;85-90%</b> short (Deneubourg)`);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elAlpha = document.getElementById('alpha'), elAlphaVal = document.getElementById('alphaVal');
+const elBeta = document.getElementById('beta'), elBetaVal = document.getElementById('betaVal');
+const elRho = document.getElementById('rho'), elRhoVal = document.getElementById('rhoVal');
+const elAnts = document.getElementById('ants'), elAntsVal = document.getElementById('antsVal');
+const btnGen = document.getElementById('btnGen');
+const btnRun = document.getElementById('btnRun');
+const btnBridge = document.getElementById('btnBridge');
+const btnResetPher = document.getElementById('btnResetPher');
+const tglEdges = document.getElementById('tglEdges');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() {
+  elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play');
+  btnRun.classList.toggle('on', playing);
+}
+function updateAlpha() { elAlphaVal.textContent = alpha.toFixed(1); }
+function updateBeta() { elBetaVal.textContent = beta.toFixed(1); }
+function updateRho() { elRhoVal.textContent = rho.toFixed(2); }
+function updateAnts() { elAntsVal.textContent = String(antN); }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elAlpha.addEventListener('input', () => { alpha = +elAlpha.value; updateAlpha(); updateFormula(); });
+elBeta.addEventListener('input', () => { beta = +elBeta.value; updateBeta(); updateFormula(); });
+elRho.addEventListener('input', () => { rho = +elRho.value; updateRho(); updateFormula(); });
+elAnts.addEventListener('input', () => { antN = +elAnts.value; updateAnts(); });
+btnGen.addEventListener('click', () => { if (mode !== 'tsp') setMode('tsp'); pendingOne++; });
+btnRun.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+btnBridge.addEventListener('click', () => {
+  const nm = mode === 'bridge' ? 'tsp' : 'bridge';
+  setMode(nm);
+  if (nm === 'tsp') tgtVec.fromArray(STEPS[scenario].tgt);
+});
+btnResetPher.addEventListener('click', () => { if (mode === 'bridge') resetBridge(); else resetPheromone(); });
+document.getElementById('btnReset').addEventListener('click', () => {
+  alpha = 1; beta = 3; rho = 0.3; antN = 12;
+  elAlpha.value = 1; elBeta.value = 3; elRho.value = 0.3; elAnts.value = 12;
+  updateAlpha(); updateBeta(); updateRho(); updateAnts();
+  resetPheromone();
+  resetBridge();
+  genT = 0; pendingOne = 0;
+  activateStep(1);
+});
+tglEdges.addEventListener('change', updateEdgeVisuals);
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD');
+function updateStatsHead() {
+  const ks = document.querySelectorAll('#stats .k');
+  if (mode === 'tsp') {
+    ks[0].textContent = L('迭代代', 'generation');
+    ks[1].textContent = L('best 回路长', 'best tour');
+    ks[2].textContent = L('平均回路长', 'mean tour');
+    ks[3].textContent = L('峰值边占比', 'top-edge share');
+  } else {
+    ks[0].textContent = L('完成往返', 'round trips');
+    ks[1].textContent = L('短桥占比', 'short share');
+    ks[2].textContent = L('P(短桥)', 'P(short)');
+    ks[3].textContent = L('长桥占比', 'long share');
+  }
+}
+function topShare() {
+  if (!edges.length) return 0;
+  const arr = edges.map(e => e.tau).sort((a, b) => b - a);
+  const k = Math.max(1, Math.round(arr.length * 0.1));
+  let s = 0;
+  for (let i = 0; i < k; i++) s += arr[i];
+  let tot = 0;
+  for (const v of arr) tot += v;
+  return tot > 0 ? s / tot * 100 : 0;
+}
+function updateStats() {
+  if (mode === 'tsp') {
+    stA.textContent = String(gen);
+    stA.className = 'v';
+    stB.innerHTML = (bestLen === Infinity ? '—' : bestLen.toFixed(2)) + '<small> u</small>';
+    stB.className = 'v ok';
+    stC.innerHTML = avgLen.toFixed(2) + '<small> u</small>';
+    stC.className = 'v';
+    const tp = topShare();
+    stD.innerHTML = tp.toFixed(0) + '<small> %</small>';
+    stD.className = 'v ' + (gen > 4 ? 'ok' : 'warn');
+  } else {
+    stA.textContent = String(bTrips);
+    stA.className = 'v';
+    const sh = tripShare();
+    stB.innerHTML = (sh * 100).toFixed(0) + '<small> %</small>';
+    stB.className = 'v ' + (sh > 0.85 ? 'ok' : sh > 0.6 ? 'warn' : 'bad');
+    stC.innerHTML = (probS * 100).toFixed(0) + '<small> %</small>';
+    stC.className = 'v ok';
+    stD.innerHTML = ((1 - sh) * 100).toFixed(0) + '<small> %</small>';
+    stD.className = 'v';
+  }
+}
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const px = f => (0.06 + 0.9 * f) * cw;
+  scopeCtx.font = `${Math.round(10 * dpr)}px system-ui`;
+  if (mode === 'tsp') {
+    if (histBest.length < 2) {
+      scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+      scopeCtx.fillText(L('运行一代后开始绘制 best / 平均回路长曲线…', 'best / mean tour curves appear after one generation…'), 8 * dpr, 34 * dpr);
+      return;
+    }
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < histBest.length; i++) { lo = Math.min(lo, histBest[i]); hi = Math.max(hi, histAvg[i]); }
+    const pad = Math.max(0.5, (hi - lo) * 0.08);
+    lo -= pad; hi += pad;
+    const py = v => ch - (0.14 + 0.74 * clamp01((v - lo) / Math.max(1e-6, hi - lo))) * ch;
+    scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+    scopeCtx.lineWidth = 1;
+    scopeCtx.beginPath();
+    scopeCtx.moveTo(px(0), py(lo)); scopeCtx.lineTo(px(1), py(lo));
+    scopeCtx.stroke();
+    scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+    scopeCtx.fillText(L('代数 →', 'generations →'), px(0.72), py(lo) + 11 * dpr);
+    scopeCtx.strokeStyle = 'rgba(116,192,252,.85)';
+    scopeCtx.lineWidth = Math.max(1.2, 1.2 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < histAvg.length; i++) {
+      i === 0 ? scopeCtx.moveTo(px(i / (histAvg.length - 1)), py(histAvg[i])) : scopeCtx.lineTo(px(i / (histAvg.length - 1)), py(histAvg[i]));
+    }
+    scopeCtx.stroke();
+    scopeCtx.strokeStyle = 'rgba(255,201,100,.95)';
+    scopeCtx.lineWidth = Math.max(1.5, 1.5 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < histBest.length; i++) {
+      i === 0 ? scopeCtx.moveTo(px(i / (histBest.length - 1)), py(histBest[i])) : scopeCtx.lineTo(px(i / (histBest.length - 1)), py(histBest[i]));
+    }
+    scopeCtx.stroke();
+    scopeCtx.fillStyle = 'rgba(255,201,100,.95)';
+    scopeCtx.fillText(L('best-so-far', 'best-so-far'), px(0.03), py(histBest[0]) - 3 * dpr);
+    scopeCtx.fillStyle = 'rgba(116,192,252,.9)';
+    scopeCtx.fillText(L('平均', 'mean'), px(0.03), py(histAvg[0]) - 3 * dpr);
+  } else {
+    const py = v => ch - (0.14 + 0.74 * clamp01(v)) * ch;
+    scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+    scopeCtx.lineWidth = 1;
+    scopeCtx.setLineDash([4 * dpr, 4 * dpr]);
+    scopeCtx.beginPath();
+    scopeCtx.moveTo(px(0), py(0.5)); scopeCtx.lineTo(px(1), py(0.5));
+    scopeCtx.moveTo(px(0), py(0.9)); scopeCtx.lineTo(px(1), py(0.9));
+    scopeCtx.stroke();
+    scopeCtx.setLineDash([]);
+    scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+    scopeCtx.fillText('50%', px(0.93), py(0.5) - 3 * dpr);
+    scopeCtx.fillText('90%', px(0.93), py(0.9) - 3 * dpr);
+    scopeCtx.fillText(L('短桥占比(时间 →)', 'short-bridge share (time →)'), px(0.02), 12 * dpr);
+    if (histShare.length >= 2) {
+      scopeCtx.strokeStyle = 'rgba(123,216,143,.95)';
+      scopeCtx.lineWidth = Math.max(1.5, 1.5 * dpr);
+      scopeCtx.beginPath();
+      for (let i = 0; i < histShare.length; i++) {
+        const x = px(i / (histShare.length - 1));
+        i === 0 ? scopeCtx.moveTo(x, py(histShare[i])) : scopeCtx.lineTo(x, py(histShare[i]));
+      }
+      scopeCtx.stroke();
+    }
+  }
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  probS = clamp01(Math.pow(bTau[0], alpha) / (Math.pow(bTau[0], alpha) + Math.pow(bTau[1], alpha) || 1));
+  if (mode === 'tsp') {
+    if (playing || pendingOne > 0) genT += dt * speed;
+    if (genT >= GEN_DUR) {
+      finishGeneration();
+      genT = 0;
+      if (pendingOne > 0) pendingOne--;
+    }
+    const p = clamp01(genT / GEN_DUR);
+    for (let a = 0; a < antN; a++) {
+      walkPoint(tours[a], clamp01(p * 1.12 - a * 0.008), aObj.position);
+      aObj.rotation.set(0, 0, 0);
+      aObj.updateMatrix();
+      antsMesh.setMatrixAt(a, aObj.matrix);
+    }
+  } else {
+    const decay = Math.exp(-rho * 0.55 * dt * speed);
+    bTau[0] = Math.max(0.02, bTau[0] * decay);
+    bTau[1] = Math.max(0.02, bTau[1] * decay);
+    const v = 2.35 * speed;
+    for (let a = 0; a < antN; a++) {
+      const A = bAnts[a];
+      const Lc = Math.max(0.01, bL[A.b]);
+      A.t += dt * v / Lc;
+      if (A.t >= 1) {
+        if (A.s === 'go') { A.s = 'ret'; A.t = 0; }
+        else {
+          bTau[A.b] += 1 / (2 * bL[A.b]);
+          trips.push(A.b);
+          if (trips.length > 20) trips.shift();
+          bTrips++;
+          A.b = Math.random() < probS ? 0 : 1;
+          A.s = 'go'; A.t = 0;
+        }
+      }
+      const tt = A.s === 'go' ? A.t : 1 - A.t;
+      bCurve[A.b].getPointAt(clamp01(tt), aObj.position);
+      aObj.position.y += 0.13;
+      aObj.rotation.set(0, 0, 0);
+      aObj.updateMatrix();
+      antsMesh.setMatrixAt(a, aObj.matrix);
+    }
+    bShareTimer += dt;
+    if (bShareTimer > 0.5) {
+      bShareTimer = 0;
+      histShare.push(tripShare());
+      if (histShare.length > 90) histShare.shift();
+    }
+  }
+  antsMesh.count = antN;
+  antsMesh.instanceMatrix.needsUpdate = true;
+  /* 高亮脉冲(按步骤) */
+  const hlK = 0.5 + 0.28 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  M.ant.emissiveIntensity = 0.15 + (hl === 'choice' ? 0.55 + 0.35 * hlK : 0);
+  M.best.emissiveIntensity = 0.3 + (hl === 'converge' || hl === 'meta' ? 0.5 + 0.3 * hlK : 0);
+  M.node.emissiveIntensity = 0.18 + (hl === 'meta' ? 0.5 + 0.3 * hlK : 0);
+  const tmax = Math.max(bTau[0], bTau[1], 0.02);
+  M.bridgeS.emissiveIntensity = 0.1 + 1.0 * Math.pow(bTau[0] / tmax, 2) + (hl === 'bridge' ? 0.4 + 0.25 * hlK : 0);
+  M.bridgeL.emissiveIntensity = 0.1 + 1.0 * Math.pow(bTau[1] / tmax, 2);
+  M.nest.emissiveIntensity = 0.2 + (hl === 'bridge' || hl === 'apps' ? 0.3 + 0.2 * hlK : 0);
+  M.food.emissiveIntensity = 0.2 + (hl === 'bridge' || hl === 'apps' ? 0.3 + 0.2 * hlK : 0);
+  /* 相机目标缓动 + 标签 */
+  controls.target.lerp(tgtVec, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+buildTours();
+updateEdgeVisuals();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+updateStatsHead();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

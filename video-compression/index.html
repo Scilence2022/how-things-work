@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>视频压缩 · 运动补偿与 I/P/B 帧</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="视频压缩:帧内 + 帧间 + 运动补偿,把 Gbps 砍到 Mbps" data-en="Video Compression: Intra + Inter + Motion Compensation, from Gbps down to Mbps">视频压缩:帧内 + 帧间 + 运动补偿,把 Gbps 砍到 Mbps</h1>
+  <div class="sub" data-zh="未压缩 1080p(8bit 4:2:0,每像素 12bit)30fps ≈ 0.75 Gbps、60fps ≈ 1.5 Gbps——千兆网线都装不下;而 H.264 1080p30 只要 4-8 Mbps,压缩 ~200-300×。三板斧:I 帧做「会动的 JPEG」(DCT+量化+熵编码);P 帧把画面切成 16×16 宏块,在参考帧 ±16 px 里找最匹配的位置,只编码运动矢量+残差;B 帧双向参考再省 15-30%。I 帧约为 P 帧的 10×,GOP 30-250 帧刷新一次;QP 滑块就是画质/码率旋钮,AV1 比 H.264 再省 ~30-50% · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Uncompressed 1080p (8-bit 4:2:0, 12 bit/pixel) at 30fps is ~0.75 Gbps, at 60fps ~1.5 Gbps - no gigabit link fits it; H.264 1080p30 needs just 4-8 Mbps, a 200-300x cut. Three tricks: I frames are 'moving JPEG' (DCT + quantization + entropy coding); P frames slice the picture into 16x16 macroblocks, search ±16 px in the reference frame for the best match, and code only motion vectors + residual; B frames reference both ways and save another 15-30%. An I frame is ~10x a P frame, refreshed once per GOP of 30-250 frames; the QP slider is your quality/bitrate dial, and AV1 saves another ~30-50% over H.264 · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">未压缩 1080p(8bit 4:2:0,每像素 12bit)30fps ≈ 0.75 Gbps、60fps ≈ 1.5 Gbps——千兆网线都装不下;而 H.264 1080p30 只要 4-8 Mbps,压缩 ~200-300×。三板斧:I 帧做「会动的 JPEG」(DCT+量化+熵编码);P 帧把画面切成 16×16 宏块,在参考帧 ±16 px 里找最匹配的位置,只编码运动矢量+残差;B 帧双向参考再省 15-30%。I 帧约为 P 帧的 10×,GOP 30-250 帧刷新一次;QP 滑块就是画质/码率旋钮,AV1 比 H.264 再省 ~30-50% · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k">当前帧类型</span><span class="v" id="stA">—</span>
+  <span class="k">帧大小</span><span class="v" id="stB">—</span>
+  <span class="k">码率(GOP 均)</span><span class="v" id="stC">—</span>
+  <span class="k">压缩比</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="16×16 宏块画布(程序生成动图)" data-en="16×16 macroblock canvas (procedural clip)">16×16 宏块画布(程序生成动图)</span>
+    <span class="chip o" data-zh="运动矢量箭头(球区域密集)" data-en="motion vectors (dense around the ball)">运动矢量箭头(球区域密集)</span>
+    <span class="chip r" data-zh="残差:红/蓝微色,大部分为 0" data-en="residual: faint red/blue, mostly zero">残差:红/蓝微色,大部分为 0</span>
+    <span class="chip g" data-zh="GOP 时间轴 I P B B…(B 双向)" data-en="GOP timeline I P B B… (B is bidirectional)">GOP 时间轴 I P B B…(B 双向)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnBreakdown" data-zh="I/P/B 分解播放" data-en="I/P/B breakdown playback">I/P/B 分解播放</button>
+    <button class="abtn" id="btnOverlay" data-zh="运动矢量 / 残差" data-en="motion vectors / residual">运动矢量 / 残差</button>
+    <button class="abtn" id="btnAllI" data-zh="全 I 帧对照" data-en="all-intra comparison">全 I 帧对照</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="QP 量化参数" data-en="QP quantizer">QP 量化参数</label><input id="qp" type="range" min="2" max="51" step="1" value="26"><span class="val" id="qpVal">26</span></div>
+  <div class="row"><label data-zh="运动搜索范围" data-en="search range">运动搜索范围</label><input id="range" type="range" min="2" max="16" step="2" value="16"><span class="val" id="rangeVal">±16 px</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglGrid" type="checkbox" checked> <span data-zh="宏块网格" data-en="MB grid">宏块网格</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../jpeg-compression/" data-zh="JPEG 压缩" data-en="JPEG compression">JPEG 压缩</a>
+    <a href="../compression-lz/" data-zh="LZ 压缩" data-en="LZ compression">LZ 压缩</a>
+    <a href="../sampling-aliasing/" data-zh="采样与混叠" data-en="sampling &amp; aliasing">采样与混叠</a>
+    <a href="../fourier-series/" data-zh="傅里叶级数" data-en="Fourier series">傅里叶级数</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x1a2129 : 0xd8dee5);
+  M.border.color.set(dark ? 0x5c6672 : 0x8b96a3);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('视频压缩 · 运动补偿与 I/P/B 帧', 'Video Compression · Motion Compensation and I/P/B Frames');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateQp();
+  updateRange();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 120);
+camera.position.set(4.8, 3.6, 9.2);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.4, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 30;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.3;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 6);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 4, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.5,
+    emissive: color, emissiveIntensity: 0.1, ...opts });
+}
+const M = {
+  ground: mat(0x1a2129, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  border: mat(0x5c6672, { roughness: 0.4, metalness: 0.6, emissiveIntensity: 0.12 }),
+  block: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.05 }),
+  tlI: mat(0xffd27a, { roughness: 0.35, metalness: 0.5, emissiveIntensity: 0.3 }),
+  tlP: mat(0x6fb8ff, { roughness: 0.35, metalness: 0.5, emissiveIntensity: 0.3 }),
+  tlB: mat(0x7bd88f, { roughness: 0.35, metalness: 0.5, emissiveIntensity: 0.3 }),
+  barRaw: mat(0xe07856, { roughness: 0.4, metalness: 0.4, emissiveIntensity: 0.18 }),
+  barComp: mat(0x7bd88f, { roughness: 0.4, metalness: 0.4, emissiveIntensity: 0.18 }),
+  pointer: mat(0xffd27a, { roughness: 0.3, metalness: 0.6, emissiveIntensity: 0.5 }),
+};
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let qp = 26, rangePx = 16;
+let overlayOn = true, breakdown = false, allIntra = false;
+let frameIdx = 0, frameTimer = 0;
+let et = 0, scenario = 0;
+const types12 = ['I', 'P', 'B', 'B', 'P', 'B', 'B', 'P', 'B', 'B', 'P', 'B'];
+const FRAME_DT = 0.5;
+const histSz = [], histTy = [];
+
+/* ---------------- 场景:宏块画布 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 0.12, 56), M.ground);
+ground.position.y = -0.2;
+scene.add(ground);
+
+const GRID = 16, PITCH = 0.25, CV_Y = 2.4;
+const canvasG = new THREE.Group();
+scene.add(canvasG);
+const blockGeo = new THREE.BoxGeometry(PITCH * 0.92, PITCH * 0.92, 0.07);
+const blocks = new THREE.InstancedMesh(blockGeo, M.block, GRID * GRID);
+canvasG.add(blocks);
+const bObj = new THREE.Object3D();
+{
+  const col = new THREE.Color(0.2, 0.2, 0.2);
+  for (let iy = 0; iy < GRID; iy++) for (let ix = 0; ix < GRID; ix++) {
+    const i = iy * GRID + ix;
+    bObj.position.set((ix - 7.5) * PITCH, CV_Y + (7.5 - iy) * PITCH, 0);
+    bObj.updateMatrix();
+    blocks.setMatrixAt(i, bObj.matrix);
+    blocks.setColorAt(i, col);
+  }
+  blocks.instanceMatrix.needsUpdate = true;
+}
+/* 画布边框(与块错开 0.001 防 z-fighting) */
+(function frameBorder() {
+  const half = GRID * PITCH / 2 + 0.06, t = 0.1, z = -0.041;
+  const mk = (w, h, x, y) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.09), M.border);
+    m.position.set(x, y, z);
+    canvasG.add(m);
+  };
+  mk(half * 2 + t, t, 0, CV_Y + half);
+  mk(half * 2 + t, t, 0, CV_Y - half);
+  mk(t, half * 2, -half, CV_Y);
+  mk(t, half * 2, half, CV_Y);
+})();
+/* 宏块网格线(可关) */
+const gridLines = (function gridLines() {
+  const pos = [];
+  const half = GRID * PITCH / 2;
+  for (let k = 0; k <= GRID; k++) {
+    const v = -half + k * PITCH;
+    pos.push(v, CV_Y - half, 0.045, v, CV_Y + half, 0.045);
+    pos.push(-half, CV_Y + v, 0.045, half, CV_Y + v, 0.045);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x8899aa, transparent: true, opacity: 0.28 }));
+  canvasG.add(lines);
+  return lines;
+})();
+
+/* 运动矢量箭头(LineSegments,256 段) */
+const NBLK = GRID * GRID;
+const arrowPos = new Float32Array(NBLK * 2 * 3);
+const arrowCol = new Float32Array(NBLK * 2 * 3);
+const arrowGeo = new THREE.BufferGeometry();
+arrowGeo.setAttribute('position', new THREE.BufferAttribute(arrowPos, 3));
+arrowGeo.setAttribute('color', new THREE.BufferAttribute(arrowCol, 3));
+const arrowMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.95 });
+const arrows = new THREE.LineSegments(arrowGeo, arrowMat);
+arrows.frustumCulled = false;
+canvasG.add(arrows);
+
+/* ---------------- 程序生成动图:滚动球 + 背景条纹 ---------------- */
+function ballPos(t, out) {
+  const ph = (t * 0.16) % 2;
+  out[0] = 2.2 + (ph < 1 ? ph : 2 - ph) * 11.6;   // 2.2 → 13.8 → 2.2(块坐标,~15 px/帧)
+  out[1] = 8 + Math.sin(t * 0.45) * 3.2;          // 4.8 → 11.2
+  return out;
+}
+const _b0 = [0, 0], _b1 = [0, 0];
+const cCur = { r: 0, g: 0, b: 0 }, cPred = { r: 0, g: 0, b: 0 };
+function baseColor(ix, iy, t, out) {
+  const s = Math.sin((ix * 0.55 + iy * 0.8) * 0.9 + t * 0.16);   // 背景条纹缓慢漂移
+  let r = 0.10 + 0.06 * Math.sin(ix * 0.35 + 1.2);
+  let g = 0.30 + 0.13 * s;
+  let b = 0.44 + 0.10 * Math.cos(iy * 0.4 - 0.5);
+  ballPos(t, _b0);
+  const d = Math.hypot(ix - _b0[0], iy - _b0[1]);
+  if (d < 2.4) {
+    const sh = 1 - d / 2.4;
+    r = 0.55 + 0.42 * sh; g = 0.28 + 0.18 * sh; b = 0.08;
+  }
+  out.r = clamp01(r); out.g = clamp01(g); out.b = clamp01(b);
+}
+function frameType() { return allIntra ? 'I' : types12[((frameIdx % 12) + 12) % 12]; }
+function frameSizeKB(ty) {                 // 全高清等效 KB(示意模型)
+  const qual = clamp01((52 - qp) / 50);
+  const szI = 150 * (0.15 + 0.85 * qual);
+  if (allIntra || ty === 'I') return szI;
+  const szP = szI * 0.10 * (1 + Math.max(0, 18 - rangePx) / 18 * 1.4);
+  return ty === 'P' ? szP : szP * 0.75;
+}
+function gopBitrateMbps() {                // GOP 12 帧(1 I + 3 P + 8 B)平均
+  let sum = 0;
+  for (const ty of types12) sum += frameSizeKB(ty);
+  return sum / types12.length * 8192 * 30 / 1e6;
+}
+const tintCol = new THREE.Color();
+function updateBlocks() {
+  arrowPos.fill(0);                        // 每帧清空箭头,未命中的块自然不可见
+  const tCur = frameIdx * FRAME_DT, tPrev = tCur - FRAME_DT;
+  ballPos(tCur, _b0);
+  ballPos(tPrev, _b1);
+  const mvx = _b0[0] - _b1[0], mvy = _b0[1] - _b1[1];
+  const R = rangePx / 16;
+  const mvxC = clamp(mvx, -R, R), mvyC = clamp(mvy, -R, R);
+  const isI = frameType() === 'I';
+  const levels = Math.max(2, Math.round(2 + (52 - qp) / 50 * 30));
+  let ai = 0;
+  for (let iy = 0; iy < GRID; iy++) for (let ix = 0; ix < GRID; ix++, ai++) {
+    baseColor(ix, iy, tCur, cCur);
+    let tint = 0, tsign = 1;
+    if (!isI) {
+      const nearBall = Math.hypot(ix - _b0[0], iy - _b0[1]) < 3 || Math.hypot(ix - _b1[0], iy - _b1[1]) < 3;
+      const ox = nearBall ? mvxC : 0, oy = nearBall ? mvyC : 0;
+      baseColor(ix - ox, iy - oy, tPrev, cPred);
+      const dr = cCur.r - cPred.r, dg = cCur.g - cPred.g, db = cCur.b - cPred.b;
+      const mag = (Math.abs(dr) + Math.abs(dg) + Math.abs(db)) / 3;
+      if (overlayOn && mag > 0.02) { tint = clamp01(mag * 6); tsign = dr + dg + db >= 0 ? 1 : -1; }
+      if (overlayOn && nearBall && (Math.abs(mvxC) > 0.05 || Math.abs(mvyC) > 0.05)) {
+        const x0 = (ix - 7.5) * PITCH, y0 = CV_Y + (7.5 - iy) * PITCH;
+        const o = ai * 6;
+        arrowPos[o] = x0; arrowPos[o + 1] = y0; arrowPos[o + 2] = 0.055;
+        arrowPos[o + 3] = x0 + mvxC * 1.6; arrowPos[o + 4] = y0 + mvyC * 1.6; arrowPos[o + 5] = 0.055;
+        arrowCol[o] = 1; arrowCol[o + 1] = 0.78; arrowCol[o + 2] = 0.3;
+        arrowCol[o + 3] = 1; arrowCol[o + 4] = 0.5; arrowCol[o + 5] = 0.1;
+      }
+    }
+    let r = Math.round(cCur.r * levels) / levels;
+    let g = Math.round(cCur.g * levels) / levels;
+    let b = Math.round(cCur.b * levels) / levels;
+    if (isI) { r = Math.min(1, r * 1.14); g = Math.min(1, g * 1.14); b = Math.min(1, b * 1.14); }
+    if (tint > 0) {
+      tintCol.setRGB(tsign > 0 ? 1 : 0.3, tsign > 0 ? 0.32 : 0.5, tsign > 0 ? 0.3 : 1);
+      tintCol.multiplyScalar(tint * 0.85);
+      r = clamp01(r * (1 - tint * 0.85) + tintCol.r);
+      g = clamp01(g * (1 - tint * 0.85) + tintCol.g);
+      b = clamp01(b * (1 - tint * 0.85) + tintCol.b);
+    }
+    tintCol.setRGB(r, g, b);
+    blocks.setColorAt(ai, tintCol);
+  }
+  if (blocks.instanceColor) blocks.instanceColor.needsUpdate = true;
+  arrowGeo.attributes.position.needsUpdate = true;
+  arrowGeo.attributes.color.needsUpdate = true;
+}
+function advanceFrame() {
+  frameIdx++;
+  const ty = frameType();
+  histSz.push(frameSizeKB(ty));
+  histTy.push(ty);
+  if (histSz.length > 48) { histSz.shift(); histTy.shift(); }
+  updateBlocks();
+}
+
+/* ---------------- GOP 时间轴 ---------------- */
+const tlG = new THREE.Group();
+tlG.position.set(3.2, 0, 0);
+scene.add(tlG);
+const slotMeshes = [];
+const slotGeo = new THREE.BoxGeometry(0.24, 0.24, 0.24);
+const coneGeo = new THREE.ConeGeometry(0.05, 0.14, 8);
+for (let k = 0; k < 12; k++) {
+  const ty = types12[k];
+  const m = new THREE.Mesh(slotGeo, ty === 'I' ? M.tlI : ty === 'P' ? M.tlP : M.tlB);
+  m.position.set(0, 4.15 - k * 0.3, 0);
+  tlG.add(m);
+  slotMeshes.push(m);
+  if (ty === 'B') {                       // B 帧:双向参考箭头
+    const c1 = new THREE.Mesh(coneGeo, M.tlB);
+    c1.position.set(-0.22, 4.15 - k * 0.3, 0);
+    c1.rotation.z = Math.PI / 2;
+    tlG.add(c1);
+    const c2 = new THREE.Mesh(coneGeo, M.tlB);
+    c2.position.set(0.22, 4.15 - k * 0.3, 0);
+    c2.rotation.z = -Math.PI / 2;
+    tlG.add(c2);
+  }
+}
+const tlLabel = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), M.tlI);
+tlLabel.position.set(0, 4.62, 0);
+tlG.add(tlLabel);
+const pointer = new THREE.Mesh(new THREE.OctahedronGeometry(0.09), M.pointer);
+pointer.position.set(-0.42, 4.15, 0);
+scene.add(pointer);
+
+/* ---------------- 码率对比柱 ---------------- */
+const barsG = new THREE.Group();
+scene.add(barsG);
+const RAW_MBPS = 750;                      // 未压缩 1080p30 ≈ 0.75 Gbps(60fps ≈ 1.5 Gbps)
+const barBaseY = 0.55;
+const barRaw = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1, 0.5), M.barRaw);
+barRaw.position.set(-3.3, barBaseY, 0);
+barsG.add(barRaw);
+const barComp = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1, 0.5), M.barComp);
+barComp.position.set(-2.35, barBaseY, 0);
+barsG.add(barComp);
+function updateBars() {
+  const comp = gopBitrateMbps();
+  barRaw.scale.y = 3.2;
+  barRaw.position.y = barBaseY + 1.6;
+  barComp.scale.y = Math.max(0.07, 3.2 * clamp01(Math.log10(Math.max(0.01, comp)) / Math.log10(RAW_MBPS)));
+  barComp.position.y = barBaseY + barComp.scale.y / 2;
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+addLabel(() => L('16×16 宏块画布(1080p 一帧有 8160 个宏块)', '16×16 macroblock canvas (a 1080p frame has 8,160 MBs)'),
+  () => 'b', new THREE.Vector3(0, 4.6, 0), null);
+addLabel(() => L('运动矢量:球区域密集,箭头指向参考帧最匹配块', 'motion vectors: dense around the ball, pointing at the best match'),
+  () => 'e', new THREE.Vector3(0, 0.35, 0.4), null);
+addLabel(() => L('残差:红/蓝微色,大部分为 0', 'residual: faint red/blue, mostly zero'),
+  () => 'r', new THREE.Vector3(-2.6, 0.9, 0.4), null);
+addLabel(() => L('GOP 时间轴:I P B B …(B 双向参考)', 'GOP timeline: I P B B … (B is bidirectional)'),
+  () => 'g', new THREE.Vector3(3.2, 4.95, 0), null);
+addLabel(() => L(`原始 ~750 Mbps(1080p30)· 60fps ≈ 1.5 Gbps`, `raw ~750 Mbps (1080p30) · 60fps ≈ 1.5 Gbps`),
+  () => 'w', new THREE.Vector3(-3.3, 4.35, 0), null);
+addLabel(() => L(`H.264 ≈ ${gopBitrateMbps().toFixed(1)} Mbps → 压缩 ~${Math.round(RAW_MBPS / Math.max(0.01, gopBitrateMbps()))}×`,
+  `H.264 ≈ ${gopBitrateMbps().toFixed(1)} Mbps → ~${Math.round(RAW_MBPS / Math.max(0.01, gopBitrateMbps()))}× smaller`),
+  () => 'g', new THREE.Vector3(-2.35, 1.15, 0), null);
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'raw', tgt: [0, 2.4, 1.6],
+    b: '原始视频带宽多可怕', be: 'How terrifying raw video bandwidth is',
+    d: '1080p 是 1920×1080 像素,8bit 4:2:0 采样平均每像素 12bit:1920×1080×30 fps×12 bit ≈ 0.75 Gbps,60fps 直接 ≈1.5 Gbps——千兆网线、单块机械硬盘都跟不上。不压缩,视频根本没法在互联网上存在;一切从这里开始。',
+    de: '1080p is 1920×1080 pixels; 8-bit 4:2:0 sampling averages 12 bit/pixel: 1920×1080×30 fps×12 bit ≈ 0.75 Gbps, and 60fps ≈ 1.5 Gbps - a gigabit link or a spinning disk cannot keep up. Without compression video cannot exist on the internet; everything starts here.' },
+  { hl: 'intra', tgt: [0, 2.4, 2.4],
+    b: '帧内编码:静态图那套(参照 JPEG)', be: 'Intra coding: the still-image toolbox (see JPEG)',
+    d: 'I 帧就是「会动的 JPEG」:把画面切成宏块,每块做 DCT 变换(能量集中到低频)→ 量化(高频丢弃,QP 控制狠度)→ 熵编码。看画布:I 帧所有块整体变亮——每一块都被独立编码,不依赖任何其他帧;代价是 I 帧约为 P 帧的 10× 大小。',
+    de: 'An I frame is a "moving JPEG": slice the picture into macroblocks, DCT each block (energy packs into low frequencies), quantize (drop high frequencies; QP sets how hard), entropy-code. Watch the canvas: at I frames every block brightens - each block is coded independently of all others; the cost is an I frame ~10x the size of a P frame.' },
+  { hl: 'inter', tgt: [3.2, 2.4, 0.8],
+    b: '帧间:大部分像素根本没变', be: 'Inter coding: most pixels barely change',
+    d: '相邻两帧之间,背景几乎不动、球只挪了一小段——帧与帧的差里 90% 以上接近零。既然「没变」是常态,就别整帧重传:只说「哪里变了、怎么变」。这是时间维度上的冗余,和 JPEG 干掉的空间冗余是两码事,视频压缩两样都要吃。',
+    de: 'Between neighboring frames the background barely moves and the ball shifts only slightly - over 90% of the frame-to-frame difference is near zero. Since "unchanged" is the norm, do not resend the frame: just say where and how it changed. This is temporal redundancy, a different beast from the spatial redundancy JPEG removes - video eats both.' },
+  { hl: 'motion', tgt: [0, 2.4, 3.2],
+    b: '运动补偿:块在哪,箭头指向', be: 'Motion compensation: where the block went, an arrow points',
+    d: 'P 帧为每个 16×16 宏块在参考帧里做运动搜索(典型 ±16 px),找到最像的位置,只编码一个运动矢量——画布上金色箭头在球区域密集,箭头方向就是球的位移。搜索范围越小,找不到好匹配的块越多:把滑块拉到 ±2 px 试试,残差立刻爆炸。',
+    de: 'A P frame runs a motion search for every 16×16 macroblock in the reference frame (typically ±16 px), finds the best-matching spot, and codes just one motion vector - the gold arrows cluster around the ball and point along its displacement. Shrink the search and matches fail: drag the slider to ±2 px and watch the residual explode.' },
+  { hl: 'residual', tgt: [0, 2.4, 2.8],
+    b: '残差 + DCT + 量化:剩下的少量信息', be: 'Residual + DCT + quantization: the little that remains',
+    d: '运动补偿后的差叫残差:大部分块是 0,非零的块画成红/蓝微色(正/负)。残差再走一遍 DCT+量化+熵编码——这一次量很小,QP 越高丢得越狠,画面出现块状伪影。把 QP 拉到 45+ 看看「省到变质」的样子。',
+    de: 'What is left after motion compensation is the residual: mostly zeros, with non-zero blocks tinted faint red/blue (positive/negative). The residual goes through DCT + quantization + entropy coding too - but it is tiny now, and higher QP throws away more, producing blocky artifacts. Push QP past 45 to watch "saved into oblivion".' },
+  { hl: 'gop', tgt: [3.2, 2.6, 1.2],
+    b: 'I/P/B 分工与 GOP', be: 'Division of labor: I/P/B and the GOP',
+    d: '时间轴 I P B B P B B …:I 独立成帧(随机接入点、拖进度条的入口);P 参考前面的 I/P;B 双向参考前后两帧,再省 15-30%。一组图像(GOP)通常 30-250 帧才放一个 I 帧——I 帧坏了整段花屏,所以它也最贵。点「I/P/B 分解播放」慢放,点「全 I 帧对照」看码率柱跳升。',
+    de: 'The timeline reads I P B B P B B …: I is self-contained (the random-access point, where seeking lands); P references earlier I/P; B references both directions and saves another 15-30%. A Group of Pictures of 30-250 frames holds just one I frame - break it and the whole stretch smears, which is why it is also the most expensive. Try the breakdown playback button and the all-intra toggle to see the bitrate bar jump.' },
+  { hl: 'rate', tgt: [-3.0, 2.0, 2.2],
+    b: '码率控制与画质滑块', be: 'Rate control and the quality dial',
+    d: 'QP 就是画质/码率旋钮:QP 高 → 量化狠 → 块多被压成 0 → 码率低但糊。H.264 编 1080p30 典型只需 4-8 Mbps,比原始低 ~200-300×;同一画面 AV1 还能再省 ~30-50%。编码器的真实工作,就是在你给的码率预算里把 QP 调到「刚好不穿帮」。',
+    de: 'QP is the quality/bitrate dial: high QP → aggressive quantization → most residual crushed to zero → low bitrate but blurry. H.264 encodes 1080p30 in a typical 4-8 Mbps, ~200-300x below raw; AV1 saves another ~30-50% on the same picture. The encoder\u2019s real job is riding QP right up to "just before it shows" within your bitrate budget.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+let tgtVec = new THREE.Vector3(0, 2.4, 1.6);
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const br = gopBitrateMbps();
+  formulaEl.innerHTML =
+    L(`原始:1920×1080×30fps×12bit(4:2:0)≈ <b>0.75 Gbps</b>,60fps ≈ <b>1.5 Gbps</b>`,
+      `Raw: 1920×1080×30fps×12bit (4:2:0) ≈ <b>0.75 Gbps</b>, 60fps ≈ <b>1.5 Gbps</b>`) +
+    '<br>' +
+    L(`当前 QP=<b>${qp}</b> → GOP 均值 <b>${br.toFixed(1)} Mbps</b>,压缩 <b>${Math.round(RAW_MBPS / Math.max(0.01, br))}×</b>;I≈10×P,B 再省 <b>15-30%</b>`,
+      `QP=<b>${qp}</b> now → GOP mean <b>${br.toFixed(1)} Mbps</b>, <b>${Math.round(RAW_MBPS / Math.max(0.01, br))}×</b> smaller; I≈10×P, B saves <b>15-30%</b> more`) +
+    '<br>' +
+    L(`宏块 <b>16×16</b>,运动搜索 <b>±16 px</b>;GOP <b>30-250</b> 帧;H.264 1080p30 典型 <b>4-8 Mbps</b>;AV1 再省 <b>~30-50%</b>`,
+      `Macroblock <b>16×16</b>, motion search <b>±16 px</b>; GOP <b>30-250</b> frames; H.264 1080p30 typical <b>4-8 Mbps</b>; AV1 saves <b>~30-50%</b> more`);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elQp = document.getElementById('qp'), elQpVal = document.getElementById('qpVal');
+const elRange = document.getElementById('range'), elRangeVal = document.getElementById('rangeVal');
+const btnBreakdown = document.getElementById('btnBreakdown');
+const btnOverlay = document.getElementById('btnOverlay');
+const btnAllI = document.getElementById('btnAllI');
+const tglGrid = document.getElementById('tglGrid');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function updateQp() { elQpVal.textContent = String(qp); }
+function updateRange() { elRangeVal.textContent = '±' + rangePx + ' px'; }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elQp.addEventListener('input', () => { qp = +elQp.value; updateQp(); updateBlocks(); updateBars(); updateFormula(); });
+elRange.addEventListener('input', () => { rangePx = +elRange.value; updateRange(); updateBlocks(); updateFormula(); });
+btnBreakdown.addEventListener('click', () => {
+  breakdown = !breakdown;
+  btnBreakdown.classList.toggle('on', breakdown);
+  if (breakdown && !overlayOn) { overlayOn = true; btnOverlay.classList.add('on'); updateBlocks(); }
+});
+btnOverlay.addEventListener('click', () => {
+  overlayOn = !overlayOn;
+  btnOverlay.classList.toggle('on', overlayOn);
+  updateBlocks();
+});
+btnAllI.addEventListener('click', () => {
+  allIntra = !allIntra;
+  btnAllI.classList.toggle('on', allIntra);
+  histSz.length = 0; histTy.length = 0;
+  updateBlocks(); updateBars(); updateFormula();
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+  qp = 26; rangePx = 16;
+  elQp.value = 26; elRange.value = 16;
+  updateQp(); updateRange();
+  overlayOn = true; breakdown = false; allIntra = false;
+  btnOverlay.classList.add('on'); btnBreakdown.classList.remove('on'); btnAllI.classList.remove('on');
+  frameIdx = 0; frameTimer = 0;
+  histSz.length = 0; histTy.length = 0;
+  updateBlocks(); updateBars(); updateFormula();
+  activateStep(0);
+});
+tglGrid.addEventListener('change', () => { gridLines.visible = tglGrid.checked; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD');
+function updateStats() {
+  const ty = frameType();
+  stA.textContent = ty + (breakdown ? L(' 分解', ' brk') : '');
+  stA.className = 'v ' + (ty === 'I' ? 'warn' : ty === 'P' ? '' : 'ok');
+  stB.innerHTML = frameSizeKB(ty).toFixed(1) + '<small> KB</small>';
+  stB.className = 'v ' + (ty === 'I' ? 'warn' : 'ok');
+  const br = gopBitrateMbps();
+  stC.innerHTML = br.toFixed(1) + '<small> Mbps</small>';
+  stC.className = 'v ok';
+  const ratio = RAW_MBPS / Math.max(0.01, br);
+  stD.innerHTML = '×' + Math.round(ratio);
+  stD.className = 'v ' + (ratio > 100 ? 'ok' : 'warn');
+}
+
+/* ---------------- 示波器:帧大小序列 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const typeColor = { I: 'rgba(255,210,122,.95)', P: 'rgba(124,196,255,.9)', B: 'rgba(143,227,176,.85)' };
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const base = ch * 0.88, top = ch * 0.12;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0.05 * cw, base); scopeCtx.lineTo(0.95 * cw, base);
+  scopeCtx.stroke();
+  scopeCtx.font = `${Math.round(10 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('帧大小序列:I 高 · P/B 低(KB)', 'frame size series: I tall · P/B low (KB)'), 8 * dpr, 12 * dpr);
+  if (!histSz.length) {
+    scopeCtx.fillText(L('播放后出现…', 'appears once playing…'), 8 * dpr, ch * 0.55);
+    return;
+  }
+  const n = histSz.length;
+  const bw = 0.9 / 48 * cw;
+  for (let i = 0; i < n; i++) {
+    const h = clamp01(histSz[i] / 160) * (base - top);
+    const x = (0.05 + (i + 0.5) / 48 * 0.9) * cw;
+    scopeCtx.fillStyle = typeColor[histTy[i]] || '#999';
+    scopeCtx.fillRect(x - bw / 2, base - h, bw, h);
+  }
+  /* 当前帧指针 */
+  const cx = (0.05 + (n - 0.5) / 48 * 0.9) * cw;
+  scopeCtx.fillStyle = '#fff';
+  scopeCtx.fillRect(cx - 1 * dpr, top, 2 * dpr, base - top);
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, lastSlot = -1;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  /* 帧推进(分解模式 = 慢放) */
+  const fd = breakdown ? 1.5 : 0.5;
+  if (playing) {
+    frameTimer += dt * speed;
+    if (frameTimer >= fd) { frameTimer = 0; advanceFrame(); }
+  }
+  /* GOP 时间轴当前帧 */
+  const slot = ((frameIdx % 12) + 12) % 12;
+  if (slot !== lastSlot) {
+    lastSlot = slot;
+    for (let k = 0; k < 12; k++) slotMeshes[k].scale.setScalar(k === slot ? 1.35 : 1);
+    pointer.position.y = 4.15 - slot * 0.3;
+    tlLabel.position.y = 4.62;
+  }
+  pointer.rotation.y = et * 2.4;
+  /* 高亮脉冲(按步骤) */
+  const hlK = 0.5 + 0.28 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  M.border.emissiveIntensity = 0.12 + (hl === 'raw' || hl === 'intra' ? 0.4 + 0.25 * hlK : 0);
+  M.tlI.emissiveIntensity = 0.3 + (hl === 'gop' || hl === 'inter' ? 0.5 + 0.3 * hlK : 0);
+  M.tlP.emissiveIntensity = 0.3 + (hl === 'gop' || hl === 'inter' || hl === 'motion' ? 0.5 + 0.3 * hlK : 0);
+  M.tlB.emissiveIntensity = 0.3 + (hl === 'gop' ? 0.5 + 0.3 * hlK : 0);
+  M.barRaw.emissiveIntensity = 0.18 + (hl === 'raw' || hl === 'rate' ? 0.5 + 0.3 * hlK : 0);
+  M.barComp.emissiveIntensity = 0.18 + (hl === 'rate' ? 0.5 + 0.3 * hlK : 0);
+  /* 相机目标缓动 + 标签 */
+  controls.target.lerp(tgtVec, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+updateBlocks();
+updateBars();
+btnOverlay.classList.add('on');
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
