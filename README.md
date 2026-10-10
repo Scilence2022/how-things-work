@@ -1701,7 +1701,7 @@
 - [x] 气孔与保卫细胞(光下 K⁺/Cl⁻ 泵入+苹果酸,渗透势拉水,膨压顶弯薄外壁厚内壁,气孔张开;ABA 逆转闭合;CO₂ 通道=水汽出口同一扇门的权衡) ✅ **stomata-guard-cells/**
 - [x] 神经肌肉接头(AP 点燃 Ca²⁺ 通道→囊泡融合→ACh 横渡 50 nm→nAChR 开→终板电位过阈→T 管-肌质网钙火花;AChE 清场;箭毒占受体、肉毒掐融合) ✅ **neuromuscular-junction/**
 - [x] 向重力性(淀粉体沉底,PIN 重排把生长素泵向低侧;茎低侧促伸长上弯、根低侧抑制下弯——同一激素两种答案;造粉体突变体横放立不直) ✅ **gravitropism/**
-- [x] 图灵斑图(激活剂短程自催化+抑制剂长程扩散划界,均匀场噪声自发裂成斑点/条纹/迷宫;Du/Dv>1 否则当场溶解;豹点斑马条=同方程不同参数)· 2D ✅ **turing-patterns/**
+- [x] 图灵斑图(激活剂短程自催化+抑制剂长程扩散划界,均匀场噪声自发裂成斑点/条纹/迷宫;Du/Dv>1 否则当场溶解;豹点斑马条=同方程不同参数)✅ **turing-patterns/**
 - [x] 科里奥利效应(旋转系里直线是错觉,a=2Ω×v 北右偏南左偏 ∝sinφ;浴缸漩涡是谣言,气旋不是——低压入流被偏转成涡) ✅ **coriolis-effect/**
 - [x] 双金属片(黄铜 α=19 对钢 α=12,受热弯向钢侧曲率 ∝Δα·ΔT;卷螺旋当烤箱温度计;带触点即温控开关/断路器热脱扣,80 °C 弹开 60 °C 复位滞回防抖) ✅ **bimetallic-strip/**
 - [x] 陨石坑(20 km/s 能量 ∝v²:接触压缩震出冲击石英;开挖喷出物幕 45° 锥+二次坑链;改造阶地+中央峰回弹;巴林杰 1.2 km、希克苏鲁伯 180 km,地球坑少是风化在加班) ✅ **impact-crater/**
@@ -1709,9 +1709,9 @@
 - [x] 气垫船(风扇垫压 2.5 kPa 抬船几厘米,拖曳阻力跌一个量级;围裙随浪贴合,水滩冰三栖;垫压不足拖底、过高跳振,油门窄甜区) ✅ **hovercraft/**
 - [x] 沙丘迁移(跃移链式倍增,迎风坡侵蚀、脊线翻沙、背风坡 34° 休止角雪崩;整丘保形迁移一年几米到几十米;新月 barchan=单一风向签名) ✅ **sand-dunes/**
 - [x] 河口三角洲(入海流速骤降挟沙力断崖,粗细分选成顶/前/底积层斜层理,向海推进;分汊决口改道;河鸟足/浪圆弧/潮喇叭) ✅ **river-delta/**
-- [x] 马尔可夫链(转移矩阵 P,行者按概率跳边,几步收敛 π=πP 与初值无关;无记忆是全部假设,π=P 的特征向量)· 2D ✅ **markov-chain/**
-- [x] A* 寻路(Dijkstra 漫灌 790 格、贪婪 38 格被沼泽骗到代价翻倍、A* 用 f=g+h 304 格拿到同款最优路;可采纳启发=快而不骗;ε 滑块扫光谱)· 2D ✅ **a-star-search/**
-- [x] 鸟群与 Boids(分离/对齐/凝聚三条局部规则,无领导群体秩序涌现;权重调出鸟群→鱼群→蝗虫带;捕食者引发闪避波)· 2D ✅ **boids-flocking/**
+- [x] 马尔可夫链(转移矩阵 P,行者按概率跳边,几步收敛 π=πP 与初值无关;无记忆是全部假设,π=P 的特征向量)✅ **markov-chain/**
+- [x] A* 寻路(Dijkstra 漫灌 790 格、贪婪 38 格被沼泽骗到代价翻倍、A* 用 f=g+h 304 格拿到同款最优路;可采纳启发=快而不骗;ε 滑块扫光谱)✅ **a-star-search/**
+- [x] 鸟群与 Boids(分离/对齐/凝聚三条局部规则,无领导群体秩序涌现;权重调出鸟群→鱼群→蝗虫带;捕食者引发闪避波)✅ **boids-flocking/**
 ### Phase 32 · 跨家族补缺第四批（24/24 收官）
 
 - [x] 谐波减速器（三部件半透明剖视,椭圆变形随波游走,转一圈错齿 3.6° 反向,ΔZ=2/4 实时换速比,啮合区放大镜,θ_in/θ_out 曲线,堵转演示）✅ **harmonic-drive/**
@@ -2396,9 +2396,9 @@
 
 #### 鸟群与 Boids:三条规则长出群体
 
-- **看什么**:260 只 boids 各只执行分离/对齐/凝聚三条局部规则,没有领队、没有队形图,絮群整体涌现;聚焦一只看邻居圈与三股力箭头;质心轨迹记录群体的漂移;三滑块权重从鸟群调到鱼群再调到蝗虫带;红色捕食者扎进来,闪避波一圈圈荡开;序参量 φ 从全开 0.71 掉到全关 0.03。
-- **怎么玩**:拖三权重;点放障碍看分流;开捕食者;关规则对照;`空格` 播放暂停。
-- **URL 参数**:`?t=` `?pause=` `?speed=`。
+- **看什么**:三维空域里 260 只 boids 各只执行分离/对齐/凝聚三条局部规则,没有领队、没有队形图,絮群整体涌现;聚焦一只看邻居球壳与三股力箭头;质心轨迹记录群体的漂移;三滑块权重从鸟群调到鱼群再调到蝗虫带;红色捕食者扎进来,闪避波一圈圈荡开;序参量 φ 实时测量群体有序度,规则全关立刻崩盘。
+- **怎么玩**:拖动旋转、滚轮缩放;拖三权重;点空处放障碍看分流;开捕食者;关规则对照;`空格` 播放暂停。
+- **URL 参数**:`?t=` `?pause=` `?speed=` `?labels=`。
 
 
 #### 高炉炼铁:碳的还原阶梯
@@ -2713,12 +2713,12 @@ motor-generator/         直流电动机 ⇄ 发电机：两种身份（Three.js
 galton-board/            伽尔顿板：正态从随机里长出来（Three.js，CDN 引入）
 carnot-cycle/            卡诺循环：pV 黄金圈与效率天花板（Three.js，CDN 引入）
 electromagnetic-induction/ 电磁感应：楞次「来拒去留」（Three.js，CDN 引入）
-monty-hall-bayes/        蒙提霍尔：换还是不换，2/3 vs 1/3（Canvas 2D，零依赖）
+monty-hall-bayes/        蒙提霍尔：换还是不换，2/3 vs 1/3（Three.js，CDN 引入）
 doppler-effect/          多普勒效应：音障与马赫锥（Three.js，CDN 引入）
-activation-energy/       活化能：麦克斯韦-玻尔兹曼分布（Canvas 2D，零依赖）
+activation-energy/       活化能：麦克斯韦-玻尔兹曼分布（Three.js，CDN 引入）
 orbital-mechanics/       开普勒轨道：椭圆与等时面积（Three.js，CDN 引入）
-titration-curve/         滴定曲线：缓冲平台与等当点突跃（Canvas 2D，零依赖）
-fourier-series/          傅里叶级数：本轮圆叠出一切波形（Canvas 2D，零依赖）
+titration-curve/         滴定曲线：缓冲平台与等当点突跃（Three.js，CDN 引入）
+fourier-series/          傅里叶级数：本轮圆叠出一切波形（Three.js，CDN 引入）
 cross-bridge-cycle/      肌肉收缩的横桥循环：粗细肌丝滑行的分子机制（Three.js，CDN 引入）
 hemoglobin-mwc/          血红蛋白 MWC 别构模型：协同运氧与 S 形氧合曲线（Three.js，CDN 引入）
 angular-momentum/        角动量守恒：滑冰者 / 太空猫 / 中子星三幕（Three.js，CDN 引入）
@@ -2728,7 +2728,7 @@ fuel-cell/               燃料电池：不停加料的原电池（Three.js，CD
 osmosis/                 渗透与反渗透：外加压强越过 π 净流反转（Three.js，CDN 引入）
 neural-gradient/         神经网络梯度下降：损失曲面上下山（Three.js，CDN 引入）
 sorting-race/            排序算法竞速：五种算法同屏开跑（Three.js，CDN 引入）
-rsa-crypto/              RSA 加密：乘起来容易拆回去难（Canvas 2D，零依赖）
+rsa-crypto/              RSA 加密：乘起来容易拆回去难（Three.js，CDN 引入）
 induction-motor/         三相感应电动机：旋转磁场拖着鼠笼跑（Three.js，CDN 引入）
 transformer/             变压器与高压输电：匝数比就是电压比（Three.js，CDN 引入）
 speaker-microphone/      扬声器 ⇄ 麦克风：同一只动圈头（Three.js，CDN 引入）
@@ -2808,11 +2808,11 @@ spacetime-curvature/     时空弯曲：网格下陷，行星走测地线（Thre
 shortest-path/           导航与最短路径：Dijkstra 波纹扩散 vs A* 直奔目标，实时路况改道（Three.js，CDN 引入）
 pagerank/                PageRank 与马尔可夫链：随机点击冲出网页重要性（Three.js，CDN 引入）
 packet-switching/        互联网如何送包裹：切包独立选路、乱序重组、超时重传（Three.js，CDN 引入）
-error-correction/        二维码为什么破损也能扫：里德-所罗门纠错（Canvas 2D，零依赖）
-huffman-coding/          哈夫曼编码：频次建树生前缀码，232 bit 压到 109 bit（Canvas 2D，零依赖）
-bayes-screening/         贝叶斯筛查：阳性≠患病，基率占坑（Canvas 2D，零依赖）
-fractals/                分形与递归：简单规则×无限递归=无限复杂（Canvas 2D，零依赖）
-taylor-series/           泰勒展开：一点相切到逐段重合，误差带与收敛半径（Canvas 2D，零依赖）
+error-correction/        二维码为什么破损也能扫：里德-所罗门纠错（Three.js，CDN 引入）
+huffman-coding/          哈夫曼编码：频次建树生前缀码，232 bit 压到 109 bit（Three.js，CDN 引入）
+bayes-screening/         贝叶斯筛查：阳性≠患病，基率占坑（Three.js，CDN 引入）
+fractals/                分形与递归：简单规则×无限递归=无限复杂（Three.js，CDN 引入）
+taylor-series/           泰勒展开：一点相切到逐段重合，误差带与收敛半径（Three.js，CDN 引入）
 microwave-oven/          微波炉：驻波冷热点与转盘匀热（Three.js，CDN 引入）
 touch-screen/            电容触摸屏：电极网格与指尖定位（Three.js，CDN 引入）
 gps/                     GPS 定位：伪距球面与相对论修正（Three.js，CDN 引入）
@@ -2828,7 +2828,7 @@ hard-drive-flash/        硬盘与闪存：磁畴与浮栅两条存储路线（T
 fission-chain/           裂变链式反应：中子代际雪球与临界控制（Three.js，CDN 引入）
 rainbow/                 彩虹与霓：水滴色散与 42°/51° 极值角（Three.js，CDN 引入）
 mitosis/                 有丝分裂：纺锤体捕获动粒与姐妹单体分离（Three.js，CDN 引入）
-birthday-paradox/        生日悖论：配对数爆炸，23 人过半（Canvas 2D，零依赖）
+birthday-paradox/        生日悖论：配对数爆炸，23 人过半（Three.js，CDN 引入）
 thermoregulation/        体温调节：下丘脑比较器与设定点追逐（Three.js，CDN 引入）
 sonar-ultrasound/        声呐与超声成像：回波计时与逐线 B 超（Three.js，CDN 引入）
 cosmic-expansion/        宇宙膨胀与红移：空间拉伸与途中变长的光（Three.js，CDN 引入）
@@ -3340,7 +3340,7 @@ usb-fast-charging/   快充与 USB-PD:握手日志逐条滚动、功率柱 10W�
 - [x] 渗透与反渗透（液面差攒到 Δh = π 平衡,活塞加压越过 π 净流反转=海水淡化）✅ **osmosis/**
 - [x] 神经网络梯度下降（3D 损失曲面,学习率/动量实时调,点击放置小球）✅ **neural-gradient/**
 - [x] 排序算法竞速（冒泡/选择/插入/快排/归并同一乱序同屏竞速,比较/写入计数）✅ **sorting-race/**
-- [x] RSA 加密（p,q → n,φ → e,d 全流程真算 + 模钟轨道 + 试拆计数器;2D 白名单页）✅ **rsa-crypto/**
+- [x] RSA 加密（p,q → n,φ → e,d 全流程真算 + 模钟轨道 + 试拆计数器）✅ **rsa-crypto/**
 
 > ✅ **Phase 2 全部完成(8/8)**。从本批起执行 v2 技术基线:新页默认 Three.js 3D(2D 白名单仅限纯平面图表),页面底部带「相关」互链。
 
@@ -3582,8 +3582,8 @@ usb-fast-charging/   快充与 USB-PD:握手日志逐条滚动、功率柱 10W�
 
 ### 蒙提霍尔:换还是不换
 
-- **看什么**:三扇门的演示局自动循环——你选门 1,主持人**专开一扇羊门**(他知道车在哪),换/不换各记一局;右上贝叶斯三分支卡讲清「换 → 赢」的两条路径;统计面板两条胜率线随局数收敛到 **2/3 与 1/3**——大数定律现场作证。
-- **怎么玩**:`空格` 播放暂停;「批量」滑块一次跑多局加速收敛;「清零重跑」从头来。
+- **看什么**:三维舞台上的三扇门演示局自动循环——你选门 1,主持人**专开一扇羊门**(他知道车在哪),换/不换各记一局;右上贝叶斯三分支卡讲清「换 → 赢」的两条路径;统计面板两条胜率线随局数收敛到 **2/3 与 1/3**——大数定律现场作证。
+- **怎么玩**:拖动旋转、滚轮缩放舞台;`空格` 播放暂停;「批量」滑块一次跑多局加速收敛;「清零重跑」从头来。
 - **URL 参数**:`?labels=0`。
 
 
