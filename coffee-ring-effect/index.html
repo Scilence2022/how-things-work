@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>咖啡环效应 · 蒸发流把颗粒全押去边缘</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="咖啡环效应:蒸发流把颗粒全押去边缘" data-en="The Coffee-Ring Effect: Evaporation Convays Every Particle to the Edge">咖啡环效应:蒸发流把颗粒全押去边缘</h1>
+  <div class="sub" data-zh="液滴边缘被表面粗糙度「钉扎」,蒸发时直径不变、只变矮;边缘的水汽扩散锥角更开阔,局部蒸发通量 J(r)∝(R−r)^{−1/2} 在边缘发散(Deegan 1997)——r=0.9R 处已是中心的 ~3.2 倍。为补足边缘失水,体内生出一根中心→边缘的毛细流,把悬浮颗粒源源不断押送到周界,干后就是一圈深环。消除:去钉扎/表面活性剂/马兰戈尼回流;喷墨打印配方专治它,否则成膜厚薄不均 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The contact line of a droplet is pinned by surface roughness: as it evaporates the diameter stays fixed while only the height shrinks; vapor diffuses through a wider cone at the rim, so the local flux J(r)∝(R−r)^{−1/2} diverges at the edge (Deegan 1997) - 3.2x the center already at r=0.9R. To make up the loss, an internal capillary flow rises from center to edge and convays suspended particles to the boundary, leaving a dark ring when dry. Cures: de-pinning / surfactants / Marangoni recirculation; inkjet formulations exist precisely to beat it, or films print uneven · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">液滴边缘被表面粗糙度「钉扎」,蒸发时直径不变、只变矮;边缘的水汽扩散锥角更开阔,局部蒸发通量 J(r)∝(R−r)^{−1/2} 在边缘发散(Deegan 1997)——r=0.9R 处已是中心的 ~3.2 倍。为补足边缘失水,体内生出一根中心→边缘的毛细流,把悬浮颗粒源源不断押送到周界,干后就是一圈深环。消除:去钉扎/表面活性剂/马兰戈尼回流;喷墨打印配方专治它,否则成膜厚薄不均 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="蒸发进度" data-en="evaporation progress">蒸发进度</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="边缘/中心通量比" data-en="edge/center flux ratio">边缘/中心通量比</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="已沉积颗粒" data-en="particles deposited">已沉积颗粒</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="沉积均匀度" data-en="deposit uniformity">沉积均匀度</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="接触线状态" data-en="contact line">接触线状态</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="马兰戈尼强度" data-en="Marangoni strength">马兰戈尼强度</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip o" data-zh="咖啡颗粒(悬浮)" data-en="coffee particles (suspended)">咖啡颗粒(悬浮)</span>
+    <span class="chip b" data-zh="液滴(钉扎接触线)" data-en="droplet (pinned contact line)">液滴(钉扎接触线)</span>
+    <span class="chip r" data-zh="蒸发通量:边缘最强" data-en="evaporation flux: strongest at rim">蒸发通量:边缘最强</span>
+    <span class="chip g" data-zh="马兰戈尼回流(消除环)" data-en="Marangoni recirculation (kills the ring)">马兰戈尼回流(消除环)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnMar" data-zh="马兰戈尼回流(招牌)" data-en="Marangoni recirculation (signature)">马兰戈尼回流(招牌)</button>
+    <button class="abtn" id="btnPin" data-zh="去钉扎(疏水改性)" data-en="de-pin (hydrophobic)">去钉扎(疏水改性)</button>
+    <button class="abtn" id="btnInject" data-zh="重铺颗粒" data-en="resuspend particles">重铺颗粒</button>
+    <button class="abtn" id="btnTop" data-zh="俯视" data-en="top view">俯视</button>
+    <button class="abtn" id="btnSide" data-zh="侧视" data-en="side view">侧视</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="马兰戈尼强度" data-en="Marangoni strength">马兰戈尼强度</label><input id="marSl" type="range" min="0" max="100" step="5" value="0"><span class="val" id="marVal">0%</span></div>
+  <div class="row"><label data-zh="蒸发速率" data-en="evaporation rate">蒸发速率</label><input id="evSl" type="range" min="2" max="30" step="1" value="10"><span class="val" id="evVal">1.0×</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="通量分布曲线" data-en="flux profile">通量分布曲线</span></label>
+        <label><input id="tglVec" type="checkbox" checked> <span data-zh="流动箭头" data-en="flow arrows">流动箭头</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../marangoni-effect/" data-zh="马兰戈尼效应" data-en="Marangoni effect">马兰戈尼效应</a>
+    <a href="../capillarity/" data-zh="毛细现象" data-en="capillarity">毛细现象</a>
+    <a href="../surfactant-micelle/" data-zh="表面活性剂" data-en="surfactants">表面活性剂</a>
+    <a href="../inkjet-printing/" data-zh="喷墨打印" data-en="inkjet printing">喷墨打印</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.slide.color.set(dark ? 0x2c3440 : 0x9aa8b8);          // 载玻片
+  M.drop.color.set(dark ? 0x8a5a34 : 0xa87040);           // 咖啡液滴
+  M.grainP.color.set(dark ? 0x6b4a2e : 0x4a3320);         // 颗粒
+  M.stain.color.set(dark ? 0x3a2513 : 0x2e1c0e);          // 干涸沉积
+  M.rim.color.set(dark ? 0xffd27a : 0xd8a12a);            // 接触线
+  M.chrome.color.set(dark ? 0xc2ccd8 : 0x9aa6b4);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh],[data-en]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('咖啡环效应 · 蒸发流把颗粒全押去边缘', 'Coffee-Ring Effect · Evaporation Convays Particles to the Edge');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateMar();
+  updateEvap();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(8.5, 4.5, 10.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.8, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 45;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fillLight = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fillLight.position.set(-7, 5, -6);
+scene.add(fillLight);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  slide: mat(0x2c3440, { roughness: 0.35, metalness: 0.4 }),
+  drop: new THREE.MeshPhysicalMaterial({ color: 0x8a5a34, roughness: 0.12, metalness: 0,
+    transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false }),
+  grainP: mat(0x6b4a2e, { roughness: 0.7, metalness: 0.1 }),
+  stain: mat(0x3a2513, { roughness: 0.85, metalness: 0, transparent: true, opacity: 0 }),
+  rim: mat(0xffd27a, { roughness: 0.4, metalness: 0.4, emissiveIntensity: 0.5 }),
+  chrome: mat(0xc2ccd8, { roughness: 0.25, metalness: 0.85 }),
+};
+
+/* ---------------- 物理与状态 ----------------
+   球冠液滴:接触半径 a(钉扎时不变),接触角 θ 从 52° 降到 ~12°
+   Rc=a/sinθ,h=Rc(1−cosθ);蒸发通量 J(r)∝(R−r)^{−1/2}
+   视觉:a=4 单位 ↔ 真实 2 mm(1 单位=0.5 mm) */
+const A0 = 4, TH0 = 0.9;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let mar = 0, evapRate = 1, e = 0;
+let dePin = false, dried = false;
+let et = 0;
+let curA = A0, curTh = TH0, curRc = A0 / Math.sin(TH0), builtTh = 0, builtA = 0;
+const fluxRatio = () => Math.sqrt(curA / (0.1 * curA));       // r=0.9a 处 / 中心
+const surfY = r => Math.sqrt(Math.max(curRc * curRc - r * r, 0.0001)) - curRc * Math.cos(curTh);
+
+/* ---------------- 场景装配:地面 + 载玻片 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(120, 0.1, 120), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(60, 30, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+const slide = new THREE.Mesh(new THREE.BoxGeometry(17, 0.3, 12), M.slide);
+slide.position.y = -0.17;
+scene.add(slide);
+
+/* ---------------- 液滴(球冠,可重建) ---------------- */
+let dropMesh = null;
+function rebuildDrop() {
+  if (dropMesh) { scene.remove(dropMesh); dropMesh.geometry.dispose(); }
+  const geo = new THREE.SphereGeometry(curRc, 44, 20, 0, TAU, 0, Math.max(curTh, 0.02));
+  dropMesh = new THREE.Mesh(geo, M.drop);
+  dropMesh.position.y = -curRc * Math.cos(curTh);
+  scene.add(dropMesh);
+  builtTh = curTh; builtA = curA;
+}
+rebuildDrop();
+const rimRing = new THREE.Mesh(new THREE.TorusGeometry(A0, 0.05, 8, 64), M.rim);
+rimRing.rotation.x = Math.PI / 2;
+rimRing.position.y = 0.02;
+scene.add(rimRing);
+
+/* 干涸沉积:环(圆环体)与均匀盘 */
+const stainRing = new THREE.Mesh(new THREE.TorusGeometry(A0 - 0.1, 0.2, 10, 64), M.stain);
+stainRing.rotation.x = Math.PI / 2;
+stainRing.position.y = 0.05;
+scene.add(stainRing);
+const stainDiscMat = M.stain.clone();
+const stainDisc = new THREE.Mesh(new THREE.CylinderGeometry(A0 * 0.94, A0 * 0.94, 0.06, 48), stainDiscMat);
+stainDisc.position.y = 0.03;
+scene.add(stainDisc);
+
+/* ---------------- 颗粒 ---------------- */
+const N_P = 130;
+const partMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.085, 8, 6), M.grainP, N_P);
+scene.add(partMesh);
+const pR = [], pA = [], pDep = [];
+const dummy = new THREE.Object3D();
+const cWet = new THREE.Color(0x8a6540), cDep = new THREE.Color(0x2e1c0e);
+function seedParticles() {
+  for (let i = 0; i < N_P; i++) {
+    pR[i] = Math.sqrt(Math.random()) * (A0 - 0.5);
+    pA[i] = Math.random() * TAU;
+    pDep[i] = false;
+    partMesh.setColorAt(i, cWet);
+  }
+  partMesh.instanceColor.needsUpdate = true;
+}
+seedParticles();
+
+/* ---------------- 蒸发通量箭头(红,沿 +x 剖面) ---------------- */
+const evapArrows = [];
+for (let i = 0; i < 9; i++) {
+  const rf = 0.15 + i / 8 * 0.78;
+  const a = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(rf * A0, 1, 0), 0.6, 0xff8a6a, 0.2, 0.11);
+  scene.add(a);
+  evapArrows.push({ a, rf });
+}
+/* 毛细流箭头(金,底层向外)与马兰戈尼箭头(青,表层向心) */
+const capArrows = [], marArrows = [];
+for (let i = 0; i < 5; i++) {
+  const rf = 0.2 + i / 4 * 0.62;
+  const x = rf * A0;
+  const a = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(x, 0.35, 0), 0.8, 0xffd25c, 0.22, 0.12);
+  a.line.material.transparent = true; a.cone.material.transparent = true;
+  scene.add(a);
+  capArrows.push({ a, rf });
+  const b = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(x, 1.2, 0), 0.8, 0x6be0d8, 0.22, 0.12);
+  b.line.material.transparent = true; b.cone.material.transparent = true;
+  scene.add(b);
+  marArrows.push({ a: b, rf });
+}
+function setArrowOpacity(ar, op) {
+  ar.line.material.opacity = op;
+  ar.cone.material.opacity = op;
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+let scenario = 0;                    // 当前步骤(标签/统计引用)
+function addLabel(textFn, clsFn, pos, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn });
+  div.textContent = textFn();
+  return o;
+}
+function nDep() { let n = 0; for (let i = 0; i < N_P; i++) if (pDep[i]) n++; return n; }
+function uniformity() {
+  let n = 0, s = 0, s2 = 0;
+  for (let i = 0; i < N_P; i++) if (pDep[i]) { n++; s += pR[i]; s2 += pR[i] * pR[i]; }
+  if (n < 5) return 0;
+  const mu = s / n;
+  return Math.sqrt(Math.max(s2 / n - mu * mu, 0)) / curA * 100;
+}
+addLabel(() => L(`接触线钉扎:粗糙度卡住三相线,R 不变、液滴只变矮`, `contact-line pinning: roughness grips the line - R fixed, droplet only flattens`), () => 'e',
+  new THREE.Vector3(0, 0.35, A0 + 0.5));
+addLabel(() => L(`蒸发通量 J∝(R−r)^{-1/2}:r=0.9R 处 = 中心的 ${fluxRatio().toFixed(1)} 倍`,
+  `evap flux J∝(R−r)^{-1/2}: at r=0.9R it is ${fluxRatio().toFixed(1)}x the center`), () => 'bad',
+  new THREE.Vector3(A0 + 1.3, 2.4, 0));
+addLabel(() => mar > 0.4
+  ? L(`马兰戈尼回流:表层向心流把颗粒送回去`, `Marangoni recirculation: surface flow carries particles back`)
+  : L(`毛细补流:中心 → 边缘,押送颗粒`, `capillary make-up flow: center → edge, herding particles`),
+  () => mar > 0.4 ? 'g' : 'o',
+  new THREE.Vector3(0, 1.9, 0));
+addLabel(() => L(`接触角 θ=${(curTh * 180 / Math.PI).toFixed(0)}° · a=${(curA / 2).toFixed(1)} mm · 已干 ${(e * 100).toFixed(0)}%`,
+  `contact angle θ=${(curTh * 180 / Math.PI).toFixed(0)}° · a=${(curA / 2).toFixed(1)} mm · ${((e) * 100).toFixed(0)}% dried`), () => 'b',
+  new THREE.Vector3(0, 3.1, 0));
+addLabel(() => nDep() > N_P * 0.85
+  ? (uniformity() > 35 ? L(`结果:均匀沉积(膜厚一致)`, `result: uniform deposit (even film)`) : L(`结果:咖啡环——颗粒全在周界`, `result: coffee ring - all particles at the rim`))
+  : L(`蒸发中:颗粒正被押向边缘…`, `evaporating: particles herded to the rim…`),
+  () => nDep() > N_P * 0.85 ? (uniformity() > 35 ? 'g' : 'bad') : 'st',
+  new THREE.Vector3(0, -0.9, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'ring', world: 1, tgt: [0, 0.5, 0],
+    b: '现象:干掉的咖啡是一圈环', be: 'The phenomenon: dried coffee forms a ring',
+    d: '一杯咖啡放干,杯底留下的不是均匀圆斑,而是一圈深褐色环——颗粒几乎全部聚到了周界。1997 年 Deegan 等人定量解释了它:不是「边缘渗咖啡」,而是钉扎+蒸发流共同导演的输运。同样的效应决定着喷墨打印、涂层与生物检测点样的成膜质量——点「重铺颗粒」现场重演。',
+    de: 'Let a drop of coffee dry and you find not a uniform stain but a dark brown ring - nearly every particle has migrated to the boundary. Deegan and colleagues quantified why in 1997: not "coffee seeping to the edge" but transport staged by pinning plus evaporation. The same effect governs film quality in inkjet printing, coatings and bio-assay spotting - hit "resuspend" to replay it live.' },
+  { hl: 'pin', world: 1, tgt: [0, 0.8, 2],
+    b: '钉扎:接触线被粗糙度卡住', be: 'Pinning: roughness grips the contact line',
+    d: '液滴压在粗糙表面上,三相接触线被微米级粗糙度与化学不均匀「卡住」(接触线钉扎):液滴无法收缩直径,只能保持接触半径不变、越蒸发越矮。看剖面:接触角从 ~52° 一路降到 ~12°,液面边缘始终钉在原地——这是一切后续输运的前提。',
+    de: 'A droplet resting on a rough surface has its three-phase contact line gripped by micron-scale roughness and chemical heterogeneity - the contact line is pinned: the droplet cannot shrink its diameter, only flatten as it evaporates. Watch the section: the contact angle falls from ~52° to ~12° while the rim stays put - the premise for everything that follows.' },
+  { hl: 'flux', world: 1, tgt: [2.5, 1.2, 0],
+    b: '边缘蒸发最快:J∝(R−r)^{−1/2}', be: 'The edge evaporates fastest: J∝(R−r)^{−1/2}',
+    d: '蒸发速率沿液面并不均匀:边缘的水汽扩散「锥角」更开阔,局部通量 J(r)∝(R−r)^{−1/2},越靠近接触线越强——r=0.9R 处约是中心的 3.2 倍,在边缘数学上发散(Deegan 1997)。看红色箭头的长度分布:边缘最长,中心最短。',
+    de: 'Evaporation is not uniform along the surface: vapor escapes through a wider cone at the rim, so the local flux J(r)∝(R−r)^{−1/2} grows toward the contact line - already 3.2x the center at r=0.9R and mathematically divergent at the edge (Deegan 1997). The red arrows encode it: longest at the rim, shortest at the center.' },
+  { hl: 'cap', world: 1, tgt: [0, 0.6, 0],
+    b: '毛细补流:把颗粒押去边缘(招牌)', be: 'Capillary make-up flow: herding particles outward (signature)',
+    d: '边缘失水最多,液面必须从体内补水:一根从液滴中心流向边缘的毛细流建立起来,悬浮颗粒被源源不断押送到接触线、就地沉积。看颗粒轨迹:全部划向边缘——液滴干透时,颗粒在周界堆成深色圆环,中心反而几乎留不下东西。这就是招牌瞬间。',
+    de: 'The rim loses water fastest, so the surface must be fed from within: a capillary flow from center to edge rises, carrying suspended particles to the contact line and depositing them on arrival. Watch the trajectories - every particle drifts outward; when the drop dries they pile into a dark ring at the rim and almost nothing remains in the middle. That is the signature moment.' },
+  { hl: 'mar', world: 1, tgt: [0, 1, 0],
+    b: '消除:去钉扎 / 表面活性剂 / 马兰戈尼', be: 'Cures: de-pinning / surfactants / Marangoni',
+    d: '消除有三招:让接触线动起来(疏水改性/振动)、加表面活性剂,或利用马兰戈尼回流——表面张力梯度驱动表层液体流回中心,把颗粒再送回去。把马兰戈尼滑块拉满或点「马兰戈尼回流」:内部环流反向,沉积当场变均匀;红酒「酒泪」沿杯壁上爬,正是同一张力的把戏。',
+    de: 'Three cures: unpin the line (hydrophobic coating or vibration), add surfactant, or exploit Marangoni recirculation - a surface-tension gradient drives the top layer back toward the center, returning particles. Drag the Marangoni slider to full or hit the button: the internal circulation reverses and the deposit turns uniform on the spot; wine "tears" climbing the glass play the same trick.' },
+  { hl: 'app', world: 1, tgt: [0, 0.5, 0],
+    b: '应用:喷墨打印的头号敌人', be: 'Application: public enemy No.1 of inkjet printing',
+    d: '工业上这是喷墨打印的头号敌人:墨滴干成环,导电线路中间缺料、边缘隆起,功能全废。配方靠聚合物添加剂与二元溶剂组合制造马兰戈尼对流;DNA 微阵列点样、法证血痕形态分析也都要与它打交道——一个厨房小现象,决定着印刷电子与诊断芯片的良率。',
+    de: 'In industry this is inkjet printing\'s public enemy: a drop that dries into a ring leaves conductive lines starved in the middle and bulging at the edges - functionally dead. Formulations fight back with polymer additives and binary-solvent blends that build Marangoni convection; DNA microarrays and forensic bloodstain analysis wrestle with it too. A kitchen-table phenomenon that decides the yield of printed electronics and diagnostic chips.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 0.8, 0);
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`蒸发通量:J(r) ∝ (R−r)^{−1/2}(Deegan 1997)→ r=0.9R 处 = 中心的 <b>${fluxRatio().toFixed(1)} 倍</b>,边缘发散`,
+      `Evap flux: J(r) ∝ (R−r)^{−1/2} (Deegan 1997) → ${fluxRatio().toFixed(1)}x the center at r=0.9R, divergent at the rim`) +
+    '<br>' +
+    L(`钉扎蒸发:R 不变,接触角 θ:${(TH0 * 180 / Math.PI).toFixed(0)}°→${(TH0 * 0.22 * 180 / Math.PI).toFixed(0)}°;去钉扎:R 收缩 ~82%、θ 近似不变`,
+      `Pinned drying: R fixed, θ:${(TH0 * 180 / Math.PI).toFixed(0)}°→${(TH0 * 0.22 * 180 / Math.PI).toFixed(0)}°; de-pinned: R shrinks ~82% at near-constant θ`) +
+    '<br>' +
+    L(`沉积:毛细流押送 → 均匀度 <b>${uniformity().toFixed(0)}%</b>(<15% = 环);马兰戈尼回流强度 <b>${mar.toFixed(0)}%</b>`,
+      `Deposit: capillary herding → uniformity <b>${uniformity().toFixed(0)}%</b> (<15% = ring); Marangoni recirculation <b>${mar.toFixed(0)}%</b>`);
+}
+
+/* ---------------- 按钮 / 视角 ---------------- */
+const btnMar = document.getElementById('btnMar'), btnPin = document.getElementById('btnPin'),
+  btnInject = document.getElementById('btnInject'), btnTop = document.getElementById('btnTop'),
+  btnSide = document.getElementById('btnSide'), btnReset = document.getElementById('btnReset');
+let camAnim = null;
+function flyTo(pos, tgt) {
+  camAnim = { t: 0, fromP: camera.position.clone(), toP: new THREE.Vector3(...pos),
+    fromT: controls.target.clone(), toT: new THREE.Vector3(...tgt) };
+}
+controls.addEventListener('start', () => { camAnim = null; });
+btnMar.addEventListener('click', () => {
+  mar = mar > 50 ? 0 : 100;
+  elMarSl.value = mar;
+  updateMar();
+});
+btnPin.addEventListener('click', () => {
+  dePin = !dePin;
+  btnPin.classList.toggle('on', dePin);
+  updateFormula();
+});
+btnInject.addEventListener('click', () => { seedParticles(); updateFormula(); });
+btnTop.addEventListener('click', () => flyTo([0.01, 16, 0.01], [0, 0.5, 0]));
+btnSide.addEventListener('click', () => flyTo([8.5, 4.5, 10.5], [0, 0.8, 0]));
+btnReset.addEventListener('click', () => {
+  mar = 0; elMarSl.value = 0;
+  evapRate = 1; elEvSl.value = 10;
+  e = 0; dried = false;
+  dePin = false; btnPin.classList.remove('on');
+  curA = A0; curTh = TH0;
+  seedParticles(); rebuildDrop();
+  flyTo([8.5, 4.5, 10.5], [0, 0.8, 0]);
+  updateMar(); updateEvap();
+  updateFormula();
+});
+
+/* ---------------- 通量分布曲线(示波器) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('蒸发通量 J(r):中心 → 边缘(发散)', 'evap flux J(r): center → edge (divergent)'), 4 * dpr, 10 * dpr);
+  scopeCtx.strokeStyle = 'rgba(255,138,106,.95)';
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  let maxY = 0;
+  const pts = [];
+  for (let i = 0; i <= 60; i++) {
+    const rf = i / 60;
+    const v = 1 / Math.sqrt(Math.max(1 - rf, 0.02));
+    pts.push([rf, v]);
+    maxY = Math.max(maxY, v);
+  }
+  for (let i = 0; i < pts.length; i++) {
+    const px = 4 * dpr + pts[i][0] * (cw - 10 * dpr);
+    const py = ch - 6 * dpr - Math.min(pts[i][1] / maxY, 1) * (ch - 18 * dpr);
+    i === 0 ? scopeCtx.moveTo(px, py) : scopeCtx.lineTo(px, py);
+  }
+  scopeCtx.stroke();
+  scopeCtx.fillStyle = 'rgba(150,160,175,.55)';
+  scopeCtx.fillText(L('中心', 'center'), 4 * dpr, ch - 1 * dpr);
+  scopeCtx.fillText(L('边缘(钉扎)', 'edge (pinned)'), cw - 56 * dpr, ch - 1 * dpr);
+  scopeCtx.strokeStyle = 'rgba(116,220,132,.7)';
+  scopeCtx.setLineDash([3 * dpr, 3 * dpr]);
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(4 * dpr, ch - 6 * dpr - (1 / maxY) * (ch - 18 * dpr) * 3.2);
+  scopeCtx.lineTo(cw - 6 * dpr, ch - 6 * dpr - (1 / maxY) * (ch - 18 * dpr) * 3.2);
+  scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  scopeCtx.fillStyle = 'rgba(116,220,132,.9)';
+  scopeCtx.fillText(L('3.2×', '3.2x'), cw - 40 * dpr, ch - 6 * dpr - (1 / maxY) * (ch - 18 * dpr) * 3.2 - 3 * dpr);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elMarSl = document.getElementById('marSl'), elMarVal = document.getElementById('marVal');
+const elEvSl = document.getElementById('evSl'), elEvVal = document.getElementById('evVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglVec = document.getElementById('tglVec');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateMar() {
+  mar = +elMarSl.value;
+  elMarVal.textContent = mar + '%';
+  updateFormula();
+}
+function updateEvap() {
+  evapRate = (+elEvSl.value) / 10;
+  elEvVal.textContent = evapRate.toFixed(1) + '×';
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elMarSl.addEventListener('input', updateMar);
+elEvSl.addEventListener('input', updateEvap);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglVec.addEventListener('change', () => {
+  for (const o of evapArrows) o.a.visible = tglVec.checked;
+  for (const o of capArrows) o.a.visible = tglVec.checked;
+  for (const o of marArrows) o.a.visible = tglVec.checked;
+});
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  stA.innerHTML = (e * 100).toFixed(0) + '<small> %</small>';
+  stA.className = 'v ' + (e < 0.9 ? 'ok' : e < 1 ? 'warn' : 'bad');
+  stB.innerHTML = fluxRatio().toFixed(1) + '<small> ×</small>';
+  stB.className = 'v ok';
+  stC.innerHTML = nDep() + '<small>/' + N_P + '</small>';
+  stC.className = 'v ok';
+  const u = uniformity();
+  stD.innerHTML = u.toFixed(0) + '<small> %</small>';
+  stD.className = 'v ' + (u > 35 ? 'ok' : u > 15 ? 'warn' : 'bad');
+  stE.innerHTML = '<small>' + (dried ? L('已干透', 'dried') : dePin ? L('去钉扎:线回缩', 'de-pinned: receding') : L('钉扎:R 不变', 'pinned: R fixed')) + '</small>';
+  stE.className = 'v ' + (dried ? 'warn' : dePin ? 'ok' : 'warn');
+  stF.innerHTML = mar + '<small> %</small>';
+  stF.className = 'v ' + (mar > 60 ? 'ok' : mar > 20 ? 'warn' : 'bad');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, dropT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  /* 蒸发推进 */
+  if (playing && !dried) {
+    e += dt * speed * 0.028 * evapRate;
+    if (e >= 1) { e = 1; dried = true; }
+    /* 形状演化:钉扎=θ 降 a 不变;去钉扎=a 收缩 θ 近似不变 */
+    if (dePin) { curA = A0 * (1 - 0.82 * e); curTh = TH0 * 0.69; }
+    else { curA = A0; curTh = TH0 * (1 - 0.78 * e); }
+    curRc = curA / Math.sin(Math.max(curTh, 0.05));
+  }
+  dropT += dt;
+  if (Math.abs(curTh - builtTh) > 0.01 || Math.abs(curA - builtA) > 0.05) {
+    if (dropT > 0.12) { dropT = 0; rebuildDrop(); }
+  }
+  rimRing.scale.set(curA / A0, 1, curA / A0);
+  rimRing.visible = !dried;
+  /* 颗粒输运 */
+  if (playing && !dried) {
+    for (let i = 0; i < N_P; i++) {
+      if (pDep[i]) continue;
+      const dr = 0.42 / Math.sqrt(Math.max(curA - pR[i], 0.35)) * (1 - 0.95 * mar / 100);
+      pR[i] += dr * dt * speed;
+      if (pR[i] >= curA - 0.12) {
+        pR[i] = curA - 0.05;
+        pDep[i] = true;
+        partMesh.setColorAt(i, cDep);
+        partMesh.instanceColor.needsUpdate = true;
+      } else if (pR[i] > curA) {
+        pR[i] = curA;
+        pDep[i] = true;
+        partMesh.setColorAt(i, cDep);
+        partMesh.instanceColor.needsUpdate = true;
+      }
+    }
+  }
+  for (let i = 0; i < N_P; i++) {
+    const y = pDep[i] ? 0.06 : 0.18 + 0.1 * Math.sin(i * 3.7 + et * 0.8);
+    dummy.position.set(Math.cos(pA[i]) * pR[i], y, Math.sin(pA[i]) * pR[i]);
+    dummy.scale.setScalar(1);
+    dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    partMesh.setMatrixAt(i, dummy.matrix);
+  }
+  partMesh.instanceMatrix.needsUpdate = true;
+  /* 沉积显示:环 vs 均匀盘 */
+  const u = uniformity(), nd = nDep() / N_P;
+  const ringFrac = clamp01(nd * 1.4) * clamp01(1 - u / 30);
+  stainRing.scale.setScalar(clamp01(0.5 + ringFrac));
+  stainRing.material.opacity = clamp01(ringFrac * 0.95);
+  stainDisc.material.opacity = clamp01(nd * clamp01(u / 32) * 0.85);
+  stainDisc.scale.setScalar(Math.max(curA / A0, 0.05));
+  /* 蒸发通量箭头 */
+  for (const o of evapArrows) {
+    const r = o.rf * curA;
+    const len = 0.22 + 1.45 * Math.sqrt(curA / Math.max(curA - r, 0.35)) / 3.3;
+    o.a.position.set(r, Math.max(surfY(r), 0.06) + 0.05, 0);
+    o.a.setLength(len, 0.2, 0.11);
+  }
+  /* 毛细流 / 马兰戈尼箭头 */
+  for (const o of capArrows) {
+    o.a.visible = tglVec.checked && mar < 65 && !dried;
+    setArrowOpacity(o.a, 1 - mar / 100);
+  }
+  for (const o of marArrows) {
+    const r = o.rf * curA;
+    o.a.visible = tglVec.checked && mar > 12 && !dried;
+    o.a.position.set(r, Math.max(surfY(r) - 0.22, 0.3), 0);
+    setArrowOpacity(o.a, mar / 100);
+  }
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.grainP, M.stain, M.rim, M.drop]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.25);
+  const boost = m => { m.emissiveIntensity = 0.5 + 0.3 * hlK; };
+  if (hl === 'ring' || hl === 'app') boost(M.stain);
+  else if (hl === 'pin') boost(M.rim);
+  else if (hl === 'flux') boost(M.drop);
+  else if (hl === 'cap') boost(M.grainP);
+  else if (hl === 'mar') { boost(M.grainP); boost(M.rim); }
+  /* 相机动画与目标 */
+  if (camAnim) {
+    camAnim.t += dt / 0.9;
+    const ee = E2(clamp01(camAnim.t));
+    camera.position.lerpVectors(camAnim.fromP, camAnim.toP, ee);
+    controls.target.lerpVectors(camAnim.fromT, camAnim.toT, ee);
+    if (camAnim.t >= 1) camAnim = null;
+  } else {
+    tmpV.fromArray(STEPS[scenario].tgt);
+    controls.target.lerp(tmpV, 0.04);
+  }
+  /* 标签 */
+  for (const r of labelReg) {
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglVec.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

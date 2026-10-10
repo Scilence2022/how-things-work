@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>优先级反转 · 中间任务把高优先级卡死</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="优先级反转:中间任务把高优先级卡死" data-en="Priority Inversion: A Middle Task Starves the High-Priority One">优先级反转:中间任务把高优先级卡死</h1>
+  <div class="sub" data-zh="低优先级 L 持有互斥锁;高优先级 H 就绪却被锁挡住只能等;不需要锁的中优先级 M 反复抢占 L——H 被 M 间接压制,优先级「倒转」。1997 年火星探路者号在火星上反复复位:气象任务(低,持锁)阻塞通信任务(高),总线管理任务(中)抢占,VxWorks 打开优先级继承后修复。解法:优先级继承(L 临时升到 H 的优先级,尽快放锁)或优先级天花板(直接按临界区最高优先级跑);默认剧本里 H 等锁 4.2 s、被插队 5 次,开继承缩到 2.2 s、0 次 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Low-priority L holds a mutex; high-priority H becomes ready but stalls on the lock; lock-free medium-priority M keeps preempting L - so M indirectly throttles H: priorities are 'inverted'. Mars Pathfinder (1997) kept resetting on Mars: the weather task (low, lock holder) blocked the comms task (high) while the bus manager (medium) preempted - fixed by enabling priority inheritance in VxWorks. Fixes: inheritance (L temporarily runs at H's priority, releases ASAP) or ceiling protocol (L runs at the critical section's highest priority). In the default script H waits 4.2 s and is cut in 5 times; with inheritance, 2.2 s and 0 times · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">低优先级 L 持有互斥锁;高优先级 H 就绪却被锁挡住只能等;不需要锁的中优先级 M 反复抢占 L——H 被 M 间接压制,优先级「倒转」。1997 年火星探路者号在火星上反复复位:气象任务(低,持锁)阻塞通信任务(高),总线管理任务(中)抢占,VxWorks 打开优先级继承后修复。解法:优先级继承(L 临时升到 H 的优先级,尽快放锁)或优先级天花板(直接按临界区最高优先级跑);默认剧本里 H 等锁 4.2 s、被插队 5 次,开继承缩到 2.2 s、0 次 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="H 等锁时长" data-en="H lock wait">H 等锁时长</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="H 完成时刻" data-en="H finish time">H 完成时刻</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="M 插队次数" data-en="M preemptions">M 插队次数</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="优先级继承" data-en="inheritance">优先级继承</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="当前时刻" data-en="current time">当前时刻</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="正在运行" data-en="running">正在运行</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip r" data-zh="H 高优先级(通信)" data-en="H high (comms)">H 高优先级(通信)</span>
+    <span class="chip o" data-zh="M 中优先级(总线)" data-en="M medium (bus)">M 中优先级(总线)</span>
+    <span class="chip b" data-zh="L 低优先级(气象,持锁)" data-en="L low (weather, holds lock)">L 低优先级(气象,持锁)</span>
+    <span class="chip g" data-zh="金条=L 继承优先级" data-en="gold = L inherited priority">金条=L 继承优先级</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnClassic" data-zh="经典反转(继承关)" data-en="classic inversion (no inherit)">经典反转(继承关)</button>
+    <button class="abtn" id="btnInherit" data-zh="优先级继承(招牌)" data-en="priority inheritance (signature)">优先级继承(招牌)</button>
+    <button class="abtn" id="btnPathfinder" data-zh="火星探路者剧本" data-en="Mars Pathfinder script">火星探路者剧本</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="M 任务周期" data-en="M task period">M 任务周期</label><input id="mPeriod" type="range" min="6" max="20" step="1" value="8"><span class="val" id="mPeriodVal">0.8 s</span></div>
+  <div class="row"><label data-zh="L 临界区长度" data-en="L critical section">L 临界区长度</label><input id="critLen" type="range" min="15" max="40" step="1" value="26"><span class="val" id="critLenVal">2.6 s</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglInherit" type="checkbox"> <span data-zh="优先级继承" data-en="priority inheritance">优先级继承</span></label>
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="优先级曲线" data-en="priority curve">优先级曲线</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../mutex-race/" data-zh="互斥锁与竞态" data-en="mutex & race conditions">互斥锁与竞态</a>
+    <a href="../deadlock-banker/" data-zh="死锁与银行家算法" data-en="deadlock & banker's algorithm">死锁与银行家算法</a>
+    <a href="../event-loop/" data-zh="事件循环" data-en="event loop">事件循环</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.rail.color.set(dark ? 0x39414c : 0x5d6774);          // 时间轨道
+  M.segH.color.set(dark ? 0xff6b6b : 0xe05252);          // H(红)
+  M.segM.color.set(dark ? 0xb18cff : 0x8f5fd0);          // M(紫)
+  M.segL.color.set(dark ? 0x74c0fc : 0x3b82c4);          // L(蓝)
+  M.inh.color.set(dark ? 0xffd25c : 0xd89c30);           // 继承中的 L(金)
+  M.wait.color.set(dark ? 0x8b93a3 : 0xa9b0b8);          // H 等锁(灰)
+  M.beamBad.color.set(dark ? 0xff5d5d : 0xe05252);       // 锁阻塞光幕(红)
+  M.beamOk.color.set(dark ? 0x7bd88f : 0x2f9e60);        // 继承光幕(绿)
+  M.lock.color.set(dark ? 0xd8b25c : 0xc09a45);          // 锁
+  M.cursor.color.set(dark ? 0xf2f5f9 : 0x33414f);        // 时间光标
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh],[data-en]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('优先级反转 · 中间任务把高优先级卡死', 'Priority Inversion · How a Middle Task Starves the High-Priority One');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updatePeriod();
+  updateCrit();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(-2.5, 6.8, 11.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.2, 0.9, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.5,
+    vertexColors: true, depthWrite: false }),
+  rail: mat(0x39414c, { roughness: 0.55, metalness: 0.5 }),
+  segH: mat(0xff6b6b, { roughness: 0.5, metalness: 0.35 }),
+  segM: mat(0xb18cff, { roughness: 0.5, metalness: 0.35 }),
+  segL: mat(0x74c0fc, { roughness: 0.5, metalness: 0.35 }),
+  inh: mat(0xffd25c, { roughness: 0.4, metalness: 0.4, emissiveIntensity: 0.55 }),
+  wait: mat(0x8b93a3, { roughness: 0.7, metalness: 0.2, transparent: true, opacity: 0.75 }),
+  beamBad: mat(0xff5d5d, { roughness: 0.6, metalness: 0, transparent: true, opacity: 0.22, emissiveIntensity: 0.4 }),
+  beamOk: mat(0x7bd88f, { roughness: 0.6, metalness: 0, transparent: true, opacity: 0.2, emissiveIntensity: 0.4 }),
+  lock: mat(0xd8b25c, { roughness: 0.35, metalness: 0.65 }),
+  cursor: mat(0xf2f5f9, { roughness: 0.3, metalness: 0.2, transparent: true, opacity: 0.85, emissiveIntensity: 1.1 }),
+};
+
+/* ---------------- 布局:1 单位 = 1 s ---------------- */
+const T = 10.5;                     // 时间窗
+const X0 = -5.6;                    // t=0 的 x
+const Z = { H: -1.75, M: 0, L: 1.75 };
+const Y0 = 0.55;                    // 轨道高度
+let inheritOn = false, mPeriodV = 0.8, critLenV = 2.6;
+
+/* ---------------- 调度模拟(与左图剧本一致,dt=2ms 逐步仿真) --------------
+   H:1.2 s 到达,跑 0.25 s 后请求锁;拿到锁再跑 1.0 s
+   L:0 s 到达,跑 0.8 s 后持锁进临界区(critLen),出临界区再跑 0.6 s
+   M:2.0 s 起每 mPeriod 秒就绪一次,每次需 CPU 0.4 s(不用锁)
+   无继承:L 被 M 反复抢占;有继承:H 等锁期间 L 升到 H 的优先级 */
+function runSchedule(inherit, critLen, mPeriod) {
+  const dt = 0.002;
+  let t = 0;
+  const Lq = [{ k: 'run', rem: 0.8 }, { k: 'crit', rem: critLen }, { k: 'run', rem: 0.6 }];
+  const Hq = [{ k: 'run', rem: 0.25 }, { k: 'lock' }, { k: 'run', rem: 1.0 }];
+  let mNext = 2.0, mRem = 0, iL = 0, iH = 0;
+  let lock = null, hWaiting = false, hWaitStart = 0, hWaitEnd = null;
+  let mPreempts = 0, lastRunner = null, hDone = null;
+  const segs = { H: [], M: [], L: [] };
+  const cur = { H: null, M: null, L: null };
+  function close(task) {
+    if (cur[task]) { const d = t - cur[task].start; if (d > 0.01) segs[task].push({ start: cur[task].start, dur: d }); cur[task] = null; }
+  }
+  function open(task) { if (!cur[task]) cur[task] = { start: t }; }
+  while (t < T) {
+    if (t >= mNext - 1e-9 && mRem <= 0) { mRem = 0.4; mNext += mPeriod; }
+    const hB = Hq[iH], lB = Lq[iL];
+    if (hB && hB.k === 'lock' && t >= 1.2) {
+      if (!hWaiting) { hWaiting = true; hWaitStart = t; }
+      if (lock === null) { hWaiting = false; hWaitEnd = t; lock = 'H'; Hq[iH].k = 'done'; iH++; }
+    }
+    const hArr = t >= 1.2;
+    const hRun = hArr && hB && hB.k === 'run' && hB.rem > 0;
+    const lEff = inherit && hWaiting && lock === 'L';   // L 继承 H 的优先级
+    let runner = null;
+    if (hRun) runner = 'H';
+    else if (mRem > 0 && !lEff) runner = 'M';
+    else if (lB && lB.rem > 0) runner = 'L';
+    if (runner === 'M' && lastRunner === 'L' && lock === 'L') mPreempts++;
+    if (runner !== lastRunner) { for (const k of ['H', 'M', 'L']) close(k); }
+    if (runner) {
+      open(runner);
+      if (runner === 'H') { hB.rem -= dt; if (hB.rem <= 0) { close('H'); iH++; if (iH >= Hq.length) hDone = t + dt; } }
+      else if (runner === 'M') { mRem -= dt; if (mRem <= 0) close('M'); }
+      else {
+        if (lB.k === 'crit' && lock === null) lock = 'L';
+        lB.rem -= dt;
+        if (lB.rem <= 0) { if (lB.k === 'crit' && lock === 'L') lock = null; close('L'); iL++; }
+      }
+      lastRunner = runner;
+    } else lastRunner = null;
+    t += dt;
+  }
+  for (const k of ['H', 'M', 'L']) close(k);
+  const critSegs = segs.L;
+  return { segs, hWait: hWaitEnd !== null ? hWaitEnd - hWaitStart : null,
+    hWaitStart, hWaitEnd, hDone, mPreempts,
+    lockStart: 0.8, lockEnd: 0.8 + critLen };
+}
+
+/* ---------------- 场景装配 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(140, 0.1, 140), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(60, 30, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* 三条泳道轨道 */
+for (const k of ['H', 'M', 'L']) {
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(T + 0.7, 0.08, 0.52), M.rail);
+  rail.position.set(X0 + T / 2, Y0 - 0.06, Z[k]);
+  scene.add(rail);
+}
+/* 时间光标 */
+const cursor = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.9, 4.6), M.cursor);
+cursor.position.set(X0, Y0 + 0.85, 0);
+scene.add(cursor);
+
+/* 锁(挂在 L 轨道临界区起点) */
+const lockG = new THREE.Group();
+lockG.position.set(0, 0, 0);
+scene.add(lockG);
+const lockBody = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.2, 0.14), M.lock);
+const lockShackle = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.028, 6, 16, Math.PI), M.lock);
+lockShackle.position.y = 0.12;
+lockG.add(lockBody, lockShackle);
+
+/* 阻塞光幕(H 等锁区间,H 轨道 ↔ L 轨道) */
+const beam = new THREE.Mesh(new THREE.BoxGeometry(1, 1.15, 3.5), M.beamBad);
+beam.visible = false;
+scene.add(beam);
+
+/* 段块容器(每次调度重建) */
+const segsG = new THREE.Group();
+scene.add(segsG);
+const blockGeo = new THREE.BoxGeometry(1, 1, 1);
+let blockList = [];      // {mesh, start, dur, kind}
+let sim = null;
+
+function rebuild() {
+  segsG.clear();
+  blockList = [];
+  sim = runSchedule(inheritOn, critLenV, mPeriodV);
+  const add = (start, dur, material, lane, hgt, kind) => {
+    const mesh = new THREE.Mesh(blockGeo, material);
+    mesh.position.y = Y0 + hgt / 2;
+    segsG.add(mesh);
+    blockList.push({ mesh, start, dur, lane, hgt, kind });
+  };
+  for (const s of sim.segs.H) add(s.start, s.dur, M.segH, 'H', 0.4, 'run');
+  for (const s of sim.segs.M) add(s.start, s.dur, M.segM, 'M', 0.4, 'run');
+  for (const s of sim.segs.L) add(s.start, s.dur, M.segL, 'L', 0.4, 'run');
+  if (sim.hWaitEnd !== null) add(sim.hWaitStart, sim.hWaitEnd - sim.hWaitStart, M.wait, 'H', 0.18, 'wait');
+  /* 挂锁定位在 L 临界区起点 */
+  lockG.position.set(X0 + sim.lockStart, Y0 + 0.38, Z.L);
+  lockG.visible = true;
+  updateFormula();
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+addLabel(() => L('H 高优先级 · 1.2 s 到达 · 需要锁', 'H high · arrives 1.2 s · needs the lock'), () => 'bad',
+  new THREE.Vector3(X0 - 0.9, Y0 + 0.55, Z.H), null, null);
+addLabel(() => L('M 中优先级 · 不需要锁 · 周期 ' + mPeriodV.toFixed(1) + ' s', 'M medium · lock-free · period ' + mPeriodV.toFixed(1) + ' s'), () => 'w',
+  new THREE.Vector3(X0 - 0.9, Y0 + 0.55, Z.M), null, null);
+addLabel(() => L('L 低优先级 · 持锁 ' + critLenV.toFixed(1) + ' s', 'L low · holds lock ' + critLenV.toFixed(1) + ' s'), () => 'b',
+  new THREE.Vector3(X0 - 0.9, Y0 + 0.55, Z.L), null, null);
+addLabel(() => sim && sim.hWaitEnd !== null
+    ? L(`H 被锁挡住:等 ${sim.hWait.toFixed(1)} s(红幕区间)`, `H stalled by lock: ${sim.hWait.toFixed(1)} s (red curtain)`)
+    : L('H 未被阻塞', 'H not blocked'), () => 'e',
+  new THREE.Vector3(0, Y0 + 1.75, 0), null, null);
+addLabel(() => inheritOn
+    ? L('继承开启:M 抢不动持锁的 L(金条)', 'inheritance ON: M cannot preempt lock-holding L (gold)')
+    : L('继承关闭:M 反复插队(紫条切碎蓝条)', 'inheritance OFF: M keeps cutting in (purple slices blue)'), () => inheritOn ? 'g' : 'bad',
+  new THREE.Vector3(0, Y0 + 2.25, 0), null, null);
+addLabel(() => L(`时间轴 0 → ${T.toFixed(1)} s · 1 格 = 1 s`, `timeline 0 → ${T.toFixed(1)} s · 1 unit = 1 s`), () => 'st',
+  new THREE.Vector3(X0 + T / 2, 0.12, Z.L + 1.1), null, null);
+addLabel(() => sim ? L(`M 插队 ${sim.mPreempts} 次`, `M preempted ${sim.mPreempts}×`) : '', () => 'st',
+  new THREE.Vector3(X0 + T + 0.8, Y0 + 0.5, Z.M), null, null);
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'segH', tgt: [0, 0.9, -0.9],
+    b: '理想:高优先级永远先跑', be: 'The ideal: highest priority always runs first',
+    d: '实时调度的承诺:CPU 永远给就绪任务里优先级最高的人。本页三个任务:H(高,通信)1.2 s 到达、M(中,总线管理)2.0 s 起每 0.8 s 需 CPU 0.4 s、L(低,气象)0 s 到达。没有共享资源时这套规则天衣无缝——但 H 和 L 共享一把互斥锁,故事从这里开始拐弯。',
+    de: 'Real-time scheduling promises the CPU always goes to the highest-priority ready task. Three tasks here: H (high, comms) arrives at 1.2 s; M (medium, bus manager) needs 0.4 s of CPU every 0.8 s from 2.0 s; L (low, weather) arrives at 0. With no shared resources the rule works flawlessly - but H and L share one mutex, and that is where the story bends.' },
+  { hl: 'segM', tgt: [0, 0.8, 0.6],
+    b: '反转三步:L 持锁,H 等锁,M 插队', be: 'Three beats: L holds, H waits, M cuts in',
+    d: '看紫色 M 条一次次插进蓝色 L 条中间:L 在 0.8 s 拿到锁进临界区,H 在 1.45 s 就绪却拿不到锁(灰条拉长);M 不需要锁,按优先级反复抢占 L——L 拖到 5.65 s 才放锁,H 白等 4.2 s、被插队 5 次。低优先级的 L 反而「绑架」了 H:优先级倒转。',
+    de: 'Watch purple M slice into blue L again and again: L takes the lock at 0.8 s, H turns ready at 1.45 s but cannot get it (the grey bar stretches); M needs no lock yet keeps preempting L by priority - L only releases at 5.65 s, so H waits 4.2 s across 5 preemptions. Low-priority L effectively hijacks high-priority H: inversion.' },
+  { hl: 'segH', tgt: [-1.2, 0.8, -0.6],
+    b: '火星探路者:1997 年的真实事故', be: 'Mars Pathfinder: the real 1997 incident',
+    d: '1997 年火星探路者号在火星上反复总线复位:气象数据任务(低,持锁)阻塞通信任务(高,等锁),总线管理任务(中)反复抢占——与左图剧本一模一样。地面团队用 JPL 的调试器追到互斥锁,远程打开 VxWorks 的优先级继承开关,系统随即恢复稳定;此后「优先级反转」成为嵌入式系统必修课。',
+    de: 'In 1997 Mars Pathfinder kept resetting its bus on Mars: the weather task (low, lock holder) blocked the comms task (high) while the bus manager (medium) preempted - exactly this script. JPL traced it to the mutex with a debugger, remotely enabled VxWorks priority inheritance, and the system stabilized; inversion became embedded-systems lore.' },
+  { hl: 'segL', tgt: [0.3, 0.8, 1.2],
+    b: '解法一:优先级继承(PIP)', be: 'Fix one: priority inheritance (PIP)',
+    d: '打开「优先级继承」开关:L 持锁期间被临时提升到 H 的优先级,M 再也插不进队——蓝色条连成一整段金条,L 在 3.65 s 准时放锁。H 等锁时间从 4.2 s 缩到 2.2 s,完成时间从 6.65 s 提前到 4.65 s。代价:实现要处理继承链与死锁,临界区本身仍然要短。',
+    de: 'Flip on "priority inheritance": while holding the lock, L temporarily runs at H\'s priority, so M can never cut in - the blue bars fuse into one gold bar and L releases at 3.65 s on schedule. H\'s wait shrinks from 4.2 s to 2.2 s and it finishes at 4.65 s instead of 6.65 s. Cost: inheritance chains and deadlock handling, and critical sections must still be short.' },
+  { hl: 'lock', tgt: [-1.4, 0.9, 1.4],
+    b: '解法二:优先级天花板(PCP)', be: 'Fix two: priority ceiling (PCP)',
+    d: '更狠的预防:给每把锁设「天花板」= 所有可能用它的任务的最高优先级;任务一拿锁就按天花板跑,根本不给 M 出场机会,还顺带阻断死锁。代价是必须在设计期算清每把锁的天花板,且天花板过高会拖慢中低优先级任务。FreeRTOS、VxWorks 等 RTOS 两种协议都内置。',
+    de: 'A stronger preventive: give each lock a "ceiling" equal to the highest priority of all tasks that may use it; the holder runs at the ceiling immediately, leaving M no chance to appear, and deadlock is blocked as a bonus. Cost: ceilings must be designed up front, and over-high ceilings slow everyone else. FreeRTOS and VxWorks ship both protocols.' },
+  { hl: 'wait', tgt: [0, 0.7, 0],
+    b: '拖滑块:制造你自己的反转', be: 'Drag the sliders: build your own inversion',
+    d: '把「M 任务周期」调小(M 更频繁)或「L 临界区」调大,灰条被紫条切得更碎、H 等得更久——切到「火星探路者剧本」(临界区 3.4 s、周期 0.7 s)时,H 要等 6.6 s、被插队 9 次,10.5 s 时限内 9.05 s 才跑完;再开继承:等锁 3.0 s、5.45 s 完成。',
+    de: 'Shrink the M period or stretch the L critical section and the grey bar gets sliced finer while H waits longer - on the Pathfinder script (3.4 s section, 0.7 s period) H waits 6.6 s across 9 preemptions and only finishes at 9.05 s of the 10.5 s window. Enable inheritance on the same script: 3.0 s wait, done by 5.45 s.' },
+  { hl: 'rail', tgt: [0, 0.8, 0],
+    b: '工程教训:锁是隐形的调度器', be: 'Engineering lesson: a lock is an invisible scheduler',
+    d: '互斥锁把「优先级」和「持有时长」耦合在一起:持锁者事实上拥有了所有等待者中最高的优先级。实时系统要做到:临界区只放内存操作、绝不做 I/O;审计每把锁的全部使用者;能无锁(原子操作/队列)就无锁。反转的教训属于一切并发系统——包括你手机里那个偶尔卡顿的 App。',
+    de: 'A mutex couples priority with holding time: whoever holds the lock effectively owns the highest priority of all waiters. Real-time rules: keep critical sections to memory ops, never I/O; audit every user of every lock; go lock-free (atomics, queues) when possible. The lesson belongs to all concurrent systems - including that occasionally janky phone app.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  if (!sim) return;
+  formulaEl.innerHTML =
+    L(`调度规则:CPU → 就绪任务中优先级最高者(H &gt; M &gt; L);H 在 <b>1.45 s</b> 就绪,却要等 L 的锁;M 每 <b>${mPeriodV.toFixed(1)} s</b> 需要 <b>0.4 s</b> CPU`,
+      `Rule: CPU → highest-priority ready task (H &gt; M &gt; L); H turns ready at <b>1.45 s</b> but needs L's lock; M demands <b>0.4 s</b> CPU every <b>${mPeriodV.toFixed(1)} s</b>`) +
+    '<br>' +
+    L(`优先级继承:hold(L) 期间 eff_prio(L) = max(prio(L), prio(等待者)) = <b>${inheritOn ? 'H 级' : 'L 级(未启用)'}</b>`,
+      `Inheritance: while hold(L), eff_prio(L) = max(prio(L), prio(waiters)) = <b>${inheritOn ? 'H level' : 'L level (off)'}</b>`) +
+    '<br>' +
+    L(`结果对比:H 等锁 <b>${sim.hWait === null ? '—' : sim.hWait.toFixed(1) + ' s'}</b> · M 插队 <b>${sim.mPreempts}</b> 次 · H 完成 <b>${sim.hDone === null ? '—' : sim.hDone.toFixed(1) + ' s'}</b>(继承关默认剧本 4.2 s / 5 次 / 6.65 s)`,
+      `Outcome: H wait <b>${sim.hWait === null ? '—' : sim.hWait.toFixed(1) + ' s'}</b> · M preempts <b>${sim.mPreempts}</b> · H done <b>${sim.hDone === null ? '—' : sim.hDone.toFixed(1) + ' s'}</b> (off-by-default script: 4.2 s / 5× / 6.65 s)`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnClassic = document.getElementById('btnClassic'), btnInherit = document.getElementById('btnInherit'),
+  btnPathfinder = document.getElementById('btnPathfinder'), btnReset = document.getElementById('btnReset');
+function syncSliders() {
+  elPeriod.value = Math.round(mPeriodV * 10);
+  elCrit.value = Math.round(critLenV * 10);
+  elPeriodVal.textContent = mPeriodV.toFixed(1) + ' s';
+  elCritVal.textContent = critLenV.toFixed(1) + ' s';
+}
+function applyScenario(inh, period, crit) {
+  inheritOn = inh;
+  mPeriodV = period; critLenV = crit;
+  tglInherit.checked = inh;
+  syncSliders();
+  rebuild();
+  btnClassic.classList.toggle('on', !inh && Math.abs(period - 0.8) < 0.01 && Math.abs(crit - 2.6) < 0.01);
+  btnInherit.classList.toggle('on', inh && Math.abs(period - 0.8) < 0.01 && Math.abs(crit - 2.6) < 0.01);
+  btnPathfinder.classList.toggle('on', !inh && Math.abs(period - 0.7) < 0.01 && Math.abs(crit - 3.4) < 0.01);
+}
+btnClassic.addEventListener('click', () => applyScenario(false, 0.8, 2.6));
+btnInherit.addEventListener('click', () => applyScenario(true, 0.8, 2.6));
+btnPathfinder.addEventListener('click', () => applyScenario(false, 0.7, 3.4));
+btnReset.addEventListener('click', () => { tNow = 0; applyScenario(false, 0.8, 2.6); });
+
+/* ---------------- 优先级曲线(示波器) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function runnerAt(t) {
+  if (!sim) return { p: 0, hWait: false };
+  let p = 0;
+  for (const [task, pr] of [['H', 1], ['M', 0.55], ['L', 0.22]]) {
+    for (const s of sim.segs[task]) if (t >= s.start && t < s.start + s.dur) p = pr;
+  }
+  const hWait = sim.hWaitEnd !== null && t >= sim.hWaitStart && t < sim.hWaitEnd;
+  return { p, hWait };
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const py = v => ch - (0.1 + 0.8 * clamp01(v)) * ch;
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('运行者优先级(H/M/L)· 灰点=H 正在等锁', 'runner priority (H/M/L) · grey dots = H blocked on lock'), 4 * dpr, 11 * dpr);
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.beginPath(); scopeCtx.moveTo(0, py(0)); scopeCtx.lineTo(cw, py(0)); scopeCtx.stroke();
+  if (!sim) return;
+  scopeCtx.strokeStyle = 'rgba(255,210,92,.95)';
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const N = 200;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N * T;
+    const { p } = runnerAt(t);
+    const x = i / N * cw;
+    i === 0 ? scopeCtx.moveTo(x, py(p)) : scopeCtx.lineTo(x, py(p));
+  }
+  scopeCtx.stroke();
+  scopeCtx.fillStyle = 'rgba(160,170,185,.8)';
+  for (let i = 0; i <= N; i++) {
+    const t = i / N * T;
+    const { hWait } = runnerAt(t);
+    if (hWait) scopeCtx.fillRect(i / N * cw - dpr, py(0.06), 2 * dpr, 3 * dpr);
+  }
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elPeriod = document.getElementById('mPeriod'), elPeriodVal = document.getElementById('mPeriodVal');
+const elCrit = document.getElementById('critLen'), elCritVal = document.getElementById('critLenVal');
+const tglInherit = document.getElementById('tglInherit');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updatePeriod() {
+  mPeriodV = (+elPeriod.value) / 10;
+  elPeriodVal.textContent = mPeriodV.toFixed(1) + ' s';
+  btnClassic.classList.remove('on'); btnInherit.classList.remove('on'); btnPathfinder.classList.remove('on');
+  rebuild();
+}
+function updateCrit() {
+  critLenV = (+elCrit.value) / 10;
+  elCritVal.textContent = critLenV.toFixed(1) + ' s';
+  btnClassic.classList.remove('on'); btnInherit.classList.remove('on'); btnPathfinder.classList.remove('on');
+  rebuild();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elPeriod.addEventListener('input', updatePeriod);
+elCrit.addEventListener('input', updateCrit);
+tglInherit.addEventListener('change', () => {
+  inheritOn = tglInherit.checked;
+  rebuild();
+  btnInherit.classList.toggle('on', inheritOn && Math.abs(mPeriodV - 0.8) < 0.01 && Math.abs(critLenV - 2.6) < 0.01);
+});
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  if (!sim) return;
+  const w = sim.hWait;
+  stA.innerHTML = w === null ? '—' : w.toFixed(1) + '<small> s</small>';
+  stA.className = 'v ' + (w === null ? '' : w <= 2.5 ? 'ok' : w <= 4.5 ? 'warn' : 'bad');
+  stB.innerHTML = sim.hDone === null ? '—' : sim.hDone.toFixed(1) + '<small> s</small>';
+  stB.className = 'v ' + (sim.hDone !== null && sim.hDone <= 5 ? 'ok' : 'warn');
+  stC.textContent = sim.mPreempts;
+  stC.className = 'v ' + (sim.mPreempts === 0 ? 'ok' : sim.mPreempts <= 5 ? 'warn' : 'bad');
+  stD.textContent = inheritOn ? L('开', 'ON') : L('关', 'OFF');
+  stD.className = 'v ' + (inheritOn ? 'ok' : 'bad');
+  stE.innerHTML = tNow.toFixed(1) + '<small> s</small>';
+  stE.className = 'v';
+  const { p } = runnerAt(tNow);
+  stF.innerHTML = '<small>' + (p === 1 ? 'H(高)' : p === 0.55 ? 'M(中)' : p > 0 ? 'L(低)' : L('空闲', 'idle')) + '</small>';
+  stF.className = 'v ok';
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let scenario = 0;
+let et = 0;
+let tNow = 0;
+const tmpV = new THREE.Vector3();
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  if (playing) {
+    tNow += dt * speed * 1.1;
+    if (tNow > T) tNow = 0;
+  }
+  /* 段块随光标挤出 */
+  for (const b of blockList) {
+    const sc = clamp01((tNow - b.start) / Math.max(0.02, b.dur));
+    const w = b.dur * E2(sc);
+    b.mesh.visible = w > 0.015;
+    b.mesh.scale.set(Math.max(0.015, w), b.hgt, 0.42);
+    b.mesh.position.x = b.start + w / 2;
+    b.mesh.position.z = Z[b.lane];
+    if (b.kind === 'run' && b.lane === 'L' && inheritOn && tNow >= b.start && tNow < b.start + b.dur
+        && sim && sim.hWaitEnd !== null && tNow >= sim.hWaitStart && tNow < sim.hWaitEnd) {
+      b.mesh.material = M.inh;             // L 继承期间变金
+    } else if (b.kind === 'run') {
+      b.mesh.material = b.lane === 'H' ? M.segH : b.lane === 'M' ? M.segM : M.segL;
+    }
+  }
+  /* 光标 */
+  cursor.position.x = X0 + tNow;
+  /* 锁阻塞光幕 */
+  if (sim && sim.hWaitEnd !== null) {
+    const vis = tNow >= sim.hWaitStart && tNow < sim.hWaitEnd;
+    beam.visible = vis;
+    const w = (sim.hWaitEnd - sim.hWaitStart) * E2(clamp01((tNow - sim.hWaitStart) / (sim.hWaitEnd - sim.hWaitStart)));
+    beam.scale.set(Math.max(0.02, w), 1, 1);
+    beam.position.set(sim.hWaitStart + w / 2, Y0 + 0.35, (Z.H + Z.L) / 2);
+    beam.material = inheritOn ? M.beamOk : M.beamBad;
+  } else beam.visible = false;
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.rail, M.segH, M.segM, M.segL, M.wait, M.lock]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.35);
+  const boost = m => { m.emissiveIntensity = 0.55 + 0.35 * hlK; };
+  if (hl === 'segH') boost(M.segH);
+  else if (hl === 'segM') boost(M.segM);
+  else if (hl === 'segL') boost(M.segL);
+  else if (hl === 'wait') boost(M.wait);
+  else if (hl === 'lock') boost(M.lock);
+  else if (hl === 'rail') { boost(M.rail); boost(M.segH); boost(M.segM); boost(M.segL); }
+  /* 相机目标 */
+  tmpV.fromArray(STEPS[scenario].tgt);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+applyScenario(false, 0.8, 2.6);
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
