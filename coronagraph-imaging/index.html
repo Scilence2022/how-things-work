@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>日冕仪直接成像 · 把恒星「关灯」</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="日冕仪直接成像:把恒星「关灯」找行星" data-en="Coronagraph Imaging: Switch the Star Off to Find Planets">日冕仪直接成像:把恒星「关灯」找行星</h1>
+  <div class="sub" data-zh="木星型行星比恒星暗 10⁸–10⁹ 倍,而望远镜衍射又把恒星光糊成爱里斑、铺到行星位置——直接看根本看不见。日冕仪用焦面/瞳面掩模(Lyot 点、四象限相位掩模、矢量涡)压制恒星光,配合变形镜造出「暗区」,对比度做到 10⁻⁸–10⁻¹⁰:掩模落位瞬间恒星环当场熄灭,暗区里行星亮点浮现。HR 8799 四行星系统正是一台「行星放映机」,重复成像可测自转与天气 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A Jupiter-like planet is 10⁸-10⁹ times fainter than its star, and diffraction smears starlight into an Airy pattern right over the planet's position - invisible by direct looking. A coronagraph suppresses starlight with focal/pupil masks (Lyot spot, four-quadrant phase mask, vector vortex) while a deformable mirror carves a 'dark hole', reaching contrasts of 10⁻⁸-10⁻¹⁰: the instant the mask drops, the stellar rings extinguish and planet dots surface in the dark zone. HR 8799's four planets make a planetary movie - repeat imaging measures spin and weather · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">木星型行星比恒星暗 10⁸–10⁹ 倍,而望远镜衍射又把恒星光糊成爱里斑、铺到行星位置——直接看根本看不见。日冕仪用焦面/瞳面掩模(Lyot 点、四象限相位掩模、矢量涡)压制恒星光,配合变形镜造出「暗区」,对比度做到 10⁻⁸–10⁻¹⁰:掩模落位瞬间恒星环当场熄灭,暗区里行星亮点浮现。HR 8799 四行星系统正是一台「行星放映机」,重复成像可测自转与天气 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="对比度 C" data-en="contrast C">对比度 C</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="可见行星" data-en="planets visible">可见行星</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="恒星光残留" data-en="stellar residual">恒星光残留</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="掩模状态" data-en="mask state">掩模状态</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="当前目标" data-en="target">当前目标</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="衍射极限 1.22λ/D" data-en="diffraction 1.22λ/D">衍射极限 1.22λ/D</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip o" data-zh="恒星 + 爱里斑(未掩模)" data-en="star + Airy pattern (unmasked)">恒星 + 爱里斑(未掩模)</span>
+    <span class="chip g" data-zh="行星亮点(比值>C 才可见)" data-en="planet dots (visible if ratio>C)">行星亮点(比值>C 才可见)</span>
+    <span class="chip b" data-zh="焦面掩模 + 变形镜" data-en="focal mask + deformable mirror">焦面掩模 + 变形镜</span>
+    <span class="chip r" data-zh="暗区残余斑纹" data-en="dark-hole speckles">暗区残余斑纹</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnMask" data-zh="掩模落位(招牌)" data-en="drop mask (signature)">掩模落位(招牌)</button>
+    <button class="abtn" id="btnHR" data-zh="HR 8799 四行星" data-en="HR 8799 four planets">HR 8799 四行星</button>
+    <button class="abtn" id="btnYoung" data-zh="年轻热巨行星" data-en="young hot giants">年轻热巨行星</button>
+    <button class="abtn" id="btnJup" data-zh="成熟木星型 10⁻⁹" data-en="mature Jupiters 10⁻⁹">成熟木星型 10⁻⁹</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="对比度指数 x" data-en="contrast exponent x">对比度指数 x</label><input id="cSl" type="range" min="3" max="10" step="0.1" value="8"><span class="val" id="cVal">10⁻⁸</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="径向亮度剖面" data-en="radial profile">径向亮度剖面</span></label>
+        <label><input id="tglVec" type="checkbox" checked> <span data-zh="残余斑纹" data-en="speckles">残余斑纹</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../exoplanet-transit/" data-zh="凌星法" data-en="exoplanet transit">凌星法</a>
+    <a href="../telescope-resolution/" data-zh="望远镜分辨率" data-en="telescope resolution">望远镜分辨率</a>
+    <a href="../adaptive-optics/" data-zh="自适应光学" data-en="adaptive optics">自适应光学</a>
+    <a href="../exoplanet-atmosphere/" data-zh="系外行星大气" data-en="exoplanet atmosphere">系外行星大气</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.star.color.set(dark ? 0xffdca8 : 0xd8a450);          // 恒星
+  M.planet.color.set(dark ? 0x74c0fc : 0x4a90d8);        // 行星
+  M.dm.color.set(dark ? 0x9fb2c8 : 0x7188a0);            // 变形镜
+  M.mask.color.set(dark ? 0x2a2f38 : 0x4a5260);          // 掩模
+  M.chrome.color.set(dark ? 0xc2ccd8 : 0x9aa6b4);
+  M.frame.color.set(dark ? 0x39414c : 0x5d6774);
+  M.detBase.color.set(dark ? 0x05070a : 0x10141c);       // 探测器底
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh],[data-en]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('日冕仪直接成像 · 把恒星「关灯」', 'Coronagraph Imaging · Switch the Star Off');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateContrast();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(9, 6.5, 17);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 3, 2);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 60;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  star: mat(0xffdca8, { roughness: 0.5, metalness: 0, emissiveIntensity: 1.5 }),
+  planet: mat(0x74c0fc, { roughness: 0.4, metalness: 0.2, emissiveIntensity: 0.5 }),
+  dm: mat(0x9fb2c8, { roughness: 0.3, metalness: 0.75 }),
+  mask: mat(0x2a2f38, { roughness: 0.5, metalness: 0.6 }),
+  chrome: mat(0xc2ccd8, { roughness: 0.25, metalness: 0.85 }),
+  frame: mat(0x39414c, { roughness: 0.5, metalness: 0.6 }),
+  detBase: new THREE.MeshBasicMaterial({ color: 0x05070a }),
+};
+
+/* ---------------- 物理与状态 ----------------
+   爱里斑:I=[2J₁(x)/x]²,第一暗环 x=3.8317 → 1.22λ/D
+   行星可见条件:F_p/F_★ > C(对比度)
+   状态:掩模 progress maskP 0→1;C=10⁻ˣ */
+function besselJ1(x) {
+  if (x < 1e-8) return 0;
+  let term = x / 2, sum = term, k = 0;
+  while (Math.abs(term) > 1e-12 && k < 40) {
+    k++;
+    term *= -(x * x / 4) / (k * (k + 1));
+    sum += term;
+  }
+  return sum;
+}
+const airy = x => x < 1e-9 ? 1 : Math.pow(2 * besselJ1(x) / x, 2);
+const X_FIRST_ZERO = 3.8317;
+const XHOLE = 5.0;                                   // 暗区半径(Airy 坐标)≈1.6 λ/D
+const holeAtt = x => x < XHOLE ? 0.02 + 0.98 * (x / XHOLE) * (x / XHOLE) : 1;
+const logMap = (I, C) => Math.pow(clamp01((Math.log10(Math.max(I * C, 1e-14)) + 6) / 6), 0.62);
+
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let cExp = 8;                                        // C = 10^-cExp
+let maskOn = false, maskP = 0;
+let et = 0, darkDirty = true;
+const MODES = {
+  hr:    { name: ['HR 8799 四行星', 'HR 8799 four planets'], ratio: [3e-5, 1e-5, 5e-6, 2e-6] },
+  young: { name: ['年轻热巨行星', 'young hot giants'], ratio: [1e-6, 4e-7, 2e-7, 1e-7] },
+  jup:   { name: ['成熟木星型', 'mature Jupiters'], ratio: [1e-9, 1.6e-9, 8e-10, 2e-9] },
+};
+let mode = 'hr';
+const SEP = [1.7, 2.9, 4.3, 6.2];                    // 分离(λ/D)
+const ANG0 = [0.5, 2.2, 3.6, 5.4];
+const CONTRAST = () => Math.pow(10, -cExp);
+
+/* ---------------- 场景装配:地面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(120, 0.1, 120), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(70, 30, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* ---------------- 恒星系统(左侧,物理世界) ---------------- */
+const sysG = new THREE.Group();
+sysG.position.set(-9.5, 2.6, -2.5);
+sysG.rotation.set(0.18, 0.35, 0);
+scene.add(sysG);
+const star = new THREE.Mesh(new THREE.SphereGeometry(1.05, 24, 18), M.star);
+sysG.add(star);
+const starGlow = new THREE.Mesh(new THREE.SphereGeometry(1.5, 20, 14),
+  new THREE.MeshBasicMaterial({ color: 0xffdca8, transparent: true, opacity: 0.12 }));
+sysG.add(starGlow);
+const ORB_R = [3.2, 4.8, 7.2, 10.4], PL_R = [0.22, 0.28, 0.34, 0.42], OMEGA = [0.34, 0.22, 0.15, 0.10];
+const sysRings = [], sysPlanets = [], sysAng = [0.3, 1.4, 2.6, 4.2];
+for (let i = 0; i < 4; i++) {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(ORB_R[i], 0.014, 6, 90),
+    new THREE.MeshBasicMaterial({ color: 0x8fa8c0, transparent: true, opacity: 0.28 }));
+  ring.rotation.x = Math.PI / 2;
+  sysG.add(ring);
+  sysRings.push(ring);
+  const pl = new THREE.Mesh(new THREE.SphereGeometry(PL_R[i], 14, 10), M.planet);
+  sysG.add(pl);
+  sysPlanets.push(pl);
+}
+
+/* ---------------- 探测器焦面(右侧,衍射成像) ---------------- */
+const detG = new THREE.Group();
+detG.position.set(7.5, 3.4, 7);
+detG.rotation.y = -0.4;
+scene.add(detG);
+const detBase = new THREE.Mesh(new THREE.BoxGeometry(10.4, 10.4, 0.12), M.detBase);
+detG.add(detBase);
+/* PSF 画布纹理:raw(未掩模)与 dark(掩模+暗区) */
+const PS = 256;
+function makeCanvas() { const c = document.createElement('canvas'); c.width = PS; c.height = PS; return c; }
+const rawCv = makeCanvas(), darkCv = makeCanvas();
+function paintPSF(cv, suppressed) {
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(PS, PS);
+  const C = suppressed ? CONTRAST() : 1;
+  for (let py = 0; py < PS; py++) {
+    for (let px = 0; px < PS; px++) {
+      const dx = (px - PS / 2) / (PS / 2) * 16, dy = (py - PS / 2) / (PS / 2) * 16;
+      const x = Math.hypot(dx, dy);
+      let I = airy(x);
+      if (suppressed) I *= C * holeAtt(x);
+      const b = Math.round(255 * logMap(I, 1));
+      const idx = (py * PS + px) * 4;
+      img.data[idx] = b; img.data[idx + 1] = Math.round(b * 0.94); img.data[idx + 2] = Math.round(b * 0.82);
+      img.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+paintPSF(rawCv, false);
+paintPSF(darkCv, true);
+const rawTex = new THREE.CanvasTexture(rawCv), darkTex = new THREE.CanvasTexture(darkCv);
+const psfRaw = new THREE.Mesh(new THREE.PlaneGeometry(9, 9),
+  new THREE.MeshBasicMaterial({ map: rawTex, transparent: true, opacity: 0.98 }));
+psfRaw.position.z = 0.08;
+detG.add(psfRaw);
+const psfDark = new THREE.Mesh(new THREE.PlaneGeometry(9, 9),
+  new THREE.MeshBasicMaterial({ map: darkTex, transparent: true, opacity: 0 }));
+psfDark.position.z = 0.12;
+detG.add(psfDark);
+/* 行星亮点(sprites) */
+function dotSprite() {
+  const cv = makeCanvas();
+  cv.width = cv.height = 64;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 30);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.35, 'rgba(190,230,255,.9)');
+  g.addColorStop(1, 'rgba(120,200,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(cv);
+}
+const dotTex = dotSprite();
+const detPlanets = [];
+for (let i = 0; i < 4; i++) {
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, transparent: true, opacity: 0, depthWrite: false }));
+  sp.scale.set(0.55, 0.55, 1);
+  const r = SEP[i] * 0.62;
+  sp.position.set(Math.cos(ANG0[i]) * r, Math.sin(ANG0[i]) * r, 0.2);
+  detG.add(sp);
+  detPlanets.push(sp);
+}
+/* 残余斑纹(暗区内的波前误差) */
+const N_SPEK = 60;
+const spekPos = new Float32Array(N_SPEK * 3);
+for (let i = 0; i < N_SPEK; i++) {
+  const r = Math.sqrt(Math.random()) * 4.1, a = Math.random() * TAU;
+  spekPos[i * 3] = Math.cos(a) * r; spekPos[i * 3 + 1] = Math.sin(a) * r; spekPos[i * 3 + 2] = 0.16;
+}
+const spekGeo = new THREE.BufferGeometry();
+spekGeo.setAttribute('position', new THREE.BufferAttribute(spekPos, 3));
+const spekMat = new THREE.PointsMaterial({ color: 0xffe8c8, size: 0.07, transparent: true, opacity: 0 });
+const speks = new THREE.Points(spekGeo, spekMat);
+detG.add(speks);
+/* 焦面掩模 + 吊杆(招牌道具) */
+const maskG = new THREE.Group();
+detG.add(maskG);
+const maskDisc = new THREE.Mesh(new THREE.CircleGeometry(0.62, 24),
+  new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.88, side: THREE.DoubleSide }));
+maskG.add(maskDisc);
+const maskRim = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.025, 6, 28), M.mask);
+maskG.add(maskRim);
+const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.6, 6), M.chrome);
+maskG.add(stalk);
+maskG.position.set(0, 0, 2.6);
+/* 变形镜(瞳面,七段六边形) */
+const dmG = new THREE.Group();
+dmG.position.set(2.5, 7.6, 3.4);
+dmG.rotation.set(-0.5, 0.4, 0.2);
+scene.add(dmG);
+for (let i = 0; i < 7; i++) {
+  const hx = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.08, 6), M.dm);
+  const ang = i * TAU / 6;
+  hx.position.set(i === 0 ? 0 : Math.cos(ang) * 0.62, i === 0 ? 0 : Math.sin(ang) * 0.62, 0);
+  hx.rotation.x = Math.PI / 2;
+  dmG.add(hx);
+}
+const dmLabelRod = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.2, 6), M.frame);
+dmLabelRod.position.y = -1.2;
+dmG.add(dmLabelRod);
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+let scenario = 0;                    // 当前步骤(标签/统计引用)
+function addLabel(textFn, clsFn, pos, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn });
+  div.textContent = textFn();
+  return o;
+}
+function nVisible() {
+  let n = 0;
+  for (let i = 0; i < 4; i++) if (MODES[mode].ratio[i] > CONTRAST()) n++;
+  return n;
+}
+addLabel(() => L(`类日恒星 F_★:行星比它暗 10⁸–10⁹ 倍`, `sun-like star F_★: planets are 10⁸-10⁹ fainter`), () => 'e',
+  new THREE.Vector3(0, 2.1, 0), sysG);
+addLabel(() => L(`焦面:爱里斑 I=[2J₁(x)/x]²,恒星光铺满探测器`, `focal plane: Airy I=[2J₁(x)/x]² floods the detector`), () => 'w',
+  new THREE.Vector3(0, 5.6, 0), detG);
+addLabel(() => maskP > 0.5
+  ? L(`掩模已落位:恒星环当场熄灭`, `mask in place: stellar rings extinguished`)
+  : L(`焦面掩模(Lyot 点 / 相位掩模 / 矢量涡)待命`, `focal mask (Lyot spot / phase mask / vortex) standby`), () => maskP > 0.5 ? 'g' : 'b',
+  new THREE.Vector3(0, 2.5, 0), maskG);
+addLabel(() => L(`暗区 dark hole:变形镜把残余星光「扫」出去 → C ~ 10⁻⁸–10⁻¹⁰`, `dark hole: the deformable mirror sweeps residual starlight out → C ~ 10⁻⁸-10⁻¹⁰`), () => 'g',
+  new THREE.Vector3(0, -5.4, 0), detG);
+addLabel(() => L(`瞳面:Lyot 光阑 + 变形镜(七段)`, `pupil: Lyot stop + deformable mirror (7 segments)`), () => 'b',
+  new THREE.Vector3(0, 1.6, 0), dmG);
+addLabel(() => L(`HR 8799:4×(5–10 M_J)年轻巨行星,17–68 AU,~40 pc`, `HR 8799: 4 young giants of 5-10 M_J, 17-68 AU, ~40 pc`), () => 'st',
+  new THREE.Vector3(0, -2.6, 0), sysG);
+addLabel(() => L(`当前 ${nVisible()}/4 颗可见(需 F_p/F_★ > C)`, `${nVisible()}/4 visible (needs F_p/F_★ > C)`), () => nVisible() === 4 ? 'g' : 'bad',
+  new THREE.Vector3(0, 5.9, 0), detG);
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'why', world: 1, tgt: [-9.5, 2.6, -2.5],
+    b: '为什么难:暗 10⁸–10⁹ 倍的邻居', be: 'Why it is hard: a neighbor 10⁸-10⁹ times fainter',
+    d: '想在照片里直接看到行星,亮度差是第一道坎:木星型行星反射母星光,对比度只有 10⁸–10⁹ 量级——相当于在探照灯旁看一只萤火虫。更糟的是望远镜衍射:恒星光永远不是一个点,而是铺开的环状图样,恰好糊到行星的位置上。凌星法和视向速度法绕开了这个问题,但它们看不到行星自己的光。',
+    de: 'Brightness is the first hurdle for direct imaging: a Jupiter-like planet reflects its star\'s light at a contrast of only 10⁸-10⁹ - a firefly beside a searchlight. Worse, diffraction means a telescope never images the star as a point: it spreads into concentric rings landing exactly where the planet sits. Transits and radial velocities sidestep this, but they never see the planet\'s own light.' },
+  { hl: 'airy', world: 1, tgt: [7.5, 3.4, 7],
+    b: '爱里斑:衍射把恒星光铺满焦面', be: 'The Airy pattern: diffraction floods the focal plane',
+    d: '圆孔衍射的焦面图样是 I=[2J₁(x)/x]²:中心亮斑加一圈圈光环,第一暗环在 1.22λ/D。D=6.5 m 的 JWST 在 2 μm 波长,1.22λ/D≈0.08″;一颗 5 AU 轨道的行星在 10 pc 外只有 0.5″——恰好落在恒星光环上。看右侧焦面:行星信号完全淹没在衍射环里。',
+    de: 'A circular aperture diffracts starlight into I=[2J₁(x)/x]²: a bright core wrapped in rings, first null at 1.22λ/D. For JWST (D=6.5 m) at 2 μm that is 0.08″; a planet at 5 AU around a star 10 pc away sits at 0.5″ - right on top of the rings. Look at the focal plane: the planet signal drowns in the diffraction pattern.' },
+  { hl: 'mask', world: 1, tgt: [7.5, 4.2, 7],
+    b: '掩模落位:恒星环当场熄灭(招牌)', be: 'Mask drops: the stellar rings go dark (signature)',
+    d: '日冕仪的核心是一个小小的掩模:焦面上的 Lyot 点/四象限相位掩模/矢量涡,正对恒星光斑,把恒星的衍射结构重新分配到瞳面上,再由 Lyot 光阑裁掉。点「掩模落位」:吊杆降下、掩模就位,爱里斑环当场熄灭,焦面只剩近乎全黑的底——恒星的「灯」被关掉了,行星的光却几乎不受影响。',
+    de: 'The coronagraph\'s heart is a tiny mask: a Lyot spot, four-quadrant phase mask or vector vortex placed exactly on the stellar image, redistributing the diffraction pattern onto the pupil where a Lyot stop crops it out. Hit "drop mask": the stalk descends, the rings extinguish on the spot, and the focal plane goes nearly black - the star\'s light is switched off while the planet\'s light passes almost untouched.' },
+  { hl: 'hole', world: 1, tgt: [5.5, 3.8, 6.5],
+    b: '暗区与变形镜:对比度 10⁻⁸–10⁻¹⁰', be: 'Dark hole and deformable mirror: contrast 10⁻⁸-10⁻¹⁰',
+    d: '掩模之外还要「打扫」:变形镜(瞳面可变形反射镜)逐点微调波前,把残余恒星光从指定区域干涉相消,造出一片「暗区」(dark hole)。地面望远镜配合自适应光学先修正大气;空间日冕仪(JWST NIRCam 已在用,罗马望远镜 CGI 目标 ~10⁻⁸)把对比度推到 10⁻⁸–10⁻¹⁰。',
+    de: 'After masking comes housekeeping: a deformable mirror nudges the wavefront point by point to cancel residual starlight inside a chosen region - the "dark hole". Ground telescopes chain this behind adaptive optics; space coronagraphs (JWST NIRCam already flies one; the Roman CGI targets ~10⁻⁸) push contrast to 10⁻⁸-10⁻¹⁰. Drag the contrast slider and watch the residual speckles brighten or fade.' },
+  { hl: 'hr', world: 1, tgt: [-9.5, 2.6, -2.5],
+    b: 'HR 8799:一部行星「纪录片」', be: 'HR 8799: a planetary documentary',
+    d: '2010 年起,HR 8799 的四颗 5–10 倍木星质量的年轻巨行星被直接拍下:轨道 17–68 AU、距离约 40 pc,行星仍带着形成余热自发光,在近红外比恒星只暗 10⁴–10⁵ 倍。多年的重复成像拼出它们的轨道「电影」,甚至测出了自转与大气云层天气——直接成像独家的能力。',
+    de: 'Since 2010, four young giants of 5-10 Jupiter masses around HR 8799 have been imaged directly: orbits of 17-68 AU at ~40 pc. Still glowing with formation heat, they are only 10⁴-10⁵ times fainter than the star in the near-infrared. Years of repeated imaging compose an orbital "movie" - even measuring rotation and cloud weather, a capability unique to direct imaging.' },
+  { hl: 'comp', world: 1, tgt: [0, 3.4, 4],
+    b: '互补:短周期找凌星,宽轨道靠成像', be: 'Complementary: transits for short periods, imaging for wide orbits',
+    d: '三种系外行星手段各有地盘:凌星与视向速度偏爱近距短周期行星(凌星概率 ∝1/a);微引力透镜中介轨道;直接成像偏爱年轻、热、宽轨道的巨行星——它们又亮又分得开,恰是掩模+暗区的主场。把目标切成「成熟木星型」(10⁻⁹):即便 C=10⁻⁸ 也一无所见,罗马时代的目标正是把 C 推到 10⁻¹⁰。',
+    de: 'Each planet-hunting method owns a territory: transits and radial velocities favor close-in short-period worlds (transit probability ∝1/a); microlensing covers intermediate orbits; direct imaging favors young, hot, wide-orbit giants - bright and well separated, exactly the dark hole\'s home turf. Switch to "mature Jupiters" (10⁻⁹): even at C=10⁻⁸ you see nothing - pushing to 10⁻¹⁰ is the next generation\'s goal.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 3, 2);
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`爱里斑:I = [2J₁(x)/x]²,第一暗环 1.22λ/D(JWST@2 μm ≈ <b>0.08″</b>);行星须落在暗区 ~2–8 λ/D`,
+      `Airy: I = [2J₁(x)/x]², first null at 1.22λ/D (JWST@2 μm ≈ <b>0.08″</b>); planets must sit in the dark zone ~2-8 λ/D`) +
+    '<br>' +
+    L(`对比度 C = 10⁻<b>${cExp.toFixed(1)}</b> → 恒星残影 = C×F_★;行星可见 ⇔ F_p/F_★ > C:当前 <b>${nVisible()}/4</b>`,
+      `Contrast C = 10⁻<b>${cExp.toFixed(1)}</b> → stellar residual = C×F_★; visible ⇔ F_p/F_★ > C: currently <b>${nVisible()}/4</b>`) +
+    '<br>' +
+    L(`HR 8799:4 颗 5–10 M_J,17–68 AU,~40 pc;年轻自发光 → 近红外对比度仅 10⁻⁴–10⁻⁵;罗马 CGI 目标 ~10⁻⁸`,
+      `HR 8799: 4 planets of 5-10 M_J, 17-68 AU, ~40 pc; young and self-luminous → near-IR contrast only 10⁻⁴-10⁻⁵; Roman CGI targets ~10⁻⁸`);
+}
+
+/* ---------------- 模式 / 掩模 / 复位 ---------------- */
+const btnMask = document.getElementById('btnMask'), btnHR = document.getElementById('btnHR'),
+  btnYoung = document.getElementById('btnYoung'), btnJup = document.getElementById('btnJup'),
+  btnReset = document.getElementById('btnReset');
+const presetBtns = { hr: btnHR, young: btnYoung, jup: btnJup };
+function setMode(id) {
+  mode = id;
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === id);
+  darkDirty = true;
+  updateFormula();
+}
+btnMask.addEventListener('click', () => {
+  maskOn = !maskOn;
+  btnMask.classList.toggle('on', maskOn);
+});
+btnHR.addEventListener('click', () => setMode('hr'));
+btnYoung.addEventListener('click', () => setMode('young'));
+btnJup.addEventListener('click', () => setMode('jup'));
+btnReset.addEventListener('click', () => {
+  maskOn = false; btnMask.classList.remove('on');
+  cExp = 8; elCSl.value = 8; updateContrast();
+  setMode('hr');
+  updateFormula();
+});
+
+/* ---------------- 径向亮度剖面(示波器) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('焦面径向亮度(对数):灰=未掩模,绿=掩模+暗区', 'radial intensity (log): grey=unmasked, green=mask+dark hole'), 4 * dpr, 10 * dpr);
+  const drawLine = (sup, col) => {
+    scopeCtx.strokeStyle = col;
+    scopeCtx.lineWidth = Math.max(1.2, 1.2 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i <= cw; i += 2) {
+      const x = i / cw * 16;
+      let I = airy(x);
+      if (sup) I *= CONTRAST() * holeAtt(x);
+      const y = ch - (0.06 + 0.88 * logMap(I, 1)) * ch;
+      i === 0 ? scopeCtx.moveTo(i, y) : scopeCtx.lineTo(i, y);
+    }
+    scopeCtx.stroke();
+  };
+  drawLine(false, 'rgba(160,170,185,.75)');
+  drawLine(true, 'rgba(123,216,143,.95)');
+  const xh = XHOLE / 16 * cw;
+  scopeCtx.strokeStyle = 'rgba(255,205,112,.5)';
+  scopeCtx.setLineDash([3 * dpr, 3 * dpr]);
+  scopeCtx.beginPath(); scopeCtx.moveTo(xh, 8 * dpr); scopeCtx.lineTo(xh, ch); scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  scopeCtx.fillStyle = 'rgba(255,205,112,.8)';
+  scopeCtx.fillText(L('暗区', 'dark hole'), xh + 4 * dpr, 20 * dpr);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elCSl = document.getElementById('cSl'), elCVal = document.getElementById('cVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglVec = document.getElementById('tglVec');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateContrast() {
+  cExp = +elCSl.value;
+  elCVal.textContent = '10⁻' + cExp.toFixed(1);
+  darkDirty = true;
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elCSl.addEventListener('input', updateContrast);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglVec.addEventListener('change', () => { speks.visible = tglVec.checked; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  stA.innerHTML = '10<sup>-' + cExp.toFixed(1) + '</sup>';
+  stA.className = 'v ' + (cExp >= 8 ? 'ok' : cExp >= 6 ? 'warn' : 'bad');
+  const nv = nVisible();
+  stB.innerHTML = nv + '<small>/4 颗</small>';
+  stB.className = 'v ' + (nv === 4 ? 'ok' : nv > 0 ? 'warn' : 'bad');
+  stC.innerHTML = maskP > 0.5 ? '10<sup>-' + cExp.toFixed(1) + '</sup><small> ×F_★</small>' : '<small>未压制</small>';
+  stC.className = 'v ' + (maskP > 0.5 ? (cExp >= 8 ? 'ok' : 'warn') : 'bad');
+  stD.innerHTML = '<small>' + (maskP > 0.5 ? L('已落位', 'in place') : maskP > 0.05 ? L('落位中…', 'descending…') : L('抬起', 'raised')) + '</small>';
+  stD.className = 'v ' + (maskP > 0.5 ? 'ok' : 'warn');
+  stE.innerHTML = '<small>' + L(MODES[mode].name[0], MODES[mode].name[1]) + '</small>';
+  stE.className = 'v ok';
+  stF.innerHTML = '0.08<small> ″ (JWST@2μm)</small>';
+  stF.className = 'v ok';
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, lastDarkT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt * speed;
+  /* 掩模升降 */
+  maskP += ((maskOn ? 1 : 0) - maskP) * Math.min(1, dt * 3.5);
+  maskG.position.set(0, 0, 2.6 - 2.5 * maskP);
+  psfDark.material.opacity = maskP;
+  psfRaw.material.opacity = 0.98 - 0.35 * maskP;
+  spekMat.opacity = maskP * clamp(30 * CONTRAST() / 1e-6, 0.02, 0.8);
+  /* 斑纹微抖(波前误差) */
+  if (speks.visible && playing) {
+    const pos = spekGeo.attributes.position;
+    for (let i = 0; i < N_SPEK; i++) {
+      pos.array[i * 3] += Math.sin(et * 2.1 + i) * 0.0025;
+      pos.array[i * 3 + 1] += Math.cos(et * 1.7 + i * 2) * 0.0025;
+    }
+    pos.needsUpdate = true;
+  }
+  /* 对比度变化后重绘暗区纹理(节流) */
+  if (darkDirty && et - lastDarkT > 0.25) {
+    lastDarkT = et;
+    darkDirty = false;
+    paintPSF(darkCv, true);
+    darkTex.needsUpdate = true;
+  }
+  /* 恒星系统运转 */
+  if (playing) for (let i = 0; i < 4; i++) {
+    sysAng[i] += dt * speed * OMEGA[i];
+    sysPlanets[i].position.set(Math.cos(sysAng[i]) * ORB_R[i], 0, Math.sin(sysAng[i]) * ORB_R[i]);
+  }
+  star.material.emissiveIntensity = 1.5 + 0.25 * Math.sin(et * 2);
+  /* 焦面行星亮点可见性 */
+  for (let i = 0; i < 4; i++) {
+    const vis = clamp01(MODES[mode].ratio[i] / CONTRAST() * (1 - 0.15 * (1 - maskP)));
+    detPlanets[i].material.opacity = vis * 0.95;
+  }
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.star, M.planet, M.dm, M.mask, M.chrome]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.25);
+  const boost = m => { m.emissiveIntensity = 0.5 + 0.3 * hlK; };
+  if (hl === 'why' || hl === 'airy') boost(M.star);
+  else if (hl === 'mask') boost(M.mask);
+  else if (hl === 'hole') boost(M.dm);
+  else if (hl === 'hr' || hl === 'comp') { boost(M.planet); boost(M.star); }
+  /* 相机目标 */
+  tmpV.fromArray(STEPS[scenario].tgt);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+setMode('hr');
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglVec.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

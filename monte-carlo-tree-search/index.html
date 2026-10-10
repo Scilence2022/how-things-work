@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蒙特卡洛树搜索 · 让胜率自己长出好棋</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="蒙特卡洛树搜索:让胜率自己长出好棋" data-en="Monte Carlo Tree Search: Let Win Rates Grow the Best Move">蒙特卡洛树搜索:让胜率自己长出好棋</h1>
+  <div class="sub" data-zh="每一轮四拍:选择(自根按 UCT=Q/N+C·√(ln N父/N_i) 下行)→ 扩展(叶节点加一个孩子)→ 模拟(随机走子到终局)→ 回传(胜负沿路径更新)。C≈1-1.7 调探索-利用平衡;树按战绩不对称生长,好分支自然变粗——19×19 围棋每步 ~250 种着法无法穷举,MCTS 不打分、只试下,数万次模拟就能在 9×9 棋盘接近业余水平;AlphaGo 再用策略网络引导选择、价值网络替代随机模拟 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Each round has four beats: Selection (descend from root by UCT=Q/N+C·√(ln N_parent/N_i)) → Expansion (add one child at a leaf) → Simulation (random playout to the end) → Backpropagation (update wins along the path). C≈1-1.7 balances exploration vs exploitation; the tree grows asymmetrically by track record, so good branches thicken on their own. Go has ~250 moves per turn on 19×19 - impossible to enumerate. MCTS never scores positions, it just tries moves: tens of thousands of playouts reach amateur strength on 9×9; AlphaGo then steers selection with a policy net and replaces rollouts with a value net · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">每一轮四拍:选择(自根按 UCT=Q/N+C·√(ln N父/N_i) 下行)→ 扩展(叶节点加一个孩子)→ 模拟(随机走子到终局)→ 回传(胜负沿路径更新)。C≈1-1.7 调探索-利用平衡;树按战绩不对称生长,好分支自然变粗——19×19 围棋每步 ~250 种着法无法穷举,MCTS 不打分、只试下,数万次模拟就能在 9×9 棋盘接近业余水平;AlphaGo 再用策略网络引导选择、价值网络替代随机模拟 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="模拟局数 N" data-en="playouts N">模拟局数 N</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="最优分支估计胜率" data-en="best branch estimate">最优分支估计胜率</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="真实最优胜率" data-en="true best win rate">真实最优胜率</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="已探明终局线" data-en="terminal lines probed">已探明终局线</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="当前节拍" data-en="current beat">当前节拍</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="探索系数 C" data-en="exploration C">探索系数 C</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="灰球=未访问节点" data-en="grey = unvisited node">灰球=未访问节点</span>
+    <span class="chip o" data-zh="金枝=访问多的粗枝" data-en="gold = heavily visited branch">金枝=访问多的粗枝</span>
+    <span class="chip g" data-zh="绿/红=胜率高/低" data-en="green/red = high/low win rate">绿/红=胜率高/低</span>
+    <span class="chip r" data-zh="光点=模拟脉冲" data-en="glow = simulation pulse">光点=模拟脉冲</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnLow" data-zh="C=0.3 贪婪" data-en="C=0.3 greedy">C=0.3 贪婪</button>
+    <button class="abtn" id="btnMid" data-zh="C=1.4 均衡(招牌)" data-en="C=1.4 balanced (signature)">C=1.4 均衡(招牌)</button>
+    <button class="abtn" id="btnHigh" data-zh="C=3.0 乱逛" data-en="C=3.0 wander">C=3.0 乱逛</button>
+    <button class="abtn" id="btnBurst" data-zh="快进 2000 局" data-en="fast-forward 2000">快进 2000 局</button>
+    <button class="abtn" id="btnRebuild" data-zh="重换棋局" data-en="new game tree">重换棋局</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="探索系数 C" data-en="exploration C">探索系数 C</label><input id="cslider" type="range" min="2" max="30" step="1" value="14"><span class="val" id="cVal">1.4</span></div>
+  <div class="row"><label data-zh="真实最优对照" data-en="oracle gap">真实最优对照</label><input id="oracle" type="range" min="0" max="100" step="1" value="0" disabled><span class="val" id="oracleVal">—</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="胜率曲线" data-en="win-rate curve">胜率曲线</span></label>
+        <label><input id="tglTruth" type="checkbox"> <span data-zh="终局真值(作弊视角)" data-en="terminal truths (oracle)">终局真值(作弊视角)</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../minimax-alphabeta/" data-zh="极小极大+αβ剪枝" data-en="minimax + alpha-beta">极小极大+αβ剪枝</a>
+    <a href="../monte-carlo/" data-zh="蒙特卡洛方法" data-en="Monte Carlo methods">蒙特卡洛方法</a>
+    <a href="../q-learning/" data-zh="Q 学习" data-en="Q-learning">Q 学习</a>
+    <a href="../neural-network/" data-zh="神经网络" data-en="neural network">神经网络</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.board.color.set(dark ? 0x6b5233 : 0x9c7f57);          // 棋盘木台
+  M.node.color.set(dark ? 0x8a8f96 : 0xa9b0b8);           // 未访问节点(灰)
+  M.root.color.set(dark ? 0xd8b25c : 0xc09a45);           // 根节点(金=主角)
+  M.edge.color.set(dark ? 0x55606e : 0x8b97a5);           // 树枝
+  M.term.color.set(dark ? 0x74c0fc : 0x3b82c4);           // 终局线(蓝,真值另染)
+  M.pulse.color.set(dark ? 0xffe2ae : 0xd89c30);          // 模拟脉冲
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh],[data-en]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('蒙特卡洛树搜索 · 让胜率自己长出好棋', 'Monte Carlo Tree Search · Let Win Rates Grow the Best Move');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateC();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 300);
+camera.position.set(6.5, 9.5, 23);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 3.0, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 60;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 12, 6);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-8, 6, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.5,
+    vertexColors: true, depthWrite: false }),
+  board: mat(0x6b5233, { roughness: 0.8, metalness: 0.05 }),
+  node: mat(0x8a8f96, { roughness: 0.5, metalness: 0.4 }),
+  root: mat(0xd8b25c, { roughness: 0.35, metalness: 0.65 }),
+  edge: mat(0x55606e, { roughness: 0.55, metalness: 0.45 }),
+  term: mat(0x74c0fc, { roughness: 0.4, metalness: 0.4 }),
+  pulse: mat(0xffe2ae, { roughness: 0.3, metalness: 0.2, emissiveIntensity: 1.6 }),
+};
+
+/* ---------------- 演示博弈树:分支 3 × 深度 3 = 27 条终局线 ----------------
+   终局胜率(0-1)预先随机固定 = 「真实胜负」;模拟 = 随机走到叶子亮出真值。
+   这是 MCTS 的玩具化:真实围棋的模拟是随机对局,统计意义相同。 */
+const BR = 3, DEPTH = 3;
+let nodes = [], root = null, trueBest = 0, bestLeaf = null;
+const treeG = new THREE.Group();
+scene.add(treeG);
+const nodeGeo = new THREE.SphereGeometry(1, 18, 14);
+const leafGeo = new THREE.OctahedronGeometry(1, 0);
+const edgeGeo = new THREE.CylinderGeometry(1, 1, 1, 6); edgeGeo.translate(0, 0.5, 0);
+
+function genTree() {
+  nodes = [];
+  function build(depth) {
+    const n = { id: nodes.length, depth, children: [], N: 0, W: 0,
+      terminal: depth === DEPTH, val: 0, expanded: false, revealed: false, mesh: null, edge: null };
+    if (n.terminal) n.val = 0.02 + Math.random() * 0.96;
+    nodes.push(n);
+    if (depth < DEPTH) for (let k = 0; k < BR; k++) n.children.push(build(depth + 1));
+    return n;
+  }
+  root = build(0);
+  root.expanded = true;
+  const leaves = nodes.filter(n => n.terminal);
+  const span = 0.85;
+  leaves.forEach((n, i) => {
+    n.pos = new THREE.Vector3((i - (leaves.length - 1) / 2) * span, 0.9 + DEPTH * 1.55,
+      (((n.id * 2654435761) >>> 0) % 1000 / 1000 - 0.5) * 2.8);
+  });
+  (function up(n) {
+    if (n.terminal) return;
+    n.children.forEach(up);
+    n.pos = new THREE.Vector3(
+      n.children.reduce((s, c) => s + c.pos.x, 0) / n.children.length,
+      0.9 + n.depth * 1.55,
+      n.children.reduce((s, c) => s + c.pos.z, 0) / n.children.length);
+  })(root);
+  trueBest = Math.max(...leaves.map(n => n.val));
+  bestLeaf = leaves.reduce((a, b) => a.val > b.val ? a : b);
+}
+function winColor(w) {                    // 胜率 0-1 → 红-金-绿
+  const c = new THREE.Color();
+  if (w < 0.5) c.setHex(0xff5d5d).lerp(new THREE.Color(0xffd25c), w * 2);
+  else c.setHex(0xffd25c).lerp(new THREE.Color(0x7bd88f), (w - 0.5) * 2);
+  return c;
+}
+function makeVisible(n) {
+  if (n.mesh) return;
+  n.mat = (n === root ? M.root : M.node).clone();
+  n.mesh = new THREE.Mesh(n.terminal ? leafGeo : nodeGeo, n.mat);
+  n.mesh.position.copy(n.pos);
+  treeG.add(n.mesh);
+  if (n !== root) {
+    n.edgeMat = M.edge.clone();
+    n.edge = new THREE.Mesh(edgeGeo, n.edgeMat);
+    treeG.add(n.edge);
+  }
+  updateNodeVis(n);
+}
+function updateNodeVis(n) {
+  if (!n.mesh) return;
+  const visited = n.N > 0;
+  const rr = 0.16 + (n === root ? 0.5 : 0.42) * Math.sqrt(n.N / Math.max(1, root.N + 4));
+  n.mesh.scale.setScalar(clamp(rr, 0.14, 0.95));
+  if (n.terminal) {
+    n.mesh.visible = n.revealed || truthOn;
+    n.mat.color.copy(n.revealed ? winColor(n.val) : M.term.color);
+    n.mat.emissive.copy(n.mat.color);
+    n.mat.emissiveIntensity = n.revealed ? 0.35 : 0.08;
+  } else if (visited) {
+    n.mat.color.copy(winColor(n.W / n.N));
+    n.mat.emissive.copy(n.mat.color);
+    n.mat.emissiveIntensity = 0.3;
+  } else {
+    n.mat.color.copy(M.node.color);
+    n.mat.emissiveIntensity = 0.06;
+  }
+  if (n.edge) {
+    const dir = new THREE.Vector3().subVectors(n.pos, n.parentPos || root.pos);
+    const len = dir.length() || 0.001;
+    n.edge.position.copy(n.parentPos || root.pos);
+    n.edge.quaternion.setFromUnitVectors(UP, dir.normalize());
+    const th = 0.025 + 0.13 * Math.sqrt(n.N / Math.max(1, root.N + 4));
+    n.edge.scale.set(th, len, th);
+    n.edge.visible = n.mesh.visible;
+  }
+}
+function updateAllVis() {
+  for (const n of nodes) {
+    if ((n.revealed || (n.terminal && truthOn)) && !n.mesh) makeVisible(n);
+  }
+  (function link(n) { if (n.terminal) return; for (const c of n.children) { c.parentPos = n.pos; link(c); } })(root);
+  for (const n of nodes) updateNodeVis(n);
+}
+function resetTreeVisual() {
+  treeG.clear();
+  for (const n of nodes) { n.mesh = null; n.edge = null; }
+  makeVisible(root);
+  updateAllVis();
+}
+genTree();
+makeVisible(root);
+
+/* 棋盘木台 + 脉冲光点 */
+const board = new THREE.Mesh(new THREE.CylinderGeometry(13.5, 13.5, 0.24, 48), M.board);
+board.position.y = -0.14;
+scene.add(board);
+const rim = new THREE.Mesh(new THREE.TorusGeometry(13.5, 0.09, 8, 60), M.root);
+rim.rotation.x = Math.PI / 2;
+rim.position.y = -0.02;
+scene.add(rim);
+const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 10), M.pulse);
+pulse.visible = false;
+scene.add(pulse);
+
+/* ---------------- MCTS 核心 ---------------- */
+let C = 1.4;
+function uct(c, parentN) {
+  if (c.N === 0) return Infinity;
+  return c.W / c.N + C * Math.sqrt(Math.log(Math.max(2, parentN)) / c.N);
+}
+function pickStart() {                    // 选择:全扩展则按 UCT 下行,否则停在可扩展点
+  const path = [root];
+  let n = root;
+  while (!n.terminal) {
+    const unex = n.children.filter(c => !c.expanded);
+    if (unex.length) break;
+    n = n.children.reduce((a, b) => uct(b, n.N) > uct(a, n.N) ? b : a);
+    path.push(n);
+  }
+  return { path, stop: n };
+}
+function startSim(animate) {
+  const { path, stop } = pickStart();
+  let expanded = null, node = stop;
+  if (!stop.terminal) {
+    const unex = stop.children.filter(c => !c.expanded);
+    expanded = unex[(Math.random() * unex.length) | 0];
+    expanded.expanded = true;
+    expanded.parentPos = stop.pos;
+    makeVisible(expanded);
+    path.push(expanded);
+    node = expanded;
+  }
+  let leaf = node;
+  while (!leaf.terminal) leaf = leaf.children[(Math.random() * leaf.children.length) | 0];  // 模拟:随机走子
+  leaf.revealed = true;
+  const v = leaf.val;
+  const segs = [];
+  for (let i = 0; i < path.length - 1; i++) segs.push({ a: path[i].pos, b: path[i + 1].pos });
+  if (animate) {
+    sim = { path, expanded, leaf, v, t: 0, phase: 0,
+      dA: (path.length - 1) * 0.16 + 0.1, dB: 0.3, dC: path.length * 0.13, popT: 0 };
+    sim.segs = segs;
+  } else {
+    backprop(path, v);
+  }
+  return { path, expanded, leaf, v };
+}
+function backprop(path, v) {              // 回传:W、N 沿路径 +1
+  for (const n of path) { n.N++; n.W += v; }
+  updateAllVis();
+  hist.push([estBest(), trueBest]);
+  if (hist.length > 140) hist.shift();
+}
+function instantSim() { startSim(false); }
+const estBest = () => root.N ? Math.max(...root.children.filter(c => c.N > 0).map(c => c.W / c.N)) : 0;
+let sim = null;
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let truthOn = false;
+let scenario = 0;
+let et = 0;
+const hist = [];
+let probed = () => nodes.filter(n => n.terminal && n.revealed).length;
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'board', tgt: [0, 1.2, 0],
+    b: '穷举的天花板:250 的 150 次方', be: 'The ceiling of brute force: 250^150',
+    d: '19×19 围棋平均每步约 250 种合法着法,一局 150+ 手:极小极大搜索树要展开约 10³⁶⁰ 个局面,比可观测宇宙的原子总数还多;而「局面好坏」的人工评估函数又难以下手——棋感、厚薄、劫材都难以量化。穷举和人工打分都走不通,得换一条路。',
+    de: 'A 19×19 Go game averages ~250 legal moves per turn over 150+ moves: a minimax tree would span ~10^360 positions, more than the atoms in the observable universe, and a hand-written evaluation of thickness, ko fights and shape is hopeless. Exhaustive search and manual scoring both dead-end - a different road is needed.' },
+  { hl: 'edge', tgt: [0, 3.0, 0],
+    b: 'MCTS:不打分,让胜率说话', be: 'MCTS: no scoring, let win rates speak',
+    d: '蒙特卡洛树搜索(MCTS)把评估交给「试下」。每一轮四拍:选择→扩展→模拟→回传。树不再对称展开,而是按战绩生长:胜率高的分支被反复访问、越变越粗,烂分支被冷落。看这棵演示树(分支 3 × 深度 3,共 27 条终局线)如何一轮轮长歪到好枝上。',
+    de: 'Monte Carlo Tree Search outsources evaluation to "trying moves". Each round has four beats: select, expand, simulate, backpropagate. The tree grows asymmetrically by track record: high-win-rate branches get revisited and thicken while bad ones are neglected. Watch this demo tree (branching 3 × depth 3, 27 terminal lines) lean into good moves.' },
+  { hl: 'root', tgt: [0, 1.6, 0],
+    b: '选择:UCT 平衡利用与探索', be: 'Selection: UCT balances exploit and explore',
+    d: '从根出发,每层挑 UCT=Q/N+C·√(ln N父/N_i) 最大的孩子下行:Q/N 是这条枝的实测胜率(利用项),根号项惩罚访问次数太少的枝(探索项,N父 是父节点访问数)。C≈1-1.7 调节两者配比——这一行公式就是整棵树的大脑,下面的光点正在按它下行。',
+    de: 'Descend from the root, each level taking the child with the largest UCT=Q/N+C·√(ln N_parent/N_i): Q/N is the measured win rate (exploit), the root term penalizes rarely visited branches (explore; N_parent is the parent visit count). C≈1-1.7 tunes the mix - this one formula is the brain of the whole tree.' },
+  { hl: 'node', tgt: [0, 4.4, 0],
+    b: '扩展+模拟:加一个孩子,随机走到终局', be: 'Expand + simulate: add a child, random-walk to the end',
+    d: '停在还有未扩展孩子的节点时,给叶节点添加一个孩子并让它入树(灰球亮起);随后从新节点随机走子直到终局,亮出这局的胜负。模拟又快又糙,单局噪声极大——演示树里就是一条随机终局线的真实胜率。但乘以上万次,大数定律会把真值磨出来。',
+    de: 'Stop at a node that still has unexpanded children, add one child to the tree (a grey ball lights up), then random-walk from it to a terminal state to reveal the outcome. A rollout is fast and crude - in this demo, the true win rate of one random terminal line. But over tens of thousands of trials, the law of large numbers polishes out the truth.' },
+  { hl: 'term', tgt: [0, 5.6, 0],
+    b: '回传:胜负沿路径更新', be: 'Backpropagation: updating wins along the path',
+    d: '模拟结果沿选择路径逐层回传:每层 W+=v、N+=1,节点胜率 W/N 和粗细当场更新。高胜率枝下一轮更易被 UCT 选中,粗枝吸走更多模拟、估计更准——正反馈让树自动把算力集中到关键分支,这就是「好分支自己长粗」。绿色=胜率高,红色=低。',
+    de: 'The playout result travels back up the selection path: each level gets W+=v, N+=1, so win rate W/N and thickness update on the spot. High-win branches are picked more often next round and attract more simulations, sharpening their estimates - a feedback loop that concentrates compute on the key lines. That is "good branches thicken themselves".' },
+  { hl: 'cslider', tgt: [0, 2.6, 0],
+    b: 'C 的两难:贪婪掉坑,撒网慢收', be: 'The C dilemma: greedy traps, wide nets converge slowly',
+    d: '拖动 C 滑块对照:C=0.3 时算法死磕最早发现的高胜率枝,真最优若藏在别处就永远陷在局部坑里(点「重换棋局」多试几次);C=3.0 时模拟被摊薄到全树,收敛慢得多。C≈1-1.7 的折中让利用与探索各得其所——这也是所有在线学习算法的通用权衡。',
+    de: 'Drag the C slider to compare: at C=0.3 the search hammers the first promising branch it finds and, if the true best hides elsewhere, sits in a local trap forever (try "new game tree" a few times). At C=3.0 simulations spread across the whole tree and convergence crawls. C≈1-1.7 gives exploit and explore their fair share.' },
+  { hl: 'node', tgt: [0, 3.6, 0],
+    b: 'AlphaGo:神经网络接管评估', be: 'AlphaGo: neural nets take over evaluation',
+    d: '2016 年的 AlphaGo 在 MCTS 骨架上换了两个引擎:策略网络引导选择,把搜索压向「人类直觉」的分支、裁掉九成以上着法;价值网络替代随机模拟,直接输出局面胜率,MCTS 只负责把判断在树上兑现。这套框架至今活跃于棋类与扑克 AI、物流排程和化学路线搜索。',
+    de: 'AlphaGo (2016) swapped two engines into the MCTS skeleton: a policy network steers selection toward "intuitive" moves, pruning 90%+ of options, and a value network replaces random rollouts by outputting a position win rate directly; MCTS just cashes those judgments into the tree. The framework still powers game AI, logistics scheduling and chemistry route search.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const kids = root.children.filter(c => c.N > 0);
+  const bc = kids.length ? kids.reduce((a, b) => b.W / b.N > a.W / a.N ? b : a) : null;
+  const uctTxt = bc
+    ? L(`最优子节点:N=<b>${bc.N}</b>,利用项 Q/N=<b>${(bc.W / bc.N).toFixed(3)}</b>,探索项 C·√(ln ${root.N}/${bc.N})=<b>${(C * Math.sqrt(Math.log(Math.max(2, root.N)) / bc.N)).toFixed(3)}</b>`,
+        `Best child: N=<b>${bc.N}</b>, exploit Q/N=<b>${(bc.W / bc.N).toFixed(3)}</b>, explore C·√(ln ${root.N}/${bc.N})=<b>${(C * Math.sqrt(Math.log(Math.max(2, root.N)) / bc.N)).toFixed(3)}</b>`)
+    : L('尚未开始模拟——点播放或快进按钮', 'No simulations yet - press play or fast-forward');
+  formulaEl.innerHTML =
+    L(`选择:UCT = Q/N + C·√(ln N父/N_i),当前 C=<b>${C.toFixed(1)}</b>`, `Selection: UCT = Q/N + C·√(ln N_parent/N_i), C=<b>${C.toFixed(1)}</b>`) +
+    '<br>' + uctTxt +
+    '<br>' +
+    L(`回传:W+=v、N+=1 → 胜率 W/N;演示树分支 3×深度 3=<b>27</b> 条终局线,已探明 <b>${probed()}</b> 条;19×19 围棋每步 ~250 着法,极小极大树 ~10³⁶⁰ 局面`,
+      `Backprop: W+=v, N+=1 → win rate W/N; demo tree 3×3=<b>27</b> terminal lines, <b>${probed()}</b> probed; 19×19 Go has ~250 moves/turn → minimax ~10^360 positions`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnLow = document.getElementById('btnLow'), btnMid = document.getElementById('btnMid'),
+  btnHigh = document.getElementById('btnHigh'), btnBurst = document.getElementById('btnBurst'),
+  btnRebuild = document.getElementById('btnRebuild'), btnReset = document.getElementById('btnReset');
+function setC(v) {
+  C = v;
+  elC.value = Math.round(v * 10);
+  btnLow.classList.toggle('on', Math.abs(v - 0.3) < 0.01);
+  btnMid.classList.toggle('on', Math.abs(v - 1.4) < 0.01);
+  btnHigh.classList.toggle('on', Math.abs(v - 3.0) < 0.01);
+  updateFormula();
+}
+function resetMachine(keepTree) {
+  if (!keepTree) { genTree(); resetTreeVisual(); }
+  for (const n of nodes) { n.N = 0; n.W = 0; n.expanded = n === root; n.revealed = false; }
+  sim = null; hist.length = 0;
+  updateAllVis();
+  updateFormula();
+}
+btnLow.addEventListener('click', () => setC(0.3));
+btnMid.addEventListener('click', () => setC(1.4));
+btnHigh.addEventListener('click', () => setC(3.0));
+btnBurst.addEventListener('click', () => { sim = null; for (let i = 0; i < 2000; i++) instantSim(); });
+btnRebuild.addEventListener('click', () => resetMachine(false));
+btnReset.addEventListener('click', () => resetMachine(false));
+
+/* ---------------- 胜率曲线(示波器:估计 vs 真值) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const py = v => ch - (0.08 + 0.84 * clamp01(v)) * ch;
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('最优分支估计(金) vs 真实最优(绿)', 'best-branch estimate (gold) vs true best (green)'), 4 * dpr, 11 * dpr);
+  if (hist.length < 2) return;
+  const series = [
+    { k: 0, c: 'rgba(255,210,92,.95)' },
+    { k: 1, c: 'rgba(123,216,143,.9)' },
+  ];
+  for (const ser of series) {
+    scopeCtx.strokeStyle = ser.c;
+    scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < hist.length; i++) {
+      const x = i / (hist.length - 1) * cw;
+      i === 0 ? scopeCtx.moveTo(x, py(hist[i][ser.k])) : scopeCtx.lineTo(x, py(hist[i][ser.k]));
+    }
+    scopeCtx.stroke();
+  }
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elC = document.getElementById('cslider'), elCVal = document.getElementById('cVal');
+const elOracle = document.getElementById('oracle'), elOracleVal = document.getElementById('oracleVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglTruth = document.getElementById('tglTruth');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateC() {
+  C = (+elC.value) / 10;
+  elCVal.textContent = C.toFixed(1);
+  btnLow.classList.toggle('on', Math.abs(C - 0.3) < 0.01);
+  btnMid.classList.toggle('on', Math.abs(C - 1.4) < 0.01);
+  btnHigh.classList.toggle('on', Math.abs(C - 3.0) < 0.01);
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elC.addEventListener('input', updateC);
+tglTruth.addEventListener('change', () => { truthOn = tglTruth.checked; updateAllVis(); });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent, tag) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow, tag });
+  div.textContent = textFn();
+  return o;
+}
+const phaseName = () => {
+  if (!sim) return L('待机/即时', 'idle/instant');
+  const t = sim.t;
+  if (t < sim.dA) return L('① 选择+扩展', '① select+expand');
+  if (t < sim.dA + sim.dB) return L('② 模拟(随机终局)', '② simulate (random playout)');
+  return L('③ 回传更新', '③ backpropagate');
+};
+addLabel(() => L(`根节点:N=${root.N} 局 · 估计最优 ${(estBest() * 100).toFixed(0)}%`,
+    `root: N=${root.N} playouts · best est ${(estBest() * 100).toFixed(0)}%`), () => 'st',
+  new THREE.Vector3(0, 0.15, 0), null, null, null);
+const bcLabel = addLabel(() => {
+  const kids = root.children.filter(c => c.N > 0);
+  if (!kids.length) return L('三个根孩子都还没试过——探索开始', 'no root child tried yet - exploration starts');
+  const bc = kids.reduce((a, b) => b.W / b.N > a.W / a.N ? b : a);
+  return L(`最优分支:W/N=${(bc.W / bc.N).toFixed(2)} · N=${bc.N}`, `best branch: W/N=${(bc.W / bc.N).toFixed(2)} · N=${bc.N}`);
+}, () => 'g', new THREE.Vector3(0, 2.6, 0), null, null, null);
+addLabel(() => {
+  const n = nodes.find(x => x.depth === 2 && x.N > 0);
+  return n ? L(`中层节点:N=${n.N} · 胜率 ${(n.W / n.N * 100).toFixed(0)}% 决定粗细`,
+      `mid node: N=${n.N} · win rate ${(n.W / n.N * 100).toFixed(0)}% sets thickness`)
+    : L('中层节点:等待被扩展', 'mid node: waiting to be expanded');
+}, () => 'w', new THREE.Vector3(0, 4.35, 0), null, null, null);
+addLabel(() => {
+  const n = nodes.find(x => x.terminal && !x.revealed);
+  if (n) return L('未访问终局线:胜率未知', 'unvisited terminal: win rate unknown');
+  return L(`已探明 ${probed()}/27 条终局线`, `${probed()}/27 terminal lines probed`);
+}, () => 'b', new THREE.Vector3(-6.8, 5.85, 0), null, null, null);
+const truthLabel = addLabel(() => L(`真实最优 ${(trueBest * 100).toFixed(0)}%(作弊视角)`,
+    `true best ${(trueBest * 100).toFixed(0)}% (oracle view)`), () => 'e',
+  new THREE.Vector3(6.8, 6.15, 0), null, null, 'truth');
+addLabel(() => L(`节拍:${phaseName()}`, `beat: ${phaseName()}`), () => 'st',
+  new THREE.Vector3(0, 7.0, 0), null, null, null);
+truthLabel.visible = false;
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  stA.textContent = root.N;
+  stA.className = 'v';
+  const est = estBest(), gap = Math.abs(est - trueBest);
+  stB.textContent = (est * 100).toFixed(1) + '%';
+  stB.className = 'v ' + (gap < 0.04 ? 'ok' : gap < 0.12 ? 'warn' : 'bad');
+  stC.textContent = (trueBest * 100).toFixed(1) + '%';
+  stC.className = 'v';
+  stD.textContent = probed() + '/27';
+  stD.className = 'v ' + (probed() === 27 ? 'ok' : '');
+  stE.innerHTML = '<small>' + phaseName() + '</small>';
+  stE.className = 'v ok';
+  stF.textContent = C.toFixed(1);
+  stF.className = 'v ' + (C >= 0.8 && C <= 2.0 ? 'ok' : 'warn');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+const tmpV = new THREE.Vector3();
+const tmpV2 = new THREE.Vector3();
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  /* 推进一局模拟动画;高速时附加即时模拟 */
+  if (playing) {
+    if (!sim) startSim(true);
+    if (sim) {
+      sim.t += dt * speed * 1.7;
+      const { dA, dB, segs, path, expanded, leaf } = sim;
+      pulse.visible = true;
+      if (sim.t < dA) {                                   // ① 选择+扩展:光点沿路径下行
+        const u = clamp01(sim.t / dA) * (segs.length);
+        const si = Math.min(segs.length - 1, Math.floor(u));
+        const f = u - si;
+        pulse.position.lerpVectors(segs[si].a, segs[si].b, f);
+      } else if (sim.t < dA + dB) {                       // ② 模拟:弧线飞向随机终局
+        const u = (sim.t - dA) / dB;
+        const from = (expanded || path[path.length - 1]).pos;
+        pulse.position.lerpVectors(from, leaf.pos, u);
+        pulse.position.y += Math.sin(u * Math.PI) * 0.8;
+      } else {                                            // ③ 回传:光点沿路径上行
+        const u = clamp01((sim.t - dA - dB) / sim.dC) * path.length;
+        const si = Math.min(path.length - 1, Math.floor(u));
+        const f = u - si;
+        pulse.position.lerpVectors(path[si].pos, path[Math.max(0, si - 1)].pos, f);
+        if (!sim.applied && u >= 0.02) { sim.applied = true; backprop(path, sim.v); }
+      }
+      if (sim.t >= dA + dB + sim.dC) { sim = null; pulse.visible = false; }
+    }
+    const extra = speed > 1.5 ? Math.floor((speed - 1.4) * 3) : 0;
+    for (let i = 0; i < extra; i++) instantSim();
+  } else {
+    pulse.visible = false;
+  }
+  /* 展中的扩展节点弹性放大 */
+  if (sim && sim.expanded && sim.expanded.mesh && sim.t < sim.dA) {
+    sim.expanded.mesh.scale.setScalar(Math.max(0.14, 0.2 + 0.28 * Math.sin(clamp01(sim.t / sim.dA) * Math.PI)));
+  }
+  /* 终局八面体慢速自旋 */
+  for (const n of nodes) if (n.terminal && n.mesh && n.mesh.visible) n.mesh.rotation.y += dt * 0.8;
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.board, M.node, M.root, M.edge, M.term, M.pulse]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.35);
+  const boost = m => { m.emissiveIntensity = 0.55 + 0.35 * hlK; };
+  if (hl === 'board') boost(M.board);
+  else if (hl === 'edge') boost(M.edge);
+  else if (hl === 'root') boost(M.root);
+  else if (hl === 'node') boost(M.node);
+  else if (hl === 'term') boost(M.term);
+  else if (hl === 'cslider') { boost(M.root); boost(M.edge); }
+  /* 相机目标 */
+  tmpV.fromArray(STEPS[scenario].tgt);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    r.o.visible = labelsOn && (!r.tag || r.tag !== 'truth' || truthOn);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  /* 真实最优对照滑块(只读显示差距) */
+  const gap = Math.abs(estBest() - trueBest);
+  elOracle.value = Math.round(clamp01(1 - gap) * 100);
+  elOracleVal.textContent = '差距 ' + (gap * 100).toFixed(1) + '%';
+  if (tglCurve.checked) drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglTruth.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

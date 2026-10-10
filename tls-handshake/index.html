@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TLS 握手 · 一条连接的三重保险</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="TLS 握手:一条连接的三重保险" data-en="The TLS Handshake: Triple Insurance for One Connection">TLS 握手:一条连接的三重保险</h1>
+  <div class="sub" data-zh="TLS 1.3 用 1 个往返(1-RTT)谈成三件事:ClientHello(随机数+密码套件+X25519 密钥共享)→ ServerHello+证书链+Finished → 客户端验完证书链回 Finished。证书链「根 CA←中间 CA←站点证书」逐级用上级公钥验签,锚在内置根信任库;ECDHE 临时椭圆曲线密钥每次会话全新——服务器私钥将来泄露也解不开历史流量(前向保密);Finished 对全部握手消息做 HMAC,中间人篡改任何一步当场败露;TLS 1.2 的 RSA 密钥传输(2-RTT、无前向保密)已被淘汰 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="TLS 1.3 settles three things in one round trip (1-RTT): ClientHello (random + cipher suites + X25519 key share) → ServerHello + certificate chain + Finished → client verifies the chain and replies Finished. The chain root CA ← intermediate CA ← site cert is verified level by level with the issuer's public key, anchored in the built-in trust store; ECDHE ephemeral keys are fresh every session - a future server-key leak cannot decrypt past traffic (forward secrecy); Finished HMACs the whole transcript, so any MITM tampering fails on the spot; TLS 1.2's RSA key transport (2-RTT, no forward secrecy) is retired · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">TLS 1.3 用 1 个往返(1-RTT)谈成三件事:ClientHello(随机数+密码套件+X25519 密钥共享)→ ServerHello+证书链+Finished → 客户端验完证书链回 Finished。证书链「根 CA←中间 CA←站点证书」逐级用上级公钥验签,锚在内置根信任库;ECDHE 临时椭圆曲线密钥每次会话全新——服务器私钥将来泄露也解不开历史流量(前向保密);Finished 对全部握手消息做 HMAC,中间人篡改任何一步当场败露;TLS 1.2 的 RSA 密钥传输(2-RTT、无前向保密)已被淘汰 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="握手轮次" data-en="round trips">握手轮次</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="握手耗时(单程延迟×轮次)" data-en="handshake time (delay × RTT)">握手耗时(单程延迟×轮次)</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="密钥交换" data-en="key exchange">密钥交换</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="前向保密" data-en="forward secrecy">前向保密</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="证书链验签" data-en="chain verified">证书链验签</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="连接状态" data-en="status">连接状态</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="客户端 / 服务器" data-en="client / server">客户端 / 服务器</span>
+    <span class="chip o" data-zh="飞行中的握手报文" data-en="in-flight handshake message">飞行中的握手报文</span>
+    <span class="chip g" data-zh="证书链(三级验签)" data-en="cert chain (3-level verify)">证书链(三级验签)</span>
+    <span class="chip r" data-zh="中间人攻击者" data-en="man-in-the-middle">中间人攻击者</span>
+  </div>
+  <div id="actions">
+    <button class="abtn on" id="btnRun" data-zh="正常握手(招牌)" data-en="normal handshake (signature)">正常握手(招牌)</button>
+    <button class="abtn" id="btnMitm" data-zh="中间人攻击" data-en="man-in-the-middle">中间人攻击</button>
+    <button class="abtn" id="btnTls12" data-zh="TLS 1.2 RSA 对照" data-en="TLS 1.2 RSA comparison">TLS 1.2 RSA 对照</button>
+    <button class="abtn" id="btnCert" data-zh="展开证书链" data-en="expand cert chain">展开证书链</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="单程延迟" data-en="one-way delay">单程延迟</label><input id="delay" type="range" min="10" max="100" step="5" value="30"><span class="val" id="delayVal">30 ms</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="阶段曲线" data-en="phase curve">阶段曲线</span></label>
+        <label><input id="tglChain" type="checkbox" checked> <span data-zh="证书链展开" data-en="cert chain shown">证书链展开</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../diffie-hellman/" data-zh="Diffie-Hellman" data-en="Diffie-Hellman">Diffie-Hellman</a>
+    <a href="../rsa-crypto/" data-zh="RSA 加密" data-en="RSA crypto">RSA 加密</a>
+    <a href="../cryptographic-hash/" data-zh="密码学哈希" data-en="cryptographic hash">密码学哈希</a>
+    <a href="../ecc-crypto/" data-zh="椭圆曲线" data-en="elliptic curves">椭圆曲线</a>
+    <a href="../aes-crypto/" data-zh="AES 加密" data-en="AES crypto">AES 加密</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.client.color.set(dark ? 0x4a7dbd : 0x6f95c9);        // 客户端(蓝)
+  M.server.color.set(dark ? 0x55606e : 0x8b97a5);        // 服务器机柜
+  M.wire.color.set(dark ? 0xc2ccd8 : 0x9aa6b4);          // 通信链路
+  M.packet.color.set(dark ? 0xd8b25c : 0xc09a45);        // 报文(金=主角)
+  M.cert.color.set(dark ? 0x9db4d6 : 0x7f96b8);          // 证书
+  M.ok.color.set(0x7bd88f);                              // 验签通过
+  M.bad.color.set(0xff5d5d);                             // 验签失败/攻击者
+  M.gem.color.set(dark ? 0xffe2ae : 0xd89c30);           // 会话密钥宝石
+  M.ring.color.set(0x7bd88f);                            // HMAC 环
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh],[data-en]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('TLS 握手 · 一条连接的三重保险', 'TLS Handshake · Triple Insurance for One Connection');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateDelay();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(-3.2, 4.6, 13.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.5,
+    vertexColors: true, depthWrite: false }),
+  client: mat(0x4a7dbd, { roughness: 0.4, metalness: 0.6 }),
+  server: mat(0x55606e, { roughness: 0.45, metalness: 0.65 }),
+  wire: mat(0xc2ccd8, { roughness: 0.25, metalness: 0.85 }),
+  packet: mat(0xd8b25c, { roughness: 0.35, metalness: 0.55, emissiveIntensity: 0.7 }),
+  cert: mat(0x9db4d6, { roughness: 0.5, metalness: 0.35 }),
+  ok: mat(0x7bd88f, { roughness: 0.4, metalness: 0.3, emissiveIntensity: 0.9 }),
+  bad: mat(0xff5d5d, { roughness: 0.4, metalness: 0.3, emissiveIntensity: 0.9 }),
+  gem: mat(0xffe2ae, { roughness: 0.2, metalness: 0.5, emissiveIntensity: 1.2 }),
+  ring: mat(0x7bd88f, { roughness: 0.4, metalness: 0.3, emissiveIntensity: 1.0 }),
+};
+
+/* ---------------- 布局常量 ---------------- */
+const CX = -6.4, SX = 6.4, WY = 1.5;                     // 客户端/服务器 x、链路高度
+const seq = [CX, 0.02, 0], ses = [SX, 0.02, 0];
+
+/* ---------------- 场景装配 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(140, 0.1, 140), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(60, 30, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* 客户端:笔记本(底座+屏幕) */
+const clientG = new THREE.Group();
+clientG.position.set(CX, 0, 0);
+scene.add(clientG);
+const cBase = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.14, 1.3), M.client);
+cBase.position.y = 0.07;
+clientG.add(cBase);
+const cKeys = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.05, 1.0), M.server);
+cKeys.position.y = 0.16;
+clientG.add(cKeys);
+const cScreen = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.25, 0.08), M.client);
+cScreen.position.set(0, 0.76, -0.6);
+cScreen.rotation.x = -0.18;
+clientG.add(cScreen);
+const cGlow = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.0, 0.02), M.ok);
+cGlow.position.set(0, 0.78, -0.56);
+cGlow.rotation.x = -0.18;
+cGlow.material = M.client;
+clientG.add(cGlow);
+
+/* 服务器:三层机柜 + LED 灯带 */
+const serverG = new THREE.Group();
+serverG.position.set(SX, 0, 0);
+scene.add(serverG);
+for (let i = 0; i < 3; i++) {
+  const box = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.62, 1.1), M.server);
+  box.position.y = 0.31 + i * 0.66;
+  serverG.add(box);
+  const led = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 0.02), M.ok);
+  led.position.set(0, 0.31 + i * 0.66 + 0.2, 0.56);
+  serverG.add(led);
+}
+const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 8), M.wire);
+antenna.position.set(0.5, 2.3, 0);
+serverG.add(antenna);
+
+/* 通信链路 */
+const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, SX - CX, 8), M.wire);
+wire.rotation.z = Math.PI / 2;
+wire.position.set((CX + SX) / 2, WY, 0);
+scene.add(wire);
+
+/* 中间人攻击者:悬浮的暗红八面体 */
+const mitmG = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), M.bad);
+mitmG.position.set(0, 3.6, 0);
+mitmG.material = M.bad;
+scene.add(mitmG);
+
+/* 证书链:根 CA → 中间 CA → 站点证书(自上而下) */
+const chainG = new THREE.Group();
+chainG.position.set(2.6, 0, -2.6);
+scene.add(chainG);
+const certs = [];
+const certNames = [
+  () => L('根 CA(内置信任库)', 'root CA (trust store)'),
+  () => L('中间 CA', 'intermediate CA'),
+  () => L('站点证书', 'site certificate'),
+];
+for (let i = 0; i < 3; i++) {
+  const box = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.78, 0.1), M.cert);
+  box.position.set(0, 1.1 + i * 1.05, 0);
+  chainG.add(box);
+  certs.push(box);
+  if (i < 2) {
+    const link = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.27, 6), M.wire);
+    link.position.set(0, 1.1 + i * 1.05 + 0.52, 0);
+    chainG.add(link);
+  }
+}
+/* 验签封印(小球):从站点证书逐级跳到根 CA */
+const seal = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), M.ok);
+seal.visible = false;
+scene.add(seal);
+
+/* 公钥小球(交叉飞行)与两侧私钥 */
+const pubA = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), M.gem);
+const pubB = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), M.gem);
+pubA.visible = pubB.visible = false;
+scene.add(pubA, pubB);
+const privA = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), M.client);
+privA.position.set(CX + 1.35, WY, 0);
+scene.add(privA);
+const privB = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), M.server);
+privB.position.set(SX - 1.35, WY, 0);
+scene.add(privB);
+
+/* 会话密钥宝石(HKDF 产物,两侧同时点亮) */
+const gemA = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 0), M.gem);
+gemA.position.set(CX + 0.6, 2.15, 0.9);
+scene.add(gemA);
+const gemB = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 0), M.gem);
+gemB.position.set(SX - 0.6, 2.15, 0.9);
+scene.add(gemB);
+gemA.scale.setScalar(0.001); gemB.scale.setScalar(0.001);
+
+/* HMAC 完成环 */
+const ring = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.06, 8, 40), M.ring);
+ring.rotation.x = Math.PI / 2;
+ring.position.set(0, WY, 0);
+ring.visible = false;
+scene.add(ring);
+
+/* 飞行报文(胶囊 + 动态标签) */
+const packet = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.55, 4, 10), M.packet);
+packet.rotation.z = Math.PI / 2;
+packet.visible = false;
+scene.add(packet);
+
+/* ---------------- 握手时序状态机 ---------------- */
+let mode = 'normal';            // normal | mitm | tls12
+let phase = 'idle', pt = 0, certLevel = 0, status = 'run';
+const DUR = { idle: 0.5, ch: 1.0, sh: 1.0, cert: 1.8, rsa: 1.0, ke: 1.6, fin: 0.9, fin2: 0.6, done: 1.8, abort: 2.2 };
+const RTT = { normal: 1, mitm: 1, tls12: 2 };
+function setPhase(p) { phase = p; pt = 0; }
+function restart() {
+  certLevel = 0; status = 'run';
+  gemA.scale.setScalar(0.001); gemB.scale.setScalar(0.001);
+  ring.visible = false; seal.visible = false;
+  pubA.visible = pubB.visible = false; packet.visible = false;
+  for (const c of certs) c.material = M.cert;
+  setPhase('idle');
+}
+function nextPhase() {
+  if (phase === 'idle') return setPhase('ch');
+  if (phase === 'ch') return setPhase('sh');
+  if (phase === 'sh') { packet.visible = false; return setPhase('cert'); }
+  if (phase === 'cert') {
+    if (mode === 'mitm') { status = 'fail'; return setPhase('abort'); }
+    return setPhase(mode === 'tls12' ? 'rsa' : 'ke');
+  }
+  if (phase === 'rsa') return setPhase('fin');
+  if (phase === 'ke') return setPhase('fin');
+  if (phase === 'fin') {
+    if (mode === 'tls12') { ring.visible = false; return setPhase('fin2'); }
+    return setPhase('done');
+  }
+  if (phase === 'fin2') return setPhase('done');
+  if (phase === 'done' || phase === 'abort') return restart();
+}
+/* 报文/宝石标签 */
+let packetLabelFn = () => L('', '');
+const gemLabelFn = isA => gemA.scale.x > 0.5
+  ? (isA ? L('客户端算得:同一会话密钥', 'client computed: same session keys')
+         : L('服务器算得:同一会话密钥', 'server computed: same session keys'))
+  : L('等待 ECDHE 计算…', 'waiting for ECDHE…');
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+let scenario = 0;                    // 当前步骤(标签/统计引用)
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+const pktLabel = addLabel(() => packetLabelFn(), () => 'e',
+  new THREE.Vector3(0, 0.42, 0), p => p.copy(packet.position), null);
+addLabel(() => L('客户端(浏览器)', 'client (browser)'), () => 'b',
+  new THREE.Vector3(0, 1.9, 0), null, clientG);
+addLabel(() => L('服务器(持私钥)', 'server (holds private key)'), () => 'b',
+  new THREE.Vector3(0, 2.75, 0), null, serverG);
+addLabel(() => (mode === 'mitm' || scenario === 5)
+    ? L('中间人:截胡+伪造证书', 'MITM: intercept + forged cert')
+    : L('中间人(本模式未出场)', 'MITM (not in this mode)'), () => 'bad',
+  new THREE.Vector3(0, 0.85, 0), null, mitmG);
+const chainLabels = [];
+for (let i = 0; i < 3; i++) {
+  chainLabels.push(addLabel(certNames[i], () => i === 0 ? 'g' : i === 1 ? 'w' : 'b',
+    new THREE.Vector3(0, 0.62, 0), null, certs[i]));
+}
+const gemLabelA = addLabel(() => gemLabelFn(true), () => 'g',
+  new THREE.Vector3(0, 0.55, 0), null, gemA);
+const gemLabelB = addLabel(() => gemLabelFn(false), () => 'g',
+  new THREE.Vector3(0, 0.55, 0), null, gemB);
+addLabel(() => L(`TLS 1.3 记录层:应用数据用 AES-128-GCM 加密`, `TLS 1.3 record layer: app data encrypted with AES-128-GCM`), () => 'st',
+  new THREE.Vector3(0, 0.55, 0), null, null);
+addLabel(() => L(`会话密钥 = HKDF(握手 transcript)`, `session keys = HKDF(handshake transcript)`), () => 'w',
+  new THREE.Vector3(0, 1.0, 0), null, ring);
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'wire', tgt: [0, 1.8, 0],
+    b: '明文的三宗罪:窃听、篡改、冒充', be: 'Three sins of plaintext: sniffing, tampering, spoofing',
+    d: 'HTTP 明文传输:同一 Wi-Fi 的人能读你的密码(窃听)、改一条转账金额(篡改)、假扮银行网站(冒充)。TLS 在 TCP 之上先握手再传数据,一次连接要同时谈成三件事:机密性(加密)、完整性(防篡改)、身份认证(证书)。TLS 1.3 把它们压进 1 个往返(1-RTT)。',
+    de: 'HTTP is plaintext: anyone on the same Wi-Fi can read your password (sniffing), alter a transfer amount (tampering), or impersonate your bank (spoofing). TLS handshakes before sending data, settling three things per connection: confidentiality (encryption), integrity (tamper-proofing) and authentication (certificates) - all in one round trip with TLS 1.3.' },
+  { hl: 'packet', tgt: [-3, 1.6, 0],
+    b: 'ClientHello:先亮牌再谈价', be: 'ClientHello: show your cards first',
+    d: '客户端发出 ClientHello:一个 32 字节随机数、支持的密码套件清单(AES-128-GCM、ChaCha20 等),以及关键的「密钥共享」——一个 X25519 椭圆曲线临时公钥。它是明文,但每条连接都全新;服务器从中挑一套算法,回以 ServerHello 和自己的临时公钥。',
+    de: 'The client sends ClientHello: a 32-byte random, its supported cipher suites (AES-128-GCM, ChaCha20-Poly1305...), and the crucial "key share" - an X25519 ephemeral public key. It is plaintext but brand-new every connection; the server picks one suite and answers with ServerHello plus its own key share.' },
+  { hl: 'cert', tgt: [2.6, 3.2, -1.4],
+    b: '证书链:三级验签锚定信任', be: 'Certificate chain: three levels pin down trust',
+    d: '服务器随 ServerHello 递上证书链:站点证书 ← 中间 CA ← 根 CA。浏览器用上级公钥逐级验签(签名多为 RSA-2048 或 ECDSA P-256),链条锚在系统内置的根信任库;同时核对域名是否匹配、是否在有效期内、吊销状态是否正常——任何一环不过,浏览器立即亮红警告。',
+    de: 'With ServerHello the server presents its chain: site cert ← intermediate CA ← root CA. The browser verifies each signature with the issuer\'s public key (RSA-2048 or ECDSA P-256), anchored in the built-in root trust store; it also checks domain match, validity period and revocation - any failure and the browser throws a red warning.' },
+  { hl: 'gem', tgt: [0, 2.2, 0.8],
+    b: 'ECDHE:各算各的,结果当场一致', be: 'ECDHE: computed separately, identical on the spot',
+    d: '密钥交换用 ECDHE:双方各自拿「自己的私钥+对方的公钥」在椭圆曲线上运算,独立得出同一个共享秘密——窃听者只有两个公钥,什么也算不出。会话密钥再由 HKDF 从全部握手消息导出。临时密钥每条连接全新,所以服务器私钥将来泄露也解不开历史流量:这就是前向保密。看两侧宝石同时点亮。',
+    de: 'Key exchange uses ECDHE: each side combines "my private + your public" on the elliptic curve and independently arrives at the same shared secret - an eavesdropper holding two public keys computes nothing. Session keys come from HKDF over the whole transcript. Ephemeral keys are fresh per connection, so a future server-key leak cannot decrypt past traffic: forward secrecy. Watch both gems light up.' },
+  { hl: 'ring', tgt: [0, 1.9, 0],
+    b: 'Finished:给全程盖一枚 HMAC 指纹', be: 'Finished: an HMAC fingerprint over everything',
+    d: '双方交换 Finished 消息:对迄今全部握手内容计算 HMAC,且密钥已经过通道加密保护。中间人只要在任一步改过一个字节,两端 HMAC 就对不上,握手当场失败。至此 1-RTT 走完,连接转入 AES-128-GCM 加密的应用数据——整个握手通常只要几十毫秒。',
+    de: 'Both sides exchange Finished: an HMAC over the entire handshake so far, already protected by the negotiated keys. If an attacker altered even one byte anywhere, the two HMACs disagree and the handshake fails on the spot. One round trip done, the connection switches to AES-128-GCM application data - the whole handshake takes tens of milliseconds.' },
+  { hl: 'attacker', tgt: [0, 3.3, 0],
+    b: '中间人攻击:两道锁各卡死一步', be: 'MITM: two independent locks, each fatal',
+    d: '点「中间人攻击」:攻击者截下流量、递上自己的证书——但它没有受信 CA 的私钥签名,证书链验签失败;就算侥幸混过,再改握手消息,Finished 的 HMAC 也会对不上。两道独立防线,只要锚点(内置根证书)不丢,HTTPS 就能当场识破并中止连接。',
+    de: 'Hit "man-in-the-middle": the attacker intercepts traffic and presents its own certificate - but it lacks a trusted CA\'s signature, so chain verification fails; even if it slipped through, any altered handshake message breaks the Finished HMAC. Two independent defenses: keep the anchor (built-in root certs) intact and HTTPS exposes the attack instantly.' },
+  { hl: 'server', tgt: [4.5, 2.2, 0],
+    b: 'TLS 1.2 对照:RSA 传输为何被淘汰', be: 'TLS 1.2 comparison: why RSA transport was retired',
+    d: '点「TLS 1.2 RSA 对照」:客户端把预主密钥用服务器 RSA-2048 公钥加密后发送——要 2-RTT,而且一旦服务器私钥将来泄露,过去抓的所有包都能解开,没有前向保密。TLS 1.3 因此删掉 RSA 密钥传输与静态 DH,强制 ECDHE,握手更快也更抗「先存后解」。',
+    de: 'Hit "TLS 1.2 RSA": the client encrypts a pre-master secret under the server\'s RSA-2048 key - two round trips, and if the server key ever leaks, every captured past session becomes readable: no forward secrecy. TLS 1.3 removed RSA key transport and static DH, made ECDHE mandatory, and is both faster and "harvest-now-decrypt-later"-proof.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`TLS 1.3:ClientHello → ServerHello+证书+Finished → Finished,<b>1-RTT</b>;当前延迟设定 <b>${delay} ms</b> 单程 → 握手 <b>${delay * RTT[mode]} ms</b>`,
+      `TLS 1.3: ClientHello → ServerHello+certs+Finished → Finished, <b>1-RTT</b>; delay set to <b>${delay} ms</b> one-way → handshake <b>${delay * RTT[mode]} ms</b>`) +
+    '<br>' +
+    L(`证书链:站点 ← 中间 CA ← 根 CA,逐级公钥验签(RSA-2048 / ECDSA P-256)+ 域名/有效期/吊销三查;已验 <b>${certLevel}/3</b> 级`,
+      `Chain: site ← intermediate ← root, per-level signature check (RSA-2048 / ECDSA P-256) + domain/expiry/revocation; <b>${certLevel}/3</b> verified`) +
+    '<br>' +
+    L(`密钥:<b>${mode === 'tls12' ? 'RSA-2048 密钥传输(无前向保密)' : 'ECDHE-X25519(前向保密)'}</b>;会话密钥 = HKDF(transcript);Finished = HMAC(全部握手消息)`,
+      `Keys: <b>${mode === 'tls12' ? 'RSA-2048 transport (no forward secrecy)' : 'ECDHE-X25519 (forward secrecy)'}</b>; session keys = HKDF(transcript); Finished = HMAC(full transcript)`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnRun = document.getElementById('btnRun'), btnMitm = document.getElementById('btnMitm'),
+  btnTls12 = document.getElementById('btnTls12'), btnCert = document.getElementById('btnCert'),
+  btnReset = document.getElementById('btnReset');
+function setMode(m) {
+  mode = m;
+  btnRun.classList.toggle('on', m === 'normal');
+  btnMitm.classList.toggle('on', m === 'mitm');
+  btnTls12.classList.toggle('on', m === 'tls12');
+  restart();
+  updateFormula();
+}
+btnRun.addEventListener('click', () => setMode('normal'));
+btnMitm.addEventListener('click', () => setMode('mitm'));
+btnTls12.addEventListener('click', () => setMode('tls12'));
+btnCert.addEventListener('click', () => { chainShown = !chainShown; tglChain.checked = chainShown; chainG.visible = chainShown; });
+btnReset.addEventListener('click', () => { delay = 30; elDelay.value = 30; setMode('normal'); });
+
+/* ---------------- 阶段曲线(示波器) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const phIdx = ['idle', 'ch', 'sh', 'cert', 'rsa', 'ke', 'fin', 'fin2', 'done', 'abort'].indexOf(phase);
+  const py = v => ch - (0.08 + 0.84 * clamp01(v)) * ch;
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('握手阶段进度(金) · 证书验签级数(绿)', 'handshake phase (gold) · chain level (green)'), 4 * dpr, 11 * dpr);
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.beginPath(); scopeCtx.moveTo(0, py(0)); scopeCtx.lineTo(cw, py(0)); scopeCtx.stroke();
+  const series = [
+    { v: (phIdx + (pt / (DUR[phase] || 1))) / 8, c: 'rgba(255,210,92,.95)' },
+    { v: certLevel / 3, c: 'rgba(123,216,143,.9)' },
+  ];
+  for (const ser of series) {
+    hist.push(ser.v);
+    if (hist.length > 140) hist.shift();
+  }
+  if (hist.length < 4) return;
+  scopeCtx.strokeStyle = series[0].c;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  for (let i = 0; i < hist.length; i += 2) {
+    const x = i / (hist.length - 1) * cw;
+    i === 0 ? scopeCtx.moveTo(x, py(hist[i])) : scopeCtx.lineTo(x, py(hist[i]));
+  }
+  scopeCtx.stroke();
+  scopeCtx.strokeStyle = series[1].c;
+  scopeCtx.beginPath();
+  for (let i = 1; i < hist.length; i += 2) {
+    const x = i / (hist.length - 1) * cw;
+    i === 1 ? scopeCtx.moveTo(x, py(hist[i])) : scopeCtx.lineTo(x, py(hist[i]));
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elDelay = document.getElementById('delay'), elDelayVal = document.getElementById('delayVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglChain = document.getElementById('tglChain');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+let chainShown = true;
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateDelay() {
+  delay = +elDelay.value;
+  elDelayVal.textContent = delay + ' ms';
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elDelay.addEventListener('input', updateDelay);
+tglChain.addEventListener('change', () => { chainShown = tglChain.checked; chainG.visible = chainShown; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- 状态标签(补充) ---------------- */
+addLabel(() => {
+  const map = {
+    normal: L('正常握手:ECDHE + 证书链', 'normal: ECDHE + cert chain'),
+    mitm: L('中间人模式:证书链会被戳穿', 'MITM mode: chain check will catch it'),
+    tls12: L('TLS 1.2 模式:RSA 传输 2-RTT', 'TLS 1.2 mode: RSA transport, 2-RTT'),
+  };
+  return map[mode];
+}, () => 'st', new THREE.Vector3(0, 5.6, 0), null, null);
+
+/* ---------------- stats 刷新 ---------------- */
+let delay = 30;
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  stA.innerHTML = RTT[mode] + '<small> RTT</small>';
+  stA.className = 'v ' + (RTT[mode] === 1 ? 'ok' : 'warn');
+  const ms = delay * RTT[mode];
+  stB.innerHTML = ms + '<small> ms</small>';
+  stB.className = 'v ' + (ms <= 100 ? 'ok' : ms <= 200 ? 'warn' : 'bad');
+  stC.innerHTML = '<small>' + (mode === 'tls12' ? 'RSA-2048' : 'ECDHE-X25519') + '</small>';
+  stC.className = 'v ok';
+  if (mode === 'tls12') { stD.textContent = L('无', 'none'); stD.className = 'v bad'; }
+  else { stD.textContent = L('有', 'yes'); stD.className = 'v ok'; }
+  stE.textContent = certLevel + '/3';
+  stE.className = 'v ' + (certLevel === 3 ? 'ok' : status === 'fail' ? 'bad' : 'warn');
+  const stTxt = status === 'fail' ? L('被中间人击破', 'broken by MITM')
+    : phase === 'done' ? L('已建立,应用数据加密中', 'established, app data flowing')
+    : phase === 'abort' ? L('握手失败,连接中止', 'handshake failed, aborted')
+    : L('握手中…', 'handshaking…');
+  stF.innerHTML = '<small>' + stTxt + '</small>';
+  stF.className = 'v ' + (status === 'fail' || phase === 'abort' ? 'bad' : phase === 'done' ? 'ok' : 'warn');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+let et = 0;
+const hist = [];
+const tmpV = new THREE.Vector3();
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  /* 时序推进 */
+  if (playing) {
+    pt += dt * speed;
+    if (pt >= DUR[phase]) nextPhase();
+  }
+  /* 报文飞行 */
+  const fly = (from, to, txt) => {
+    const u = clamp01(pt / DUR[phase]);
+    packet.visible = true;
+    packet.position.lerpVectors(from, to, E2(u));
+    packetLabelFn = txt;
+    return u;
+  };
+  if (phase === 'ch') fly(seq, ses, () => L('ClientHello:随机数 + 套件 + X25519 密钥共享', 'ClientHello: random + suites + X25519 key share'));
+  else if (phase === 'sh') {
+    if (mode === 'mitm') {
+      const u = clamp01(pt / DUR.sh);
+      tmpV.lerpVectors(ses, seq, E2(u * 0.55));
+      packet.position.copy(tmpV);
+      packetLabelFn = () => L('被中间人截下!递上伪造证书', 'intercepted by MITM! forged cert offered');
+    } else fly(ses, seq, () => L('ServerHello + 证书链 + 服务器 Finished', 'ServerHello + cert chain + server Finished'));
+  }
+  else if (phase === 'rsa') fly(seq, ses, () => L('预主密钥(RSA-2048 公钥加密)· 无前向保密', 'pre-master (RSA-2048 encrypted) · no forward secrecy'));
+  else packet.visible = false;
+  /* 证书链验签 */
+  if (phase === 'cert') {
+    const u = pt / DUR.cert;
+    const lvl = mode === 'mitm' ? (u < 0.4 ? 1 : 2) : Math.min(3, Math.floor(u * 3.2) + 1);
+    if (lvl !== certLevel) {
+      certLevel = lvl;
+      for (let i = 0; i < 3; i++) certs[i].material = M.cert;
+      seal.visible = true;
+      if (mode === 'mitm' && certLevel >= 2) {
+        certs[2].material = M.bad;                       // 伪造的站点证书:无受信 CA 签名
+        seal.material = M.bad;
+      } else {
+        for (let i = 0; i < certLevel; i++) certs[i].material = M.ok;
+        seal.material = M.ok;
+      }
+    }
+    const ci = clamp(certLevel - 1, 0, 2);
+    tmpV.copy(certs[ci].position); chainG.localToWorld(tmpV); tmpV.y += 0.85;
+    seal.position.copy(tmpV);
+    if (mode === 'mitm' && certLevel === 2) {
+      seal.position.y += Math.sin(et * 14) * 0.05;   // 验签失败抖动
+    }
+  } else if (phase !== 'idle') seal.visible = false;
+  /* ECDHE 公钥交叉 + 宝石点亮 */
+  if (phase === 'ke') {
+    const u = clamp01(pt / DUR.ke);
+    pubA.visible = pubB.visible = true;
+    pubA.position.lerpVectors(privA.position, privB.position, E2(u));
+    pubB.position.lerpVectors(privB.position, privA.position, E2(u));
+    pubA.position.y = WY + 0.3; pubB.position.y = WY - 0.3;
+    const g = u > 0.65 ? clamp01((u - 0.65) / 0.35) : 0.001;
+    gemA.scale.setScalar(Math.max(0.001, g)); gemB.scale.setScalar(Math.max(0.001, g));
+    gemA.rotation.y = gemB.rotation.y = et * 1.2;
+  } else {
+    pubA.visible = pubB.visible = false;
+    if (phase === 'rsa') {
+      const u = clamp01(pt / DUR.rsa);
+      const g = u > 0.8 ? clamp01((u - 0.8) / 0.2) : 0.001;
+      gemA.scale.setScalar(Math.max(0.001, g)); gemB.scale.setScalar(Math.max(0.001, g));
+    }
+  }
+  gemA.rotation.y = gemB.rotation.y = et * 0.8;
+  /* Finished HMAC 环 */
+  if (phase === 'fin' || phase === 'fin2') {
+    ring.visible = true;
+    const u = clamp01(pt / (phase === 'fin' ? DUR.fin : DUR.fin2));
+    ring.scale.setScalar(0.6 + 0.5 * Math.sin(u * Math.PI));
+    ring.material = M.ok;
+  } else ring.visible = false;
+  /* 攻击者可见性 / 状态 */
+  mitmG.visible = mode === 'mitm' || scenario === 5;
+  if (mitmG.visible) mitmG.rotation.y = et * 0.9;
+  if (phase === 'abort') {
+    ring.visible = true; ring.material = M.bad;
+    ring.scale.setScalar(1.0 + 0.2 * Math.sin(et * 10));
+  }
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.client, M.server, M.wire, M.packet, M.cert, M.gem, M.ring, M.bad]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.55);
+  const boost = m => { m.emissiveIntensity = 0.8 + 0.4 * hlK; };
+  if (hl === 'wire') boost(M.wire);
+  else if (hl === 'packet') boost(M.packet);
+  else if (hl === 'cert') boost(M.cert);
+  else if (hl === 'gem') boost(M.gem);
+  else if (hl === 'ring') boost(M.ring);
+  else if (hl === 'attacker') boost(M.bad);
+  else if (hl === 'server') boost(M.server);
+  /* 相机目标 */
+  tmpV.fromArray(STEPS[scenario].tgt);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked && playing) drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+restart();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
