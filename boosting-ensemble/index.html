@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boosting 集成学习 · 逐步残差纠错</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; }
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="Boosting 集成学习:逐步残差纠错" data-en="Boosting Ensembles: Error Correction, One Step at a Time">Boosting 集成学习:逐步残差纠错</h1>
+  <div class="sub" data-zh="弱学习器串行接力:AdaBoost 给错分样本加倍权重 w_i←w_i·e^(α_t),话语权 α_t=½ln((1−ε_t)/ε_t),ε_t→0.5 时 α_t→0(废票);梯度提升 GBDT 让每棵新树拟合前面所有树留下的残差,F(x)=Σν·h_t(x),学习率 ν=0.05–0.1、树深 3–8,慢工出细活。看 3D 决策曲面如何随每棵树的加入朝正确方向变形:Bagging 并行降方差,Boosting 串行降偏差 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Weak learners relay in series: AdaBoost multiplies weights of misclassified samples, w_i←w_i·e^(α_t) with voting power α_t=½ln((1−ε_t)/ε_t) — ε_t→0.5 means α_t→0 (a spoiled vote); gradient boosting (GBDT) fits each new tree to the residuals left by all previous trees, F(x)=Σν·h_t(x) with learning rate ν=0.05–0.1 and depth 3–8. Watch the 3D decision surface bend toward the truth one tree at a time: bagging cuts variance in parallel, boosting cuts bias in series · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">弱学习器串行接力:AdaBoost 给错分样本加倍权重 w_i←w_i·e^(α_t),话语权 α_t=½ln((1−ε_t)/ε_t),ε_t→0.5 时 α_t→0(废票);梯度提升 GBDT 让每棵新树拟合前面所有树留下的残差,F(x)=Σν·h_t(x),学习率 ν=0.05–0.1、树深 3–8,慢工出细活。看 3D 决策曲面如何随每棵树的加入朝正确方向变形:Bagging 并行降方差,Boosting 串行降偏差 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="已训练弱学习器" data-en="trees trained">已训练弱学习器</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="最新错误率 ε_t" data-en="latest error ε_t">最新错误率 ε_t</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="样本最大权重" data-en="max sample weight">样本最大权重</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="训练准确率" data-en="train accuracy">训练准确率</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="测试准确率" data-en="test accuracy">测试准确率</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="学习率 ν" data-en="learning rate ν">学习率 ν</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip g" data-zh="类 +1 内圈样本(绿)" data-en="class +1 inner disc (green)">类 +1 内圈样本(绿)</span>
+    <span class="chip b" data-zh="类 −1 外环样本(蓝)" data-en="class −1 outer ring (blue)">类 −1 外环样本(蓝)</span>
+    <span class="chip r" data-zh="错分样本(红)" data-en="misclassified (red)">错分样本(红)</span>
+    <span class="chip o" data-zh="决策曲面:F(x) 高度=置信度" data-en="decision surface: height = confidence">决策曲面:F(x) 高度=置信度</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnAda" data-zh="AdaBoost 单步" data-en="AdaBoost +1 tree">AdaBoost 单步</button>
+    <button class="abtn" id="btnAuto" data-zh="自动连训" data-en="auto train">自动连训</button>
+    <button class="abtn" id="btnResid" data-zh="残差视角(GBDT)" data-en="residual view (GBDT)">残差视角(GBDT)</button>
+    <button class="abtn hot" id="btnOver" data-zh="过拟合演示" data-en="overfit demo">过拟合演示</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="学习率 ν" data-en="learning rate ν">学习率 ν</label><input id="nu" type="range" min="2" max="50" step="1" value="10"><span class="val" id="nuVal">0.10</span></div>
+  <div class="row"><label data-zh="树深(弱学习器)" data-en="tree depth (weak)">树深(弱学习器)</label><input id="depth" type="range" min="1" max="8" step="1" value="3"><span class="val" id="depthVal">3</span></div>
+  <div class="row"><label data-zh="数量上限" data-en="tree budget">数量上限</label><input id="maxn" type="range" min="10" max="120" step="5" value="60"><span class="val" id="maxnVal">60</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="准确率曲线" data-en="accuracy curves">准确率曲线</span></label>
+        <label><input id="tglResid" type="checkbox"> <span data-zh="残差棒" data-en="residual bars">残差棒</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../random-forest/" data-zh="随机森林" data-en="random forest">随机森林</a>
+    <a href="../decision-tree/" data-zh="决策树" data-en="decision tree">决策树</a>
+    <a href="../neural-gradient/" data-zh="神经网络梯度下降" data-en="neural gradient descent">神经网络梯度下降</a>
+    <a href="../overfitting/" data-zh="过拟合" data-en="overfitting">过拟合</a>
+    <a href="../genetic-algorithm/" data-zh="遗传算法" data-en="genetic algorithm">遗传算法</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.pos.color.set(dark ? 0x3fae62 : 0x2b8a3e);           // 类 +1(绿)
+  M.neg.color.set(dark ? 0x3d7fd6 : 0x1864ab);           // 类 −1(蓝)
+  M.wrong.color.set(dark ? 0xff5d5d : 0xe03131);         // 错分(红)
+  M.tpos.color.set(dark ? 0x3fae62 : 0x2b8a3e);
+  M.tneg.color.set(dark ? 0x3d7fd6 : 0x1864ab);
+  M.edge.color.set(dark ? 0xe8c98f : 0x8f6a25);          // 决策边界线
+  M.trunk.color.set(dark ? 0x46556a : 0x74879c);         // 迷你树干
+  M.leaf.color.set(dark ? 0x5fae72 : 0x2b8a3e);          // 迷你树冠
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('Boosting 集成学习 · 逐步残差纠错', 'Boosting Ensembles · Sequential Error Correction');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateNu();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(4.6, 5.4, 7.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.2;
+controls.maxDistance = 26;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.35,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.5,
+    vertexColors: true, depthWrite: false }),
+  surf: mat(0xffffff, { vertexColors: true, roughness: 0.6, metalness: 0.1,
+    transparent: true, opacity: 0.94, emissive: 0x8c8c8c, emissiveIntensity: 0.06 }),
+  pos: mat(0x3fae62, { roughness: 0.4, metalness: 0.2 }),
+  neg: mat(0x3d7fd6, { roughness: 0.4, metalness: 0.2 }),
+  wrong: mat(0xff5d5d, { roughness: 0.35, metalness: 0.2, emissiveIntensity: 0.3 }),
+  tpos: new THREE.MeshStandardMaterial({ color: 0x3fae62, roughness: 0.5, metalness: 0.1,
+    transparent: true, opacity: 0.55 }),
+  tneg: new THREE.MeshStandardMaterial({ color: 0x3d7fd6, roughness: 0.5, metalness: 0.1,
+    transparent: true, opacity: 0.55 }),
+  edge: new THREE.LineBasicMaterial({ color: 0xe8c98f }),
+  resid: new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }),
+  trunk: mat(0x46556a, { roughness: 0.6, metalness: 0.3 }),
+  leaf: mat(0x5fae72, { roughness: 0.55, metalness: 0.1 }),
+};
+
+/* ---------------- 数据:环形二分类(x,y ∈ [-2.9,2.9],世界坐标 1:1) ----------------
+   内圈 r<1.15 → y=+1;外环 1.7<r<2.9 → y=−1。训练 160 + 测试 60 */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const ringLabel = (x, y) => Math.hypot(x, y) < 1.15 ? 1 : -1;
+function genSet(n, seed, noisy) {
+  const rng = mulberry32(seed);
+  const X = [], y = [];
+  while (X.length < n) {
+    const half = X.length < n / 2;
+    const x = (rng() * 2 - 1) * (half ? 1.05 : 2.9);
+    const zz = (rng() * 2 - 1) * (half ? 1.05 : 2.9);
+    const r = Math.hypot(x, zz);
+    if (half ? r > 1.05 : (r < 1.7 || r > 2.9)) continue;
+    X.push([x, zz]);
+    let lab = ringLabel(x, zz);
+    if (noisy && rng() < 0.08) lab = -lab;      // 8% 标签噪声(过拟合演示)
+    y.push(lab);
+  }
+  return { X, y };
+}
+let train = genSet(160, 20261010, false);
+let test = genSet(60, 777001, false);
+
+/* ---------------- 弱学习器:加权贪心回归树(轴平行切分,加权 SSE 最大下降) ---------------- */
+function fitTree(X, T, W, maxDepth) {
+  const nodes = [];
+  function build(idxs, depth) {
+    let sw = 0, sy = 0;
+    for (const i of idxs) { sw += W[i]; sy += W[i] * T[i]; }
+    const p = nodes.push({ val: sw > 1e-12 ? sy / sw : 0 }) - 1;
+    if (depth >= maxDepth || idxs.length < 6) return p;
+    let best = 1e-9, bf = -1, bthr = 0;
+    for (let f = 0; f < 2; f++) {
+      const arr = idxs.slice().sort((a, b) => X[a][f] - X[b][f]);
+      let sl = 0, syl = 0;
+      for (let k = 0; k < arr.length - 1; k++) {
+        const i = arr[k];
+        sl += W[i]; syl += W[i] * T[i];
+        const xr = X[arr[k + 1]][f];
+        if (xr - X[i][f] < 1e-4) continue;
+        const cl = k + 1, wl = sl, wr = sw - sl, yr = sy - syl;
+        if (cl < 3 || arr.length - cl < 3 || wl < 1e-9 || wr < 1e-9) continue;
+        const gain = (syl * syl) / wl + (yr * yr) / wr;   // ∝ SSE 下降量
+        if (gain > best) { best = gain; bf = f; bthr = (X[i][f] + xr) / 2; }
+      }
+    }
+    if (bf < 0) return p;
+    const li = [], ri = [];
+    for (const i of idxs) (X[i][bf] < bthr ? li : ri).push(i);
+    nodes[p].f = bf; nodes[p].thr = bthr;
+    nodes[p].l = build(li, depth + 1);
+    nodes[p].r = build(ri, depth + 1);
+    return p;
+  }
+  const root = build(X.map((_, i) => i), 0);
+  return (x, y) => {
+    let nd = nodes[root];
+    while (nd.f !== undefined) nd = (nd.f === 0 ? x < nd.thr : y < nd.thr) ? nodes[nd.l] : nodes[nd.r];
+    return nd.val;
+  };
+}
+
+/* ---------------- Boosting 引擎:AdaBoost / 梯度提升 双模式 ---------------- */
+const model = {
+  mode: 'ada',            // 'ada':加权纠错 | 'gbdt':拟合残差
+  learners: [],           // { pred, alpha }
+  w: new Float64Array(160).fill(1 / 160),
+  F: new Float64Array(160),      // 集成在训练集上的输出
+  eps: 0, alpha: 0, wmax: 1 / 160, lastResid: 0,
+};
+let nu = 0.10, depth = 3, maxTrees = 60, residView = false, overfitOn = false;
+
+function modelOut(x, y) {
+  let s = 0;
+  for (const lr of model.learners) s += lr.alpha * lr.pred(x, y);
+  return s;
+}
+function trainOne(depthOv) {
+  if (model.learners.length >= maxTrees) return false;
+  const n = train.X.length, ada = model.mode === 'ada';
+  const T = new Float64Array(n), W = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    W[i] = ada ? model.w[i] : 1 / n;
+    T[i] = ada ? train.y[i] : train.y[i] - model.F[i];   // GBDT:负梯度(平方损失)= 残差
+  }
+  const h = fitTree(train.X, T, W, depthOv || depth);
+  if (ada) {
+    let err = 0;
+    for (let i = 0; i < n; i++) if (Math.sign(h(train.X[i][0], train.X[i][1])) !== train.y[i]) err += W[i];
+    if (err >= 0.5) return false;                          // 不比抛硬币好 → 停止(α 将为 0)
+    model.eps = clamp(err, 1e-4, 0.499);
+    model.alpha = 0.5 * Math.log((1 - model.eps) / model.eps);
+    for (let i = 0; i < n; i++) {
+      const s = Math.sign(h(train.X[i][0], train.X[i][1])) || 1;
+      model.F[i] += model.alpha * s;
+      if (s !== train.y[i]) model.w[i] *= Math.exp(model.alpha);   // 错分:w←w·e^α
+    }
+    let sw = 0; model.wmax = 0;
+    for (let i = 0; i < n; i++) { sw += model.w[i]; model.wmax = Math.max(model.wmax, model.w[i]); }
+    for (let i = 0; i < n; i++) model.w[i] /= sw;
+    model.wmax /= sw;
+    model.learners.push({ pred: (x, y) => Math.sign(h(x, y)) || 1, alpha: model.alpha });
+  } else {
+    let ss = 0;
+    for (let i = 0; i < n; i++) {
+      const hv = h(train.X[i][0], train.X[i][1]);
+      model.F[i] += nu * hv;
+      ss += (train.y[i] - model.F[i]) ** 2;
+    }
+    model.lastResid = Math.sqrt(ss / n);
+    model.eps = 0; model.alpha = nu;
+    model.learners.push({ pred: h, alpha: nu });
+  }
+  afterTrain();
+  return true;
+}
+function accOf(set) {
+  let ok = 0;
+  for (let i = 0; i < set.X.length; i++) if (Math.sign(modelOut(set.X[i][0], set.X[i][1])) === set.y[i]) ok++;
+  return ok / set.X.length;
+}
+function resetEnsemble() {
+  model.learners.length = 0;
+  model.w.fill(1 / 160); model.F.fill(0);
+  model.eps = 0; model.alpha = 0; model.wmax = 1 / 160; model.lastResid = 0;
+  accHist.length = 0;
+  refreshSamples();
+  rebuildSurfaceTarget(true);
+  updateFormula();
+}
+
+/* ---------------- 场景装配:地面 / 网格 / 坐标框 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(30, 0.1, 30), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(24, 24, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = -0.005;
+scene.add(grid);
+
+/* ---------------- 3D 决策曲面 F(x):48×48 网格,高度=置信度,颜色=类别 ---------------- */
+const G = 48, EXT = 3.1;
+const surfGeo = new THREE.PlaneGeometry(EXT * 2, EXT * 2, G, G);
+surfGeo.rotateX(-Math.PI / 2);
+const surfPos = surfGeo.attributes.position;
+const surfCol = new THREE.BufferAttribute(new Float32Array(surfPos.count * 3), 3);
+surfGeo.setAttribute('color', surfCol);
+const surf = new THREE.Mesh(surfGeo, M.surf);
+surf.position.y = 0.02;
+scene.add(surf);
+const hNow = new Float32Array(surfPos.count);
+const fgrid = new Float32Array((G + 1) * (G + 1));
+function rebuildSurfaceTarget(flat) {
+  const T = train.X.length + test.X.length;
+  for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) {
+    const x = -EXT + i / G * EXT * 2, zz = -EXT + j / G * EXT * 2;
+    fgrid[j * (G + 1) + i] = flat ? 0 : modelOut(x, zz);
+  }
+  for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) {
+    const k = j * (G + 1) + i, vi = j * (G + 1) + i;
+    const f = fgrid[k];
+    hNowT[vi] = clamp(f / 2.4, -1, 1) * 0.75;
+    const c = clamp(Math.abs(f) / 1.8, 0.12, 1);
+    if (f >= 0) surfCol.setXYZ(vi, 0.22 * c, 0.72 * c, 0.38 * c);
+    else surfCol.setXYZ(vi, 0.20 * c, 0.42 * c, 0.80 * c);
+  }
+  surfCol.needsUpdate = true;
+}
+const hNowT = new Float32Array(surfPos.count);
+rebuildSurfaceTarget(true);
+
+/* 决策边界 F(x)=0:marching squares 折线 */
+const bndGeo = new THREE.BufferGeometry();
+const bndArr = new Float32Array(8000 * 3);
+bndGeo.setAttribute('position', new THREE.BufferAttribute(bndArr, 3));
+const bndLine = new THREE.LineSegments(bndGeo, M.edge);
+bndLine.position.y = 0.035;
+scene.add(bndLine);
+let bndAnchor = new THREE.Vector3(0, 0.5, 0);
+function rebuildBoundary() {
+  let m = 0;
+  for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+    const x0 = -EXT + i / G * EXT * 2, x1 = -EXT + (i + 1) / G * EXT * 2;
+    const z0 = -EXT + j / G * EXT * 2, z1 = -EXT + (j + 1) / G * EXT * 2;
+    const v00 = fgrid[j * (G + 1) + i], v10 = fgrid[j * (G + 1) + i + 1];
+    const v01 = fgrid[(j + 1) * (G + 1) + i], v11 = fgrid[(j + 1) * (G + 1) + i + 1];
+    const pts = [];
+    if (v00 * v10 < 0) pts.push([x0 + (v00 / (v00 - v10)) * (x1 - x0), z0]);
+    if (v10 * v11 < 0) pts.push([x1, z0 + (v10 / (v10 - v11)) * (z1 - z0)]);
+    if (v01 * v11 < 0) pts.push([x0 + (v01 / (v01 - v11)) * (x1 - x0), z1]);
+    if (v00 * v01 < 0) pts.push([x0, z0 + (v00 / (v00 - v01)) * (z1 - z0)]);
+    for (let p = 0; p + 1 < pts.length && m < 7998; p += 2) {
+      bndArr[m * 3] = pts[p][0]; bndArr[m * 3 + 1] = 0; bndArr[m * 3 + 2] = pts[p][1]; m++;
+      bndArr[m * 3] = pts[p + 1][0]; bndArr[m * 3 + 1] = 0; bndArr[m * 3 + 2] = pts[p + 1][1]; m++;
+    }
+  }
+  bndGeo.setDrawRange(0, m);
+  bndGeo.attributes.position.needsUpdate = true;
+  if (m >= 2) bndAnchor.set(bndArr[0], 0.45, bndArr[2]);
+}
+rebuildBoundary();
+
+/* ---------------- 样本点:球大小 ∝ 权重(Ada)/ |残差|(GBDT) ---------------- */
+const sphGeo = new THREE.SphereGeometry(1, 10, 8);
+const diaGeo = new THREE.OctahedronGeometry(0.075);
+const trainPts = [], testPts = [];
+for (let i = 0; i < train.X.length; i++) {
+  const mesh = new THREE.Mesh(sphGeo, M.pos);
+  mesh.position.set(train.X[i][0], 0.06, train.X[i][1]);
+  mesh.scale.setScalar(0.085);
+  scene.add(mesh);
+  trainPts.push(mesh);
+}
+for (let i = 0; i < test.X.length; i++) {
+  const mesh = new THREE.Mesh(diaGeo, M.tpos);
+  mesh.position.set(test.X[i][0], 0.06, test.X[i][1]);
+  mesh.rotation.x = Math.PI / 4;
+  scene.add(mesh);
+  testPts.push(mesh);
+}
+function refreshSamples() {
+  for (let i = 0; i < trainPts.length; i++) {
+    const ok = Math.sign(model.F[i]) === train.y[i];
+    trainPts[i].material = ok ? (train.y[i] > 0 ? M.pos : M.neg) : M.wrong;
+  }
+  for (let i = 0; i < testPts.length; i++) {
+    const ok = Math.sign(modelOut(test.X[i][0], test.X[i][1])) === test.y[i];
+    testPts[i].material = ok ? (test.y[i] > 0 ? M.tpos : M.tneg) : M.wrong;
+  }
+}
+refreshSamples();
+
+/* 残差棒:绿=正残差(需要调高 F),红=负残差 */
+const resGeo = new THREE.BufferGeometry();
+const resArr = new Float32Array(train.X.length * 6);
+const resCol = new Float32Array(train.X.length * 6);
+resGeo.setAttribute('position', new THREE.BufferAttribute(resArr, 3));
+resGeo.setAttribute('color', new THREE.BufferAttribute(resCol, 3));
+const resLines = new THREE.LineSegments(resGeo, M.resid);
+scene.add(resLines);
+function refreshResid() {
+  let rmax = 0.3;
+  for (let i = 0; i < train.X.length; i++) rmax = Math.max(rmax, Math.abs(train.y[i] - model.F[i]));
+  for (let i = 0; i < train.X.length; i++) {
+    const r = train.y[i] - model.F[i];
+    const len = clamp(Math.abs(r) / rmax, 0, 1) * 0.55 * Math.sign(r);
+    const o = i * 6;
+    resArr[o] = train.X[i][0]; resArr[o + 1] = 0.18; resArr[o + 2] = train.X[i][1];
+    resArr[o + 3] = train.X[i][0]; resArr[o + 4] = 0.18 + len; resArr[o + 5] = train.X[i][1];
+    if (r >= 0) { resCol[o] = 0.3; resCol[o + 1] = 0.9; resCol[o + 2] = 0.4; }
+    else { resCol[o] = 1; resCol[o + 1] = 0.4; resCol[o + 2] = 0.4; }
+    for (let c = 0; c < 3; c++) resCol[o + 3 + c] = resCol[o + c];
+  }
+  resGeo.attributes.position.needsUpdate = true;
+  resGeo.attributes.color.needsUpdate = true;
+  resLines.visible = residView && model.mode === 'gbdt' && tglResid.checked;
+}
+resLines.visible = false;
+
+/* ---------------- 迷你对照:Bagging(并行投票) vs Boosting(串行纠错) ---------------- */
+function miniTree(x, zz, parent) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, zz);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.5, 8), M.trunk);
+  trunk.position.y = 0.25;
+  g.add(trunk);
+  const c1 = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.55, 7), M.leaf);
+  c1.position.y = 0.72;
+  g.add(c1);
+  const c2 = new THREE.Mesh(new THREE.ConeGeometry(0.21, 0.42, 7), M.leaf);
+  c2.position.y = 1.05;
+  g.add(c2);
+  parent.add(g);
+  return g;
+}
+const bagG = new THREE.Group(); bagG.position.set(-3.4, 0, -5.4); scene.add(bagG);
+const boostG = new THREE.Group(); boostG.position.set(2.2, 0, -5.4); scene.add(boostG);
+for (let k = 0; k < 3; k++) miniTree(k * 1.15 - 1.15, 0, bagG);
+const chain = [];
+for (let k = 0; k < 3; k++) chain.push(miniTree(k * 1.3 - 1.3, 0, boostG));
+for (let k = 0; k < 2; k++) {
+  const ar = new THREE.ArrowHelper(new THREE.Vector3(1, 0.25, 0), new THREE.Vector3(k * 1.3 - 0.62, 0.55, 0), 0.6, 0xffc95c, 0.14, 0.08);
+  boostG.add(ar);
+}
+
+/* ---------------- afterTrain:训练后刷新一切 ---------------- */
+const accHist = [];
+function afterTrain() {
+  refreshSamples();
+  refreshResid();
+  rebuildSurfaceTarget(false);
+  rebuildBoundary();
+  accHist.push([accOf(train), accOf(test)]);
+  updateFormula();
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+addLabel(() => {
+  const T = model.learners.length;
+  return L(`决策边界 F(x)=0 · 已被 ${T} 棵树逐步弯成环形`, `decision boundary F(x)=0 · bent into a ring by ${T} trees`);
+}, () => 'e', new THREE.Vector3(0, 0.5, 0), p => p.copy(bndAnchor).setY(0.45));
+addLabel(() => model.mode === 'ada'
+  ? L(`最新学习器 ε_t=${model.eps.toFixed(3)} → 话语权 α_t=${model.alpha.toFixed(2)}`,
+      `latest learner ε_t=${model.eps.toFixed(3)} → voting power α_t=${model.alpha.toFixed(2)}`)
+  : L(`最新残差 RMS=${model.lastResid.toFixed(3)} · 下一棵树的任务`, `latest residual RMS=${model.lastResid.toFixed(3)} · next tree's job`),
+  () => 'w', new THREE.Vector3(2.6, 1.55, 0.6));
+addLabel(() => model.mode === 'ada'
+  ? L(`气泡大小 = 样本权重 w_i(错题 ×e^α=${Math.exp(model.alpha).toFixed(1)})`,
+      `bubble size = weight w_i (misses ×e^α=${Math.exp(model.alpha).toFixed(1)})`)
+  : L(`气泡大小 = |残差|:欠账越多球越大`, `bubble size = |residual|: bigger debt, bigger sphere`),
+  () => 'b', new THREE.Vector3(-2.5, 1.15, 1.7));
+addLabel(() => L(`残差 r_i = y_i − F(x_i):下一棵树专补这里`, `residual r_i = y_i − F(x_i): the next tree fills exactly this`),
+  () => 'g', new THREE.Vector3(0.3, 1.75, 2.1));
+addLabel(() => L(`环形数据:训练 160 + 测试 60 · 内圈 +1 / 外环 −1`, `ring data: 160 train + 60 test · inner +1 / outer −1`),
+  () => 'st', new THREE.Vector3(0, 0.22, 3.45));
+addLabel(() => L(`随机森林 Bagging:并行训练 · 投票平均 · 降方差`, `random forest (bagging): parallel · vote & average · cuts variance`),
+  () => 'g', new THREE.Vector3(0, 1.85, 0), null, bagG);
+addLabel(() => L(`Boosting:串行接力 · 每棵专纠前棵之错 · 降偏差`, `boosting: serial relay · each tree fixes the last · cuts bias`),
+  () => 'e', new THREE.Vector3(0, 1.85, 0), null, boostG);
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'underfit', tgt: [0, 0.9, 0],
+    b: '一棵树不够:欠拟合的边界', be: 'One tree is not enough: the underfitting ceiling',
+    d: '环形数据要求「内圈归绿、外环归蓝」,而一棵 depth=1 的树桩只会沿某根坐标轴切一刀——直线怎么摆都圈不住圆环,训练准确率只有六成上下。弱学习器是被故意做弱的:限制树深,让它只比瞎猜好一点。Boosting 的全部魔法,就是把一群这样的弱者串成一支强军。',
+    de: 'Ring data demands "green inside, blue outside", but a depth-1 stump only cuts once along one axis - no straight line can enclose a ring, so training accuracy stalls around 60%. Weak learners are weak on purpose: limited depth, just better than a coin flip. Boosting\'s whole trick is marching such weaklings into a strong army.' },
+  { hl: 'ada', tgt: [0, 1.5, 0.6],
+    b: 'AdaBoost:给错题加倍注意力', be: 'AdaBoost: double the attention on misses',
+    d: '每棵树训完,算加权错误率 ε_t(必须 <0.5),然后错分样本权重 w←w·e^(α_t)、分对的缩小,再归一化。下一棵树在新的权重分布上训练,自然把火力压到上一轮的错题上。看球体:错分样本(红)一圈圈变大——「知错就改」的数学形式就是重新加权。',
+    de: 'After each tree, compute the weighted error ε_t (must be <0.5), then multiply missed samples by e^(α_t), shrink correct ones and renormalize. The next tree trains on this new distribution and focuses fire on last round\'s misses. Watch the spheres: red misclassified points swell round after round - "learn from mistakes" as reweighting.' },
+  { hl: 'alpha', tgt: [2.6, 1.3, 0.5],
+    b: 'α_t:错误率换话语权', be: 'α_t: trading error rate for voting power',
+    d: '话语权 α_t=½ln((1−ε_t)/ε_t):ε_t=0.3 → α_t≈0.42;ε_t=0.1 → α_t≈1.10;ε_t→0.5 时 α_t→0——跟抛硬币一样准的学习器只领到废票,训练就此停机。最终 F(x)=sign(Σα_t·h_t(x)):错得少的树嗓门大,委员会的加权多数派就是答案。',
+    de: 'Voting power α_t=½ln((1−ε_t)/ε_t): ε_t=0.3 gives α_t≈0.42; ε_t=0.1 gives α_t≈1.10; as ε_t→0.5, α_t→0 - a coin-flip learner gets a spoiled vote and training halts. Finally F(x)=sign(Σα_t·h_t(x)): better trees shout louder, and the weighted majority answers.' },
+  { hl: 'resid', tgt: [-0.4, 1.6, 1.8],
+    b: '梯度提升:拟合残差', be: 'Gradient boosting: fit the residuals',
+    d: '另一条串行纠错路线直接盯数值:平方损失下负梯度恰是残差 r_i=y_i−F(x_i)。每棵新树拟合残差,再乘学习率 ν 叠加:F(x)=Σν·h_t(x)。勾选「残差棒」:绿棒朝上=欠账为正、红棒朝下=欠账为负,每训一棵棒子集体缩短——曲面就是这样一步步贴向数据的。',
+    de: 'The other serial route tracks numbers directly: under squared loss the negative gradient is exactly the residual r_i=y_i−F(x_i). Each new tree fits residuals and is added scaled by learning rate ν: F(x)=Σν·h_t(x). Enable residual bars: green up = positive debt, red down = negative; every tree shortens them all - that is the surface hugging the data.' },
+  { hl: 'rate', tgt: [0, 1.1, 0],
+    b: '学习率与树深:慢工出细活', be: 'Learning rate and depth: slow work, fine finish',
+    d: '经验甜点区:ν=0.05–0.1、树深 3–8。ν 小,每棵树只走一小步,几十上百棵才收敛,但泛化更稳;把 ν 拖到 0.5,收敛快却容易冲过头。树深决定单棵树的表达力:太浅学不动,太深开始背样本噪声。拖滑块,看下方准确率曲线换姿势。',
+    de: 'The empirical sweet spot: ν=0.05–0.1, depth 3–8. A small ν means each tree takes a small step - dozens to hundreds of trees to converge, but steadier generalization; drag ν to 0.5 and it converges fast but overshoots. Depth sets each tree\'s expressiveness: too shallow cannot learn, too deep memorizes noise. Drag the sliders and watch the accuracy curves.' },
+  { hl: 'compare', tgt: [0, 1.2, -4.4],
+    b: '与随机森林的分工', be: 'Division of labor vs the random forest',
+    d: '随机森林:有放回采样+特征随机,几百棵深树并行训练再投票——树与树独立,平均掉方差。Boosting:浅树串行接力,每棵专纠前面留下的残差——逐步消偏差。表格数据上 GBDT 家族(XGBoost 加二阶泰勒与正则)常胜深度网络,还能给出特征重要性与 SHAP 解释:既准又能讲道理。',
+    de: 'Random forest: bootstrap sampling + random features, hundreds of deep trees trained in parallel then voting - independent trees average variance away. Boosting: shallow trees relay in series, each fixing the residuals left before - bias erodes step by step. On tabular data the GBDT family (XGBoost adds second-order Taylor terms and regularization) often beats deep nets, and ships feature importance and SHAP explanations.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const T = model.learners.length;
+  const tr = (accOf(train) * 100).toFixed(1), te = (accOf(test) * 100).toFixed(1);
+  if (model.mode === 'ada') {
+    formulaEl.innerHTML =
+      L(`AdaBoost:F(x)=sign(Σα_t·h_t(x)),已训 <b>${T}</b> 棵 · 训练 <b>${tr}%</b> / 测试 <b>${te}%</b>`,
+        `AdaBoost: F(x)=sign(Σα_t·h_t(x)), <b>${T}</b> trees · train <b>${tr}%</b> / test <b>${te}%</b>`) + '<br>' +
+      L(`最新:ε_t=<b>${model.eps.toFixed(3)}</b> → α_t=½ln((1−ε_t)/ε_t)=<b>${model.alpha.toFixed(3)}</b>;ε_t→0.5 ⇒ α_t→0(废票即停机)`,
+        `latest: ε_t=<b>${model.eps.toFixed(3)}</b> → α_t=½ln((1−ε_t)/ε_t)=<b>${model.alpha.toFixed(3)}</b>; ε_t→0.5 ⇒ α_t→0 (spoiled vote, stop)`) + '<br>' +
+      L(`权重更新 w_i←w_i·e^(−α_t·y·h):错分样本 ×e^α=<b>×${Math.exp(model.alpha).toFixed(2)}</b> · 当前最大权重 <b>${(model.wmax * 160).toFixed(1)}×</b> 均匀权重`,
+        `update w_i←w_i·e^(−α_t·y·h): misses ×e^α=<b>×${Math.exp(model.alpha).toFixed(2)}</b> · max weight <b>${(model.wmax * 160).toFixed(1)}×</b> uniform`);
+  } else {
+    formulaEl.innerHTML =
+      L(`梯度提升:F_${T + 1}(x)=F_${T}(x)+ν·h_${T + 1}(x),ν=<b>${nu.toFixed(2)}</b> · 树深=<b>${depth}</b> · 已训 <b>${T}</b> 棵`,
+        `Gradient boosting: F_${T + 1}(x)=F_${T}(x)+ν·h_${T + 1}(x), ν=<b>${nu.toFixed(2)}</b> · depth=<b>${depth}</b> · <b>${T}</b> trees`) + '<br>' +
+      L(`平方损失的负梯度 = 残差 r_i=y_i−F(x_i);最新树拟合后残差 RMS=<b>${model.lastResid.toFixed(3)}</b> · 训练 <b>${tr}%</b> / 测试 <b>${te}%</b>`,
+        `Squared-loss negative gradient = residual r_i=y_i−F(x_i); residual RMS after latest tree=<b>${model.lastResid.toFixed(3)}</b> · train <b>${tr}%</b> / test <b>${te}%</b>`) + '<br>' +
+      (overfitOn && parseFloat(te) < parseFloat(tr) - 4
+        ? L(`<b>过拟合警报</b>:训练 ${tr}% vs 测试 ${te}%,差距 ${(parseFloat(tr) - parseFloat(te)).toFixed(1)} 个点——深树+大 ν 正在背噪声`,
+            `<b>Overfit alert</b>: train ${tr}% vs test ${te}%, gap ${(parseFloat(tr) - parseFloat(te)).toFixed(1)} pts - deep trees + big ν memorizing noise`)
+        : L(`甜点区 ν=0.05–0.1、深 3–8;XGBoost 再加二阶泰勒与正则——表格数据之王`,
+            `Sweet spot ν=0.05–0.1, depth 3–8; XGBoost adds 2nd-order Taylor + regularization - king of tabular data`));
+  }
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let scenario = 0, forceTrain = false, trainTimer = 0;
+const btnAda = document.getElementById('btnAda'), btnAuto = document.getElementById('btnAuto'),
+  btnResid = document.getElementById('btnResid'), btnOver = document.getElementById('btnOver'),
+  btnReset = document.getElementById('btnReset');
+const presetBtns = { ada: btnAda, auto: btnAuto, resid: btnResid, over: btnOver };
+function setMode(m) {
+  if (model.mode !== m) { model.mode = m; resetEnsemble(); }
+}
+function setPreset(id) {
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === id);
+  if (id === 'ada') { setMode('ada'); residView = false; tglResid.checked = false; refreshResid(); trainOne(); }
+  else if (id === 'auto') { forceTrain = true; if (!playing) { playing = true; setPlayLabel(); } }
+  else if (id === 'resid') { setMode('gbdt'); residView = true; tglResid.checked = true; refreshResid(); trainOne(); }
+  else if (id === 'over') {
+    setMode('gbdt');
+    if (!overfitOn) { overfitOn = true; train = genSet(160, 20261010, true); }
+    elDepth.value = 8; updateDepth();
+    elNu.value = 45; updateNu();
+    forceTrain = true; playing = true; setPlayLabel();
+  }
+  updateFormula();
+}
+function resetAll() {
+  forceTrain = false; playing = false; overfitOn = false;
+  train = genSet(160, 20261010, false);
+  residView = false; tglResid.checked = false;
+  elNu.value = 10; updateNu();
+  elDepth.value = 3; updateDepth();
+  elMaxn.value = 60; updateMaxn();
+  for (const k in presetBtns) presetBtns[k].classList.remove('on');
+  model.mode = 'ada';
+  resetEnsemble();
+  refreshResid();
+  setPlayLabel();
+}
+function stepAction() {
+  const s = scenario;
+  if (s === 0) { if (model.learners.length === 0) trainOne(1); }
+  else if (s === 1 || s === 2) { setMode('ada'); trainOne(); }
+  else if (s === 3 || s === 4) { setMode('gbdt'); trainOne(); }
+  /* 第 6 步:静观 Bagging vs Boosting 对照 */
+}
+btnAda.addEventListener('click', () => setPreset('ada'));
+btnAuto.addEventListener('click', () => setPreset('auto'));
+btnResid.addEventListener('click', () => setPreset('resid'));
+btnOver.addEventListener('click', () => setPreset('over'));
+btnReset.addEventListener('click', resetAll);
+
+/* ---------------- 准确率曲线(示波器:训练/测试 随树数) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('训练(绿)/ 测试(蓝)×树数', 'train (green) / test (blue) vs trees'), 4 * dpr, 11 * dpr);
+  const py = v => ch - clamp((v - 0.4) / 0.65, 0, 1) * ch;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, py(0.5)); scopeCtx.lineTo(cw, py(0.5));
+  scopeCtx.stroke();
+  if (accHist.length < 2) return;
+  const series = [[0, 'rgba(123,216,143,.95)'], [1, 'rgba(116,192,252,.95)']];
+  for (const [k, c] of series) {
+    scopeCtx.strokeStyle = c;
+    scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < accHist.length; i++) {
+      const x = i / Math.max(1, maxTrees - 1) * cw;
+      i === 0 ? scopeCtx.moveTo(x, py(accHist[i][k])) : scopeCtx.lineTo(x, py(accHist[i][k]));
+    }
+    scopeCtx.stroke();
+  }
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elNu = document.getElementById('nu'), elNuVal = document.getElementById('nuVal');
+const elDepth = document.getElementById('depth'), elDepthVal = document.getElementById('depthVal');
+const elMaxn = document.getElementById('maxn'), elMaxnVal = document.getElementById('maxnVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglResid = document.getElementById('tglResid');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() { for (const r of labelReg) r.o.visible = labelsOn; }
+function updateNu() { nu = (+elNu.value) / 100; elNuVal.textContent = nu.toFixed(2); updateFormula(); }
+function updateDepth() { depth = +elDepth.value; elDepthVal.textContent = depth; updateFormula(); }
+function updateMaxn() { maxTrees = +elMaxn.value; elMaxnVal.textContent = maxTrees; }
+elPlay.addEventListener('click', () => { playing = !playing; if (playing) trainTimer = 1.4; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elNu.addEventListener('input', updateNu);
+elDepth.addEventListener('input', updateDepth);
+elMaxn.addEventListener('input', updateMaxn);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglResid.addEventListener('change', () => { residView = tglResid.checked; refreshResid(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const T = model.learners.length, wm = model.wmax * 160;
+  stA.innerHTML = T + '<small> / ' + maxTrees + '</small>';
+  stA.className = 'v ' + (T > 0 ? 'ok' : '');
+  if (model.mode === 'ada') {
+    stB.innerHTML = model.eps.toFixed(3);
+    stB.className = 'v ' + (model.eps < 0.42 ? 'ok' : model.eps < 0.5 ? 'warn' : 'bad');
+    stC.innerHTML = '×' + wm.toFixed(1);
+    stC.className = 'v ' + (wm < 3 ? 'ok' : wm < 8 ? 'warn' : 'bad');
+  } else {
+    stB.innerHTML = '—<small> GBDT</small>';
+    stB.className = 'v';
+    stC.innerHTML = '1.0<small>×</small>';
+    stC.className = 'v ok';
+  }
+  const tr = accOf(train) * 100, te = accOf(test) * 100;
+  stD.innerHTML = tr.toFixed(1) + '<small> %</small>';
+  stD.className = 'v ' + (tr > 92 ? 'ok' : tr > 75 ? 'warn' : 'bad');
+  stE.innerHTML = te.toFixed(1) + '<small> %</small>';
+  stE.className = 'v ' + (te > 90 ? 'ok' : te > 72 ? 'warn' : 'bad');
+  stF.innerHTML = nu.toFixed(2);
+  stF.className = 'v ' + (nu <= 0.12 ? 'ok' : nu <= 0.3 ? 'warn' : 'bad');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+const tmpV = new THREE.Vector3();
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  /* 曲面向目标变形 */
+  let md = 0;
+  const kk = Math.min(1, dt * 3.5);
+  for (let i = 0; i < hNow.length; i++) {
+    const d = hNowT[i] - hNow[i];
+    hNow[i] += d * kk;
+    surfPos.setY(i, hNow[i]);
+    md = Math.max(md, Math.abs(d));
+  }
+  if (md > 1e-4) {
+    surfPos.needsUpdate = true;
+    surfGeo.computeVertexNormals();
+    rebuildBoundary();
+  }
+  /* 训练节拍(播放时按当前步骤自动演示 / 强制连训) */
+  if (playing) {
+    trainTimer += dt * speed;
+    if (trainTimer > 1.5) {
+      trainTimer = 0;
+      if (forceTrain) {
+        if (!trainOne()) { forceTrain = false; playing = false; setPlayLabel(); }
+      } else stepAction();
+    }
+  }
+  /* 权重/残差气泡缓动 */
+  const ada = model.mode === 'ada';
+  for (let i = 0; i < trainPts.length; i++) {
+    let norm;
+    if (ada) norm = model.wmax > 0 ? 0.35 + 0.65 * (model.w[i] / model.wmax) : 0.35;
+    else norm = Math.min(1, Math.abs(train.y[i] - model.F[i]) / Math.max(0.25, model.lastResid * 1.6));
+    trainPts[i].scale.lerp(tmpV.setScalar(0.06 + 0.13 * norm), Math.min(1, dt * 6));
+  }
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  for (const m of [M.surf, M.pos, M.neg, M.wrong, M.trunk, M.leaf]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.25);
+  const boost = m => { m.emissiveIntensity = 0.5 + 0.3 * hlK; };
+  const hl = STEPS[scenario].hl;
+  if (hl === 'underfit' || hl === 'rate') boost(M.surf);
+  else if (hl === 'ada') { boost(M.pos); boost(M.neg); }
+  else if (hl === 'alpha') boost(M.wrong);
+  else if (hl === 'resid') M.resid.opacity = 0.55 + 0.4 * hlK;
+  else if (hl === 'compare') { boost(M.trunk); boost(M.leaf); }
+  if (hl !== 'resid') M.resid.opacity = 0.9;
+  /* 相机目标 + 标签 */
+  controls.target.lerp(tmpV.fromArray(STEPS[scenario].tgt), 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+updateStats();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

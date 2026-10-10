@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>撞击坑计数 · 没有岩石样本也能读出表面年龄</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="撞击坑计数:没有岩石样本,也能读出表面年龄" data-en="Crater Counting: Reading a Surface's Age Without a Single Rock Sample">撞击坑计数:没有岩石样本,也能读出表面年龄</h1>
+  <div class="sub" data-zh="坑就是行星表面的「年轮」:单位面积上直径 ≥D 的坑密度 N(D) 随暴露时间单调增长,把 N(D)-D 计数点叠到等时线上即可读年龄;内太阳系生产函数 N(≥D) ∝ D^(−1.8~−2),绝对刻度由阿波罗月岩同位素年龄(月海玄武岩 3.5–4.0 Gyr)锚定;表面太老会撞上饱和极限(平衡覆盖 ~1–3%,月球/水星高地 ~4 Gyr 封顶),风化与掩埋又让读数偏年轻——月球雨海 ~3.9 Gyr、火星亚马逊平原 ~2–3 Gyr、冥王星斯普特尼克平原 &lt;10 Myr(2015 新视野) · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Craters are the tree rings of a planetary surface: the density N(D) of craters with diameter ≥ D per unit area grows monotonically with exposure time — overlay the N(D)-D counts on isochrons to read an age. The inner-solar-system production function runs N(≥D) ∝ D^(−1.8~−2), its absolute scale anchored by Apollo isotope ages (mare basalts 3.5–4.0 Gyr). Old surfaces hit geometric saturation (equilibrium coverage ~1–3%; lunar/Mercury highlands cap at ~4 Gyr) while erosion biases ages young — Mare Imbrium ~3.9 Gyr, Mars' Amazonis plains ~2–3 Gyr, Pluto's Sputnik Planitia &lt;10 Myr (New Horizons 2015) · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">坑就是行星表面的「年轮」:单位面积上直径 ≥D 的坑密度 N(D) 随暴露时间单调增长,把 N(D)-D 计数点叠到等时线上即可读年龄;内太阳系生产函数 N(≥D) ∝ D^(−1.8~−2),绝对刻度由阿波罗月岩同位素年龄(月海玄武岩 3.5–4.0 Gyr)锚定;表面太老会撞上饱和极限(平衡覆盖 ~1–3%,月球/水星高地 ~4 Gyr 封顶),风化与掩埋又让读数偏年轻——月球雨海 ~3.9 Gyr、火星亚马逊平原 ~2–3 Gyr、冥王星斯普特尼克平原 &lt;10 Myr(2015 新视野) · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="计数窗口直径" data-en="counting window">计数窗口直径</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="坑密度 N(≥1 km)" data-en="density N(≥1 km)">坑密度 N(≥1 km)</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="拟合年龄" data-en="fitted age">拟合年龄</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="覆盖饱和度" data-en="saturation">覆盖饱和度</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="抹平速率" data-en="erasure rate">抹平速率</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="定年误差" data-en="dating error">定年误差</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip o" data-zh="新鲜坑 · 亮色坑缘" data-en="fresh crater · bright rim">新鲜坑 · 亮色坑缘</span>
+    <span class="chip b" data-zh="蓝色 = 计数窗口圈选" data-en="blue = counting window">蓝色 = 计数窗口圈选</span>
+    <span class="chip r" data-zh="二次坑(要剔除)" data-en="secondaries (drop them)">二次坑(要剔除)</span>
+    <span class="chip g" data-zh="金线 = 拟合等时线 → 年龄" data-en="gold = fitted isochron → age">金线 = 拟合等时线 → 年龄</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnMare" data-zh="月球月海 3.9 Gyr" data-en="lunar mare 3.9 Gyr">月球月海 3.9 Gyr</button>
+    <button class="abtn" id="btnMars" data-zh="火星平原 ~2–3 Gyr" data-en="Mars plains ~2–3 Gyr">火星平原 ~2–3 Gyr</button>
+    <button class="abtn" id="btnPluto" data-zh="冥王星 &lt;10 Myr" data-en="Pluto &lt;10 Myr">冥王星 &lt;10 Myr</button>
+    <button class="abtn" id="btnSat" data-zh="饱和极限演示" data-en="saturation demo">饱和极限演示</button>
+    <button class="abtn" id="btnSel" data-zh="圈选计数" data-en="select window">圈选计数</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="暴露时间 t" data-en="exposure time t">暴露时间 t</label><input id="time" type="range" min="0" max="450" step="1" value="120"><span class="val" id="timeVal">1.20 Gyr</span></div>
+  <div class="row"><label data-zh="抹平速率" data-en="erasure rate">抹平速率</label><input id="erase" type="range" min="0" max="50" step="1" value="0"><span class="val" id="eraseVal">0 m/Myr</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglVol" type="checkbox"> <span data-zh="火山抹面" data-en="volcanic resurfacing">火山抹面</span></label>
+        <label><input id="tglSand" type="checkbox"> <span data-zh="风沙掩埋" data-en="sand burial">风沙掩埋</span></label>
+        <label><input id="tglSec" type="checkbox" checked> <span data-zh="剔除二次坑" data-en="drop secondaries">剔除二次坑</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../impact-crater/" data-zh="撞击坑" data-en="impact craters">撞击坑</a>
+    <a href="../moon-formation/" data-zh="月球起源" data-en="Moon formation">月球起源</a>
+    <a href="../radiocarbon-dating/" data-zh="放射性碳定年" data-en="radiocarbon dating">放射性碳定年</a>
+    <a href="../tree-rings/" data-zh="树木年轮" data-en="tree rings">树木年轮</a>
+    <a href="../plate-tectonics/" data-zh="板块构造" data-en="plate tectonics">板块构造</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const UP = new THREE.Vector3(0, 1, 0);
+const rnd = Math.random;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const scene = new THREE.Scene();
+const terrainTint = new THREE.Color(0x4a4f57);
+function tintTerrain() { M.terrain.color.copy(terrainTint).multiplyScalar(THEME === 'dark' ? 1 : 1.22); }
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0b0e12 : 0xe8ebee);
+  tintTerrain();
+  M.rim.color.setScalar(dark ? 1 : 0.9);
+  M.floor.color.setScalar(dark ? 1 : 0.94);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.sel.userData.base = dark ? 0x74c0fc : 0x1864ab;
+  M.sel.color.setHex(M.sel.userData.base);
+  M.selFill.color.setHex(M.sel.userData.base);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[' + 'data-' + 'zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('撞击坑计数 · 没有岩石样本也能读出表面年龄', 'Crater Counting · Dating a Surface Without Rock Samples');
+  buildSteps(); setPlayLabel(); markStep(); syncPhase();
+  updateTime(); updateErase(); updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME); applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG); applyLang();
+});
+
+/* ---------------- 渲染器 / 相机 / 灯光 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 400);
+camera.position.set(17, 13, 23);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 5;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.autoRotateSpeed = 0.25;
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.8));
+const keyLight = new THREE.DirectionalLight(0xfff1de, 2.1);
+keyLight.position.set(16, 20, 9);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.4);
+fill.position.set(-12, 9, -9);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+const M = {
+  terrain: new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.96, metalness: 0.02, flatShading: true }),
+  rim: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.72, metalness: 0.04, emissive: 0xffffff, emissiveIntensity: 0.04 }),
+  floor: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0.03, emissive: 0xffffff, emissiveIntensity: 0.03 }),
+  sel: new THREE.LineBasicMaterial({ color: 0x74c0fc }),
+  selFill: new THREE.MeshBasicMaterial({ color: 0x74c0fc, transparent: true, opacity: 0.07, depthWrite: false }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.22, depthWrite: false }),
+};
+
+/* ---------------- 尺度与定年模型(1 单位 = 4 km) ----------------
+   生产函数:N(≥D) = N₁·(D/1 km)^(−s),内太阳系 s≈1.8~2(演示取 1.9);
+   刻度:N₁ ≈ 900·t(Gyr) /10⁶ km²,由阿波罗月海玄武岩 3.5–4.0 Gyr 同位素年龄锚定;
+   饱和:坑面积覆盖率到 ~2%(几何平衡 1–3%)后新坑砸毁旧坑,密度封顶读不出更老 */
+const KM = 4;                                  // 1 单位 = 4 km
+const HALF = 22;                               // 半边长(单位)→ 全域 176 km 见方
+const AREA_KM2 = Math.pow(2 * HALF * KM, 2);   // ≈ 30976 km²
+const FRAC = AREA_KM2 / 1e6;                   // 占 10⁶ km² 比例 ≈ 0.031
+const DMIN = 1, DMAX = 20;                     // 计数直径范围 km
+const SLOPE = 1.9;                             // N(≥D) ∝ D^−1.9
+const CAL = 900;                               // N(≥1 km) = 900·t /10⁶ km²
+const SAT_COV = 0.020;                         // 饱和覆盖率 ~2%(平衡 1–3%)
+const MEAN_DT = 1 / (CAL * FRAC);              // 平均产坑间隔 ≈ 0.036 Gyr
+const CAP = 260;                               // 坑实例上限
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let modelT = 1.2, spawnedT = 0, eraseRate = 0, rateBoost = 1;
+let volOn = false, sandOn = false, dropSec = true;
+let selMode = false, sel = null, selDrag = null, scrubbing = false;
+let preset = null, saturated = false, spawnSeq = 0, volTimer = 0, et = 0;
+let FIT = { n: 0, t: 0, err: 0.5, area: AREA_KM2, Ds: [] };
+
+/* ---------------- 地形 / 网格 / 圈选框 ---------------- */
+const terrain = new THREE.Mesh((() => {
+  const g = new THREE.PlaneGeometry(2 * HALF, 2 * HALF, 56, 56);
+  g.rotateX(-Math.PI / 2);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), z = p.getZ(i);
+    p.setY(i, 0.024 * Math.sin(x * 0.35 + z * 0.21) + 0.016 * Math.sin(x * 0.9 - z * 0.7 + 1.7) + 0.012 * Math.sin(z * 1.4 + x * 0.5));
+  }
+  g.computeVertexNormals();
+  return g;
+})(), M.terrain);
+scene.add(terrain);
+const grid = new THREE.GridHelper(2 * HALF, 22, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.062;
+scene.add(grid);
+const selGeo = new THREE.BufferGeometry();
+selGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3));
+const selG = new THREE.LineLoop(selGeo, M.sel);
+selG.visible = false;
+scene.add(selG);
+const selFillG = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), M.selFill);
+selFillG.rotation.x = -Math.PI / 2;
+selFillG.visible = false;
+scene.add(selFillG);
+function updateSelMesh() {          // 只刷新几何;可见性由帧循环按 selMode/步骤控制
+  if (!sel) return;
+  const x0 = Math.min(sel.x0, sel.x1), x1 = Math.max(sel.x0, sel.x1);
+  const z0 = Math.min(sel.z0, sel.z1), z1 = Math.max(sel.z0, sel.z1);
+  const p = selGeo.attributes.position;
+  p.setXYZ(0, x0, 0.09, z0); p.setXYZ(1, x1, 0.09, z0); p.setXYZ(2, x1, 0.09, z1); p.setXYZ(3, x0, 0.09, z1);
+  p.needsUpdate = true;
+  selFillG.position.set((x0 + x1) / 2, 0.07, (z0 + z1) / 2);
+  selFillG.scale.set(Math.max(0.01, x1 - x0), 1, Math.max(0.01, z1 - z0));
+}
+
+/* ---------------- 陨坑实例系统(坑缘环 + 暗色坑底,叠置=新压旧) ---------------- */
+const rimGeo = new THREE.TorusGeometry(1, 0.24, 7, 22);
+rimGeo.rotateX(Math.PI / 2);
+const floorGeo = new THREE.CircleGeometry(1, 20);
+floorGeo.rotateX(-Math.PI / 2);
+const rims = new THREE.InstancedMesh(rimGeo, M.rim, CAP);
+const floors = new THREE.InstancedMesh(floorGeo, M.floor, CAP);
+rims.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+floors.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+rims.frustumCulled = floors.frustumCulled = false;
+rims.count = floors.count = 0;
+scene.add(rims, floors);
+const cX = new Float32Array(CAP), cZ = new Float32Array(CAP), cR = new Float32Array(CAP),
+  cS = new Float32Array(CAP), cY = new Float32Array(CAP), cT = new Float32Array(CAP),
+  cSec = new Uint8Array(CAP), cSeq = new Uint32Array(CAP), cDie = new Uint8Array(CAP);
+let cN = 0;
+const dummy = new THREE.Object3D();
+function writeInstance(i) {
+  const r = Math.max(1e-4, cR[i] * cS[i]);
+  const ry = (0.05 + 0.09 * Math.pow(cR[i], 0.6)) * Math.min(1, cS[i] * 1.5);
+  dummy.position.set(cX[i], cY[i] + 0.01, cZ[i]);
+  dummy.scale.set(r, ry, r);
+  dummy.rotation.set(0, 0, 0);
+  dummy.updateMatrix();
+  rims.setMatrixAt(i, dummy.matrix);
+  dummy.position.y = cY[i];
+  dummy.scale.set(r * 0.8, 1, r * 0.8);
+  dummy.updateMatrix();
+  floors.setMatrixAt(i, dummy.matrix);
+}
+const cRimFresh = new THREE.Color(0xf1e7cb), cRimOld = new THREE.Color(0x8f8b83),
+  cRimSec = new THREE.Color(0xd8935c), cFlFresh = new THREE.Color(0x23262c),
+  cFlOld = new THREE.Color(0x34383f), tmpC = new THREE.Color();
+function recolorOne(i) {
+  const ageF = cSec[i] ? 1 : clamp01((modelT - cT[i]) / 2.5);
+  tmpC.copy(cRimFresh).lerp(cRimOld, ageF);
+  if (cSec[i]) tmpC.copy(cRimSec);
+  rims.setColorAt(i, tmpC);
+  tmpC.copy(cFlFresh).lerp(cFlOld, cSec[i] ? 0.8 : ageF * 0.5);
+  floors.setColorAt(i, tmpC);
+}
+function colorDirty() {
+  if (rims.instanceColor) { rims.instanceColor.needsUpdate = true; floors.instanceColor.needsUpdate = true; }
+}
+function recolorAll() { for (let i = 0; i < cN; i++) recolorOne(i); colorDirty(); }
+function removeAt(i) {
+  const j = cN - 1;
+  if (i !== j) {
+    cX[i] = cX[j]; cZ[i] = cZ[j]; cR[i] = cR[j]; cS[i] = cS[j]; cY[i] = cY[j];
+    cT[i] = cT[j]; cSec[i] = cSec[j]; cSeq[i] = cSeq[j]; cDie[i] = cDie[j];
+    writeInstance(i); recolorOne(i);
+  }
+  cN--;
+  rims.count = floors.count = cN;
+  rims.instanceMatrix.needsUpdate = floors.instanceMatrix.needsUpdate = true;
+}
+function obliterateOldest(k) {      // 饱和互毁:最老的坑被新坑砸掉
+  for (let n = 0; n < k; n++) {
+    if (cN <= 6) break;
+    let j = 0;
+    for (let i = 1; i < cN; i++) if (cSeq[i] < cSeq[j]) j = i;
+    removeAt(j);
+    saturated = true;
+  }
+}
+function coverageFrac() {
+  let a = 0;
+  for (let i = 0; i < cN; i++) a += Math.PI * cR[i] * cR[i] * cS[i];
+  return a / (AREA_KM2 / (KM * KM));
+}
+const covPct = () => coverageFrac() * 100;
+function spawn(Dkm, isSec, atT, px, pz) {
+  if (cN >= CAP) obliterateOldest(1);
+  if (cN >= CAP) return;
+  const i = cN++;
+  cX[i] = px !== undefined ? px : (rnd() * 2 - 1) * (HALF - 2.5);
+  cZ[i] = pz !== undefined ? pz : (rnd() * 2 - 1) * (HALF - 2.5);
+  cR[i] = Dkm / (2 * KM);
+  cS[i] = 0.02;                                   // 新坑从小长出(冲击瞬间)
+  cT[i] = atT;
+  cY[i] = 0.055 + (spawnSeq % 140) * 0.0004;      // 后来的坑略微抬高 → 叠置感
+  cSec[i] = isSec ? 1 : 0;
+  cSeq[i] = spawnSeq++;
+  cDie[i] = 0;
+  writeInstance(i); recolorOne(i); colorDirty();
+}
+function clearCraters() {
+  cN = 0; spawnedT = 0; spawnSeq = 0; saturated = false; volTimer = 0;
+  rims.count = floors.count = 0;
+  rims.instanceMatrix.needsUpdate = floors.instanceMatrix.needsUpdate = true;
+}
+function sampleD() {                // 幂律反变换采样:N(≥D) ∝ D^−1.9
+  const p1 = Math.pow(DMIN, 1 - SLOPE), p2 = Math.pow(DMAX, 1 - SLOPE);
+  return Math.pow(p1 - rnd() * (p1 - p2), 1 / (1 - SLOPE));
+}
+function advance(toT) {             // 泊松过程:把表面"打印"到时刻 toT
+  let guard = 800;
+  while (spawnedT < toT && guard-- > 0) {
+    spawnedT += -Math.log(1 - rnd()) * MEAN_DT / rateBoost;
+    if (spawnedT >= toT) break;
+    const D = sampleD();
+    spawn(D, false, spawnedT);
+    if (D >= 8) {                   // 大坑溅射出成串二次坑
+      const n = 4 + (rnd() * 5 | 0), r0 = D / (2 * KM), pi = cN - 1;
+      for (let k = 0; k < n; k++) {
+        const a = rnd() * TAU, d = r0 * (0.9 + rnd() * 1.6);
+        spawn(0.5 + rnd() * 0.9, true, spawnedT,
+          clamp(cX[pi] + Math.cos(a) * d, -HALF + 1.5, HALF - 1.5),
+          clamp(cZ[pi] + Math.sin(a) * d, -HALF + 1.5, HALF - 1.5));
+      }
+    }
+    while (coverageFrac() > SAT_COV && cN > 8) obliterateOldest(1);
+  }
+  spawnedT = toT;
+}
+
+/* ---------------- 计数与拟合年龄 ---------------- */
+function countSet() {
+  const out = [];
+  let x0, x1, z0, z1;
+  if (sel) { x0 = Math.min(sel.x0, sel.x1); x1 = Math.max(sel.x0, sel.x1); z0 = Math.min(sel.z0, sel.z1); z1 = Math.max(sel.z0, sel.z1); }
+  for (let i = 0; i < cN; i++) {
+    if (cS[i] < 0.6) continue;                    // 正被抹掉的不计
+    if (cSec[i] && dropSec) continue;             // 剔除二次坑
+    const D = cR[i] * 2 * KM;
+    if (D < DMIN) continue;
+    if (sel && (cX[i] < x0 || cX[i] > x1 || cZ[i] < z0 || cZ[i] > z1)) continue;
+    out.push(D);
+  }
+  return out;
+}
+function windowKm() { return sel ? Math.max(Math.abs(sel.x1 - sel.x0), Math.abs(sel.z1 - sel.z0)) * KM : 2 * HALF * KM; }
+function computeFIT() {             // 斜率固定为幂律,只拟合幅度 → 年龄
+  const Ds = countSet().sort((a, b) => b - a);
+  const area = sel ? Math.abs(sel.x1 - sel.x0) * Math.abs(sel.z1 - sel.z0) * KM * KM : AREA_KM2;
+  let sum = 0;
+  for (let k = 0; k < Ds.length; k++) sum += (k + 1) / (area / 1e6) * Math.pow(Ds[k], SLOPE);
+  const A = Ds.length ? sum / Ds.length : 0;
+  const t = A / CAL;
+  FIT = { n: Ds.length, t, err: Ds.length ? t / Math.sqrt(Ds.length) + 0.06 : 0.5, area, Ds };
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+function biggestIdx() { let j = -1; for (let i = 0; i < cN; i++) if (!cSec[i] && cS[i] > 0.5 && (j < 0 || cR[i] > cR[j])) j = i; return j; }
+function firstSec() { for (let i = 0; i < cN; i++) if (cSec[i] && cS[i] > 0.4) return i; return -1; }
+addLabel(() => {
+  const j = biggestIdx();
+  return j < 0 ? L('生产函数:等待第一声撞击…', 'production function: awaiting first impact…')
+    : L(`生产函数 N(≥D) ∝ D^−1.9 · 此坑 D=${(cR[j] * 2 * KM).toFixed(1)} km`, `production N(≥D) ∝ D^−1.9 · crater D=${(cR[j] * 2 * KM).toFixed(1)} km`);
+}, () => 'e', o => {
+  const j = biggestIdx(); o.visible = labelsOn && j >= 0;
+  if (j >= 0) o.position.set(cX[j], 0.3 + cR[j] * 0.5, cZ[j]);
+});
+addLabel(() => L('二次坑:溅射块砸出的串状浅坑,计数要剔除', 'secondaries: shallow ejecta chains, drop from counts'), () => 'bad', o => {
+  const j = firstSec(); o.visible = labelsOn && j >= 0;
+  if (j >= 0) o.position.set(cX[j], 0.45, cZ[j]);
+});
+addLabel(() => L(`饱和极限:覆盖率 ${covPct().toFixed(2)}%(平衡 ~1–3%)新坑互毁、读数封顶`, `saturation: coverage ${covPct().toFixed(2)}% (equilibrium ~1–3%), craters self-destruct, age caps`), () => 'w',
+  o => { o.visible = labelsOn; o.position.set(0, 0.22, 0); });
+addLabel(() => L(`计数窗口 Ø ${windowKm().toFixed(0)} km · n = ${FIT.n}`, `counting window Ø ${windowKm().toFixed(0)} km · n = ${FIT.n}`), () => 'b', o => {
+  o.visible = labelsOn;
+  if (sel) o.position.set((sel.x0 + sel.x1) / 2, 0.42, (sel.z0 + sel.z1) / 2);
+  else o.position.set(-HALF + 4, 0.42, HALF - 5);
+});
+addLabel(() => L(`N(≥1 km) = ${Math.round(FIT.t * CAL)} /10⁶ km² → t ≈ ${FIT.t < 0.015 ? '<0.01' : FIT.t.toFixed(2)} Gyr`, `N(≥1 km) = ${Math.round(FIT.t * CAL)} /10⁶ km² → t ≈ ${FIT.t < 0.015 ? '<0.01' : FIT.t.toFixed(2)} Gyr`), () => 'st',
+  o => { o.visible = labelsOn; o.position.set(HALF - 6, 1.6, HALF - 8); });
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'terrain', tgt: [0, 0, 2],
+    b: '没有岩石样本,也能读时间', be: 'Reading time without a single rock sample',
+    d: '飞掠探测器带回不了岩石,却带回一张坑口普查图:单位面积上直径 ≥D 的坑密度 N(D) 随表面暴露时间单调增长——撞击坑就是行星表面的「年轮」。分直径区间数坑,把 N(D)-D 画成点,叠到理论等时线上,年龄当场读出。拖动「暴露时间」滑块,看表面被泊松过程一点点「打印」上坑,新坑还能叠在旧坑上。',
+    de: 'Flyby probes bring no rocks home - only a crater census: the density N(D) of craters ≥ D per unit area grows monotonically with exposure time. Craters are the tree rings of a planet. Count them in diameter bins, plot N(D)-D, and read the age off theoretical isochrons. Drag the exposure-time slider and watch the surface get printed with craters, new ones stacking on old.' },
+  { hl: 'rim', tgt: [0, 0, 0],
+    b: '生产函数与等时线', be: 'Production function & isochrons',
+    d: '内太阳系撞击体的大小-频率分布近似幂律:N(≥D) ∝ D^(−1.8~−2)。任一时刻砸出的坑群都沿这条幂律铺开,暴露时间只决定整体高度——这就是生产函数;等时线是预画的曲线族(t=0.5/1/2/3/4 Gyr),坑群计数点落在哪条线上,表面就多老。看坑缘上的新坑:直径越大越稀少,这正是 −1.9 的斜率。',
+    de: 'The inner-solar-system impactor size-frequency distribution is nearly a power law: N(≥D) ∝ D^(−1.8~−2). Craters on any surface spread along this law; exposure time only sets the height - the production function. Isochrons are a pre-drawn curve family (t=0.5/1/2/3/4 Gyr): whichever line the counts land on is the age. Big craters are rare - that is the -1.9 slope.' },
+  { hl: 'floor', tgt: [9, 0, -7],
+    b: '阿波罗样品:给钟表上发条', be: 'Apollo samples: winding the clock',
+    d: '幂律只给出形状,绝对刻度要用放射性同位素定年「上发条」:阿波罗计划取回的月海玄武岩同位素年龄集中在 3.5–4.0 Gyr,与月海坑密度一对照,单位时间的产坑率被钉死。从此这把坑钟能离开月球,拿去给水星、火星乃至柯伊伯带天体的表面对表——本演示的等时线刻度正是这么标的。',
+    de: 'The power law fixes the shape; the absolute scale needs radiometric winding: Apollo mare basalts are 3.5-4.0 Gyr old by isotope dating, and matching those ages to mare crater densities pins down the cratering rate. The crater clock has since left the Moon, dating Mercury, Mars and Kuiper-belt worlds - this demo\'s isochrons are calibrated the same way.' },
+  { hl: 'sat', tgt: [0, 0, 0],
+    b: '饱和与擦除:读数的两大陷阱', be: 'Saturation & erasure: two traps',
+    d: '表面太老后,新坑不断摧毁旧坑,坑密度停在几何饱和极限——平衡覆盖约 1–3%,月球与水星高地 ~4 Gyr 的读数已是天花板,更老的历史读不出。更阴险的是擦除:火星沙尘掩埋小坑、木卫一火山抹面、地球板块循环回收地壳,密度偏低、年龄读数偏年轻。打开「风沙掩埋/火山抹面」开关,或点「饱和极限演示」,亲眼看读数作假。',
+    de: 'On very old surfaces fresh craters destroy old ones and density stalls at geometric saturation - equilibrium coverage ~1-3%. Lunar and Mercurian highlands read ~4 Gyr, a ceiling. Sneakier is erasure: Martian dust burial, Io\'s volcanism and Earth\'s plate recycling erase craters, biasing ages young. Toggle sand burial / volcanic resurfacing, or the saturation demo, and watch the reading lie.' },
+  { hl: 'sel', tgt: [-9, 0, 0],
+    b: '二次坑与地层圈选', be: 'Secondary craters & windowing',
+    d: '大坑溅射出的岩块会在周围砸出成串浅坑——二次坑:轮廓浅、常呈链状或放射状,混进样本会高估年龄,必须剔除(橙色)。坑的叠置遵守地层学:压住旧坑边缘的新坑一定更年轻。点「圈选计数」在表面框一块干净的原生坑区域,N(D)-D 计数点实时叠到等时线上,拟合年龄随圈选刷新;误差随样本数 n 收窄。',
+    de: 'Ejecta blocks from a big impact splash chains of shallow secondaries; mixed into a sample they inflate the age and must be dropped (orange). Superposition follows stratigraphy: a crater cutting an older rim is younger. Hit "select window", box a clean patch of primaries, and the N(D)-D points land on the isochron plot with the fitted age updating live.' },
+  { hl: 'terrain', tgt: [0, 0, 0],
+    b: '从月球到冥王星', be: 'From the Moon to Pluto',
+    d: '同一把坑钟量遍太阳系:月球雨海玄武岩 ~3.9 Gyr;火星亚马逊平原的坑密度给出 ~2–3 Gyr,记录火山活动断续翻新表面;2015 年新视野号飞掠冥王星,斯普特尼克平原的氮冰对流抹平一切撞击坑,几乎无坑 → 表面 &lt;10 Myr,是太阳系最年轻的大片地貌之一。点预设按钮逐一验证:月海、火星、冥王星、饱和。',
+    de: 'One clock for the whole solar system: lunar Mare Imbrium basalts ~3.9 Gyr; Mars\' Amazonis plains count out ~2-3 Gyr as volcanism kept resurfacing; in 2015 New Horizons found Pluto\'s Sputnik Planitia almost crater-free - convecting nitrogen ice - younger than 10 Myr. Verify each case with the preset buttons: mare, Mars, Pluto, saturation.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  if (scenario === 4 && !sel) { sel = { x0: -15, z0: -7, x1: -3, z1: 7 }; updateSelMesh(); computeFIT(); }
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const F = FIT, Dth = eraseRate * 0.06;
+  formulaEl.innerHTML =
+    L(`生产函数:N(≥D) = N₁·(D/1 km)^(−1.8~−2),本演示取 <b>−1.9</b>;刻度 N₁ ≈ <b>900·t(Gyr)</b> /10⁶ km²,由阿波罗月海玄武岩 <b>3.5–4.0 Gyr</b> 同位素年龄锚定`,
+      `Production fn: N(≥D) = N₁·(D/1 km)^(−1.8~−2), slope −1.9 here; scale N₁ ≈ <b>900·t(Gyr)</b> per 10⁶ km², anchored by Apollo mare isotope ages <b>3.5–4.0 Gyr</b>`) + '<br>' +
+    L(`计数:n = <b>${F.n}</b> 个 ≥1 km · 窗口 Ø <b>${windowKm().toFixed(0)} km</b>(A ≈ <b>${(F.area / 1e4).toFixed(1)}×10⁴ km²</b>)→ N(≥1 km) = <b>${Math.round(F.t * CAL)}</b> /10⁶ km² → t = <b>${F.t < 0.015 ? '<0.01' : F.t.toFixed(2)} ± ${F.err.toFixed(2)} Gyr</b>`,
+      `Count: n = <b>${F.n}</b> craters ≥1 km · window Ø <b>${windowKm().toFixed(0)} km</b> (A ≈ <b>${(F.area / 1e4).toFixed(1)}×10⁴ km²</b>) → N(≥1 km) = <b>${Math.round(F.t * CAL)}</b> /10⁶ km² → t = <b>${F.t < 0.015 ? '<0.01' : F.t.toFixed(2)} ± ${F.err.toFixed(2)} Gyr</b>`) + '<br>' +
+    L(`覆盖率 <b>${covPct().toFixed(2)}%</b>(饱和平衡 <b>~1–3%</b>${saturated ? ' · 新坑互毁、读数封顶!' : ''});抹平 <b>${eraseRate}</b> m/Myr → D&lt;<b>${Dth.toFixed(2)} km</b> 被抹掉 → 读数<b>偏年轻</b>`,
+      `Coverage <b>${covPct().toFixed(2)}%</b> (saturation <b>~1–3%</b>${saturated ? ' · craters self-destruct, age capped!' : ''}); erasure <b>${eraseRate}</b> m/Myr removes D&lt;<b>${Dth.toFixed(2)} km</b> → age reads too young`);
+}
+
+/* ---------------- 预设 / 圈选 ---------------- */
+const btnMare = document.getElementById('btnMare'), btnMars = document.getElementById('btnMars'),
+  btnPluto = document.getElementById('btnPluto'), btnSat = document.getElementById('btnSat'),
+  btnSel = document.getElementById('btnSel'), btnReset = document.getElementById('btnReset');
+const presetBtns = { mare: btnMare, mars: btnMars, pluto: btnPluto, sat: btnSat };
+const PRESETS = {
+  mare: { t: 3.9, erase: 0, sand: false, boost: 1, tint: 0x35393f },
+  mars: { t: 2.5, erase: 20, sand: true, boost: 1, tint: 0x9a6238 },
+  pluto: { t: 0.01, erase: 0, sand: false, boost: 1, tint: 0xd8d2c4 },
+  sat: { t: 4.4, erase: 0, sand: false, boost: 2.2, tint: 0x71767f },
+};
+function applyPreset(id) {
+  const p = PRESETS[id];
+  if (!p) return;
+  preset = id;
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === id);
+  volOn = false; tglVol.checked = false;
+  sandOn = p.sand; tglSand.checked = p.sand;
+  elErase.value = p.erase; updateErase();
+  rateBoost = p.boost;
+  terrainTint.setHex(p.tint); tintTerrain();
+  clearCraters();
+  modelT = p.t; elTime.value = Math.round(p.t * 100); elTimeVal.textContent = p.t.toFixed(2) + ' Gyr';
+  advance(modelT); recolorAll(); computeFIT(); updateFormula();
+}
+function resetAll() {
+  preset = null;
+  for (const k in presetBtns) presetBtns[k].classList.remove('on');
+  volOn = sandOn = false; tglVol.checked = tglSand.checked = false;
+  rateBoost = 1;
+  elErase.value = 0; updateErase();
+  terrainTint.setHex(0x4a4f57); tintTerrain();
+  clearCraters();
+  modelT = 0; elTime.value = 0; elTimeVal.textContent = '0.00 Gyr';
+  sel = null; updateSelMesh();
+  computeFIT(); updateFormula();
+}
+btnMare.addEventListener('click', () => applyPreset('mare'));
+btnMars.addEventListener('click', () => applyPreset('mars'));
+btnPluto.addEventListener('click', () => applyPreset('pluto'));
+btnSat.addEventListener('click', () => applyPreset('sat'));
+btnReset.addEventListener('click', resetAll);
+btnSel.addEventListener('click', () => {
+  selMode = !selMode;
+  btnSel.classList.toggle('on', selMode);
+  controls.enabled = !selMode;
+  if (!selMode) { sel = null; selDrag = null; updateSelMesh(); computeFIT(); updateFormula(); }
+});
+const ray = new THREE.Raycaster(), planeY = new THREE.Plane(UP, 0), hitP = new THREE.Vector3();
+function pickGround(e) {
+  ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
+  return ray.ray.intersectPlane(planeY, hitP) ? hitP : null;
+}
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (!selMode) return;
+  const p = pickGround(e);
+  if (!p) return;
+  selDrag = { x0: clamp(p.x, -HALF, HALF), z0: clamp(p.z, -HALF, HALF), x1: null, z1: null };
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!selDrag) return;
+  const p = pickGround(e);
+  if (!p) return;
+  selDrag.x1 = clamp(p.x, -HALF, HALF); selDrag.z1 = clamp(p.z, -HALF, HALF);
+  sel = selDrag; updateSelMesh(); computeFIT(); updateFormula();
+});
+
+/* ---------------- 等时线示波器(N-D 双对数) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2), cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const mL = 32 * dpr, mR = 6 * dpr, mT = 9 * dpr, mB = 12 * dpr;
+  const X = D => mL + Math.log10(D) / Math.log10(30) * (cw - mL - mR);
+  const Y = N => ch - mB - (Math.log10(clamp(N, 8, 3e4)) - 1) / (Math.log10(3e4) - 1) * (ch - mT - mB);
+  scopeCtx.font = `${Math.round(8.5 * dpr)}px system-ui`;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.22)'; scopeCtx.lineWidth = 1;
+  for (const D of [1, 2, 5, 10, 20]) {
+    scopeCtx.beginPath(); scopeCtx.moveTo(X(D), mT); scopeCtx.lineTo(X(D), ch - mB); scopeCtx.stroke();
+    scopeCtx.fillStyle = 'rgba(150,160,175,.75)'; scopeCtx.textAlign = 'center';
+    scopeCtx.fillText(String(D), X(D), ch - 3 * dpr);
+  }
+  for (const N of [100, 1000, 10000]) {
+    scopeCtx.beginPath(); scopeCtx.moveTo(mL, Y(N)); scopeCtx.lineTo(cw - mR, Y(N)); scopeCtx.stroke();
+    scopeCtx.fillStyle = 'rgba(150,160,175,.75)'; scopeCtx.textAlign = 'right';
+    scopeCtx.fillText(N >= 10000 ? '10⁴' : String(N), mL - 3 * dpr, Y(N) + 3 * dpr);
+  }
+  scopeCtx.textAlign = 'left';
+  for (const t of [0.5, 1, 2, 3, 4]) {
+    scopeCtx.strokeStyle = 'rgba(150,160,175,.45)';
+    scopeCtx.beginPath();
+    scopeCtx.moveTo(X(1), Y(CAL * t));
+    scopeCtx.lineTo(X(30), Y(CAL * t * Math.pow(30, -SLOPE)));
+    scopeCtx.stroke();
+    scopeCtx.fillStyle = 'rgba(150,160,175,.7)';
+    scopeCtx.fillText(t + 'G', X(1) + 2 * dpr, Y(CAL * t) - 1.5 * dpr);
+  }
+  const F = FIT;
+  if (F.n > 0) {
+    const frac = F.area / 1e6;
+    scopeCtx.fillStyle = 'rgba(255,200,100,.95)';
+    for (let k = 0; k < F.Ds.length; k++) {
+      scopeCtx.beginPath();
+      scopeCtx.arc(X(F.Ds[k]), Y((k + 1) / frac), 2.2 * dpr, 0, TAU);
+      scopeCtx.fill();
+    }
+    scopeCtx.strokeStyle = '#e8c98f';
+    scopeCtx.lineWidth = Math.max(1.4, 1.4 * dpr);
+    scopeCtx.beginPath();
+    scopeCtx.moveTo(X(1), Y(F.t * CAL));
+    scopeCtx.lineTo(X(30), Y(F.t * CAL * Math.pow(30, -SLOPE)));
+    scopeCtx.stroke();
+  }
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('N(≥D)/10⁶ km² – D(km) 双对数 · 灰线=等时线 · 金线=拟合', 'log N(≥D) vs log D · grey=isochrons · gold=fit'), mL + 4 * dpr, mT + 1 * dpr);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elTime = document.getElementById('time'), elTimeVal = document.getElementById('timeVal');
+const elErase = document.getElementById('erase'), elEraseVal = document.getElementById('eraseVal');
+const tglVol = document.getElementById('tglVol'), tglSand = document.getElementById('tglSand'),
+  tglSec = document.getElementById('tglSec'), tglLabels = document.getElementById('tglLabels'),
+  tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function updateTime() {
+  const t = (+elTime.value) / 100;
+  if (t < modelT - 1e-9) clearCraters();
+  modelT = t;
+  elTimeVal.textContent = t.toFixed(2) + ' Gyr';
+  advance(modelT); recolorAll(); computeFIT();
+}
+function updateErase() {
+  eraseRate = +elErase.value;
+  elEraseVal.textContent = eraseRate + ' m/Myr';
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1))));
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elTime.addEventListener('input', updateTime);
+elTime.addEventListener('pointerdown', () => { scrubbing = true; });
+elErase.addEventListener('input', updateErase);
+tglVol.addEventListener('change', () => { volOn = tglVol.checked; });
+tglSand.addEventListener('change', () => { sandOn = tglSand.checked; });
+tglSec.addEventListener('change', () => { dropSec = tglSec.checked; computeFIT(); updateFormula(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('pointerup', () => { selDrag = null; scrubbing = false; controls.enabled = !selMode; });
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const F = FIT, pct = covPct();
+  stA.innerHTML = windowKm().toFixed(0) + '<small> km</small>';
+  stA.className = 'v ok';
+  stB.innerHTML = Math.round(F.t * CAL) + '<small> /10⁶ km²</small>';
+  stB.className = 'v ok';
+  stC.innerHTML = (saturated ? '≥ ' + Math.max(F.t, 4).toFixed(1) : F.t < 0.015 ? '&lt; 0.01' : F.t.toFixed(2)) + '<small> Gyr</small>';
+  stC.className = 'v ' + (saturated ? 'warn' : 'ok');
+  stD.innerHTML = pct.toFixed(2) + '<small> %</small>';
+  stD.className = 'v ' + (pct < 1.6 ? 'ok' : pct < 1.95 ? 'warn' : 'bad');
+  stE.innerHTML = eraseRate + '<small> m/Myr</small>';
+  stE.className = 'v ' + (eraseRate === 0 ? 'ok' : eraseRate < 25 ? 'warn' : 'bad');
+  stF.innerHTML = '± ' + F.err.toFixed(2) + '<small> Gyr</small>';
+  stF.className = 'v ' + (F.err > 0.45 ? 'warn' : 'ok');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, frameN = 0, scenario = 0;
+const tgtVec = new THREE.Vector3(), tmpV = new THREE.Vector3();
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt; frameN++;
+  if (playing && !scrubbing) {
+    modelT = Math.min(4.5, modelT + dt * speed * 0.12);
+    advance(modelT);
+  }
+  if (volOn && (volTimer += dt) > 0.28) {          // 火山抹面:从最老的坑开始清
+    volTimer = 0;
+    let j = -1;
+    for (let i = 0; i < cN; i++) if (j < 0 || cSeq[i] < cSeq[j]) j = i;
+    if (j >= 0) cDie[j] = 1;
+  }
+  const Dth = eraseRate * 0.06;                    // 风沙掩埋:D < 0.06·速率 的坑被埋
+  if (Dth > 0) for (let i = 0; i < cN; i++) if (!cDie[i] && cR[i] * 2 * KM < Dth) cDie[i] = 1;
+  for (let i = 0; i < cN; i++) {                   // 尺寸动画(冲击弹出 / 抹除缩灭)
+    if (cDie[i]) {
+      cS[i] -= dt * 2.6;
+      if (cS[i] <= 0.02) { removeAt(i); i--; continue; }
+      writeInstance(i);
+    } else if (cS[i] < 1) {
+      cS[i] = Math.min(1, cS[i] + dt * 3);
+      writeInstance(i);
+    }
+  }
+  rims.instanceMatrix.needsUpdate = floors.instanceMatrix.needsUpdate = true;
+  if (frameN % 14 === 0) recolorAll();
+  const hl = STEPS[scenario].hl, hlK = 0.5 + 0.5 * Math.sin(et * 5);
+  M.rim.emissiveIntensity = hl === 'rim' ? 0.26 + 0.18 * hlK : Math.min(M.rim.emissiveIntensity, 0.08);
+  M.floor.emissiveIntensity = hl === 'floor' ? 0.22 + 0.16 * hlK : Math.min(M.floor.emissiveIntensity, 0.06);
+  M.terrain.emissive.copy(terrainTint).multiplyScalar(hl === 'terrain' ? 0.14 + 0.1 * hlK : 0);
+  const showSel = !!sel && (selMode || hl === 'sel');
+  selG.visible = selFillG.visible = showSel;
+  M.selFill.opacity = showSel ? 0.05 + 0.06 * (0.5 + 0.5 * Math.sin(et * 4.5)) : 0.07;
+  tmpV.fromArray(STEPS[scenario].tgt);
+  controls.target.lerp(tmpV, 0.03);
+  for (const r of labelReg) {
+    r.follow(r.o);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    computeFIT();
+    updateStats();
+    updateFormula();
+    if (playing && !scrubbing) { elTime.value = Math.round(modelT * 100); elTimeVal.textContent = modelT.toFixed(2) + ' Gyr'; }
+    drawScope();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+advance(modelT);
+computeFIT();
+const t0 = parseInt(qs.get('t'), 10);
+activateStep(Number.isFinite(t0) && t0 >= 1 ? clamp(t0 - 1, 0, STEPS.length - 1) : 0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>乱序执行 · 寄存器重命名 —— 乱着跑、顺着交</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="乱序执行 · 寄存器重命名:CPU 怎么「乱着跑、顺着交」" data-en="Out-of-Order Execution &amp; Register Renaming: Run Wild, Retire in Order">乱序执行 · 寄存器重命名:CPU 怎么「乱着跑、顺着交」</h1>
+  <div class="sub" data-zh="RAW 真依赖必须等,WAR/WAW 只是假依赖——x86-64 只有 16 个、RISC-V 才 32 个架构寄存器,名字不够用而已。Tomasulo(1967,IBM System/360 Model 91)用保留站 + 寄存器重命名消掉假依赖:译码后进保留站,RAT 把目标架构寄存器映射到物理寄存器(现代大核 ~180-300 个),操作数一齐就乱序发射,结果经 CDB 公共数据总线广播,ROB(重排序缓冲,~200-500 项)按程序顺序提交、保证精确异常。顺序双发射 IPC≈0.9,乱序 4-6 宽 IPC 2-4;代价是重命名/唤醒-选择逻辑占核心面积大头,而分支误判(约 5/1000 条)靠投机执行填窗口——Spectre(2018)正是这份性能礼物留下的缓存侧信道安全债 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="RAW true dependencies must wait; WAR/WAW are only false dependencies - x86-64 has just 16 and RISC-V 32 architectural registers, and the names run out. Tomasulo (1967, IBM System/360 Model 91) kills false deps with a reservation station plus register renaming: decoded instructions enter the RS, the RAT maps each destination arch register to a physical one (modern big cores carry ~180-300), ready operands issue out of order, results broadcast on the CDB, and the ROB (~200-500 entries) retires in program order so exceptions stay precise. Dual-issue in-order IPC is about 0.9; 4-6 wide OoO cores reach 2-4. The bill: rename and wakeup-select logic dominate core area, and with ~5 mispredicts per 1000 instructions speculation fills the window - Spectre (2018) turned that gift of performance into a cache side-channel debt · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">RAW 真依赖必须等,WAR/WAW 只是假依赖——x86-64 只有 16 个、RISC-V 才 32 个架构寄存器,名字不够用而已。Tomasulo(1967,IBM System/360 Model 91)用保留站 + 寄存器重命名消掉假依赖:译码后进保留站,RAT 把目标架构寄存器映射到物理寄存器(现代大核 ~180-300 个),操作数一齐就乱序发射,结果经 CDB 公共数据总线广播,ROB(重排序缓冲,~200-500 项)按程序顺序提交、保证精确异常。顺序双发射 IPC≈0.9,乱序 4-6 宽 IPC 2-4;代价是重命名/唤醒-选择逻辑占核心面积大头,而分支误判(约 5/1000 条)靠投机执行填窗口——Spectre(2018)正是这份性能礼物留下的缓存侧信道安全债 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="流水线宽度" data-en="pipeline width">流水线宽度</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="ROB 占用" data-en="ROB usage">ROB 占用</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="物理寄存器" data-en="phys registers">物理寄存器</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="当前 IPC" data-en="current IPC">当前 IPC</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="已提交指令" data-en="committed instrs">已提交指令</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="假依赖已消除" data-en="false deps killed">假依赖已消除</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="指令卡 · 蓝=等操作数" data-en="instr card · blue = waiting">指令卡 · 蓝=等操作数</span>
+    <span class="chip g" data-zh="绿=就绪 / 执行中" data-en="green = ready / executing">绿=就绪 / 执行中</span>
+    <span class="chip o" data-zh="金=ROB 待提交" data-en="gold = in ROB, to retire">金=ROB 待提交</span>
+    <span class="chip r" data-zh="红=分支误判作废" data-en="red = squashed on mispredict">红=分支误判作废</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnStep" data-zh="单步演示(慢速)" data-en="step demo (slow)">单步演示(慢速)</button>
+    <button class="abtn" id="btnAuto" data-zh="自动运行" data-en="auto run">自动运行</button>
+    <button class="abtn" id="btnCompare" data-zh="顺序 vs 乱序对比" data-en="in-order vs OoO">顺序 vs 乱序对比</button>
+    <button class="abtn" id="btnSpectre" data-zh="Spectre 瞬态演示" data-en="Spectre transient demo">Spectre 瞬态演示</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="发射宽度" data-en="issue width">发射宽度</label><input id="iss" type="range" min="1" max="4" step="1" value="3"><span class="val" id="issVal">3 宽</span></div>
+  <div class="row"><label data-zh="ROB 深度" data-en="ROB depth">ROB 深度</label><input id="robd" type="range" min="4" max="16" step="1" value="8"><span class="val" id="robdVal">8 项</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="12"><span class="cv" id="speedVal">1.2×</span></div>
+      <div id="toggles">
+        <label><input id="tglOoO" type="checkbox" checked> <span data-zh="乱序执行" data-en="out-of-order">乱序执行</span></label>
+        <label><input id="tglSpec" type="checkbox" checked> <span data-zh="投机执行" data-en="speculation">投机执行</span></label>
+        <label><input id="tglDep" type="checkbox" checked> <span data-zh="依赖箭头" data-en="dep arrows">依赖箭头</span></label>
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="IPC 曲线" data-en="IPC curve">IPC 曲线</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox"> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../cpu-pipeline/" data-zh="CPU 流水线" data-en="CPU pipeline">CPU 流水线</a>
+    <a href="../branch-prediction/" data-zh="分支预测" data-en="branch prediction">分支预测</a>
+    <a href="../cpu-cache/" data-zh="CPU 缓存" data-en="CPU cache">CPU 缓存</a>
+    <a href="../mesi-coherence/" data-zh="MESI 一致性" data-en="MESI coherence">MESI 一致性</a>
+    <a href="../floating-point/" data-zh="浮点运算" data-en="floating point">浮点运算</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0e1116 : 0xeef1f4);
+  M.ground.color.set(dark ? 0x141920 : 0xd9dfe6);
+  M.grid.color.set(dark ? 0x2a3340 : 0xa9b6c2);
+  M.belt.color.set(dark ? 0x1c222b : 0xc6ced8);
+  M.mDec.color.set(dark ? 0x2c4a6e : 0xa8c4de);
+  M.mRen.color.set(dark ? 0x4a3a78 : 0xb9a8e0);
+  M.mPRF.color.set(dark ? 0x5a4a96 : 0xcdc2ee);
+  M.mRS.color.set(dark ? 0x1f6e5e : 0x9ed8c8);
+  M.mROB.color.set(dark ? 0x8a6a20 : 0xe0c88a);
+  M.mCmt.color.set(dark ? 0x4a545e : 0xc2ccd6);
+  M.port.color.set(dark ? 0x3a5a44 : 0xa8d0b8);
+  M.cdb.color.set(dark ? 0x7a5216 : 0xe0b060);
+  M.cache.color.set(dark ? 0x6e2430 : 0xd89aa6);
+  M.chrome.color.set(dark ? 0x9aa8b8 : 0x768290);
+  M.cache.emissive.set(0xff4d4d);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('乱序执行 · 寄存器重命名 —— 乱着跑、顺着交', 'Out-of-Order Execution · Register Renaming');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateIss();
+  updateRobd();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 相机 / 灯光 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(1.2, 9.2, 16.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.7, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 48;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 12, 6);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-8, 6, -7);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.35,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x141920, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2a3340, transparent: true, opacity: 0.4,
+    vertexColors: true, depthWrite: false }),
+  belt: mat(0x1c222b, { roughness: 0.7, metalness: 0.25 }),
+  chrome: mat(0x9aa8b8, { roughness: 0.3, metalness: 0.8 }),
+  mDec: mat(0x2c4a6e), mRen: mat(0x4a3a78), mPRF: mat(0x5a4a96), mRS: mat(0x1f6e5e),
+  mROB: mat(0x8a6a20), mCmt: mat(0x4a545e), port: mat(0x3a5a44),
+  cdb: mat(0x7a5216, { emissiveIntensity: 0.3 }),
+  cache: mat(0x6e2430, { emissive: 0xff4d4d, emissiveIntensity: 0.08 }),
+};
+
+/* ---------------- 示例程序(10 条:I9 为分支,I10 是误取的投机指令) ----------------
+   假依赖(重命名消除):WAW I1/I3 同写 r3、I2/I7 同写 r5;WAR I2 读 r3 vs I3 写 r3、I3 读 r6 vs I5 写 r6、I5 读 r10 vs I6 写 r10 */
+const PROG = [
+  { t: 'mul r3, r1, r2', d: 'r3', s: ['r1', 'r2'], lat: 2 },
+  { t: 'add r5, r3, r4', d: 'r5', s: ['r3', 'r4'], lat: 1 },
+  { t: 'add r3, r6, r7', d: 'r3', s: ['r6', 'r7'], lat: 1 },
+  { t: 'sub r8, r5, r3', d: 'r8', s: ['r5', 'r3'], lat: 1 },
+  { t: 'add r6, r9, r10', d: 'r6', s: ['r9', 'r10'], lat: 1 },
+  { t: 'add r10, r11, r12', d: 'r10', s: ['r11', 'r12'], lat: 1 },
+  { t: 'mul r5, r8, r13', d: 'r5', s: ['r8', 'r13'], lat: 2 },
+  { t: 'add r14, r15, r16', d: 'r14', s: ['r15', 'r16'], lat: 1 },
+  { t: 'beq r14, r0, L', d: null, s: ['r14'], lat: 1, br: true },
+  { t: 'xor r20, r21, r22', d: 'r20', s: ['r21', 'r22'], lat: 1, spec: true },
+];
+const DEPS = [ [0,1,1],[1,3,1],[2,3,1],[3,6,1],[7,8,1],[0,2,0],[1,2,0],[1,6,0],[2,4,0],[4,5,0] ]; // [a,b,RAW?]
+const ARCH = ['r0','r1','r2','r3','r4','r5','r6','r7','r8','r9','r10','r11','r12','r13','r14','r15','r16','r20','r21','r22'];
+const P_TOTAL = 32, RS_CAP = 8, NPORT = 3;
+
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = 1.2, labelsOn = qsBool('labels', true);
+let ooo = true, spec = true, showDep = true;
+let width = 3, robDepth = 8;
+let cycles = 0, committed = 0, falseDeps = 0, wasted = 0;
+let fetchIdx = 0, branchResolved = false, footprint = false;
+let compare = 0, ipcOoo = 0, ipcIno = 0, lastIPC = 0, doneAt = -1, restartT = 0, simAcc = 0, cdbGlow = 0;
+let rat = {}, pReady = [], renamed = {};
+const freeP = [], rob = [], hist = [];
+const ins = PROG.map((p, j) => ({ j, st: 'pre', age: 0, slot: -1, port: -1, exLeft: 0,
+  srcP: [], destP: -1, completed: false, committed: false, reachedEx: false, sq: 0, fly: 0, sqX: 0, sqZ: 0 }));
+let et = 0;
+
+/* ---------------- 场景装配:地面 / 传送带 / 工位 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(140, 0.1, 140), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(60, 30, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+const belt = new THREE.Mesh(new THREE.BoxGeometry(26, 0.1, 5.6), M.belt);
+belt.position.set(-0.7, 0.02, 0);
+scene.add(belt);
+for (let i = 0; i < 5; i++) {
+  const c = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.34, 4), M.chrome);
+  c.rotation.z = -Math.PI / 2;
+  c.position.set(-9 + i * 4.6, 0.2, -2.45);
+  scene.add(c);
+}
+function slab(w, d, x, z, m) {
+  const s = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, d), m);
+  s.position.set(x, 0.08, z);
+  scene.add(s);
+  return s;
+}
+slab(1.8, 2.8, -11.1, 0, M.mDec);          // 译码
+slab(1.8, 2.8, -8.8, 0, M.mRen);           // 重命名 RAT
+slab(4.4, 2.6, -4.42, 0, M.mRS);           // 保留站
+slab(2.8, 4.8, 1.0, 0, M.port);            // 执行端口区
+slab(3.6, 3.0, 7.55, 0, M.mROB);           // ROB
+slab(1.5, 2.4, 10.6, 0, M.mCmt);           // 提交口
+const portNames = ['ALU0', 'ALU1', 'AGU/MEM'];
+for (let k = 0; k < NPORT; k++) {
+  const b = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.3, 0.62), M.port);
+  b.position.set(1.0, 0.26, (k - 1) * 1.55);
+  scene.add(b);
+}
+const prfB = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 1.3), M.mPRF);
+prfB.position.set(-8.8, 0.33, 2.6);
+scene.add(prfB);
+const cacheB = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.4, 1.0), M.cache);
+cacheB.position.set(1.3, 0.28, 3.4);
+scene.add(cacheB);
+const cdbB = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 5.4), M.cdb);
+cdbB.position.set(3.6, 0.14, 0);
+scene.add(cdbB);
+
+/* 指令卡片:3D 卡片沿流水线流动 */
+const cardGeo = new THREE.BoxGeometry(0.95, 0.16, 0.6);
+for (const I of ins) {
+  const m = new THREE.MeshStandardMaterial({ color: 0x7d8fa8, roughness: 0.4, metalness: 0.3,
+    emissive: 0x7d8fa8, emissiveIntensity: 0.12 });
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(cardGeo, m));
+  g.position.set(-13.2, 0.24, -2.0 + I.j * 0.44);
+  scene.add(g);
+  I.g = g; I.mat = m;
+}
+
+/* 依赖箭头:绿实线=RAW 真依赖,橙虚线=WAR/WAW 假依赖 */
+const depLines = DEPS.map(([a, b, raw]) => {
+  const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+  const m = raw
+    ? new THREE.LineBasicMaterial({ color: 0x74dc84, transparent: true, opacity: 0.75 })
+    : new THREE.LineDashedMaterial({ color: 0xffa94d, transparent: true, opacity: 0.6, dashSize: 0.14, gapSize: 0.09 });
+  const ln = new THREE.Line(g, m);
+  ln.visible = false;
+  scene.add(ln);
+  return { ln, a, b, raw };
+});
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent, html) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow, html });
+  div.textContent = textFn();
+  return o;
+}
+addLabel(() => L('① 取指 / 译码 Fetch · Decode', '(1) Fetch / Decode'), () => 'b', new THREE.Vector3(-11.1, 1.5, 0));
+addLabel(() => L('分支预测:预测「不跳转」→ 顺手取 I10', 'branch predicted not-taken → I10 fetched early'), () => 'w', new THREE.Vector3(-11.1, 2.35, 0));
+addLabel(() => L('② 重命名 RAT:架构寄存器 → 物理寄存器', '(2) Rename RAT: arch → phys reg'), () => 'e', new THREE.Vector3(-8.8, 1.9, 0));
+addLabel(() => {
+  const ks = ['r3', 'r5', 'r6', 'r8', 'r10', 'r14', 'r20'].filter(k => renamed[k]);
+  if (!ks.length) return L('RAT 重命名表:等待指令流入…', 'RAT: waiting for instructions...');
+  return 'RAT ' + ks.map(k => k + '→P' + rat[k]).join(' · ');
+}, () => 'g', new THREE.Vector3(-8.8, 2.62, 0), null, null, true);
+addLabel(() => L('物理寄存器堆 PRF · 32(用 ' + (P_TOTAL - freeP.length) + ')', 'phys reg file PRF · 32 (used ' + (P_TOTAL - freeP.length) + ')'), () => 'g', new THREE.Vector3(-8.8, 1.1, 2.6));
+addLabel(() => L('③ 保留站 Reservation Station(' + RS_CAP + ' 项:操作数齐就发射)', '(3) Reservation station (' + RS_CAP + ' entries: issue when ready)'), () => 'g', new THREE.Vector3(-4.42, 1.5, 0));
+addLabel(() => L('④ 执行端口 ×3:乱序并行', '(4) Execution ports ×3: parallel, out of order'), () => 'g', new THREE.Vector3(1.0, 1.9, 0));
+for (let k = 0; k < NPORT; k++) addLabel(() => portNames[k], () => 'st', new THREE.Vector3(1.0, 0.66, (k - 1) * 1.55));
+addLabel(() => L('⑤ CDB 公共数据总线:结果广播 + 唤醒', '(5) CDB: result broadcast + wakeup'), () => 'w', new THREE.Vector3(3.6, 1.1, 0));
+addLabel(() => L('⑥ ROB 重排序缓冲 ' + rob.length + '/' + robDepth + ':乱着跑、顺着交', '(6) ROB ' + rob.length + '/' + robDepth + ': run wild, retire in order'), () => 'e', new THREE.Vector3(7.55, 2.2, 0));
+addLabel(() => L('⑦ 提交口 Retire:精确异常', '(7) Retire: precise exceptions'), () => 'st', new THREE.Vector3(10.6, 1.3, 0));
+addLabel(() => L('L1 Cache 行:瞬态计算也会捂热它(侧信道)', 'L1 cache line: transient work warms it too (side channel)'),
+  () => footprint ? 'bad' : 'w', new THREE.Vector3(1.3, 1.35, 3.4));
+addLabel(() => {
+  const ipc = (doneAt >= 0 ? lastIPC : committed / Math.max(1, cycles)).toFixed(2);
+  return L('周期 ' + cycles + ' · 提交 ' + committed + ' · IPC ' + ipc + ' · ' + (ooo ? '乱序 OoO' : '顺序 In-Order') + (spec && ooo ? ' +投机' : ''),
+    'cycle ' + cycles + ' · committed ' + committed + ' · IPC ' + ipc + ' · ' + (ooo ? 'out-of-order' : 'in-order') + (spec && ooo ? ' +spec' : ''));
+}, () => 'st', new THREE.Vector3(0, 3.15, -2.8));
+for (const I of ins) {
+  const j = I.j, p = PROG[j];
+  addLabel(() => {
+    let suf = '';
+    if (I.st === 'rs') {
+      const miss = p.s.filter((a, i) => !pReady[I.srcP[i]]);
+      suf = miss.length ? L(' 等 ' + miss.join(','), ' wait ' + miss.join(',')) : L(' ·就绪', ' ·ready');
+    }
+    else if (I.st === 'ex') suf = L(' ·执行中', ' ·exec');
+    else if (I.st === 'wb') suf = L(' ·CDB 写回', ' ·CDB wb');
+    else if (I.st === 'rob') suf = L(' ·待提交', ' ·to-retire');
+    else if (I.st === 'sq') suf = L(' ·误判作废', ' ·squashed');
+    else if (I.st === 'fly') suf = L(' ·已提交', ' ·committed');
+    return 'I' + (j + 1) + ' ' + p.t + suf;
+  }, () => {
+    if (I.st === 'sq') return 'bad';
+    if (I.st === 'ex' || I.st === 'wb' || I.st === 'fly') return 'g';
+    if (I.st === 'rob') return 'e';
+    if (I.st === 'rs') return I.srcP.every(pp => pReady[pp]) ? 'g' : 'w';
+    return 'b';
+  }, new THREE.Vector3(0, 0.38, 0), null, I.g);
+}
+
+/* ---------------- 讲解步骤(6 步) ---------------- */
+const STEPS = [
+  { hl: 'mDec', tgt: [-10.6, 0.7, 0],
+    b: '停等:一条真依赖卡住整条流水线', be: 'Stall: one true dependency freezes the pipeline',
+    d: '10 条示例指令正排队进译码。I2 的 add r5,r3,r4 要用 I1 的 mul 刚算出的 r3——RAW 真依赖,只能干等。顺序核心里队头不动、后面全停:I5、I6 与 I1 毫无瓜葛,执行端口却只能空转。这就是流水线危机:顺序双发射的实际 IPC 往往只有 0.9 左右,一半发射槽被浪费。',
+    de: 'Ten sample instructions queue for decode. I2 (add r5,r3,r4) needs the r3 that I1 is still computing - a RAW true dependency, so it waits. In an in-order core a stuck head freezes everyone behind it: I5 and I6 are unrelated, yet the ports idle. That is the pipeline crisis: dual-issue in-order CPUs deliver an IPC near 0.9, wasting half their issue slots.' },
+  { hl: 'mRen', tgt: [-8.8, 0.9, 0.6],
+    b: '假依赖:寄存器名字不够用', be: 'False dependencies: register names run out',
+    d: 'I1 与 I3 都写 r3(WAW 写后写),I2 刚读完 r3、I3 紧跟着又要写(WAR 写后读)。它们之间并无真实数据流动,冲突只因架构寄存器太少:x86-64 只有 16 个整数寄存器,RISC-V 也才 32 个。本例有 5 处假依赖,若各停一拍 IPC 直接腰斩——假依赖不是数据问题,是「名字」问题。',
+    de: 'I1 and I3 both write r3 (WAW), and I2 has barely read r3 before I3 overwrites it (WAR). No data really flows between them; the clash exists only because architectural registers are scarce: 16 in x86-64, 32 in RISC-V. This snippet holds 5 false dependencies - stalling on each would halve IPC. A naming problem, not a data problem.' },
+  { hl: 'mPRF', tgt: [-8.6, 0.8, 2.2],
+    b: '重命名:每个结果起新名字', be: 'Renaming: a fresh name for every result',
+    d: 'RAT(寄存器别名表)给每个结果发新名字:把目标架构寄存器映射到空闲物理寄存器。I3 的 r3 改写到 P20,I1 的结果安稳留在原处,互不相碰;I2 读到的旧映射也没被破坏。演示池共 32 个物理寄存器,现代大核备有约 180-300 个。真依赖顺着 RAT 保留,假依赖在重命名瞬间就地消失——看右侧计数器。',
+    de: 'The RAT (register alias table) issues a fresh name per result, mapping each destination arch register to a free physical one. I3\'s r3 is redirected to P20 while I1\'s result stays untouched; the old mapping I2 read survives. The demo pool holds 32 physical registers; big modern cores carry ~180-300. True dependencies survive; false ones vanish on the spot.' },
+  { hl: 'mRS', tgt: [-4.4, 0.9, 0],
+    b: '保留站:条件齐了就跑', be: 'Reservation station: fire when ready',
+    d: '重命名后的指令在保留站「等风来」:各自盯着源操作数对应的物理寄存器,一就绪立刻发射到空闲执行端口——谁先凑齐谁先走,不管程序顺序。这正是 Tomasulo(1967,IBM System/360 Model 91)的思想:硬件自动挖掘指令级并行,ALU0、ALU1、访存三个端口乱序并行。把发射宽度滑块从 1 拉到 4,看端口吃满。',
+    de: 'Renamed instructions wait in the reservation station: each watches the physical registers named by its sources and fires to a free port the moment they are ready - first ready, first served, program order be damned. This is Tomasulo (1967, IBM System/360 Model 91): hardware mines instruction-level parallelism across ALU0/ALU1/MEM. Drag issue width from 1 to 4 and watch the ports fill.' },
+  { hl: 'mROB', tgt: [7.5, 0.9, 0],
+    b: 'ROB:乱着跑、顺着交', be: 'ROB: run wild, retire in order',
+    d: '执行结果经 CDB 公共数据总线广播,唤醒所有等它的保留站表项,同时进 ROB(重排序缓冲)。ROB 按程序顺序重新排队,只从队头提交(Retire):I4 算得再快,也得等 I1、I2、I3 先离开。正因提交有序,异常与中断永远精确——现代 CPU 的 ROB 深约 200-500 项,是「乱核心、顺界面」的秩序之锚。',
+    de: 'Results broadcast on the common data bus (CDB), waking every RS entry waiting on them, then land in the ROB (reorder buffer). The ROB re-queues everything in program order and commits only from the head: however fast I4 finishes, I1-I3 leave first. In-order retire keeps exceptions and interrupts precise. Modern ROBs run 200-500 entries.' },
+  { hl: 'mCache', tgt: [2.6, 0.8, 1.8],
+    b: '性能账单与 Spectre 阴影', be: 'The performance bill and the Spectre shadow',
+    d: '账单来了:本例乱序把 IPC 抬到顺序模式的约两倍,真实 4-6 宽大核可达 2-4。代价:重命名、唤醒-选择逻辑与 ROB 占去核心面积大头,功耗可观;分支每千条约错 5 次,投机白算的工被整队作废(红色 I10)。更阴的是 Spectre(2018):被作废的瞬态计算已在缓存捂热足迹,攻击者沿侧信道读出秘密——性能的礼物,安全的债。',
+    de: 'The bill: OoO here roughly doubles IPC vs in-order; real 4-6 wide cores reach 2-4. The cost: rename, wakeup-select and the ROB dominate core area and power; branches mispredict about 5 per 1000 instructions, and speculative work is discarded wholesale (red I10). Sneakier is Spectre (2018): squashed transient computation already warmed cache lines - attackers read secrets along that side channel.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L('第 ' + (scenario + 1) + '/' + STEPS.length + ' 步', 'step ' + (scenario + 1) + '/' + STEPS.length);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="n">' + (i + 1) + '</span><span class="t"><b>' + L(s.b, s.be) + '</b>　' + L(s.d, s.de) + '</span>';
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const ipc = doneAt >= 0 ? lastIPC : committed / Math.max(1, cycles);
+  let l1 = L('IPC = 已提交 ÷ 周期 = <b>' + committed + '</b> ÷ <b>' + cycles + '</b> = <b>' + ipc.toFixed(2) + '</b>',
+    'IPC = committed ÷ cycles = <b>' + committed + '</b> ÷ <b>' + cycles + '</b> = <b>' + ipc.toFixed(2) + '</b>');
+  if (ipcOoo > 0) l1 += L('　对比:乱序 <b>' + ipcOoo.toFixed(2) + '</b> vs 顺序 <b>' + (ipcIno > 0 ? ipcIno.toFixed(2) : '…') + '</b>',
+    ' compare: OoO <b>' + ipcOoo.toFixed(2) + '</b> vs in-order <b>' + (ipcIno > 0 ? ipcIno.toFixed(2) : '...') + '</b>');
+  const l2 = L('RAW 真依赖只能等;WAR/WAW 假依赖已被重命名消除 <b>' + falseDeps + '</b> 处(Tomasulo 1967,IBM 360/91)',
+    'RAW must wait; <b>' + falseDeps + '</b> WAR/WAW false deps eliminated by renaming (Tomasulo 1967, IBM 360/91)');
+  const l3 = L('物理寄存器 <b>' + (P_TOTAL - freeP.length) + '/' + P_TOTAL + '</b>(现代大核 ~180-300)· ROB <b>' + rob.length + '/' + robDepth + '</b>(实际 ~200-500 项)· 分支误判 ~5/1000 条',
+    'phys regs <b>' + (P_TOTAL - freeP.length) + '/' + P_TOTAL + '</b> (big cores ~180-300) · ROB <b>' + rob.length + '/' + robDepth + '</b> (real ~200-500) · mispredicts ~5/1000');
+  const l4 = footprint
+    ? L('Spectre(2018):被作废的瞬态计算已在 L1 缓存留下足迹——侧信道泄漏!', 'Spectre (2018): squashed transient work already left a footprint in L1 cache - a side-channel leak!')
+    : L('顺序双发射 IPC≈0.9,乱序 4-6 宽 IPC 2-4;ROB 按序提交保证精确异常', 'in-order dual-issue IPC≈0.9, OoO 4-6 wide IPC 2-4; in-order retire keeps exceptions precise');
+  formulaEl.innerHTML = [l1, l2, l3, l4].join('<br>');
+}
+
+/* ---------------- UI 引用 ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elIss = document.getElementById('iss'), elIssVal = document.getElementById('issVal');
+const elRobd = document.getElementById('robd'), elRobdVal = document.getElementById('robdVal');
+const tglOoO = document.getElementById('tglOoO'), tglSpec = document.getElementById('tglSpec');
+const tglDep = document.getElementById('tglDep'), tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels'), tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() { for (const r of labelReg) r.o.visible = labelsOn; }
+function updateIss() { width = +elIss.value; elIssVal.textContent = width + ' ' + L('宽', 'wide'); }
+function updateRobd() { robDepth = +elRobd.value; elRobdVal.textContent = robDepth + ' ' + L('项', 'entries'); }
+
+/* ---------------- 仿真引擎 ---------------- */
+function resetRun() {
+  cycles = 0; committed = 0; falseDeps = 0; wasted = 0; fetchIdx = 0;
+  branchResolved = false; footprint = false; cdbGlow = 0; doneAt = -1; restartT = 0; simAcc = 0;
+  rob.length = 0; hist.length = 0;
+  rat = {}; renamed = {};
+  for (let i = 0; i < ARCH.length; i++) rat[ARCH[i]] = i;
+  freeP.length = 0;
+  for (let i = ARCH.length; i < P_TOTAL; i++) freeP.push(i);
+  pReady = [];
+  for (let i = 0; i < P_TOTAL; i++) pReady.push(i < ARCH.length);
+  for (const I of ins) {
+    I.st = 'pre'; I.age = 0; I.slot = -1; I.port = -1; I.exLeft = 0; I.srcP = []; I.destP = -1;
+    I.completed = false; I.committed = false; I.reachedEx = false; I.sq = 0; I.fly = 0;
+    I.g.visible = true; I.g.scale.setScalar(1);
+  }
+}
+function allocSlot() {
+  const used = new Set(ins.filter(x => x.st === 'rs').map(x => x.slot));
+  for (let s = 0; s < RS_CAP; s++) if (!used.has(s)) return s;
+  return -1;
+}
+function squash(k) {
+  const I = ins[k], i = rob.indexOf(k);
+  if (i >= 0) rob.splice(i, 1);
+  if (I.reachedEx || I.completed) footprint = true;   // 瞬态计算捂热缓存(Spectre 侧信道)
+  wasted++;
+  const cur = I.g.position;
+  I.sqX = cur.x; I.sqZ = cur.z; I.sq = 0.0001;
+  I.st = 'sq'; I.slot = -1; I.port = -1;
+  if (I.destP >= 0) { freeP.push(I.destP); pReady[I.destP] = true; I.destP = -1; }
+}
+function cycle() {
+  cycles++;
+  /* 0. 流水级推进:译码→重命名→保留站 */
+  for (const I of ins) {
+    if (I.st === 'dec' || I.st === 'ren') {
+      I.age++;
+      if (I.age >= 1) { I.st = I.st === 'dec' ? 'ren' : 'rs'; if (I.st === 'rs') I.slot = allocSlot(); }
+    }
+  }
+  /* 1. 按序取指/译码/重命名(受 ROB、物理寄存器、保留站反压) */
+  const rsCount = ins.reduce((n, I) => n + (I.st === 'rs' ? 1 : 0), 0);
+  let d = 0;
+  while (d < width && fetchIdx < PROG.length) {
+    const p = PROG[fetchIdx], I = ins[fetchIdx];
+    if (p.spec && !spec && !branchResolved) break;      // 无投机:分支未解,取指止步
+    if (rob.length >= robDepth) break;
+    if (rsCount + d >= RS_CAP) break;
+    if (p.d && freeP.length === 0) break;
+    I.srcP = p.s.map(a => rat[a]);
+    if (p.d) {
+      for (const k of rob) { const q = PROG[k]; if (q.d === p.d || q.s.includes(p.d)) falseDeps++; }
+      const pp = freeP.pop();
+      rat[p.d] = pp; pReady[pp] = false; renamed[p.d] = true; I.destP = pp;
+    }
+    I.st = 'dec'; I.age = 0;
+    rob.push(fetchIdx); fetchIdx++; d++;
+  }
+  /* 2. 发射:乱序=谁就绪谁先走;顺序=队头不动后面全停 */
+  let issued = 0;
+  const portBusy = [0, 0, 0];
+  for (const I of ins) if (I.st === 'ex') portBusy[I.port] = 1;
+  if (ooo) {
+    for (const j of rob) {
+      if (issued >= width) break;
+      const I = ins[j];
+      if (I.st !== 'rs' || !I.srcP.every(pp => pReady[pp])) continue;
+      let port = -1;
+      for (let k = 0; k < NPORT; k++) if (!portBusy[k]) { port = k; break; }
+      if (port < 0) continue;
+      portBusy[port] = 1; I.port = port; I.slot = -1;
+      I.st = 'ex'; I.exLeft = PROG[j].lat; I.reachedEx = true; issued++;
+    }
+  } else {
+    for (const j of rob) {
+      const I = ins[j];
+      if (I.completed) continue;
+      if (I.st === 'rs' && I.srcP.every(pp => pReady[pp])) {
+        for (let k = 0; k < NPORT; k++) if (!portBusy[k]) {
+          portBusy[k] = 1; I.port = k; I.slot = -1;
+          I.st = 'ex'; I.exLeft = PROG[j].lat; I.reachedEx = true; issued++; break;
+        }
+      }
+      break;                                            // 顺序:队头不动,后面全停
+    }
+  }
+  /* 3. 执行 + CDB 写回 + 唤醒 */
+  const wb = [];
+  for (const j of rob) {
+    const I = ins[j];
+    if (I.st !== 'ex') continue;
+    I.exLeft--;
+    if (I.exLeft <= 0) { I.st = 'wb'; wb.push(j); }
+  }
+  for (const j of wb) {
+    const I = ins[j], p = PROG[j];
+    if (I.st !== 'wb') continue;
+    I.completed = true; I.st = 'rob'; cdbGlow = 1;
+    if (p.d) pReady[I.destP] = true;
+    if (p.br) {                                         // 分支解析:实际跳转,作废误取的投机指令
+      branchResolved = true;
+      fetchIdx = PROG.length;
+      for (const k of rob.filter(x => x > j)) squash(k);
+    }
+  }
+  /* 4. ROB 按序提交 */
+  let c = 0;
+  while (rob.length && c < width) {
+    const j = rob[0], I = ins[j];
+    if (!I.completed) break;
+    rob.shift(); I.st = 'fly'; I.committed = true; committed++; c++;
+  }
+  hist.push(c);
+  if (hist.length > 130) hist.shift();
+  /* 一轮跑完? */
+  const busy = ins.some(I => I.st === 'dec' || I.st === 'ren' || I.st === 'rs' || I.st === 'ex' || I.st === 'wb');
+  if (!busy && fetchIdx >= PROG.length && rob.length === 0 && doneAt < 0) {
+    doneAt = cycles;
+    lastIPC = committed / Math.max(1, cycles);
+    if (compare === 1) { ipcOoo = lastIPC; compare = 2; resetRun(); ooo = false; tglOoO.checked = false; }
+    else if (compare === 2) { ipcIno = lastIPC; compare = 0; }
+  }
+}
+function cardTarget(I) {
+  const j = I.j, v = new THREE.Vector3();
+  switch (I.st) {
+    case 'pre': v.set(-13.2, 0.24, -2.0 + j * 0.44); break;
+    case 'dec': v.set(-11.1, 0.24, 0); break;
+    case 'ren': v.set(-8.8, 0.24, 0); break;
+    case 'rs': { const s = I.slot < 0 ? 0 : I.slot; v.set(-6.0 + (s % 4) * 1.05, 0.24, s < 4 ? 0.78 : -0.78); break; }
+    case 'ex': v.set(1.0, 0.5, (I.port - 1) * 1.55); break;
+    case 'wb': v.set(3.6, 0.32, 0); break;
+    case 'rob': { const k = Math.max(0, rob.indexOf(j)); v.set(6.3 + (k % 5) * 0.62, 0.24, (Math.floor(k / 5) - 1) * 0.9); break; }
+    case 'fly': v.set(12.4 + I.fly * 2.2, 0.24 + I.fly * 0.6, 0); break;
+    case 'sq': v.set(I.sqX, 0.24 - I.sq * 0.45, I.sqZ); break;
+    default: v.copy(I.g.position);
+  }
+  return v;
+}
+
+/* ---------------- 预设按钮 ---------------- */
+document.getElementById('btnStep').addEventListener('click', () => {
+  resetRun(); compare = 0; ipcOoo = ipcIno = 0;
+  ooo = true; spec = true; tglOoO.checked = true; tglSpec.checked = true;
+  playing = true; speed = 0.5; elSpeed.value = 5; elSpeedVal.textContent = '0.5×'; setPlayLabel();
+});
+document.getElementById('btnAuto').addEventListener('click', () => {
+  resetRun(); compare = 0; ipcOoo = ipcIno = 0;
+  ooo = true; spec = true; tglOoO.checked = true; tglSpec.checked = true;
+  playing = true; speed = 1.6; elSpeed.value = 16; elSpeedVal.textContent = '1.6×'; setPlayLabel();
+});
+document.getElementById('btnCompare').addEventListener('click', () => {
+  ipcOoo = 0; ipcIno = 0; compare = 1;
+  ooo = true; tglOoO.checked = true;
+  resetRun(); playing = true; setPlayLabel();
+});
+document.getElementById('btnSpectre').addEventListener('click', () => {
+  spec = true; ooo = true; tglSpec.checked = true; tglOoO.checked = true;
+  resetRun(); playing = true; setPlayLabel();
+  activateStep(STEPS.length - 1);
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+  resetRun(); compare = 0; ipcOoo = ipcIno = 0;
+});
+
+/* ---------------- IPC 曲线(示波器) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = Math.round(9 * dpr) + 'px system-ui';
+  scopeCtx.fillStyle = 'rgba(150,160,175,.85)';
+  scopeCtx.fillText(L('每周期提交数(柱)· 累计 IPC(线)', 'commits per cycle (bars) · rolling IPC (line)'), 4 * dpr, 11 * dpr);
+  if (!hist.length) return;
+  const n = Math.max(hist.length, 40), bw = cw / n, mx = Math.max(width, 1);
+  for (let i = 0; i < hist.length; i++) {
+    const bh = hist[i] / mx * (ch - 18 * dpr);
+    scopeCtx.fillStyle = hist[i] > 0 ? 'rgba(123,216,143,.8)' : 'rgba(128,140,160,.22)';
+    scopeCtx.fillRect(i * bw, ch - bh - 2 * dpr, Math.max(1, bw - 1.2 * dpr), bh);
+  }
+  scopeCtx.strokeStyle = 'rgba(255,201,92,.95)';
+  scopeCtx.lineWidth = Math.max(1.2, 1.2 * dpr);
+  scopeCtx.beginPath();
+  let c = 0;
+  for (let i = 0; i < hist.length; i++) {
+    c += hist[i];
+    const x = (i + 0.5) * bw, y = ch - (c / (i + 1) / mx) * (ch - 18 * dpr) - 2 * dpr;
+    i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 事件 ---------------- */
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elIss.addEventListener('input', updateIss);
+elRobd.addEventListener('input', updateRobd);
+tglOoO.addEventListener('change', () => { ooo = tglOoO.checked; });
+tglSpec.addEventListener('change', () => { spec = tglSpec.checked; });
+tglDep.addEventListener('change', () => { showDep = tglDep.checked; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', false);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  stA.innerHTML = width + '<small> ' + L('宽', 'wide') + '</small>';
+  stA.className = 'v ok';
+  stB.innerHTML = rob.length + '<small>/' + robDepth + '</small>';
+  stB.className = 'v ' + (rob.length >= robDepth ? 'warn' : 'ok');
+  const used = P_TOTAL - freeP.length;
+  stC.innerHTML = used + '<small>/' + P_TOTAL + '</small>';
+  stC.className = 'v ' + (used > P_TOTAL - 4 ? 'warn' : 'ok');
+  const ipc = doneAt >= 0 ? lastIPC : committed / Math.max(1, cycles);
+  stD.innerHTML = ipc.toFixed(2);
+  stD.className = 'v ' + (ipc >= 1 ? 'ok' : ipc >= 0.6 ? 'warn' : 'bad');
+  stE.innerHTML = committed + '<small> ' + L('条', 'ins') + '</small>';
+  stE.className = 'v ok';
+  stF.innerHTML = falseDeps + '<small> ' + L('处', 'fixed') + '</small>';
+  stF.className = 'v ' + (falseDeps >= 5 ? 'ok' : 'warn');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, scenario = 0;
+const tmpC = new THREE.Color(), tmpV = new THREE.Vector3();
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  if (playing) {
+    simAcc += dt * speed;
+    let guard = 0;
+    while (simAcc >= 0.9 && guard < 6) { simAcc -= 0.9; cycle(); guard++; }
+  }
+  if (doneAt >= 0 && compare === 0) { restartT += dt; if (restartT > 1.8) resetRun(); }
+  /* 卡片位置 / 颜色 */
+  for (const I of ins) {
+    if (I.st === 'gone') continue;
+    if (I.st === 'fly') { I.fly += dt * 1.3; if (I.fly > 1) { I.st = 'gone'; I.g.visible = false; } }
+    if (I.st === 'sq') {
+      I.sq += dt * 1.2;
+      I.g.scale.setScalar(Math.max(0.01, 1 - I.sq));
+      if (I.sq > 1) { I.st = 'gone'; I.g.visible = false; I.g.scale.setScalar(1); }
+    }
+    I.g.position.lerp(cardTarget(I), 1 - Math.exp(-6 * dt));
+    let c = 0x7d8fa8, glow = 0.12;
+    if (I.st === 'sq') { c = 0xe0524a; glow = 0.5; }
+    else if (I.st === 'ex') { c = 0x39c46e; glow = 0.45 + 0.25 * Math.sin(et * 9); }
+    else if (I.st === 'wb') { c = 0x9be07b; glow = 0.45; }
+    else if (I.st === 'rs') c = I.srcP.every(pp => pReady[pp]) ? 0x2f9e6e : 0x4a6a94;
+    else if (I.st === 'rob') { c = 0xc7a44a; glow = 0.2; }
+    else if (I.st === 'fly') c = 0x74dc84;
+    I.mat.color.lerp(tmpC.set(c), 0.25);
+    I.mat.emissive.copy(I.mat.color);
+    I.mat.emissiveIntensity = glow;
+  }
+  /* CDB / 缓存发光 */
+  cdbGlow = Math.max(0, cdbGlow - dt * 2.2);
+  const hl = STEPS[scenario].hl, hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  M.cdb.emissiveIntensity = 0.25 + cdbGlow * 1.1 + (hl === 'mCache' ? 0.35 + 0.2 * hlK : 0);
+  M.cache.emissiveIntensity = footprint ? 0.4 + 0.18 * Math.sin(et * 6) : (hl === 'mCache' ? 0.35 + 0.2 * hlK : 0.08);
+  /* 步骤高亮 */
+  for (const m of [M.mDec, M.mRen, M.mPRF, M.mRS, M.mROB, M.mCmt, M.port]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.2);
+  const boost = m => { m.emissiveIntensity = 0.5 + 0.3 * hlK; };
+  if (hl === 'mDec') boost(M.mDec);
+  else if (hl === 'mRen') { boost(M.mRen); boost(M.mPRF); }
+  else if (hl === 'mPRF') boost(M.mPRF);
+  else if (hl === 'mRS') { boost(M.mRS); boost(M.port); }
+  else if (hl === 'mROB') { boost(M.mROB); boost(M.mCmt); }
+  /* 依赖箭头 */
+  for (const d of depLines) {
+    const A = ins[d.a], B = ins[d.b];
+    const act = showDep && A.g.visible && B.g.visible &&
+      ['rs', 'ex', 'wb', 'rob', 'dec', 'ren'].includes(A.st) && ['rs', 'ex', 'wb', 'rob', 'dec', 'ren'].includes(B.st);
+    d.ln.visible = act;
+    if (act) {
+      const p = A.g.position, q = B.g.position;
+      const arr = d.ln.geometry.attributes.position;
+      arr.setXYZ(0, p.x, 0.58, p.z); arr.setXYZ(1, q.x, 0.58, q.z);
+      arr.needsUpdate = true;
+      if (!d.raw) d.ln.computeLineDistances();
+    }
+  }
+  /* 相机目标 */
+  tmpV.fromArray(STEPS[scenario].tgt);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    if (r.html) r.o.element.innerHTML = r.text();
+    else r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) { lastStatsT = now; updateStats(); updateFormula(); }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+speed = 1.2; elSpeed.value = 12; elSpeedVal.textContent = '1.2×';
+sizeScope();
+resetRun();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+refreshLabels();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

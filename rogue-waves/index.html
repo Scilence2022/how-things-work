@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>畸形波 · 波群聚焦与调制不稳定</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="畸形波:波群聚焦与调制不稳定造出的 25.6 m 怪物浪" data-en="Rogue Waves: Focusing and Modulation Instability Build 25.6 m Monsters">畸形波:波群聚焦与调制不稳定造出的 25.6 m 怪物浪</h1>
+  <div class="sub" data-zh="波高 H > 2×有效波高 Hs(船级社常用 >2.2×)即称畸形波:1995 年元旦北海 Draupner 平台激光波高仪实测单波 25.6 m(当时 Hs≈12 m,2.1×),首次用仪器证实"水手传说"。深水群速 c_g=½c,长波追上短波,多频率/方向分量同相叠加即聚焦;阿古拉斯洋流逆流使波变陡、海底地形折射聚能;窄带波包经 Benjamin-Feir 调制不稳定(NLS 方程)长成 Peregrine 呼吸子——局部 3× 有效振幅,2011–2012 年水池实验证实。线性高斯海给 2×Hs 的概率仅 ~10⁻¹⁵/波,实测远高;卫星高度计普查:开阔海域每年数千次 · 垂向 ×2.2 夸大 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A wave with height H > 2× the significant wave height Hs (classification societies often use >2.2×) is a rogue wave: on New Year's Day 1995 the laser gauge on the Draupner platform (North Sea) recorded a single 25.6 m wave while Hs≈12 m (2.1×) - the first instrumental proof of the sailors' legend. In deep water the group velocity is c_g=½c: long waves overtake short ones, and when many frequency/direction components align in phase, energy focuses. Opposing currents such as the Agulhas steepen waves and seabed refraction funnels energy; narrow-banded packets obey the NLS equation and grow via Benjamin-Feir modulation instability into Peregrine breathers - 3× the significant amplitude, confirmed in wave tanks in 2011-2012. A linear Gaussian sea gives ~10⁻¹⁵ per wave for 2×Hs, yet observations find far more; satellite altimeters count thousands per year in the open ocean · vertical scale ×2.2 · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">波高 H > 2×有效波高 Hs(船级社常用 >2.2×)即称畸形波:1995 年元旦北海 Draupner 平台激光波高仪实测单波 25.6 m(当时 Hs≈12 m,2.1×),首次用仪器证实"水手传说"。深水群速 c_g=½c,长波追上短波,多频率/方向分量同相叠加即聚焦;阿古拉斯洋流逆流使波变陡、海底地形折射聚能;窄带波包经 Benjamin-Feir 调制不稳定(NLS 方程)长成 Peregrine 呼吸子——局部 3× 有效振幅,2011–2012 年水池实验证实。线性高斯海给 2×Hs 的概率仅 ~10⁻¹⁵/波,实测远高;卫星高度计普查:开阔海域每年数千次 · 垂向 ×2.2 夸大 · 3D 交互演示 · 拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="有效波高 Hs" data-en="significant Hs">有效波高 Hs</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="当前最大波高 H" data-en="max wave height H">当前最大波高 H</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="聚焦度 H/Hs" data-en="focus ratio H/Hs">聚焦度 H/Hs</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="BFI 指数(有效)" data-en="BFI index (effective)">BFI 指数(有效)</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="聚焦距离" data-en="focus distance">聚焦距离</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="P(H>2Hs) 每波" data-en="P(2×Hs) per wave">P(H>2Hs) 每波</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="海面 = 7 分量正弦叠加" data-en="sea = 7-component sine sum">海面 = 7 分量正弦叠加</span>
+    <span class="chip g" data-zh="波群包络 · 白冠" data-en="wave group envelope · whitecaps">波群包络 · 白冠</span>
+    <span class="chip o" data-zh="焦点环 · 聚焦窗口" data-en="focus ring · focusing window">焦点环 · 聚焦窗口</span>
+    <span class="chip r" data-zh="红冠警示 H>2Hs" data-en="red crest alert H>2Hs">红冠警示 H>2Hs</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnRand" data-zh="随机海况" data-en="random sea">随机海况</button>
+    <button class="abtn" id="btnDraupner" data-zh="Draupner 重演(聚焦)" data-en="Draupner replay (focus)">Draupner 重演(聚焦)</button>
+    <button class="abtn" id="btnLens" data-zh="洋流透镜(阿古拉斯)" data-en="current lens (Agulhas)">洋流透镜(阿古拉斯)</button>
+    <button class="abtn" id="btnPereg" data-zh="Peregrine 呼吸子" data-en="Peregrine breather">Peregrine 呼吸子</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="有效波高 Hs" data-en="significant height Hs">有效波高 Hs</label><input id="hs" type="range" min="3" max="16" step="0.5" value="12"><span class="val" id="hsVal">12.0 m</span></div>
+  <div class="row"><label data-zh="频率带宽 Δf/f₀" data-en="bandwidth Δf/f₀">频率带宽 Δf/f₀</label><input id="bw" type="range" min="4" max="32" step="1" value="12"><span class="val" id="bwVal">12 %</span></div>
+  <div class="row"><label data-zh="BFI 非线性强度" data-en="BFI nonlinearity">BFI 非线性强度</label><input id="bfi" type="range" min="0" max="2.5" step="0.05" value="1.2"><span class="val" id="bfiVal">1.20</span></div>
+  <div class="row"><label data-zh="洋流速度(−逆流)" data-en="current (− opposing)">洋流速度(−逆流)</label><input id="cur" type="range" min="-2.5" max="2.5" step="0.1" value="0"><span class="val" id="curVal">0.0 m/s</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="波面快照/时程" data-en="profile / history">波面快照/时程</span></label>
+        <label><input id="tglVec" type="checkbox" checked> <span data-zh="洋流矢量" data-en="current vector">洋流矢量</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../swell/" data-zh="涌浪" data-en="swell">涌浪</a>
+    <a href="../wave-breaking/" data-zh="波浪破碎" data-en="wave breaking">波浪破碎</a>
+    <a href="../soliton/" data-zh="孤子" data-en="soliton">孤子</a>
+    <a href="../turbulence-cascade/" data-zh="湍流级串" data-en="turbulence cascade">湍流级串</a>
+    <a href="../tsunami/" data-zh="海啸" data-en="tsunami">海啸</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const lerp = (a, b, t) => a + (b - a) * t;
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+let darkTheme = THEME === 'dark';
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  darkTheme = THEME === 'dark';
+  scene.background = new THREE.Color(darkTheme ? 0x0b1622 : 0xd9e6f2);
+  scene.fog = new THREE.Fog(scene.background.getHex(), 34, 80);
+  M.deep.color.set(darkTheme ? 0x081420 : 0xa9c2d2);     // 海底
+  M.steel.color.set(darkTheme ? 0x8d9aa8 : 0x66788a);    // 平台导管架
+  M.deck.color.set(darkTheme ? 0xc9a24a : 0xa8842f);     // 甲板
+  M.ring.color.set(darkTheme ? 0xffb454 : 0xa36a10);     // 焦点环
+  M.wire.color.set(darkTheme ? 0x9fd0e8 : 0x2a6a8a);     // 海面线框
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('畸形波 · 波群聚焦与调制不稳定', 'Rogue Waves · Focusing and Modulation Instability');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateHsVal(); updateBwVal(); updateBfiVal(); updateCurVal();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(11.5, 7, 13.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.4, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 55;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x16222e, 0.9));
+const keyLight = new THREE.DirectionalLight(0xfff4e0, 1.7);
+keyLight.position.set(6, 12, 4);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.45);
+fill.position.set(-7, 6, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  water: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true,
+    roughness: 0.38, metalness: 0.12, emissive: 0x0a6a8a, emissiveIntensity: 0.05 }),
+  deep: mat(0x081420, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  steel: mat(0x8d9aa8, { roughness: 0.5, metalness: 0.65 }),
+  deck: mat(0xc9a24a, { roughness: 0.55, metalness: 0.4 }),
+  ring: new THREE.MeshBasicMaterial({ color: 0xffb454, transparent: true, opacity: 0.35,
+    side: THREE.DoubleSide, depthWrite: false }),
+  beacon: new THREE.MeshBasicMaterial({ color: 0xff5a4d }),
+  wire: new THREE.MeshBasicMaterial({ color: 0x9fd0e8, wireframe: true, transparent: true,
+    opacity: 0.06, depthWrite: false }),
+};
+
+/* ---------------- 海浪物理(1 场景单位 = 40 m,垂向 ×2.2 夸大) ----------------
+   深水色散 ω²=gk → c=√(g/k),群速 c_g=½c;洋流经多普勒关系 Ω=√(gk)+kU 改变波数。
+   N=7 个频率/方向分量线性叠加;聚焦预设把各分量相位设为 ωᵢ·TF,使它们每周期
+   在 t=TF、原点处同相叠加 → 周期性聚焦事件;随机海况用随机相位 → 近高斯海面。 */
+const G = 9.81, SCALE_M = 40, KY = 2.2 / SCALE_M;
+const T0 = 8.0, W0 = TAU / T0, K0 = W0 * W0 / G;      // T₀=8 s → λ₀=100 m,c=12.5 m/s
+const CG0 = 0.5 * Math.sqrt(G / K0);                  // c_g = ½c ≈ 6.2 m/s
+const NC = 7, TC = 24, TF = TC * 0.55, BLEND = 1.4;   // 聚焦周期 24 s,焦点 t=13.2 s
+let Hs = 12, bw = 0.12, bfi = 1.2, curU = 0;          // 滑块状态
+let mode = 'draupner';                                 // rand | draupner | lens | pereg
+let scenario = 0;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let et = 0, tmNow = 0, lastTm = 0, eta00 = 0;          // 演化时间 / 本周期相位 / 平台处波面
+let cycleMax = 0, countedThisCycle = false, rogueCount = 0, rogueNow = false;
+let peakX = -8, peakY = 0.6, peakE = 0;                // 波群峰值(供标签跟随)
+const hist = [];                                       // 平台处 η 时程(scope)
+const comp = [];                                       // 波分量表
+const BFIe = () => clamp(bfi * Math.pow(0.12 / bw, 1.6), 0, 6);   // BFI ∝ 陡度/带宽²(窄带更危险)
+
+function solveK(w, th) {          // Ω = √(gk) + k·U·cosθ → 阻尼迭代解 k(含顺/逆流 Doppler)
+  const ux = curU * Math.cos(th);
+  let k = w * w / G;
+  for (let it = 0; it < 8; it++) {
+    const kn = Math.pow(Math.max(0.05, w - k * ux), 2) / G;
+    k = 0.5 * k + 0.5 * kn;
+  }
+  return k;
+}
+function buildSea() {             // 分量结构:中心频率 ±3 档,幅值缓降,方向小幅展开
+  comp.length = 0;
+  for (let i = 0; i < NC; i++) {
+    const j = i - (NC - 1) / 2;
+    comp.push({ j, du: bw * j / 3, at: Math.exp(-j * j * 0.06),
+      th: 0.16 * Math.sin(i * 2.1 + 1) * (mode === 'lens' ? 0.12 : 1),
+      rnd: Math.random() * TAU, rnd2: (Math.random() - 0.5) * TAU,
+      a: 0, w: 0, k: 0, ku: 0, ct: 1, st: 0, ph: 0 });
+  }
+  applySpectrum();
+}
+function applySpectrum() {        // 谱归一:Σa² = Hs²/8 → σ=Hs/4(Hs=4σ,波浪统计约定)
+  let s2 = 0;
+  for (const c of comp) s2 += c.at * c.at;
+  const ampN = (Hs * Hs / 8) / s2;
+  for (const c of comp) {
+    c.a = c.at * Math.sqrt(ampN);
+    c.w = W0 * (1 + c.du);
+    c.k = solveK(c.w, c.th);
+    c.ku = c.k * SCALE_M;                              // rad/m → rad/场景单位
+    c.ct = Math.cos(c.th); c.st = Math.sin(c.th);
+    c.ph = mode === 'rand' ? c.rnd
+         : mode === 'lens' ? c.w * TF + c.rnd2 * 0.55   // 部分对齐 + 相位抖动
+         : mode === 'pereg' ? 0
+         : c.w * TF;                                    // 完全对齐 → t=TF 于原点聚焦
+  }
+}
+function seaEta(x, z, tt) {       // 线性叠加(米)
+  let e = 0;
+  for (let i = 0; i < NC; i++) {
+    const c = comp[i];
+    e += c.a * Math.cos(c.ku * (x * c.ct + z * c.st) - c.w * tt + c.ph);
+  }
+  return e;
+}
+const envWin = tt => 0.42 + 0.58 * (0.5 - 0.5 * Math.cos(TAU * tt / TC));  // 循环缝处波况转弱(波群间歇)
+function etaAt(x, z, tt) {
+  if (mode === 'pereg') return peregrine(x, z, tt);
+  const tm = ((tt % TC) + TC) % TC;
+  const s = tm > TC - BLEND ? E2((tm - (TC - BLEND)) / BLEND) : 0;     // 循环缝交叉淡化
+  let e = seaEta(x, z, tm) * envWin(tm);
+  if (s > 0) e = e * (1 - s) + seaEta(x, z, tm - TC) * envWin(tm - TC) * s;
+  const be = BFIe();
+  if (be > 0.01) e += 0.30 * be * e * Math.abs(e) / Hs;  // 二阶波陡化(非线性视觉代理:峰尖谷缓)
+  if (Math.abs(curU) > 0.05) e *= 1 + 0.2 * Math.abs(curU) / 2.5 * Math.exp(-z * z / 10.2);  // 流带 z-透镜(折射代理)
+  return e;
+}
+function peregrine(x, z, tt) {    // NLS 精确解:峰值振幅 = 3× 有效振幅(仅存在一个瞬间)
+  const tm = ((tt % TC) + TC) % TC;
+  const s = tm > TC - BLEND ? E2((tm - (TC - BLEND)) / BLEND) : 0;
+  const one = t2 => {
+    const a = Hs / 2;
+    const X = x / 2.6, T = (t2 - TF) / 4.5;
+    const den = 1 + 16 * T * T + 4 * X * X + 2 * z * z / 7;
+    const reP = 1 - 4 / den, imP = -16 * T / den;
+    const phi = K0 * SCALE_M * 0.985 * x - W0 * 0.985 * t2;
+    return a * (reP * Math.cos(phi) - imP * Math.sin(phi)) + 0.22 * seaEta(x, z, t2) * envWin(t2);
+  };
+  let e = one(tm);
+  if (s > 0) e = e * (1 - s) + one(tm - TC) * s;
+  if (Math.abs(curU) > 0.05) e *= 1 + 0.2 * Math.abs(curU) / 2.5 * Math.exp(-z * z / 10.2);
+  return e;
+}
+
+/* ---------------- 场景:海底 / 海面网格 / 焦点环 / 平台 / 洋流箭头 ---------------- */
+const deep = new THREE.Mesh(new THREE.BoxGeometry(80, 0.1, 52), M.deep);
+deep.position.y = -1.75;
+scene.add(deep);
+
+const waterGeo = new THREE.PlaneGeometry(34, 22, 88, 56);   // 5083 顶点网格面片
+waterGeo.rotateX(-Math.PI / 2);
+const NV = waterGeo.attributes.position.count;
+const wcol = new Float32Array(NV * 3);
+waterGeo.setAttribute('color', new THREE.BufferAttribute(wcol, 3));
+const bx = new Float32Array(NV), bz = new Float32Array(NV);
+{
+  const pa = waterGeo.attributes.position;
+  for (let i = 0; i < NV; i++) { bx[i] = pa.getX(i); bz[i] = pa.getZ(i); }
+}
+const water = new THREE.Mesh(waterGeo, M.water);
+scene.add(water);
+const wire = new THREE.Mesh(waterGeo, M.wire);              // 与海面共享几何的线框
+wire.position.y = 0.012;
+scene.add(wire);
+
+const ring = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.16, 56), M.ring);
+ring.rotation.x = -Math.PI / 2;
+ring.position.y = 0.02;
+scene.add(ring);
+
+/* Draupner 式导管架平台:4 腿 + X 撑 + 甲板 + 信标(正好立在焦点上) */
+const platG = new THREE.Group();
+scene.add(platG);
+for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.062, 1.7, 10), M.steel);
+  leg.position.set(sx * 0.3, 0, sz * 0.3);
+  platG.add(leg);
+}
+for (const y of [-0.35, 0.12]) for (const r of [0.785, -0.785]) {
+  const brace = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.045, 0.045), M.steel);
+  brace.position.set(0, y, 0);
+  brace.rotation.y = r;
+  platG.add(brace);
+}
+const deck = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.09, 1.05), M.deck);
+deck.position.y = 0.85;
+platG.add(deck);
+const helipad = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.022, 20), M.steel);
+helipad.position.set(0.16, 0.91, 0.1);
+platG.add(helipad);
+const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.3), M.steel);
+cabin.position.set(-0.24, 1.0, -0.2);
+platG.add(cabin);
+const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), M.beacon);
+beacon.position.set(0.34, 1.02, -0.28);
+platG.add(beacon);
+
+const curArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0),
+  new THREE.Vector3(-7.5, 0.08, 3.4), 1.2, 0x74c0fc, 0.18, 0.11);
+scene.add(curArrow);
+const dirW = new THREE.Vector3();
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent, visFn) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow, vis: visFn });
+  div.textContent = textFn();
+  return o;
+}
+addLabel(() => L(`波群(包络)· 群速 c_g = ½c ≈ ${CG0.toFixed(1)} m/s`, `wave group (envelope) · c_g = ½c ≈ ${CG0.toFixed(1)} m/s`), () => 'e',
+  new THREE.Vector3(-8, 1.5, 0), p => p.set(peakX, peakY, 0));
+addLabel(() => L('深水色散:c=√(g/k),长波追上短波', 'deep-water dispersion: c=√(g/k), long waves overtake short'), () => 'g',
+  new THREE.Vector3(-11, 1.7, -4.5));
+addLabel(() => L(`阿古拉斯洋流(示例)U=${curU.toFixed(1)} m/s:${curU < -0.05 ? '逆流 → k 增、波陡增大、能量聚成窄带' : curU > 0.05 ? '顺流 → 波长拉长、能量铺开' : '静水'}`,
+  `Agulhas-like current U=${curU.toFixed(1)} m/s: ${curU < -0.05 ? 'opposing → k grows, waves steepen, energy in a narrow band' : curU > 0.05 ? 'following → longer waves, energy spreads' : 'still water'}`),
+  () => curU < -0.05 ? 'bad' : 'b', new THREE.Vector3(-7.5, 1.05, 3.9), null, null, () => Math.abs(curU) > 0.05);
+addLabel(() => L(`调制不稳定 Benjamin-Feir:BFI = ${BFIe().toFixed(2)}${BFIe() > 1 ? '(边带指数增长)' : ''}`,
+  `Benjamin-Feir modulation instability: BFI = ${BFIe().toFixed(2)}${BFIe() > 1 ? ' (sidebands grow exponentially)' : ''}`), () => 'w',
+  new THREE.Vector3(0, 2.7, -3), null, null, () => BFIe() > 0.45 && mode !== 'pereg');
+addLabel(() => L('Peregrine 呼吸子:峰值振幅 = 3× 有效振幅(2011–2012 水池实测)',
+  'Peregrine breather: peak amplitude = 3× significant amplitude (tank-tested 2011-2012)'), () => 'e',
+  new THREE.Vector3(0, 3.2, 1.5), null, null, () => mode === 'pereg');
+addLabel(() => L(`Draupner 平台 · 1995-01-01 实测单波 25.6 m(Hs≈12 m)· 此刻 η=${eta00.toFixed(1)} m`,
+  `Draupner platform · 1995-01-01 record 25.6 m (Hs≈12 m) · surface now η=${eta00.toFixed(1)} m`), () => rogueNow ? 'bad' : 'st',
+  new THREE.Vector3(0, 1.7, 1.0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'night', tgt: [0, 1.0, 0.9],
+    b: '1995 年元旦:Draupner 记录到 25.6 m 单波', be: 'New Year 1995: Draupner logs a single 25.6 m wave',
+    d: '北海风暴里,Draupner 平台激光波高仪记录到一个 25.6 m 的单个大波,而当时有效波高 Hs≈12 m——比值 2.1×,波峰高达 18.5 m,几乎扑到甲板。这是第一条有仪器记录的畸形波:此前"海上怪浪"只存在于水手目击与保险理赔档案里,学界普遍不信。从这一夜起,畸形波成为严肃的流体力学问题。',
+    de: 'In a North Sea storm the laser gauge on the Draupner platform logged a single 25.6 m wave while the significant height was only Hs≈12 m - a ratio of 2.1×, with an 18.5 m crest that nearly reached the deck. It was the first instrumental record of a rogue wave; before that night "monster waves" lived only in sailors accounts and insurance claims. From then on, rogue waves became a serious problem in fluid dynamics.' },
+  { hl: 'stats', tgt: [0, 0.5, 0],
+    b: '定义 H>2Hs 与高斯海的统计陷阱', be: 'Defining H>2Hs and the Gaussian-sea trap',
+    d: '船级社把畸形波定义为波高 H > 2×有效波高 Hs,不少规范取 2.2×(Hs=最高 1/3 波高的平均值)。若海面是线性高斯过程,出现 2×Hs 的概率约每波 10⁻¹⁵——把全地球的海数一遍也难凑出一个。可实测频度远高于此:真实海况的极值尾部比高斯分布"肥"得多。多出来的概率从哪来?答案在后面两步:聚焦与非线性。',
+    de: 'Classification societies define a rogue wave as H > 2×Hs, often 2.2× (Hs = mean of the highest third of waves). If the sea surface were a linear Gaussian process, a 2×Hs wave would arrive with probability about 10⁻¹⁵ per wave - practically never. Measured occurrence is far higher: the extreme tail of real seas is much fatter than Gaussian. Where does the extra probability come from? The next two steps: focusing and nonlinearity.' },
+  { hl: 'focus', tgt: [-5, 0.8, 0],
+    b: '线性聚焦:波群赛跑,同相叠加', be: 'Linear focusing: groups race, then add in phase',
+    d: '深水波是色散的:c=√(g/k),能量以群速 c_g=½c 行进——长波相速快,会从后面追上短波。把海浪拆成 7 个频率/方向分量让它们"赛跑":当它们在同一时刻、同一地点相位对齐,振幅直接相加,波峰骤然隆起成白色高亮带冲向平台。看上游:波包不断生成、压缩、聚焦——这就是线性聚焦机制,不需要任何非线性。',
+    de: 'Deep-water waves disperse: c=√(g/k), and energy travels at the group velocity c_g=½c - long waves are faster and overtake short ones from behind. Split the sea into 7 frequency/direction components and let them race: when they align in phase at the same place and time, amplitudes simply add and a crest erupts, racing toward the platform as a bright band. Watch up-wave: groups form, compress and focus - linear focusing, no nonlinearity required.' },
+  { hl: 'lens', tgt: [0, 0.5, 2.4],
+    b: '洋流与海底:天然的聚波透镜', be: 'Currents and seabed: natural wave lenses',
+    d: '把洋流滑块拉到 −1.8 m/s:多普勒关系 Ω=√(gk)+kU 中 U<0,波数 k 增大近五成,波长变短、波陡 k·a 增大——逆流把波"压陡"。南非阿古拉斯洋流(强时流速约 2 m/s)正是这样逆着涌浪,把波能折射聚成窄带,成为畸形波高发区;海底海脊与浅滩的地形折射同样把能量弯聚到一处。天然透镜,无需非线性就已危险。',
+    de: 'Drag the current slider to −1.8 m/s: in the Doppler relation Ω=√(gk)+kU with U<0 the wavenumber k grows by nearly half - waves shorten and steepen, squeezed by the opposing flow. South Africa\'s Agulhas Current (up to about 2 m/s) does exactly this to swell, refracting wave energy into a narrow band that teems with rogue waves; seabed ridges and shoals bend energy together the same way. A natural lens is dangerous even with no nonlinearity.' },
+  { hl: 'nls', tgt: [0, 1.2, 0],
+    b: 'Benjamin-Feir 不稳定与 Peregrine 呼吸子', be: 'Benjamin-Feir instability and the Peregrine breather',
+    d: '窄带陡波包由非线性薛定谔方程(NLS)描述:载波会被自己的边带反噬——Benjamin-Feir 调制不稳定,强度用 BFI 指数衡量;窄谱+大波陡时 BFI>1,边带指数增长,波包自己"鼓包"。NLS 的精确解 Peregrine 呼吸子预言:某瞬间局部振幅可达有效振幅 3 倍,随后消散。2011–2012 年水池实验真的造出了它——畸形波从传说变成可复现的物理。',
+    de: 'A narrow-banded steep wave packet obeys the nonlinear Schrödinger equation (NLS): the carrier is destabilized by its own sidebands - Benjamin-Feir modulation instability, gauged by the BFI. For narrow spectra and steep waves BFI>1, sidebands grow exponentially and the packet bulges by itself. An exact NLS solution, the Peregrine breather, predicts a local amplitude three times the significant amplitude for one instant. Tank experiments in 2011-2012 created it - the rogue wave became reproducible physics.' },
+  { hl: 'survey', tgt: [2.5, 0.6, 0],
+    b: '卫星普查与设计准则:怪物并不罕见', be: 'Satellite surveys and design rules: monsters are not rare',
+    d: '卫星雷达高度计沿星下点测量海面高度,对全球大洋做普查:开阔海域每年发生数千次畸形波——它不是传说,而是统计上必然的极端事件。后果写进了规范:船级社上调设计波高、要求更大的甲板气隙,平台与 FPSO 按聚焦概率重新校核。理解波群赛跑与调制不稳定,就是把"水手传说"翻译成结构安全系数。',
+    de: 'Satellite radar altimeters profile the sea surface along their ground tracks: thousands of rogue waves occur in the open ocean every year - not legend, but a statistically inevitable extreme event. The consequence is written into the rules: classification societies raised design wave heights, demand larger deck air gaps, and platforms and FPSOs are re-checked against focusing probabilities. Understanding group racing and modulation instability turns sailors\' tales into structural safety factors.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const be = BFIe();
+  const kk = solveK(W0, 0), k0s = W0 * W0 / G;
+  const kin = Math.round((kk / k0s - 1) * 100);
+  const ratio = cycleMax / Hs;
+  const lp = -15 + 8.5 * clamp01((ratio - 1.1) / 1.6) * (0.5 + 0.5 * clamp01(be / 2.5));
+  formulaEl.innerHTML =
+    L(`深水色散 ω²=gk:c=√(g/k)、c_g=½c。T₀=8 s → λ₀=100 m、c=12.5 m/s、c_g≈6.2 m/s(长波追短波);洋流 U=${curU.toFixed(1)} m/s → 中心波数 k ${kin >= 0 ? '增' : '减'} ${Math.abs(kin)}%(逆流即波陡 ka 增大)· 垂向 ×2.2 夸大`,
+      `Deep-water dispersion ω²=gk: c=√(g/k), c_g=½c. T₀=8 s → λ₀=100 m, c=12.5 m/s, c_g≈6.2 m/s (long chases short); current U=${curU.toFixed(1)} m/s → central wavenumber ${kin >= 0 ? '+' : ''}${kin}% (opposing flow steepens waves) · vertical ×2.2`) + '<br>' +
+    L(`聚焦:η=Σᵢ aᵢ·cos(kᵢx−ωᵢt+φᵢ),${NC} 分量同相 → 本周期最大波高 <b>${cycleMax.toFixed(1)} m = ${ratio.toFixed(2)}×Hs</b>(红警 ≥2.0×,船级社常用 2.2×)· 畸形波事件 <b>${rogueCount}</b> 次`,
+      `Focusing: η=Σᵢ aᵢ·cos(kᵢx−ωᵢt+φᵢ), ${NC} components in phase → max wave this cycle <b>${cycleMax.toFixed(1)} m = ${ratio.toFixed(2)}×Hs</b> (alert ≥2.0×, class rules often 2.2×) · rogue events: <b>${rogueCount}</b>`) + '<br>' +
+    L(`统计:线性高斯海 P(H>2Hs)≈10⁻¹⁵/波 → 当前模型 ~10<sup>${lp.toFixed(1)}</sup>/波(尾部变肥);NLS 调制不稳定 BFI=${be.toFixed(2)},Peregrine 呼吸子峰值 = 3× 有效振幅(2011–2012 水池实测)`,
+      `Statistics: linear Gaussian sea P(H>2Hs)≈10⁻¹⁵/wave → current model ~10<sup>${lp.toFixed(1)}</sup>/wave (fatter tail); NLS modulation instability BFI=${be.toFixed(2)}; Peregrine breather peak = 3× significant amplitude (tank-tested 2011-2012)`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const PRESETS = {
+  rand:     { hs: 6,  bw: 0.22, bfi: 0.6, cur: 0 },     // 随机相位 → 近高斯海
+  draupner: { hs: 12, bw: 0.12, bfi: 1.2, cur: 0 },     // 相位对齐 → 周期性聚焦事件
+  lens:     { hs: 10, bw: 0.10, bfi: 0.6, cur: -1.8 },  // 逆流压陡 + 流带折射
+  pereg:    { hs: 12, bw: 0.08, bfi: 2.0, cur: 0 },     // NLS 呼吸子
+};
+const btnRand = document.getElementById('btnRand'), btnDraupner = document.getElementById('btnDraupner'),
+  btnLens = document.getElementById('btnLens'), btnPereg = document.getElementById('btnPereg'),
+  btnReset = document.getElementById('btnReset');
+const presetBtns = { rand: btnRand, draupner: btnDraupner, lens: btnLens, pereg: btnPereg };
+function setMode(m) {
+  mode = m;
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === m);
+  const p = PRESETS[m];
+  Hs = p.hs; bw = p.bw; bfi = p.bfi; curU = p.cur;
+  elHs.value = p.hs; elBw.value = Math.round(p.bw * 100); elBfi.value = p.bfi; elCur.value = p.cur;
+  updateHsVal(); updateBwVal(); updateBfiVal(); updateCurVal();
+  buildSea();
+  cycleMax = 0; countedThisCycle = false;
+  updateFormula();
+}
+function resetAll() {
+  rogueCount = 0; cycleMax = 0; countedThisCycle = false;
+  hist.length = 0;
+  setMode('draupner');
+}
+btnRand.addEventListener('click', () => setMode('rand'));
+btnDraupner.addEventListener('click', () => setMode('draupner'));
+btnLens.addEventListener('click', () => setMode('lens'));
+btnPereg.addEventListener('click', () => setMode('pereg'));
+btnReset.addEventListener('click', resetAll);
+
+/* ---------------- 波面快照 + 平台时程(示波器) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const half = ch * 0.5, amp = 1.7 * Hs;
+  const mid1 = half * 0.52, mid2 = half * 1.55;
+  const yOf = (e, mid) => mid - clamp(e / amp, -1.15, 1.15) * half * 0.42;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.30)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath(); scopeCtx.moveTo(0, half); scopeCtx.lineTo(cw, half); scopeCtx.stroke();
+  scopeCtx.strokeStyle = 'rgba(255,107,107,.55)';       // η=Hs 阈值 ⇔ 波高≈2Hs
+  scopeCtx.setLineDash([4 * dpr, 3 * dpr]);
+  for (const mid of [mid1, mid2]) {
+    scopeCtx.beginPath(); scopeCtx.moveTo(0, yOf(Hs, mid)); scopeCtx.lineTo(cw, yOf(Hs, mid)); scopeCtx.stroke();
+  }
+  scopeCtx.setLineDash([]);
+  scopeCtx.font = `${Math.round(8.5 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.85)';
+  scopeCtx.fillText(L('空间快照 z=0(红:η>Hs ⇔ H>2Hs)', 'spatial snapshot z=0 (red: η>Hs ⇔ H>2Hs)'), 4 * dpr, 9 * dpr);
+  scopeCtx.fillText(L('平台处 η 时程', 'η history at platform'), 4 * dpr, half + 9 * dpr);
+  scopeCtx.strokeStyle = 'rgba(116,192,252,.95)';
+  scopeCtx.lineWidth = Math.max(1.2, 1.2 * dpr);
+  scopeCtx.beginPath();
+  for (let i = 0; i <= 110; i++) {
+    const e = etaAt(-17 + 34 * i / 110, 0, et);
+    i === 0 ? scopeCtx.moveTo(i / 110 * cw, yOf(e, mid1)) : scopeCtx.lineTo(i / 110 * cw, yOf(e, mid1));
+  }
+  scopeCtx.stroke();
+  scopeCtx.strokeStyle = 'rgba(255,93,93,1)';
+  scopeCtx.lineWidth = Math.max(1.8, 1.8 * dpr);
+  scopeCtx.beginPath();
+  let pen = false;
+  for (let i = 0; i <= 110; i++) {
+    const e = etaAt(-17 + 34 * i / 110, 0, et), px = i / 110 * cw, py = yOf(e, mid1);
+    if (e > Hs) { pen ? scopeCtx.lineTo(px, py) : scopeCtx.moveTo(px, py); pen = true; } else pen = false;
+  }
+  scopeCtx.stroke();
+  if (hist.length > 1) {
+    scopeCtx.strokeStyle = 'rgba(123,216,143,.95)';
+    scopeCtx.lineWidth = Math.max(1.2, 1.2 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < hist.length; i++) {
+      const px = i / (hist.length - 1) * cw, py = yOf(hist[i], mid2);
+      i === 0 ? scopeCtx.moveTo(px, py) : scopeCtx.lineTo(px, py);
+    }
+    scopeCtx.stroke();
+    scopeCtx.strokeStyle = 'rgba(255,93,93,1)';
+    scopeCtx.lineWidth = Math.max(1.8, 1.8 * dpr);
+    scopeCtx.beginPath();
+    pen = false;
+    for (let i = 0; i < hist.length; i++) {
+      const px = i / (hist.length - 1) * cw, py = yOf(hist[i], mid2);
+      if (hist[i] > Hs) { pen ? scopeCtx.lineTo(px, py) : scopeCtx.moveTo(px, py); pen = true; } else pen = false;
+    }
+    scopeCtx.stroke();
+  }
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elHs = document.getElementById('hs'), elHsVal = document.getElementById('hsVal');
+const elBw = document.getElementById('bw'), elBwVal = document.getElementById('bwVal');
+const elBfi = document.getElementById('bfi'), elBfiVal = document.getElementById('bfiVal');
+const elCur = document.getElementById('cur'), elCurVal = document.getElementById('curVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglVec = document.getElementById('tglVec');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn && (!r.vis || r.vis());
+}
+function updateHsVal() { elHsVal.textContent = Hs.toFixed(1) + ' m'; }
+function updateBwVal() { elBwVal.textContent = Math.round(bw * 100) + ' %'; }
+function updateBfiVal() { elBfiVal.textContent = bfi.toFixed(2); }
+function updateCurVal() { elCurVal.textContent = (curU > 0 ? '+' : curU < 0 ? '−' : '') + Math.abs(curU).toFixed(1) + ' m/s'; }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elHs.addEventListener('input', () => { Hs = +elHs.value; updateHsVal(); applySpectrum(); updateFormula(); });
+elBw.addEventListener('input', () => { bw = +elBw.value / 100; updateBwVal(); applySpectrum(); updateFormula(); });
+elBfi.addEventListener('input', () => { bfi = +elBfi.value; updateBfiVal(); updateFormula(); });
+elCur.addEventListener('input', () => { curU = +elCur.value; updateCurVal(); applySpectrum(); updateFormula(); });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', refreshLabels);
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const be = BFIe();
+  const ratio = cycleMax / Hs;
+  stA.innerHTML = Hs.toFixed(1) + '<small> m</small>';
+  stA.className = 'v ok';
+  stB.innerHTML = cycleMax.toFixed(1) + '<small> m</small>';
+  stB.className = 'v ' + (ratio >= 2 ? 'bad' : ratio >= 1.5 ? 'warn' : 'ok');
+  stC.innerHTML = ratio.toFixed(2) + '<small> ×Hs</small>';
+  stC.className = 'v ' + (ratio >= 2 ? 'bad' : ratio >= 1.5 ? 'warn' : 'ok');
+  stD.innerHTML = be.toFixed(2);
+  stD.className = 'v ' + (be > 1 ? 'warn' : 'ok');
+  stE.innerHTML = (CG0 * tmNow / 1000).toFixed(2) + '<small> km</small>';
+  stE.className = 'v ok';
+  const lp = -15 + 8.5 * clamp01((ratio - 1.1) / 1.6) * (0.5 + 0.5 * clamp01(be / 2.5));
+  stF.innerHTML = '10<sup>' + lp.toFixed(1) + '</sup><small>' + L(' /波', ' /wave') + '</small>';
+  stF.className = 'v ' + (lp > -11 ? 'warn' : 'ok');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+const tmpV = new THREE.Vector3();
+const ctmp = [0, 0, 0];
+const PD = [[0.02, 0.055, 0.085], [0.035, 0.16, 0.24], [0.09, 0.38, 0.5], [0.9, 0.96, 0.99]];
+const PL = [[0.10, 0.28, 0.40], [0.19, 0.46, 0.62], [0.36, 0.66, 0.80], [1, 1, 1]];
+function mix4(P, t, o) {
+  let a, b, u;
+  if (t < 0.42) { a = P[0]; b = P[1]; u = t / 0.42; }
+  else if (t < 0.75) { a = P[1]; b = P[2]; u = (t - 0.42) / 0.33; }
+  else { a = P[2]; b = P[3]; u = (t - 0.75) / 0.25; }
+  o[0] = lerp(a[0], b[0], u); o[1] = lerp(a[1], b[1], u); o[2] = lerp(a[2], b[2], u);
+}
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  if (playing) et += dt * speed;
+  tmNow = ((et % TC) + TC) % TC;
+  if (tmNow < lastTm) { cycleMax = 0; countedThisCycle = false; }   // 新周期
+  lastTm = tmNow;
+  /* 海面顶点:高度 + 顶点色(白冠 / 红冠警示) */
+  const pa = waterGeo.attributes.position.array, P = darkTheme ? PD : PL;
+  const glow = 0.55 + 0.45 * Math.sin(et * 6.3);
+  for (let i = 0; i < NV; i++) {
+    const e = etaAt(bx[i], bz[i], et);
+    pa[3 * i + 1] = e * KY;
+    const q = e / Hs;
+    mix4(P, clamp01((q + 0.9) / 2.1), ctmp);
+    const rq = clamp01((q - 0.95) / 0.6) * (rogueNow ? glow : 0.6);
+    wcol[3 * i] = lerp(ctmp[0], 1, rq);
+    wcol[3 * i + 1] = lerp(ctmp[1], 0.3, rq);
+    wcol[3 * i + 2] = lerp(ctmp[2], 0.3, rq);
+  }
+  waterGeo.attributes.position.needsUpdate = true;
+  waterGeo.attributes.color.needsUpdate = true;
+  waterGeo.computeVertexNormals();
+  /* 波群峰值扫描(z=0)→ 标签跟随 + 本周期最大波高(以 2×波峰近似波高) */
+  let pm = -1e9;
+  for (let i = 0; i <= 48; i++) {
+    const x = -16 + 32 * i / 48, e = etaAt(x, 0, et);
+    if (e > pm) { pm = e; peakX = x; }
+  }
+  peakE = pm; peakY = pm * KY + 0.55;
+  cycleMax = Math.max(cycleMax, 2 * peakE);
+  if (!countedThisCycle && cycleMax / Hs >= 2) { countedThisCycle = true; rogueCount++; }
+  rogueNow = cycleMax / Hs >= 2;
+  eta00 = etaAt(0, 0, et);
+  if (playing) { hist.push(eta00); if (hist.length > 160) hist.shift(); }
+  /* 信标 / 焦点环 / 洋流箭头 */
+  beacon.scale.setScalar(rogueNow ? 1.25 + 0.25 * Math.sin(et * 9) : 1);
+  M.beacon.color.set(rogueNow ? 0xff4038 : 0x8a3a34);
+  M.ring.opacity = 0.1 + 0.55 * Math.max(0, (envWin(tmNow) - 0.42) / 0.58);
+  const curOn = tglVec.checked && Math.abs(curU) > 0.05;
+  curArrow.visible = curOn;
+  if (curOn) {
+    curArrow.setDirection(dirW.set(Math.sign(curU), 0, 0));
+    curArrow.setLength(0.7 + Math.abs(curU) * 0.8, 0.16, 0.1);
+    curArrow.setColor(curU < 0 ? 0xff8787 : 0x74c0fc);
+  }
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.water, M.steel, M.deck]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.12);
+  const boost = m => { m.emissiveIntensity = 0.4 + 0.3 * hlK; };
+  if (hl === 'night' || hl === 'stats') boost(M.deck);
+  else if (hl === 'focus' || hl === 'nls') boost(M.water);
+  else if (hl === 'lens') { boost(M.water); boost(M.steel); }
+  else if (hl === 'survey') { boost(M.steel); boost(M.deck); }
+  /* 相机目标 */
+  tmpV.fromArray(STEPS[scenario].tgt);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+    r.o.visible = labelsOn && (!r.vis || r.vis());
+  }
+  if (tglCurve.checked) drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+setMode('draupner');
+const t0 = parseInt(qs.get('t'), 10);
+activateStep(Number.isFinite(t0) && t0 >= 1 ? clamp(t0 - 1, 0, STEPS.length - 1) : 0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
