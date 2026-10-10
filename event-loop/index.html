@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>事件循环 · 调用栈、宏任务与微任务</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #log { margin-top: 4px; max-height: 92px; overflow-y: auto; border: 1px solid var(--panel-border);
+    border-radius: 8px; background: rgba(127,140,160,.08); padding: 4px 7px;
+    font: 10.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #log .lg { white-space: nowrap; }
+  .lg.hd { color: var(--acc); font-weight: 700; }
+  .lg.sync { color: #ffe2ae; }
+  .lg.macro { color: #bde9ff; }
+  .lg.micro { color: #c8f5d0; }
+  .lg.sys { color: var(--text2); }
+  .lg.warn { color: #ffa8a8; }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="事件循环:调用栈、宏任务与微任务,谁先谁后" data-en="The Event Loop: Call Stack, Macrotasks and Microtasks">事件循环:调用栈、宏任务与微任务,谁先谁后</h1>
+  <div class="sub" data-zh="JS 主线程是一间单线程厨房:调用栈只有一摞盘子。setTimeout(fn,0) 不是 0 ms 后执行——定时器交给 Web API 计时,回调进宏任务队列,且被 HTML 规范钳到 ≥4 ms(嵌套第 5 层后);Promise.then / queueMicrotask 是微任务,当前代码一结束就「整条清空」,优先级高于任何宏任务(Node 的 process.nextTick 还要更高)。每轮循环:取 1 个宏任务 → 执行 → 清空全部微任务 → (可能)渲染一帧,rAF 回调在渲染前跑;60 fps 每帧预算 16.7 ms,主线程阻塞 50 ms ≈ 连掉 3 帧——微任务风暴能让渲染永久饿死,这就是「页面卡死」 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The JS main thread is a single-threaded kitchen: the call stack is one stack of plates. setTimeout(fn,0) does not run after 0 ms - the timer is handed to the Web API to tick, its callback joins the macrotask queue, and the HTML spec clamps it to >=4 ms after the 5th nested level. Promise.then / queueMicrotask are microtasks: the moment the current code finishes, the entire microtask queue is drained - before any macrotask (Node's process.nextTick ranks even higher). Each loop iteration: take ONE macrotask → run it → drain ALL microtasks → maybe render a frame (rAF callbacks run first); at 60 fps each frame has a 16.7 ms budget, so 50 ms of blocking drops ~3 frames - a microtask storm starves rendering forever, which is what a frozen page is · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">JS 主线程是一间单线程厨房:调用栈只有一摞盘子。setTimeout(fn,0) 不是 0 ms 后执行——定时器交给 Web API 计时,回调进宏任务队列,且被 HTML 规范钳到 ≥4 ms(嵌套第 5 层后);Promise.then / queueMicrotask 是微任务,当前代码一结束就「整条清空」,优先级高于任何宏任务(Node 的 process.nextTick 还要更高)。每轮循环:取 1 个宏任务 → 执行 → 清空全部微任务 → (可能)渲染一帧,rAF 回调在渲染前跑;60 fps 每帧预算 16.7 ms,主线程阻塞 50 ms ≈ 连掉 3 帧——微任务风暴能让渲染永久饿死,这就是「页面卡死」 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="宏任务(已执行)" data-en="macrotasks done">宏任务(已执行)</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="微任务(已执行)" data-en="microtasks done">微任务(已执行)</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="当前阶段" data-en="phase">当前阶段</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="渲染 fps(估)" data-en="render fps (est.)">渲染 fps(估)</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="调用栈(盘子堆叠,压入/弹出)" data-en="call stack (plates pushed/popped)">调用栈(盘子堆叠,压入/弹出)</span>
+    <span class="chip b" data-zh="蓝箱 = 宏任务:setTimeout / I/O" data-en="blue = macrotasks: setTimeout / I/O">蓝箱 = 宏任务:setTimeout / I/O</span>
+    <span class="chip o" data-zh="金盒 = 微任务:Promise.then(优先清空)" data-en="gold = microtasks: Promise.then (drained first)">金盒 = 微任务:Promise.then(优先清空)</span>
+    <span class="chip r" data-zh="屏幕:渲染帧闪烁 / 饥饿变红" data-en="screen: render flash / red when starved">屏幕:渲染帧闪烁 / 饥饿变红</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnQuiz" data-zh="运行经典顺序题" data-en="run the classic quiz">运行经典顺序题</button>
+    <button class="abtn" id="btnStorm" data-zh="微任务风暴" data-en="microtask storm">微任务风暴</button>
+    <button class="abtn" id="btnTimer" data-zh="普通定时器节奏" data-en="plain timer rhythm">普通定时器节奏</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="风暴再生数" data-en="storm spawn rate">风暴再生数</label><input id="stormRate" type="range" min="1" max="6" step="1" value="2"><span class="val" id="stormRateVal">×2</span></div>
+  <div class="row"><label data-zh="定时器间隔" data-en="timer interval">定时器间隔</label><input id="tickInt" type="range" min="0.6" max="2.4" step="0.2" value="1.4"><span class="val" id="tickIntVal">1.4 s</span></div>
+  <canvas id="scope"></canvas>
+  <div id="log"></div>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglFlash" type="checkbox" checked> <span data-zh="渲染帧提示" data-en="render flash">渲染帧提示</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../mutex-race/" data-zh="竞态与互斥锁" data-en="mutex &amp; race">竞态与互斥锁</a>
+    <a href="../cpu-pipeline/" data-zh="CPU 流水线" data-en="CPU pipeline">CPU 流水线</a>
+    <a href="../queueing-theory/" data-zh="排队论" data-en="queueing theory">排队论</a>
+    <a href="../garbage-collection/" data-zh="垃圾回收" data-en="garbage collection">垃圾回收</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x1a2129 : 0xd8dee5);
+  M.bench.color.set(dark ? 0x39414c : 0x9aa5b1);
+  M.plate.color.set(dark ? 0xd8dee8 : 0x5a6470);
+  M.boxMacro.color.set(dark ? 0x5f8fc4 : 0x2f6ca8);
+  M.boxMicro.color.set(dark ? 0xe0b45c : 0xa67816);
+  M.arm.color.set(dark ? 0x74838f : 0x57636e);
+  M.frame.color.set(dark ? 0x4a5560 : 0x7c8694);
+  screenMat.color.set(dark ? 0x16202b : 0xe8edf3);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('事件循环 · 调用栈、宏任务与微任务', 'The Event Loop · Call Stack, Macrotasks and Microtasks');
+  logEl.innerHTML = '';
+  log(L('—— 日志面板(随演示输出)——', '—— log panel (fed by the demo) ——'), 'hd');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateStormRate();
+  updateTickInt();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 120);
+camera.position.set(4.6, 4.8, 8.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(-0.3, 1.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 30;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.3;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 6);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 4, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.5,
+    emissive: color, emissiveIntensity: 0.1, ...opts });
+}
+const M = {
+  ground: mat(0x1a2129, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  bench: mat(0x39414c, { roughness: 0.6, metalness: 0.4 }),
+  plate: mat(0xd8dee8, { roughness: 0.3, metalness: 0.7, emissiveIntensity: 0.08 }),
+  boxMacro: mat(0x5f8fc4, { roughness: 0.5, metalness: 0.25, emissiveIntensity: 0.14 }),
+  boxMicro: mat(0xe0b45c, { roughness: 0.4, metalness: 0.4, emissiveIntensity: 0.22 }),
+  arm: mat(0x74838f, { roughness: 0.4, metalness: 0.65, emissiveIntensity: 0.12 }),
+  frame: mat(0x4a5560, { roughness: 0.55, metalness: 0.5 }),
+  hand: mat(0xffd27a, { roughness: 0.3, metalness: 0.6, emissiveIntensity: 0.15 }),
+  code: mat(0x8fa2b8, { roughness: 0.5, metalness: 0.3, emissiveIntensity: 0.12 }),
+};
+const screenMat = new THREE.MeshStandardMaterial({ color: 0x16202b, roughness: 0.25, metalness: 0.2,
+  emissive: 0xbff5c9, emissiveIntensity: 0.15 });
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let et = 0, scenario = 0, simT = 0;
+let engineBusy = false, phase = 'idle';
+let storm = false, timerMode = false;
+let stormRateN = 2, tickInt = 1.4, timerAcc = 0, idleRenderT = 0;
+let macroDone = 0, microDone = 0, flashCount = 0, flashPulse = 0, lastFlashReal = 0;
+let runId = 0;
+const macroQ = [], microQ = [];
+const CAP_MACRO = 12, CAP_MICRO = 48;
+
+/* ---------------- 场景装配 ---------------- */
+const ground = new THREE.Mesh(new THREE.CylinderGeometry(7.4, 7.4, 0.12, 56), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+
+/* 调用栈:基座 + 盘子 */
+const stackG = new THREE.Group();
+stackG.position.set(-1.2, 0, 0);
+scene.add(stackG);
+const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.1, 0.3, 28), M.frame);
+pedestal.position.y = 0.15;
+stackG.add(pedestal);
+const plateGeo = new THREE.CylinderGeometry(0.85, 0.85, 0.15, 28);
+const plates = [];                        // { mesh, anim:{mode,t,from,to} }
+const stackNames = [];
+function plateY(i) { return 0.38 + i * 0.18; }
+function pushPlate(name) {
+  if (plates.length >= 8) return;
+  const m = new THREE.Mesh(plateGeo, M.plate.clone());
+  m.material.transparent = true;
+  const i = plates.length;
+  m.position.set(0, plateY(i) + 2.4, 0);
+  stackG.add(m);
+  plates.push({ mesh: m, anim: { mode: 'drop', t: 0, from: m.position.y, to: plateY(i) } });
+  stackNames.push(name || 'fn()');
+}
+function popPlate() {
+  const p = plates[plates.length - 1];
+  if (!p) return;
+  p.anim = { mode: 'rise', t: 0, from: p.mesh.position.y, to: p.mesh.position.y + 2.0 };
+  stackNames.pop();
+}
+function settlePlates() {                 // 弹出后把上面的盘子落回新位置
+  for (let i = 0; i < plates.length; i++) {
+    const p = plates[i];
+    const to = plateY(i);
+    if (Math.abs(p.mesh.position.y - to) > 0.001 && (!p.anim || p.anim.mode === 'none')) {
+      p.anim = { mode: 'drop', t: 0, from: p.mesh.position.y, to };
+    }
+  }
+}
+
+/* 脚本(经典顺序题 4 行) */
+const codeLines = [];
+const codeTexts = [
+  () => L('console.log("1 同步")', 'console.log("1 sync")'),
+  () => 'setTimeout(fn, 0)',
+  () => 'Promise.resolve().then(fn)',
+  () => L('console.log("2 同步结束")', 'console.log("2 sync end")'),
+];
+(function buildScript() {
+  const geo = new THREE.BoxGeometry(2.0, 0.14, 0.06);
+  for (let k = 0; k < 4; k++) {
+    const m = new THREE.Mesh(geo, M.code.clone());
+    m.material.transparent = true;
+    m.position.set(-4.2, 1.42 - k * 0.3, 0);
+    scene.add(m);
+    codeLines.push(m);
+  }
+})();
+function hlLine(i) {
+  codeLines.forEach((m, k) => { m.material.emissiveIntensity = k === i ? 0.85 : 0.12; });
+}
+
+/* 两条传送带(宏任务后 / 微任务前) */
+function belt(z) {
+  const g = new THREE.Group();
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.06, 0.72), M.bench);
+  deck.position.set(3.2, 0.42, z);
+  g.add(deck);
+  for (const lx of [1.85, 4.55]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.42, 8), M.frame);
+    leg.position.set(lx, 0.21, z);
+    g.add(leg);
+  }
+  scene.add(g);
+}
+belt(-1.7);
+belt(1.7);
+
+/* 事件循环机械臂 */
+const ARM = new THREE.Vector3(0.35, 0, 0);
+const armG = new THREE.Group();
+armG.position.set(ARM.x, 0.55, ARM.z);
+scene.add(armG);
+const armBase = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.5, 14), M.frame);
+armBase.position.y = -0.28;
+armG.add(armBase);
+const boom = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.08, 0.08), M.arm);
+boom.position.set(0.6, 0, 0);
+armG.add(boom);
+const boom2 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.06), M.arm);
+boom2.position.set(1.35, -0.18, 0);
+boom2.rotation.z = 0.5;
+armG.add(boom2);
+const hand = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10), M.hand);
+hand.position.set(1.58, -0.32, 0);
+armG.add(hand);
+let armYaw = Math.PI;
+function shortestTo(target) {
+  let d = (target - armYaw) % TAU;
+  if (d > Math.PI) d -= TAU;
+  if (d < -Math.PI) d += TAU;
+  return d;
+}
+const STACK_PT = new THREE.Vector3(-1.2, 0, 0), MACRO_PT = new THREE.Vector3(3.2, 0, -1.7),
+  MICRO_PT = new THREE.Vector3(3.2, 0, 1.7), SCREEN_PT = new THREE.Vector3(-4.2, 0, 0);
+function targetYaw() {
+  const starved = storm && microQ.length > 6;
+  const p = phase === 'macro' ? MACRO_PT : (phase === 'micro' || starved) ? MICRO_PT
+    : phase === 'render' ? SCREEN_PT : STACK_PT;
+  return Math.atan2(p.z - ARM.z, p.x - ARM.x);
+}
+
+/* 屏幕(渲染帧指示) */
+const screen = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.05, 0.08), screenMat);
+screen.position.set(-4.2, 3.05, 0);
+screen.rotation.y = 0.35;
+scene.add(screen);
+const screenStand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.4, 0.1), M.frame);
+screenStand.position.set(-4.35, 2.0, -0.05);
+scene.add(screenStand);
+
+/* ---------------- 队列可视化(箱子池) ---------------- */
+const macroBoxGeo = new THREE.BoxGeometry(0.46, 0.46, 0.46);
+const microBoxGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
+const macroVis = [], microVis = [], flyingVis = [];  // flyingVis:已离队、正飞向调用栈的箱子
+function spawnVis(kind) {
+  const mesh = new THREE.Mesh(kind === 'macro' ? macroBoxGeo : microBoxGeo,
+    kind === 'macro' ? M.boxMacro : M.boxMicro);
+  mesh.position.set(4.7, kind === 'macro' ? 0.7 : 0.6, kind === 'macro' ? -1.7 : 1.7);
+  scene.add(mesh);
+  const v = { mesh, kind, state: 'queue', tx: mesh.position.x, t: 0, from: null, to: null, done: null };
+  (kind === 'macro' ? macroVis : microVis).push(v);
+  return v;
+}
+function relayoutQueues() {
+  for (let i = 0; i < macroVis.length; i++) macroVis[i].tx = 2.05 + i * 0.55;
+  for (let i = 0; i < microVis.length; i++) microVis[i].tx = 2.2 + i * 0.4;
+}
+function flyBox(v, done) {
+  v.state = 'fly';
+  v.t = 0;
+  v.from = v.mesh.position.clone();
+  v.to = new THREE.Vector3(stackG.position.x, plateY(plates.length) + 0.6, 0);
+  v.done = done;
+  flyingVis.push(v);
+}
+function removeVis(list, v) {
+  const i = list.indexOf(v);
+  if (i >= 0) list.splice(i, 1);
+  scene.remove(v.mesh);
+}
+
+/* ---------------- 日志面板 ---------------- */
+const logEl = document.getElementById('log');
+function log(msg, cls) {
+  const d = document.createElement('div');
+  d.className = 'lg ' + (cls || 'sys');
+  d.textContent = msg;
+  logEl.appendChild(d);
+  while (logEl.children.length > 40) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ---------------- 事件循环引擎 ---------------- */
+const simQ = [];
+function after(d, fn) { simQ.push({ t: simT + d, fn }); }
+function renderFlash() {
+  flashCount++;
+  if (tglFlash.checked) flashPulse = 1;
+  lastFlashReal = et;
+  if (flashCount % 3 === 1) log(L('渲染一帧 ✓(rAF 回调先跑,再 style / layout / paint)', 'render a frame ✓ (rAF callbacks first, then style / layout / paint)'), 'sys');
+}
+let stormLogT = 0;
+function spawnStorm() {
+  for (let i = 0; i < stormRateN; i++) {
+    if (microQ.length >= CAP_MICRO) break;
+    microQ.push({ label: L('then(自续)', 'then (self)'), log: null });
+    spawnVis('micro');
+  }
+  relayoutQueues();
+  if (simT - stormLogT > 2.5) {
+    stormLogT = simT;
+    log(L('⚠ 微任务风暴:每个 then 又生成本批 then,队列永远清不空 → 渲染饿死(演示仍可操作)', '⚠ microtask storm: each then spawns more thens, the queue never drains → rendering starves (this demo stays interactive)'), 'warn');
+  }
+}
+function pump() {
+  if (engineBusy) return;
+  if (microQ.length) {                    // 微任务优先,且整条清空前不碰宏任务
+    engineBusy = true;
+    phase = 'micro';
+    const job = microQ.shift();
+    const v = microVis.shift();
+    relayoutQueues();
+    flyBox(v, () => {
+      pushPlate(job.label);
+      after(0.35, () => {
+        popPlate();
+        microDone++;
+        if (job.log) log(job.log, 'micro');
+        if (storm) spawnStorm();
+        after(0.12, () => { engineBusy = false; pump(); });
+      });
+    });
+    return;
+  }
+  if (macroQ.length) {                    // 每轮只取一个宏任务
+    engineBusy = true;
+    phase = 'macro';
+    const job = macroQ.shift();
+    const v = macroVis.shift();
+    relayoutQueues();
+    flyBox(v, () => {
+      pushPlate(job.label);
+      after(0.45, () => {
+        popPlate();
+        macroDone++;
+        if (job.log) log(job.log, 'macro');
+        after(0.12, () => { engineBusy = false; renderFlash(); pump(); });
+      });
+    });
+    return;
+  }
+  engineBusy = true;                      // 两个队列都空 → 渲染一帧
+  phase = 'render';
+  after(0.22, () => {
+    renderFlash();
+    engineBusy = false;
+    phase = 'idle';
+    if (timerMode && !storm) pump();
+  });
+}
+function runClassic() {
+  resetSim(false);
+  runId++;
+  const myRun = runId;
+  log(L('—— 运行经典顺序题 ——', '—— running the classic quiz ——'), 'hd');
+  engineBusy = true;
+  phase = 'sync';
+  pushPlate('main()');
+  after(0.5, () => {
+    hlLine(0);
+    log(L('同步:打印 "1 同步"', 'sync: prints "1 sync"'), 'sync');
+  });
+  after(1.1, () => {
+    hlLine(1);
+    macroQ.push({ label: L('timeout ≥4ms', 'timeout ≥4ms'), log: L('宏任务:timeout 回调执行 → 打印 "4 timeout"', 'macro: timeout callback runs → prints "4 timeout"') });
+    spawnVis('macro');
+    relayoutQueues();
+    log(L('入队:setTimeout(fn,0) → 宏任务队列(实际钳到 ≥4 ms)', 'enqueue: setTimeout(fn,0) → macrotask queue (clamped to ≥4 ms)'), 'macro');
+  });
+  after(1.7, () => {
+    hlLine(2);
+    microQ.push({ label: 'then', log: L('微任务:then 回调执行 → 打印 "3 promise"', 'micro: then callback runs → prints "3 promise"') });
+    spawnVis('micro');
+    relayoutQueues();
+    log(L('入队:Promise.then(fn) → 微任务队列', 'enqueue: Promise.then(fn) → microtask queue'), 'micro');
+  });
+  after(2.3, () => {
+    hlLine(3);
+    log(L('同步:打印 "2 同步结束"', 'sync: prints "2 sync end"'), 'sync');
+  });
+  after(2.9, () => {
+    popPlate();
+    hlLine(-1);
+    after(0.35, () => {
+      if (myRun !== runId) return;
+      engineBusy = false;
+      log(L('—— 同步执行完,事件循环开跑:先清微任务,再取宏任务 ——', '—— sync done, event loop starts: drain microtasks first, then take macrotasks ——'), 'hd');
+      pump();
+      after(2.2, () => {
+        if (myRun !== runId) return;
+        log(L('输出顺序:1 同步 → 2 同步结束 → 3 promise → 4 timeout', 'output order: 1 sync → 2 sync end → 3 promise → 4 timeout'), 'hd');
+      });
+    });
+  });
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+addLabel(() => L('调用栈:只有一摞(单线程)', 'call stack: just one stack (single-threaded)'),
+  () => 'b', new THREE.Vector3(-1.2, 4.15, 0), null);
+addLabel(() => L(`栈顶:${stackNames.length ? stackNames[stackNames.length - 1] : L('空','empty')}`,
+  `top: ${stackNames.length ? stackNames[stackNames.length - 1] : 'empty'}`),
+  () => 'st', new THREE.Vector3(-1.2, plateY(Math.max(0, plates.length - 1)) + 0.32, 0), null);
+addLabel(() => L('宏任务队列:setTimeout / I/O 回调(蓝箱)', 'macrotask queue: setTimeout / I/O callbacks (blue)'),
+  () => 'b', new THREE.Vector3(3.2, 1.75, -1.7), null);
+addLabel(() => L(`×${macroQ.length}`, `×${macroQ.length}`), () => 'b',
+  new THREE.Vector3(1.75, 0.72, -1.7), null);
+addLabel(() => L('微任务队列:Promise.then(金,优先整条清空)', 'microtask queue: Promise.then (gold, drained first)'),
+  () => 'e', new THREE.Vector3(3.2, 1.75, 1.7), null);
+addLabel(() => L(`×${microQ.length}${storm && microQ.length > 6 ? L(' 风暴!渲染饿死', ' storm! render starved') : ''}`,
+  `×${microQ.length}${storm && microQ.length > 6 ? ' storm! render starved' : ''}`),
+  () => (storm && microQ.length > 6 ? 'bad' : 'e'), new THREE.Vector3(1.75, 0.72, 1.7), null);
+addLabel(() => L('事件循环:取 1 宏任务 → 清空全部微任务 → 渲染', 'event loop: take 1 macrotask → drain all microtasks → render'),
+  () => 'g', new THREE.Vector3(0.5, 2.5, 0.6), null);
+addLabel(() => (storm && microQ.length > 6
+  ? L(`帧等待中… 16.7 ms × ${Math.round((et - lastFlashReal) * 60)}(阻塞即掉帧)`, `frame pending… 16.7 ms × ${Math.round((et - lastFlashReal) * 60)} (blocking = dropped frames)`)
+  : L(`已渲染 ${flashCount} 帧 · 预算 16.7 ms/帧`, `${flashCount} frames rendered · 16.7 ms budget`)),
+  () => (storm && microQ.length > 6 ? 'bad' : 'g'), new THREE.Vector3(-4.2, 3.95, 0), null);
+addLabel(() => L('脚本(主线程正在执行的部分加亮)', 'script (the line the main thread is on lights up)'),
+  () => 'w', new THREE.Vector3(-4.2, 0.35, 0), null);
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'kitchen', tgt: [-1.2, 1.6, 0.6],
+    b: '单线程厨房:调用栈只有一摞', be: 'A single-threaded kitchen: one stack of plates',
+    d: 'JS 主线程像只有一个灶眼的厨房:函数调用=压入一只盘子,返回=弹出;同一时刻只能烧一道菜。栈没清空,任何回调、事件、定时器都只能排队——「卡顿」的具象就是这只盘子摞太高、太久没下来。没有第二个线程帮你端菜,这就是单线程的全部代价。',
+    de: 'The JS main thread is a kitchen with one burner: a function call pushes a plate, a return pops it; one dish at a time. Until the stack empties, every callback, event and timer waits in line - "jank" is literally this stack growing too tall for too long. No second thread to help serve: that is the whole price of single-threadedness.' },
+  { hl: 'timer', tgt: [3.2, 1.2, -1.2],
+    b: '遇到定时器:交给 Web API 计时', be: 'Meeting a timer: handed to the Web API to tick',
+    d: 'setTimeout(fn, 0) 不代表「0 毫秒后执行」:计时由浏览器(宿主环境)完成,到期后 fn 才进宏任务队列;HTML 规范规定嵌套第 5 层起定时器被钳到 ≥4 ms,所以 0 其实「至少 4」。Node 里另有 process.nextTick,优先级比 Promise 微任务还高,一句带过。',
+    de: 'setTimeout(fn, 0) does not mean "runs after 0 ms": the host environment does the timing, and only then does fn join the macrotask queue; per the HTML spec, from the 5th nested level timers are clamped to >=4 ms, so 0 really means "at least 4". Node adds process.nextTick, which outranks even Promise microtasks - one line is all it deserves here.' },
+  { hl: 'loop', tgt: [0.5, 1.4, 1.0],
+    b: '事件循环:一次取一个宏任务', be: 'The event loop: one macrotask at a time',
+    d: '调用栈一空,事件循环就从宏任务队列取出「一个」任务推栈执行:setTimeout 回调、I/O 回调、UI 事件、rAF 之外的零散工作都在这条队。机械臂一次只拿一盘——任何单个宏任务都不能霸占循环,否则后面全部饿着(这正是第 7 步要用微任务干的事)。',
+    de: 'The moment the stack empties, the event loop takes exactly ONE task from the macrotask queue and pushes it onto the stack: setTimeout callbacks, I/O callbacks, UI events and misc work all queue here. The arm grabs one plate at a time - no single macrotask may hog the loop, or everything behind it starves (which is exactly what microtasks will do in step 7).' },
+  { hl: 'micro', tgt: [3.2, 1.2, 1.4],
+    b: '微任务:立刻整条清空', be: 'Microtasks: the whole queue, drained immediately',
+    d: 'Promise.then、queueMicrotask、MutationObserver 是微任务:当前这批代码一结束、栈一空,微任务队列就被「整条清空」——清空过程中新产生的微任务也立刻执行,全部做完才轮到下一个宏任务。所以微任务插队所有定时器:优先级不是「更早排队」,是「另一条更快的队」。',
+    de: 'Promise.then, queueMicrotask and MutationObserver are microtasks: as soon as the current batch of code ends and the stack empties, the entire microtask queue is drained - microtasks created during the drain run immediately too, and only then does the next macrotask get its turn. Microtasks jump every timer not by queueing earlier, but by living in a faster queue altogether.' },
+  { hl: 'render', tgt: [-4.2, 3.0, 0.6],
+    b: '渲染:两批任务之间才发生', be: 'Rendering: only between batches of tasks',
+    d: '浏览器只在任务间隙渲染:rAF 回调先执行,然后 style → layout → paint,屏幕才亮一下。60 fps 每帧预算 16.7 ms;主线程被一个任务阻塞 50 ms,就连续丢掉约 3 帧——动画卡顿的本质。左边的屏幕每次闪 = 一帧被画出来;变红 = 有帧永远排不上。',
+    de: 'The browser renders only in the gaps between tasks: rAF callbacks run first, then style → layout → paint, and the screen blinks once. At 60 fps each frame owns a 16.7 ms budget; one 50 ms task on the main thread drops ~3 consecutive frames - the essence of jank. Each flash of the screen on the left = one painted frame; red = frames that never get a turn.' },
+  { hl: 'quiz', tgt: [-2.0, 1.4, 0.6],
+    b: '经典输出顺序题现场跑', be: 'The classic output-order quiz, run live',
+    d: '点「运行经典顺序题」:同步打印 "1 同步" → setTimeout 进宏任务队 → then 进微任务队 → 打印 "2 同步结束";同步完,栈空,先整条清微任务("3 promise"),再取宏任务("4 timeout")。答案永远是:1 同步 → 2 同步结束 → 3 promise → 4 timeout——现在你能看着它一步步发生。',
+    de: 'Press "run the classic quiz": sync prints "1 sync" → setTimeout joins macrotasks → then joins microtasks → prints "2 sync end"; the stack empties, microtasks drain first ("3 promise"), then the macrotask runs ("4 timeout"). The answer is always 1 sync → 2 sync end → 3 promise → 4 timeout - and now you watch it happen step by step.' },
+  { hl: 'storm', tgt: [2.0, 1.4, 1.0],
+    b: '微任务风暴:渲染饿死,页面卡死', be: 'Microtask storm: rendering starves, the page freezes',
+    d: '点「微任务风暴」:每个 then 执行后又生成 N 个 then,微任务队列永远清不空——事件循环再也走不到「渲染」那一步,屏幕永远等不到闪光,用户看到的就是页面卡死。真实事故来源:失控的 Promise 链、递归 queueMicrotask。别慌,演示本身还能点停;真实的页面可没这个按钮。',
+    de: 'Press "microtask storm": each then spawns N more thens as it runs, so the microtask queue never drains - the event loop never reaches the render step, the screen never flashes again, and what the user sees is a frozen page. Real-world culprits: runaway Promise chains, recursive queueMicrotask. Relax - this demo has a stop button; real pages do not.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+let tgtVec = new THREE.Vector3(-1.2, 1.6, 0.6);
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`setTimeout(fn, 0) 实际 <b>≥4 ms</b>(HTML 规范:嵌套第 5 层后钳制);微任务:&lt;宏任务,当前代码一结束立刻整条清空`,
+      `setTimeout(fn, 0) actually <b>≥4 ms</b> (HTML spec clamp after the 5th nested level); microtasks beat macrotasks: drained fully right after the current code`) +
+    '<br>' +
+    L(`每轮:1 个宏任务 → <b>全部</b>微任务 →(可能)渲染;rAF 回调在渲染前执行`,
+      `Each iteration: 1 macrotask → <b>all</b> microtasks → maybe render; rAF callbacks run before paint`) +
+    '<br>' +
+    L(`60 fps 帧预算 <b>16.7 ms</b>,阻塞 50 ms ≈ 掉 3 帧;Node 的 <b>process.nextTick</b> 优先级更高`,
+      `60 fps budget <b>16.7 ms</b>/frame, 50 ms blocked ≈ 3 dropped frames; Node\u2019s <b>process.nextTick</b> ranks even higher`);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elStormRate = document.getElementById('stormRate'), elStormRateVal = document.getElementById('stormRateVal');
+const elTickInt = document.getElementById('tickInt'), elTickIntVal = document.getElementById('tickIntVal');
+const btnQuiz = document.getElementById('btnQuiz');
+const btnStorm = document.getElementById('btnStorm');
+const btnTimer = document.getElementById('btnTimer');
+const tglFlash = document.getElementById('tglFlash');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function updateStormRate() { elStormRateVal.textContent = '×' + stormRateN; }
+function updateTickInt() { elTickIntVal.textContent = tickInt.toFixed(1) + ' s'; }
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elStormRate.addEventListener('input', () => { stormRateN = +elStormRate.value; updateStormRate(); });
+elTickInt.addEventListener('input', () => { tickInt = +elTickInt.value; updateTickInt(); });
+btnQuiz.addEventListener('click', runClassic);
+btnStorm.addEventListener('click', () => {
+  storm = !storm;
+  btnStorm.classList.toggle('on', storm);
+  if (storm) {
+    log(L('⚠ 开启微任务风暴:then 不断自续……', '⚠ microtask storm on: thens keep spawning thens…'), 'warn');
+    pump();
+  } else {
+    log(L('风暴已停:微任务队列开始排空,渲染即将恢复', 'storm stopped: draining the microtask queue, rendering resumes soon'), 'sys');
+    pump();
+  }
+});
+btnTimer.addEventListener('click', () => {
+  timerMode = !timerMode;
+  btnTimer.classList.toggle('on', timerMode);
+  timerAcc = 0;
+  log(timerMode
+    ? L('开启定时器节奏:setTimeout 每隔一段时间入队一个宏任务', 'timer rhythm on: a setTimeout macrotask enqueues every interval')
+    : L('定时器节奏已关', 'timer rhythm off'), 'macro');
+  if (timerMode) pump();
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+  stormRateN = 2; tickInt = 1.4;
+  elStormRate.value = 2; elTickInt.value = 1.4;
+  updateStormRate(); updateTickInt();
+  resetSim(true);
+  activateStep(0);
+});
+function resetSim(clearAll) {
+  runId++;
+  simQ.length = 0;
+  engineBusy = false;
+  phase = 'idle';
+  storm = false; btnStorm.classList.remove('on');
+  timerMode = false; btnTimer.classList.remove('on');
+  timerAcc = 0;
+  macroQ.length = 0; microQ.length = 0;
+  while (macroVis.length) removeVis(macroVis, macroVis[0]);
+  while (microVis.length) removeVis(microVis, microVis[0]);
+  while (flyingVis.length) removeVis(flyingVis, flyingVis[0]);
+  while (plates.length) {
+    const p = plates.pop();
+    p.mesh.material.dispose();
+    stackG.remove(p.mesh);
+  }
+  stackNames.length = 0;
+  hlLine(-1);
+  macroDone = 0; microDone = 0; flashCount = 0; flashPulse = 0; lastFlashReal = et;
+  if (clearAll) log(L('—— 复位 ——', '—— reset ——'), 'hd');
+}
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD');
+function phaseName() {
+  const starved = storm && microQ.length > 6;
+  if (starved && phase === 'micro') return L('微任务风暴(饥饿)', 'micro storm (starved)');
+  if (phase === 'sync') return L('同步执行', 'sync');
+  if (phase === 'macro') return L('宏任务', 'macrotask');
+  if (phase === 'micro') return L('微任务清空', 'draining micro');
+  if (phase === 'render') return L('渲染', 'render');
+  return L('空闲(等任务)', 'idle');
+}
+function updateStats() {
+  stA.textContent = String(macroDone);
+  stA.className = 'v';
+  stB.textContent = String(microDone);
+  stB.className = 'v';
+  stC.textContent = phaseName();
+  const starved = storm && microQ.length > 6;
+  stC.className = 'v ' + (starved ? 'bad' : phase === 'render' ? 'ok' : '');
+  const tSince = et - lastFlashReal;
+  const fps = starved ? 0 : Math.round(clamp(60 * (1 - Math.max(0, tSince - 0.4) / 1.2), 0, 60));
+  stD.textContent = String(fps);
+  stD.className = 'v ' + (fps > 40 ? 'ok' : fps > 10 ? 'warn' : 'bad');
+}
+
+/* ---------------- 示波器:渲染帧节奏 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const histF = [];
+let histTimer = 0;
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const base = ch * 0.88;
+  scopeCtx.font = `${Math.round(10 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('渲染帧节奏:闪光=画了一帧,红线=饥饿', 'render rhythm: flash = a frame painted, red = starvation'), 8 * dpr, 12 * dpr);
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0.05 * cw, base); scopeCtx.lineTo(0.95 * cw, base);
+  scopeCtx.stroke();
+  if (histF.length < 2) return;
+  const n = histF.length;
+  const bw = Math.max(1.5, 0.9 / 90 * cw);
+  for (let i = 0; i < n; i++) {
+    const v = clamp01(histF[i]);
+    const h = Math.max(2 * dpr, v * (base - ch * 0.18));
+    const x = (0.05 + i / 90 * 0.9) * cw;
+    scopeCtx.fillStyle = v > 0.15 ? 'rgba(123,216,143,.9)' : 'rgba(255,107,107,.9)';
+    scopeCtx.fillRect(x, base - h, bw, h);
+  }
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const sdt = playing ? dt * speed : 0;   // 暂停时冻结模拟
+  simT += sdt;
+  /* 模拟事件队列 */
+  if (sdt > 0 && simQ.length) {
+    for (let guard = 0; guard < 16; guard++) {
+      let bi = -1, bt = Infinity;
+      for (let i = 0; i < simQ.length; i++) if (simQ[i].t < bt) { bt = simQ[i].t; bi = i; }
+      if (bi < 0 || bt > simT) break;
+      const ev = simQ.splice(bi, 1)[0];
+      ev.fn();
+    }
+  }
+  /* 定时器节奏 */
+  if (timerMode && !storm && sdt > 0) {
+    timerAcc += sdt;
+    if (timerAcc >= tickInt) {
+      timerAcc = 0;
+      macroQ.push({ label: L('timeout ≥4ms', 'timeout ≥4ms'), log: L('宏任务:timeout 回调执行 → 打印 "timeout"', 'macro: timeout callback runs → prints "timeout"') });
+      spawnVis('macro');
+      relayoutQueues();
+      log(L('setTimeout(fn,0) 计时到 → 入宏任务队列(实际钳到 ≥4 ms)', 'setTimeout(fn,0) fired → macrotask queue (clamped to ≥4 ms)'), 'macro');
+      pump();
+    }
+  }
+  /* 空闲心跳渲染(没有任务时浏览器也在刷帧) */
+  if (!engineBusy && !(storm && microQ.length > 6)) {
+    idleRenderT += dt;
+    if (idleRenderT > 2.4 && tglFlash.checked) { idleRenderT = 0; renderFlash(); }
+  } else idleRenderT = 0;
+  /* 盘子动画 */
+  for (let i = plates.length - 1; i >= 0; i--) {
+    const p = plates[i];
+    const a = p.anim;
+    if (a && a.mode !== 'none') {
+      a.t += sdt > 0 ? sdt / (a.mode === 'drop' ? 0.35 : 0.4) : 0;
+      const k = E2(a.t);
+      p.mesh.position.y = a.from + (a.to - a.from) * k;
+      if (a.mode === 'rise') p.mesh.material.opacity = 1 - k;
+      if (a.t >= 1) {
+        if (a.mode === 'rise') {
+          stackG.remove(p.mesh);
+          p.mesh.material.dispose();
+          plates.splice(i, 1);
+        } else {
+          p.anim.mode = 'none';
+          p.mesh.material.opacity = 1;
+        }
+      }
+    }
+  }
+  settlePlates();
+  /* 箱子动画:队列滑移 + 飞向栈 */
+  for (const list of [macroVis, microVis]) {
+    for (const v of list) {
+      if (v.state === 'queue') {
+        v.mesh.position.x += (v.tx - v.mesh.position.x) * Math.min(1, dt * 6);
+        v.mesh.rotation.y = et * 0.8;
+      }
+    }
+  }
+  for (let i = flyingVis.length - 1; i >= 0; i--) {
+    const v = flyingVis[i];
+    v.t += sdt > 0 ? sdt / 0.35 : 0;
+    const k = E2(Math.min(1, v.t));
+    v.mesh.position.lerpVectors(v.from, v.to, k);
+    v.mesh.rotation.y = et * 2.2;
+    if (v.t >= 1) {
+      removeVis(flyingVis, v);
+      const cb = v.done;
+      v.done = null;
+      if (cb) cb();
+    }
+  }
+  /* 机械臂 */
+  armYaw += shortestTo(targetYaw()) * Math.min(1, dt * 6);
+  armG.rotation.y = armYaw;
+  hand.position.y = -0.32 + (engineBusy ? 0.06 * Math.sin(et * 9) : 0);
+  M.hand.emissiveIntensity = engineBusy ? 0.65 + 0.3 * Math.sin(et * 9) : 0.15;
+  /* 屏幕闪烁 / 饥饿 */
+  flashPulse *= Math.exp(-dt * 5);
+  const starved = storm && microQ.length > 6;
+  if (starved) {
+    screenMat.emissive.setHex(0xff5d5d);
+    screenMat.emissiveIntensity = 0.35 + 0.18 * Math.sin(et * 3);
+  } else {
+    screenMat.emissive.setHex(0xbff5c9);
+    screenMat.emissiveIntensity = 0.15 + flashPulse * 2.0;
+  }
+  screen.rotation.y = 0.35 + Math.sin(et * 0.7) * 0.04;
+  /* 高亮脉冲(按步骤) */
+  const hlK = 0.5 + 0.28 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  M.plate.emissiveIntensity = 0.08 + (hl === 'kitchen' || hl === 'quiz' ? 0.4 + 0.25 * hlK : 0);
+  M.boxMacro.emissiveIntensity = 0.14 + (hl === 'timer' || hl === 'loop' ? 0.45 + 0.3 * hlK : 0);
+  M.boxMicro.emissiveIntensity = 0.22 + (hl === 'micro' || hl === 'storm' ? 0.5 + 0.3 * hlK : 0);
+  screenMat.emissiveIntensity += (hl === 'render' ? 0.3 + 0.2 * hlK : 0);
+  M.arm.emissiveIntensity = 0.12 + (hl === 'loop' ? 0.4 + 0.25 * hlK : 0);
+  /* 相机目标缓动 + 标签 */
+  controls.target.lerp(tgtVec, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  /* scope 采样 */
+  histTimer += dt;
+  if (histTimer > 0.12) {
+    histTimer = 0;
+    histF.push(starved ? 0 : Math.max(flashPulse, engineBusy ? 0.25 : 0.4));
+    if (histF.length > 90) histF.shift();
+  }
+  drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+log(L('提示:点「运行经典顺序题」看同步 → 微任务 → 宏任务的真实顺序', 'tip: press "run the classic quiz" to watch sync → micro → macro ordering live'), 'sys');
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

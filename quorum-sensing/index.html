@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>细菌群体感应 · AHL 信号与同步发光</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="细菌群体感应:AHL 浓度计数与同步发光" data-en="Quorum Sensing: AHL Concentration Counting and Synchronized Glow">细菌群体感应:AHL 浓度计数与同步发光</h1>
+  <div class="sub" data-zh="每个细菌持续分泌信号分子 AHL(自由扩散、可穿膜),浓度 ∝ 细胞密度:低密度时外流≈产生,胞外仅 ~10⁻² μM;密度升到 ~10¹⁰·³ mL⁻¹,浓度跨过 1-10 μM 阈值,LuxR 被饱和结合、lux 操纵子启动,费氏弧菌发光器官全体同刻点亮;luxI 正反馈 ×3.2 造成迟滞开关;革兰阳性菌改用寡肽+双组分系统;群体猝灭酶水解 AHL 内酯环即可拆掉这台计数器 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Every cell steadily secretes AHL signal molecules (free diffusion, membrane-permeable); concentration scales with cell density. At low density efflux ≈ production and extracellular AHL sits near 10⁻² μM. Around 10¹⁰·³ mL⁻¹ the concentration crosses the 1-10 μM threshold, LuxR saturates, the lux operon switches on and the whole Vibrio fischeri colony lights up at once. luxI positive feedback (×3.2) makes it a hysteresis switch; Gram-positives use oligopeptides + two-component systems instead; quenching enzymes that hydrolyze the AHL lactone ring can smash the counter · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">每个细菌持续分泌信号分子 AHL(自由扩散、可穿膜),浓度 ∝ 细胞密度:低密度时外流≈产生,胞外仅 ~10⁻² μM;密度升到 ~10¹⁰·³ mL⁻¹,浓度跨过 1-10 μM 阈值,LuxR 被饱和结合、lux 操纵子启动,费氏弧菌发光器官全体同刻点亮;luxI 正反馈 ×3.2 造成迟滞开关;革兰阳性菌改用寡肽+双组分系统;群体猝灭酶水解 AHL 内酯环即可拆掉这台计数器 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="细胞密度" data-en="cell density">细胞密度</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="胞外 AHL" data-en="extracellular AHL">胞外 AHL</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="发光占比" data-en="glowing">发光占比</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="群体状态" data-en="quorum state">群体状态</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="细菌:短杆 1-3 μm(持续分泌)" data-en="bacteria: rods 1-3 μm (secreting)">细菌:短杆 1-3 μm(持续分泌)</span>
+    <span class="chip o" data-zh="AHL 信号分子(青,自由扩散)" data-en="AHL signal (cyan, free diffusion)">AHL 信号分子(青,自由扩散)</span>
+    <span class="chip g" data-zh="同步发光态(绿)" data-en="synchronized glow (green)">同步发光态(绿)</span>
+    <span class="chip r" data-zh="阈值 5 μM(虚线)· 猝灭酶(橙)" data-en="threshold 5 μM (dashed) · quencher (orange)">阈值 5 μM(虚线)· 猝灭酶(橙)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnDense" data-zh="高密度群落(10¹¹ /mL)" data-en="dense colony (10¹¹ /mL)">高密度群落(10¹¹ /mL)</button>
+    <button class="abtn" id="btnSparse" data-zh="稀疏对照(10⁶ /mL)" data-en="sparse control (10⁶ /mL)">稀疏对照(10⁶ /mL)</button>
+    <button class="abtn" id="btnEnzyme" data-zh="加猝灭酶 AiiA(8 s)" data-en="add lactonase AiiA (8 s)">加猝灭酶 AiiA(8 s)</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="细胞密度" data-en="cell density">细胞密度</label><input id="den" type="range" min="6" max="11" step="0.1" value="8.5"><span class="val" id="denVal">—</span></div>
+  <div class="row"><label data-zh="AHL 降解率(猝灭)" data-en="AHL decay (quench)">AHL 降解率(猝灭)</label><input id="kq" type="range" min="0" max="0.5" step="0.01" value="0.06"><span class="val" id="kqVal">—</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="信号曲线" data-en="AHL curve">信号曲线</span></label>
+        <label><input id="tglPart" type="checkbox" checked> <span data-zh="AHL 粒子" data-en="AHL particles">AHL 粒子</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../biofilm/" data-zh="生物膜" data-en="biofilm">生物膜</a>
+    <a href="../bacterial-conjugation/" data-zh="细菌接合" data-en="conjugation">细菌接合</a>
+    <a href="../antibiotic-resistance/" data-zh="抗生素耐药" data-en="antibiotic resistance">抗生素耐药</a>
+    <a href="../bioluminescence/" data-zh="生物发光" data-en="bioluminescence">生物发光</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+const UP = new THREE.Vector3(0, 1, 0);
+const SUP = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+const sup = n => String(n).split('').map(c => SUP[c] || c).join('');
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0d1319 : 0xeef1f2);
+  M.floor.color.set(dark ? 0x141b25 : 0xd9dfe4);
+  M.medium.color.set(dark ? 0x9fd8ff : 0x5aa7cf);
+  M.medium.opacity = dark ? 0.055 : 0.10;
+  M.field.color.set(dark ? 0x1a6f8a : 0x8fc8dc);
+  M.ahl.emissive.setHex(dark ? 0x2f9fd0 : 0x1a7fae);
+  M.gauge.opacity = dark ? 0.16 : 0.30;
+  M.liquid.color.set(dark ? 0x37b6d8 : 0x1a86ac);
+  M.ring.color.set(dark ? 0xd8b25c : 0xa87b28);
+  M.enzyme.color.set(dark ? 0xff9d4d : 0xc9711e);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('细菌群体感应 · AHL 信号与同步发光', 'Quorum Sensing · AHL Counting and Synchronized Glow');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateDen();
+  updateKq();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 120);
+camera.position.set(6.6, 3.2, 8.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.4, 0.9, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 30;
+controls.maxPolarAngle = Math.PI * 0.60;
+controls.autoRotateSpeed = 0.3;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.7);
+keyLight.position.set(6, 10, 6);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fd0ff, 0.45);
+fill.position.set(-7, 4, -6);
+scene.add(fill);
+const glowLight = new THREE.PointLight(0x53e8a0, 0, 14, 1.6);   // 群体发光(阈值跨越后)
+glowLight.position.set(0, 1.1, 0);
+scene.add(glowLight);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.1,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  floor: mat(0x141b25, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  medium: new THREE.MeshStandardMaterial({ color: 0x9fd8ff, roughness: 0.1, metalness: 0,
+    transparent: true, opacity: 0.055, side: THREE.DoubleSide, depthWrite: false }),
+  field: mat(0x1a6f8a, { roughness: 1, metalness: 0, transparent: true, opacity: 0.06, emissiveIntensity: 0.12 }),
+  ahl: new THREE.MeshStandardMaterial({ color: 0x9fdcff, roughness: 0.3, metalness: 0,
+    emissive: 0x2f9fd0, emissiveIntensity: 1.3 }),
+  glow: mat(0x59e08c, { roughness: 0.4, metalness: 0, emissive: 0x2fe87c, emissiveIntensity: 0.1,
+    transparent: true, opacity: 0.0 }),
+  heroM: mat(0x3fb3a8, { roughness: 0.5, metalness: 0.15 }),
+  gauge: new THREE.MeshStandardMaterial({ color: 0xbfd8e8, roughness: 0.12, metalness: 0.05,
+    transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
+  liquid: mat(0x37b6d8, { roughness: 0.25, metalness: 0.05, emissive: 0x1d8fb5, emissiveIntensity: 0.7 }),
+  ring: mat(0xd8b25c, { roughness: 0.3, metalness: 0.7, emissiveIntensity: 0.25 }),
+  enzyme: mat(0xff9d4d, { roughness: 0.4, metalness: 0.2, emissive: 0xff7a1a, emissiveIntensity: 0.55 }),
+};
+
+/* ---------------- 模型常量(时间压缩 ~1500×:真实群体感应需数小时) ----------------
+   d[AHL]/dt = α·N − (λ+k_q)·A;α=1.6×10⁻⁵ μM·s⁻¹ per 10⁶ mL⁻¹,λ=0.02 s⁻¹
+   阈值 A*=5 μM(文献 1-10 μM)在 N≈10^10.3 mL⁻¹ 处跨过;luxI 正反馈 ×3.2 → 迟滞 */
+const VOL_C = new THREE.Vector3(0, 0.9, 0);
+const VOL_R = 4.0;
+const A_TH = 5.0;            // 阈值 μM
+const A_OFF = 2.5;           // 迟滞关断(正反馈)
+const A_MAX = 24;            // 浓度计量程
+const K_PROD = 1.6e-5;       // 生成系数 μM·s⁻¹ per 10⁶ mL⁻¹
+const K_BASE = 0.02;         // 本底降解 s⁻¹
+const K_ENZ = 1.3;           // 猝灭酶附加降解 s⁻¹
+const FB = 3.2;              // luxI 正反馈倍率
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let logD = 8.5;              // log10 细胞密度(6 → 11)
+let kq = 0.06;               // AHL 降解率 s⁻¹(滑块:群体猝灭强度)
+let A = 0.12;                // 胞外 AHL μM
+let quorum = false;
+let glowFrac = 0;            // 发光占比 0..1(平滑)
+let enzymeT = 0;             // 猝灭酶剩余作用时间 s
+let et = 0, scenario = 0;
+const HIST_N = 320;
+const hist = [];
+let histAcc = 0;
+
+/* ---------------- 场景装配 ---------------- */
+const floor = new THREE.Mesh(new THREE.CylinderGeometry(10, 10, 0.1, 48), M.floor);
+floor.position.y = -2.65;
+scene.add(floor);
+
+/* 水体/琼脂外壳 + 浓度场指示球(半径错开 0.12 防 z-fighting) */
+const shell = new THREE.Mesh(new THREE.SphereGeometry(VOL_R, 48, 32), M.medium);
+shell.position.copy(VOL_C);
+scene.add(shell);
+const field = new THREE.Mesh(new THREE.SphereGeometry(VOL_R * 0.97, 40, 28), M.field);
+field.position.copy(VOL_C);
+scene.add(field);
+
+/* 细菌:短杆(胶囊)InstancedMesh,instanceColor 切换 深青→发光绿 */
+const NB_MAX = 150;
+const C_TEAL = new THREE.Color(0x3fb3a8), C_GREEN = new THREE.Color(0x59e08c);
+const bacMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.12,
+  emissive: 0x35e88c, emissiveIntensity: 0 });
+const bacMesh = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.10, 0.26, 4, 10), bacMat, NB_MAX);
+bacMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(bacMesh);
+const bacs = [];
+function seedBacs() {
+  bacs.length = 0;
+  for (let i = 0; i < NB_MAX; i++) {
+    const r = VOL_R * 0.9 * Math.cbrt(Math.random());
+    const a = Math.random() * TAU, c = Math.acos(2 * Math.random() - 1);
+    bacs.push({
+      p: new THREE.Vector3(VOL_C.x + r * Math.sin(c) * Math.cos(a),
+        VOL_C.y + r * Math.cos(c), VOL_C.z + r * Math.sin(c) * Math.sin(a)),
+      q: new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.random() * TAU, Math.random() * TAU, Math.random() * TAU)),
+      v: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.3),
+      ax: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(),
+      tt: 0,
+    });
+  }
+}
+seedBacs();
+
+/* AHL 分子:发光小粒子,布朗扩散,数量 ∩ 浓度 */
+const NA_MAX = 240;
+const ahlMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.038, 6, 5), M.ahl, NA_MAX);
+ahlMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(ahlMesh);
+const ahls = [];
+function seedAhls() {
+  ahls.length = 0;
+  for (let i = 0; i < NA_MAX; i++) {
+    const r = VOL_R * 0.88 * Math.cbrt(Math.random());
+    const a = Math.random() * TAU, c = Math.acos(2 * Math.random() - 1);
+    ahls.push({
+      p: new THREE.Vector3(VOL_C.x + r * Math.sin(c) * Math.cos(a),
+        VOL_C.y + r * Math.cos(c), VOL_C.z + r * Math.sin(c) * Math.sin(a)),
+      v: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.4),
+    });
+  }
+}
+seedAhls();
+
+/* 主角细菌(特写用):胶囊 + 鞭毛,共面错位 0.001 */
+const heroG = new THREE.Group();
+heroG.position.set(1.7, 1.5, 1.4);
+heroG.rotation.set(0.4, -0.5, 0.15);
+scene.add(heroG);
+const heroBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.44, 6, 14), M.heroM);
+heroG.add(heroBody);
+const flagel = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.004, 0.62, 6), M.heroM);
+flagel.position.set(-0.72, -0.05, 0.001);
+flagel.rotation.z = 0.45;
+heroG.add(flagel);
+const halo = new THREE.Mesh(new THREE.SphereGeometry(0.5, 20, 14), M.glow);
+halo.position.set(1.95, 2.05, 1.4);
+scene.add(halo);
+
+/* 浓度计(温度计式):玻璃管 + 液柱 + 阈值虚线环 */
+const G_X = 5.0, G_CY = 1.35, G_H = 3.4, G_Y0 = G_CY - G_H / 2;
+const gaugeG = new THREE.Group();
+gaugeG.position.set(G_X, G_CY, 0);
+scene.add(gaugeG);
+const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, G_H, 20, 1, true), M.gauge);
+gaugeG.add(tube);
+const gCapT = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.03, 20), M.gauge);
+gCapT.position.y = G_H / 2 + 0.015;
+gaugeG.add(gCapT);
+const gBase = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.42, 0.14, 20), M.floor);
+gBase.position.y = -G_H / 2 - 0.08;
+gaugeG.add(gBase);
+const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 12), M.liquid);
+bulb.position.y = -G_H / 2 - 0.2;
+gaugeG.add(bulb);
+const liquid = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.21, 1, 18), M.liquid);
+gaugeG.add(liquid);
+const thrRing = new THREE.Group();
+thrRing.position.y = G_Y0 + G_H * A_TH / A_MAX - G_CY;   // 换算到 gaugeG 本地
+gaugeG.add(thrRing);
+for (let i = 0; i < 16; i++) {
+  const a = i / 16 * TAU;
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.035), M.ring);
+  dash.position.set(Math.cos(a) * 0.31, 0, Math.sin(a) * 0.31);
+  dash.rotation.y = -a;
+  thrRing.add(dash);
+}
+
+/* 猝灭酶粒子(AiiA,作用时出现) */
+const NEZ = 12;
+const ezMesh = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.1), M.enzyme, NEZ);
+ezMesh.visible = false;
+scene.add(ezMesh);
+const ezPh = [];
+for (let i = 0; i < NEZ; i++) ezPh.push(Math.random() * TAU);
+
+/* ---------------- 状态标签(锚点错开,避免重叠) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  scene.add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+function stateInfo() {
+  if (enzymeT > 0) return { t: L(`AiiA 猝灭酶作用中:水解 AHL 内酯环 · 剩余 ${enzymeT.toFixed(0)} s`, `AiiA lactonase active: hydrolyzing the AHL lactone · ${enzymeT.toFixed(0)} s left`), c: 'bad' };
+  if (quorum) return { t: L('已跨阈值:lux 操纵子全开 · 群体同刻发光', 'past threshold: lux operon ON · colony glows in unison'), c: 'g' };
+  if (A >= 1) return { t: L('信号累积中:浓度爬向阈值,受体尚未饱和', 'signaling: concentration climbing, receptors not yet saturated'), c: 'w' };
+  return { t: L('低密度孤军:外流≈产生,胞外 AHL 仅 ~10⁻² μM', 'lonely cells: efflux ≈ production, extracellular AHL ~10⁻² μM'), c: 'b' };
+}
+addLabel(() => L('细菌:短杆 1-3 μm · 每个都在持续分泌 AHL', 'bacteria: rods 1-3 μm · each one steadily secretes AHL'),
+  () => 'b', new THREE.Vector3(1.3, 3.9, 0.6), p => p.set(1.1, 3.3, 0.4));
+addLabel(() => L('AHL 信号分子:自由扩散 · 可穿膜 · 浓度 ∝ 密度', 'AHL molecules: free diffusion · membrane-permeable · ∝ density'),
+  () => 'e', new THREE.Vector3(-3.1, 3.0, 0.9), p => p.set(-2.3, 2.6, 0.7));
+addLabel(() => quorum
+    ? L('luxI ↑ →AHL↑→ LuxR·AHL → lux 操纵子全开 → 发光 + luxI 正反馈', 'luxI ↑ →AHL↑→ LuxR·AHL → lux operon ON → glow + luxI feedback')
+    : L('luxI →AHL→ LuxR(未结合)→ lux 操纵子保持关闭', 'luxI →AHL→ LuxR (unbound) → lux operon stays OFF'),
+  () => quorum ? 'g' : 'b', new THREE.Vector3(2.9, -1.5, 1.8), p => p.set(2.6, -1.1, 1.6));
+addLabel(() => L(`胞外 AHL ${A.toFixed(2)} μM · 阈值 ${A_TH.toFixed(0)} μM(金虚线环)`, `extracellular AHL ${A.toFixed(2)} μM · threshold ${A_TH.toFixed(0)} μM (gold dashed ring)`),
+  () => 'e', new THREE.Vector3(G_X, G_CY + G_H / 2 + 0.65, 0), p => p.set(G_X, G_CY + G_H / 2 + 0.45, 0));
+const lblState = addLabel(() => stateInfo().t, () => stateInfo().c,
+  new THREE.Vector3(-3.6, -2.1, 1.2), p => p.set(-3.0, -2.0, 1.0));
+addLabel(() => L('费氏弧菌发光器官:~10¹¹ /mL 才点亮;发光基因 luxCDABE', 'V. fischeri light organ: lights up near 10¹¹ /mL; luxCDABE genes'),
+  () => 'w', new THREE.Vector3(-3.2, 0.2, 2.8), p => p.set(-2.8, 0.3, 2.4));
+addLabel(() => L('群体猝灭(quorum quenching):降解 AHL、断其语言——抗毒力新策略', 'quorum quenching: degrade AHL, steal their language - antivirulence strategy'),
+  () => 'w', new THREE.Vector3(4.5, -0.9, -1.4), p => p.set(4.1, -0.7, -1.2));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'single', tgt: [1.7, 1.5, 2.4],
+    b: '单个细菌的声音散在水中', be: "One cell's voice disperses in the water",
+    d: '一个细菌每秒约释放 10⁴-10⁵ 个 AHL 分子(N-酰基高丝氨酸内酯),但摊到周围 1 pL 水体里,浓度立刻稀释到 ~10⁻³ μM——低到受体几乎听不见。低密度时外流泵还不断把胞内少量 AHL 送出去:产生≈外流,胞外浓度贴地。单打独斗,等于没说。',
+    de: 'One cell releases roughly 10⁴-10⁵ AHL molecules (N-acyl homoserine lactones) per second, yet in the surrounding picoliters that dilutes to ~10⁻³ μM - below what any receptor can hear. At low density efflux pumps keep shipping intracellular AHL out: production ≈ efflux, extracellular level hugs the floor. Alone, a cell says nothing.' },
+  { hl: 'counter', tgt: [0, 1.2, 3.0],
+    b: '分泌物浓度 ∝ 密度:信号成了计数器', be: 'Signal ∝ density: the molecule becomes a counter',
+    d: 'AHL 自由扩散、自由穿过细胞膜,生成速率与细胞密度 N 成正比,而稀释与降解不变:稳态浓度 ≈ α·N/(λ+k_q) ∝ N。密度翻 10 倍、浓度也翻 10 倍——于是信号分子浓度成了一台「群体计数器」,读数就是周围同类的数量。',
+    de: 'AHL diffuses freely and crosses membranes; production scales with density N while dilution and decay do not: steady state ≈ α·N/(λ+k_q) ∝ N. Tenfold more cells, tenfold more signal - so extracellular AHL is a head-count of the neighborhood, read in micromolar.' },
+  { hl: 'loop', tgt: [2.4, 0.8, 2.2],
+    b: 'LuxI/LuxR 环路:一把分子放大器', be: 'The LuxI/LuxR loop: a molecular amplifier',
+    d: 'LuxI 是 AHL 合成酶,持续低水平表达;LuxR 是胞内受体,只有结合 AHL 后才变构、二聚化并启动 lux 操纵子。操纵子里既有发光基因 luxCDABE,也有 luxI 本身——激活后 LuxI 更多、AHL 更多,构成正反馈,把渐进的浓度爬升改造成「全或无」的开关。',
+    de: 'LuxI, the AHL synthase, is expressed at a low basal level; LuxR is the cytoplasmic receptor that only binds DNA once complexed with AHL, activating the lux operon. The operon carries both the light genes luxCDABE and luxI itself - so activation makes more LuxI, more AHL, a positive feedback that turns a gradual ramp into an all-or-nothing switch.' },
+  { hl: 'threshold', tgt: [4.4, 1.4, 2.0],
+    b: '浓度跨阈值:受体饱和 → 全体同刻开灯', be: 'Crossing the threshold: saturation, then everyone lights at once',
+    d: '胞外 AHL 达到阈值(约 1-10 μM,费氏弧菌发光器官在 ~10¹¹ mL⁻¹)时,胞内 LuxR 被饱和结合,正反馈把开关推过迟滞回线——群体里每个细胞几乎同一瞬间点亮。同步性不靠任何中央指挥,只来自一个共享的扩散浓度场:大家都读同一块表。',
+    de: 'When extracellular AHL reaches threshold (1-10 μM; the V. fischeri light organ fires near 10¹¹ mL⁻¹), intracellular LuxR saturates and the feedback loop throws the switch past its hysteresis - every cell in the population lights up at virtually the same instant. The synchrony comes from no central command, only from a shared diffusion field everyone reads.' },
+  { hl: 'beyond', tgt: [-0.6, 1.4, 2.8],
+    b: '不止发光:毒力 / 生物膜 / 感受态', be: 'Beyond light: virulence, biofilms, competence',
+    d: '同一套计数原理调控数百个基因:铜绿假单胞菌等到感染组织里密度够高才集体启动毒力因子,避免过早惊动免疫;生物膜从贴附走向成熟要按信号分层推进;变形链球菌靠感受态肽决定何时摄取外源 DNA。群体感应就是细菌的「数够人头再行动」。',
+    de: 'The same head-count regulates hundreds of genes: Pseudomonas aeruginosa unleashes virulence factors only once the infection site is crowded, delaying the immune alarm; biofilms mature layer by layer on cue; streptococci use competence peptides to time DNA uptake. Quorum sensing is simply: count the crowd, then act together.' },
+  { hl: 'gram', tgt: [-1.6, 1.0, 3.0],
+    b: '革兰阴性用 AHL,革兰阳性用寡肽', be: 'Gram-negatives use AHL, Gram-positives use peptides',
+    d: '革兰阴性菌(费氏弧菌、铜绿假单胞菌)的信号是小分子 AHL,可直接穿膜,配胞内 LuxR 型受体;革兰阳性菌(金黄色葡萄球菌、肺炎链球菌)的膜挡住这条路,改用分泌寡肽 + 膜上双组分系统(组氨酸激酶/响应调节子)转导。语言不同,语法相同:浓度即人数。',
+    de: "Gram-negative signals (V. fischeri, P. aeruginosa) are small AHLs that slip through the membrane to cytoplasmic LuxR-type receptors. Gram-positives (S. aureus, S. pneumoniae) can't cross that barrier, so they secrete oligopeptides read by membrane two-component systems (histidine kinase / response regulator). Different words, same grammar: concentration = count." },
+  { hl: 'quench', tgt: [3.8, 1.0, 2.2],
+    b: '群体猝灭:偷走它们的语言', be: 'Quorum quenching: stealing their language',
+    d: '既然致病靠「人数达标」,那就拆掉计数器:猝灭酶(AiiA 乳内酯酶等)水解 AHL 的内酯环,信号永远到不了阈值,毒力表达和生物膜成形被掐断——却不直接杀菌,选择压力小、不易催生耐药,被视为抗感染的新思路。点「加猝灭酶」看信号崩塌、灯灭。',
+    de: 'If virulence needs a head-count, smash the counter: quenching enzymes (AiiA lactonase and kin) hydrolyze the AHL lactone ring so the signal never reaches threshold, cutting off virulence and biofilm maturation - without killing cells, hence weak selection for resistance. A leading antivirulence idea. Hit the lactonase button and watch the signal collapse.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+let tgtVec = new THREE.Vector3(1.7, 1.5, 2.4);
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const prod = K_PROD * Math.pow(10, logD - 6) * (quorum ? FB : 1);
+  const dec = Math.max(1e-6, K_BASE + kq + (enzymeT > 0 ? K_ENZ : 0));
+  const ss = prod / dec;
+  formulaEl.innerHTML =
+    L(`信号动力学:d[AHL]/dt = α·N − (λ+k_q)·A;α = 1.6×10⁻⁵ μM·s⁻¹(每 10⁶ mL⁻¹),λ = 0.02 s⁻¹,k_q = <b>${kq.toFixed(2)} s⁻¹</b>${enzymeT > 0 ? L(' + 酶 1.3', ' + enzyme 1.3') : ''}`,
+      `Signal dynamics: d[AHL]/dt = α·N − (λ+k_q)·A; α = 1.6×10⁻⁵ μM·s⁻¹ per 10⁶ mL⁻¹, λ = 0.02 s⁻¹, k_q = <b>${kq.toFixed(2)} s⁻¹</b>${enzymeT > 0 ? L(' + enzyme 1.3', ' + enzyme 1.3') : ''}`) +
+    '<br>' +
+    L(`稳态 ≈ α·N/(λ+k_q) ∝ 密度:当前 ≈ <b>${ss.toFixed(2)} μM</b>;阈值 A* = 5 μM(文献 1-10 μM)在 N ≈ 10¹⁰·³ mL⁻¹ 处跨过`,
+      `Steady state ≈ α·N/(λ+k_q) ∝ density: now ≈ <b>${ss.toFixed(2)} μM</b>; threshold A* = 5 μM (lit. 1-10 μM) crossed near N ≈ 10¹⁰·³ mL⁻¹`) +
+    '<br>' +
+    L(`luxI 正反馈 ×${FB.toFixed(1)} → 迟滞:点亮后要降到 ${A_OFF} μM 以下才熄灭;猝灭酶把 k_q 暂时抬到 ${K_ENZ} s⁻¹(时间压缩 ~1500×)`,
+      `luxI feedback ×${FB.toFixed(1)} → hysteresis: once lit, needs to fall under ${A_OFF} μM to switch off; lactonase lifts k_q to ${K_ENZ} s⁻¹ (time compressed ~1500×)`);
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  logD = 8.5; kq = 0.06;
+  A = 0.12; quorum = false; glowFrac = 0; enzymeT = 0;
+  hist.length = 0; histAcc = 0;
+  seedBacs(); seedAhls();
+  elDen.value = logD; elKq.value = kq;
+  updateDen(); updateKq(); updateFormula();
+}
+
+/* ---------------- 示波器:AHL 浓度 vs 时间 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const px = f => (0.05 + 0.93 * f) * cw, py = v => ch - (0.14 + 0.74 * clamp01(v / A_MAX)) * ch;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(px(0), py(0)); scopeCtx.lineTo(px(1), py(0));
+  scopeCtx.moveTo(px(0), py(0)); scopeCtx.lineTo(px(0), py(A_MAX));
+  scopeCtx.stroke();
+  scopeCtx.font = `${Math.round(10 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L(`AHL μM(窗口 ${(HIST_N * 0.1).toFixed(0)} s)`, `AHL μM (${(HIST_N * 0.1).toFixed(0)} s window)`), px(0.3), py(A_MAX) + 10 * dpr);
+  /* 阈值虚线 */
+  scopeCtx.setLineDash([4 * dpr, 3 * dpr]);
+  scopeCtx.strokeStyle = 'rgba(255,201,100,.85)';
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(px(0), py(A_TH)); scopeCtx.lineTo(px(1), py(A_TH));
+  scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  scopeCtx.fillStyle = 'rgba(255,201,100,.95)';
+  scopeCtx.fillText(`${A_TH.toFixed(0)} μM`, px(0.005), py(A_TH) - 3 * dpr);
+  /* 曲线 */
+  if (hist.length > 1) {
+    scopeCtx.strokeStyle = 'rgba(111,214,255,.95)';
+    scopeCtx.lineWidth = Math.max(1.4, 1.4 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < hist.length; i++) {
+      const fx = (HIST_N - hist.length + i) / (HIST_N - 1);
+      i === 0 ? scopeCtx.moveTo(px(fx), py(hist[i])) : scopeCtx.lineTo(px(fx), py(hist[i]));
+    }
+    scopeCtx.stroke();
+  }
+  /* 当前点 */
+  scopeCtx.fillStyle = quorum ? '#8fe3b0' : '#6fd6ff';
+  scopeCtx.beginPath();
+  scopeCtx.arc(px(1), py(A), Math.max(2.5, 2.5 * dpr), 0, TAU);
+  scopeCtx.fill();
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elDen = document.getElementById('den'), elDenVal = document.getElementById('denVal');
+const elKq = document.getElementById('kq'), elKqVal = document.getElementById('kqVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglPart = document.getElementById('tglPart');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function fmtDensity() {
+  const e = Math.floor(logD + 1e-9);
+  const man = Math.pow(10, logD - e);
+  return { txt: `${man.toFixed(1)}×10${sup(e)} /mL`, e, man };
+}
+function updateDen() {
+  elDenVal.textContent = fmtDensity().txt;
+}
+function updateKq() {
+  elKqVal.textContent = kq.toFixed(2) + L(' s⁻¹', ' s⁻¹');
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elDen.addEventListener('input', () => { logD = +elDen.value; updateDen(); updateFormula(); });
+elKq.addEventListener('input', () => { kq = +elKq.value; updateKq(); updateFormula(); });
+document.getElementById('btnDense').addEventListener('click', () => {
+  logD = 11; elDen.value = logD; updateDen(); updateFormula();
+});
+document.getElementById('btnSparse').addEventListener('click', () => {
+  logD = 6; elDen.value = logD; updateDen(); updateFormula();
+});
+document.getElementById('btnEnzyme').addEventListener('click', () => {
+  enzymeT = 8; updateFormula();
+});
+document.getElementById('btnReset').addEventListener('click', resetMachine);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglPart.addEventListener('change', () => { ahlMesh.visible = tglPart.checked; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD');
+function updateStats() {
+  const d = fmtDensity();
+  stA.innerHTML = `${d.man.toFixed(1)}×10${sup(d.e)}<small> /mL</small>`;
+  stA.className = 'v ' + (logD >= 10 ? 'ok' : '');
+  stB.innerHTML = A.toFixed(2) + '<small> μM</small>';
+  stB.className = 'v ' + (A >= A_TH ? 'ok' : A >= 1 ? 'warn' : '');
+  stC.innerHTML = Math.round(glowFrac * 100) + '<small> %</small>';
+  stC.className = 'v ' + (glowFrac > 0.9 ? 'ok' : glowFrac > 0.05 ? 'warn' : '');
+  if (enzymeT > 0) { stD.textContent = L('被猝灭', 'quenched'); stD.className = 'v bad'; }
+  else if (quorum) { stD.textContent = L('同步发光', 'glowing'); stD.className = 'v ok'; }
+  else if (A >= 1) { stD.textContent = L('信号累积', 'signaling'); stD.className = 'v warn'; }
+  else { stD.textContent = L('低密度', 'sparse'); stD.className = 'v'; }
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+const dm = new THREE.Object3D();
+const tmpV = new THREE.Vector3();
+const tmpC = new THREE.Color();
+let lastN = NB_MAX;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  if (playing) {
+    const s = dt * speed;
+    et += s;
+    if (enzymeT > 0) enzymeT = Math.max(0, enzymeT - s);
+    /* AHL 动力学:生成 − 降解,正反馈迟滞 */
+    const prod = K_PROD * Math.pow(10, logD - 6) * (quorum ? FB : 1);
+    const dec = (K_BASE + kq + (enzymeT > 0 ? K_ENZ : 0)) * A;
+    A = Math.max(0, A + (prod - dec) * s);
+    if (!quorum && A >= A_TH) quorum = true;
+    if (quorum && A < A_OFF) quorum = false;
+    glowFrac += ((quorum ? 1 : 0) - glowFrac) * Math.min(1, s * 2.5);
+    histAcc += s;
+    if (histAcc >= 0.1) {
+      histAcc = 0;
+      hist.push(A);
+      if (hist.length > HIST_N) hist.shift();
+    }
+  }
+  const s2 = dt * speed;
+  /* 细菌:布朗游动 + 温和翻滚 + 发光波次 */
+  const nVis = clamp(Math.round((logD - 6) / 5 * NB_MAX), 6, NB_MAX);
+  for (let i = 0; i < NB_MAX; i++) {
+    const b = bacs[i];
+    if (i < nVis) {
+      b.v.x += (Math.random() - 0.5) * 0.9; b.v.y += (Math.random() - 0.5) * 0.9; b.v.z += (Math.random() - 0.5) * 0.9;
+      b.v.clampLength(0, 0.5);
+      b.p.addScaledVector(b.v, s2);
+      tmpV.copy(b.p).sub(VOL_C);
+      if (tmpV.length() > VOL_R * 0.9) {
+        tmpV.normalize();
+        b.p.copy(VOL_C).addScaledVector(tmpV, VOL_R * 0.9);
+        b.v.reflect(tmpV);
+      }
+      tmpV.copy(b.ax).applyQuaternion(b.q).normalize();
+      b.q.premultiply(new THREE.Quaternion().setFromAxisAngle(tmpV, s2 * 0.35));
+      b.tt += ((quorum ? 1 : 0) - b.tt) * Math.min(1, s2 * 2.2);
+      dm.position.copy(b.p);
+      dm.quaternion.copy(b.q);
+      dm.scale.setScalar(1);
+      dm.updateMatrix();
+      bacMesh.setMatrixAt(i, dm.matrix);
+      tmpC.copy(C_TEAL).lerp(C_GREEN, b.tt);
+      bacMesh.setColorAt(i, tmpC);
+    } else if (i < lastN) {
+      dm.scale.setScalar(0.0001);
+      dm.updateMatrix();
+      bacMesh.setMatrixAt(i, dm.matrix);
+    }
+  }
+  lastN = nVis;
+  bacMesh.instanceMatrix.needsUpdate = true;
+  if (bacMesh.instanceColor) bacMesh.instanceColor.needsUpdate = true;
+  bacMat.emissiveIntensity = glowFrac * 1.1;
+  /* AHL 粒子:布朗扩散,数量随浓度 */
+  const nA = ahlMesh.visible ? clamp(Math.round(A / A_MAX * NA_MAX), 0, NA_MAX) : 0;
+  for (let i = 0; i < NA_MAX; i++) {
+    const p = ahls[i];
+    if (i < nA) {
+      p.v.x += (Math.random() - 0.5) * 1.1; p.v.y += (Math.random() - 0.5) * 1.1; p.v.z += (Math.random() - 0.5) * 1.1;
+      p.v.clampLength(0, 0.55);
+      p.p.addScaledVector(p.v, s2);
+      tmpV.copy(p.p).sub(VOL_C);
+      if (tmpV.length() > VOL_R * 0.88) {
+        tmpV.normalize();
+        p.p.copy(VOL_C).addScaledVector(tmpV, VOL_R * 0.88);
+        p.v.reflect(tmpV);
+      }
+      dm.position.copy(p.p);
+      dm.rotation.set(0, 0, 0);
+      dm.scale.setScalar(1);
+      dm.updateMatrix();
+      ahlMesh.setMatrixAt(i, dm.matrix);
+    } else {
+      dm.scale.setScalar(0.0001);
+      dm.updateMatrix();
+      ahlMesh.setMatrixAt(i, dm.matrix);
+    }
+  }
+  ahlMesh.instanceMatrix.needsUpdate = true;
+  /* 浓度场 + 浓度计 + 发光灯 */
+  const frac = clamp01(A / A_MAX);
+  M.field.opacity = 0.05 + 0.17 * frac;
+  M.field.emissiveIntensity = 0.12 + 0.5 * frac;
+  M.liquid.emissiveIntensity = 0.7;
+  liquid.scale.y = Math.max(0.03, G_H * frac);
+  liquid.position.y = -G_H / 2 + G_H * frac / 2;
+  M.ring.emissiveIntensity = 0.25 + (quorum ? 0.5 : 0.2 * Math.max(0, Math.sin(et * 3)));
+  M.ahl.emissiveIntensity = 1.2 + 0.25 * Math.sin(et * 4);
+  glowLight.intensity = glowFrac * 26;
+  M.glow.opacity = glowFrac * 0.4;
+  halo.scale.setScalar(0.9 + 0.25 * Math.sin(et * 2.4) + glowFrac * 0.35);
+  heroG.rotation.y = -0.5 + Math.sin(et * 0.6) * 0.18;
+  /* 猝灭酶粒子 */
+  ezMesh.visible = enzymeT > 0;
+  if (ezMesh.visible) {
+    for (let i = 0; i < NEZ; i++) {
+      const a = et * 0.9 + ezPh[i];
+      dm.position.set(Math.cos(a) * (2.3 + 0.12 * i), VOL_C.y + 0.5 * Math.sin(et * 1.3 + ezPh[i]), Math.sin(a) * (2.3 + 0.12 * i));
+      dm.rotation.set(et + i, et * 0.7, 0);
+      dm.scale.setScalar(0.7 + 0.3 * Math.sin(et * 5 + i));
+      dm.updateMatrix();
+      ezMesh.setMatrixAt(i, dm.matrix);
+    }
+    ezMesh.instanceMatrix.needsUpdate = true;
+  }
+  /* 步骤高亮(发光材质基础值先复位,再按步骤抬升) */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  M.heroM.emissiveIntensity = 0.15;
+  const boost = (m, k = 0.8) => { m.emissiveIntensity = Math.max(m.emissiveIntensity, k + 0.4 * hlK); };
+  if (hl === 'single') boost(M.heroM);
+  else if (hl === 'counter') boost(M.ahl);
+  else if (hl === 'loop') { boost(M.heroM); boost(M.ahl); }
+  else if (hl === 'threshold') { boost(M.ring); boost(M.liquid); }
+  else if (hl === 'beyond') boost(M.glow, 1.2);
+  else if (hl === 'gram') boost(M.field);
+  else if (hl === 'quench') boost(M.enzyme);
+  /* 相机目标缓动 + 标签 */
+  controls.target.lerp(tgtVec, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
