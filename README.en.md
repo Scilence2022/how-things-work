@@ -709,7 +709,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] Lightning Rods & Upward Leaders (the charged cloud base induces opposite charge below; stepped leaders probe down ~50 m at a time; the sharpest tip concentrates field first and launches an upward leader — a rod wins the strike, it doesn't attract it; current drains down the conductor into the ground grid; the rolling-sphere method draws the protected volume and the building itself is one Faraday cage) ✅ **lightning-rod/**
 - [x] Flight Recorders & Crash Protection (an FDR of 25 h and hundreds of parameters, a CVR of 2 h looping cockpit audio, written into stacked solid-state memory; titanium shell, insulation, cushioning, core; rated for 3400 g/6.5 ms, thirty minutes at 1000 °C, 30 days at 6000 m deep; a 37.5 kHz beacon pings for thirty days and the international-orange paint is for searchers) ✅ **flight-recorder/**
 
-### Phase 65 · Cross-Family Gap-Fill Batch 36 (24/24 complete)
+### Phase 66 · Cross-Family Gap-Fill Batch 36 (24/24 complete)
 - [x] Axial Piston Pump & the Swashplate (Rotate the cylinder block and each of 7 pistons strokes once along the swashplate: s=D·tanβ, half a turn suction, half discharge — the port plate's kidney slots are a rotary valve. Displacement V=Z·(π/4)d²·D·tanβ with β stepless 0-18°: pressure compensation trims flow on demand for constant-power 250-400 bar; odd piston count keeps ripple ~2.5%, and a center orifice oils each slipper pad.) ✅ **axial-piston-pump/**
 - [x] Rotor Balancing & Correction Weights (10 g of eccentric mass at 6,000 rpm flings out 197 N — F=mrω², rising with the square of speed. Static unbalance gives a 1× force; dynamic adds a couple that bows the rotor. Two correction planes sum counterweights against the unbalance vectors, grade G=e·ω sets the allowed eccentricity (G2.5 at 10,000 rpm: 2.4 μm), and the influence-coefficient field method computes the fix from one trial weight: α=(A1−A0)/T.) ✅ **rotor-balancing/**
 - [x] Crumple Zones & Crash Energy (A 1.5 t car at 56 km/h carries ~182 kJ of kinetic energy that deformation must eat within 0.6-0.8 m: F·s=ΔE — 300 kN average force means ~20 g; halve the stroke and force doubles. The nose is "soft" (crush boxes plus crash-guided rails), the cell "hard" (1,500 MPa hot-stamped steel); a tall, flat force-stroke curve with corrugated folds absorbs 2-3× more than random buckling; pretensioner, load limiter and airbag run a 60-100 ms relay.) ✅ **crumple-zone/**
@@ -1404,7 +1404,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **stomata-guard-cells/** — Two kidney cells bow open as K⁺ and malate pull water in; flip the drought switch and ABA reverses the pumps within minutes; aperture, turgor and transpiration share one model, and the CO₂ slider steals aperture while WUE updates.
 - **neuromuscular-junction/** — The AP lights Ca²⁺ channels, vesicles fuse, ACh ferries the 50 nm cleft, the endplate potential crosses −55 mV, and the T-tubule ignites the SR calcium spark; curare and botox break the chain at different links, and the [Ca²⁺]⁴ slider can silence the synapse.
 - **gravitropism/** — Lay the seedling sideways: amyloplasts sink, PIN proteins reshuffle, auxin pools on the low flank — shoots bend up, roots bend down, and the signal fades once vertical; a 0–2 g slider and a statolith mutant that never straightens complete the story.
-- **turing-patterns/** — Seed noise into a uniform dish and activator-inhibitor dynamics crack it into spots, stripes or mazes; four presets and live F/k/ratio sliders — drop the diffusivity ratio below one and the pattern dissolves on the spot. (2D)
+- **turing-patterns/** — Seed noise into a uniform dish and activator-inhibitor dynamics crack it into spots, stripes or mazes; four presets and live F/k/ratio sliders — drop the diffusivity ratio below one and the pattern dissolves on the spot.
 - **coriolis-effect/** — Roll a ball across a spinning disk: straight in the inertial frame, an arc in the rotating one, a=2Ω×v arrow attached; the sphere mode flips the sign at the equator, the cyclone mode curls 36 inflow streams into a vortex, and the bathtub ledger computes 0.04 mm — myth busted.
 - **bimetallic-strip/** — Brass (α=19) welded to steel (α=12) can't lie flat when heated; drag 20→150 °C and watch the curvature grow, the 3 m spiral sweep 1.8°/K, the snap-disc open at 80 °C and reset at 60 °C, and a 30 A breaker trip in a measured 5.3 s.
 - **impact-crater/** — Pick diameter and velocity, watch energy ∝v² hit the ledger: contact compression, a 45° ejecta curtain with secondary chains, terraced walls and a rebounding central peak; the log-log plot carries Barringer and Chicxulub as data points.
@@ -1412,9 +1412,9 @@ A collection of animated explanations. We use animation to make "invisible princ
 - **hovercraft/** — The fan climbs the cushion to 2.5 kPa, the hull lifts clear, and the drag trace falls off a cliff; the skirt flexes frame by frame with the waves, three terrains swap the drag table, and over-revving triggers surge and pogo.
 - **sand-dunes/** — Saltating grains hop, land and knock loose more; the windward face erodes, sand crosses the crest, the lee avalanches at 34°; scrub time forward and the whole dune migrates downwind, turning barchan or longitudinal as the wind regime demands.
 - **river-delta/** — The river brakes at the coast and sorts its load: sand into topsets, silt draping cross-bedded foresets, clay to far bottomsets; distributaries avulse, the delta progrades, and river/wave/tide dominance morphs bird's-foot, arc and trumpet.
-- **markov-chain/** — Three weather states, one matrix, three hundred walkers; the heatmap's current row glows, and two cohorts started from different states converge onto the same stationary π, verified live as ‖πP−π‖<10⁻¹⁶. (2D)
-- **a-star-search/** — On one walled, swampy grid: Dijkstra floods 790 cells, greedy dashes in 38 but pays double through the swamp, and A* finds the identical optimum in 304 — with an ε slider sweeping Dijkstra → greedy. (2D)
-- **boids-flocking/** — 260 boids run separation/alignment/cohesion and nothing else; focus one bird for its neighbor circle and three force arrows, tune the weights from flock to school to locust band, drop obstacles, and let the predator send shockwaves through — φ: 0.71 rules on, 0.03 off. (2D)
+- **markov-chain/** — Three weather states, one matrix, three hundred walkers; the heatmap's current row glows, and two cohorts started from different states converge onto the same stationary π, verified live as ‖πP−π‖<10⁻¹⁶.
+- **a-star-search/** — On one walled, swampy grid: Dijkstra floods 790 cells, greedy dashes in 38 but pays double through the swamp, and A* finds the identical optimum in 304 — with an ε slider sweeping Dijkstra → greedy.
+- **boids-flocking/** — 260 boids in a 3D volume run separation/alignment/cohesion and nothing else; focus one bird for its neighbor shell and three force arrows, tune the weights from flock to school to locust band, drop obstacles, and let the predator send shockwaves through — the order parameter φ is measured live and collapses when the rules are switched off.
 ### Phase 11 · Earth system (10/10)
 
 - [x] Plate tectonics (mantle convection conveyor, ridges birth crust, trenches consume it) ✅ **plate-tectonics/**
@@ -1885,7 +1885,7 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] Stomata & guard cells (in light K⁺/Cl⁻ pump in, malate forms, osmosis drags water in, turgor bows the thin outer walls and the stoma opens; ABA reverses it in minutes; the CO₂ door and the vapor exit are one door) ✅ **stomata-guard-cells/**
 - [x] The neuromuscular junction (the AP fires Ca²⁺ channels, vesicles fuse, ACh ferries the 50 nm cleft, the EPP crosses threshold, the T-tubule ignites the SR calcium spark; AChE cleans up; curare sits on receptors, botox strangles fusion) ✅ **neuromuscular-junction/**
 - [x] Gravitropism (amyloplasts sink, PIN proteins reshuffle and pump auxin to the low flank; shoots bend up where auxin excites, roots bend down where it suppresses — one hormone, two verdicts; statolith mutants never straighten) ✅ **gravitropism/**
-- [x] Turing patterns (a short-range activator self-catalyzes while a faster inhibitor draws long-range borders; uniform noise cracks into spots, stripes, mazes; Du/Dv>1 or it dissolves; leopard spots and zebra stripes are different dials) · 2D ✅ **turing-patterns/**
+- [x] Turing patterns (a short-range activator self-catalyzes while a faster inhibitor draws long-range borders; uniform noise cracks into spots, stripes, mazes; Du/Dv>1 or it dissolves; leopard spots and zebra stripes are different dials) ✅ **turing-patterns/**
 - [x] The Coriolis effect (straight is an illusion in a rotating frame, a=2Ω×v bends paths right in the north and left in the south, ∝sinφ; the bathtub vortex is a myth, the cyclone is not — low-pressure inflow is deflected into spin) ✅ **coriolis-effect/**
 - [x] The bimetallic strip (brass α=19 vs steel α=12 bends toward the steel, curvature ∝Δα·ΔT; a coil reads ovens; with contacts it trips thermostats and breakers — snap at 80 °C, reset at 60 °C, hysteresis kills chatter) ✅ **bimetallic-strip/**
 - [x] Impact craters (a 20 km/s impactor bills energy ∝v²: contact-compression shocks quartz; excavation flips a 45° ejecta curtain with secondary chains; modification slumps terraces and rebounds a peak; Barringer 1.2 km, Chicxulub 180 km — Earth's erosion keeps erasing evidence) ✅ **impact-crater/**
@@ -1893,9 +1893,9 @@ A collection of animated explanations. We use animation to make "invisible princ
 - [x] The hovercraft (the fan climbs the cushion to 2.5 kPa, lifting the hull centimetres clear — drag drops an order of magnitude; the skirt flexes with waves, water/shore/ice in one ring of fabric; under-pressure grounds you, over-pressure pogo-sticks) ✅ **hovercraft/**
 - [x] Sand dune migration (saltation multiplies hop by hop; the windward face erodes, grains cross the crest, the lee avalanches at 34°; the whole dune migrates downwind, shape intact, meters to tens a year; the barchan crescent signs a single wind) ✅ **sand-dunes/**
 - [x] The river delta (velocity collapses at the mouth and capacity collapses faster — sand drops into topsets, silt drapes cross-bedded foresets, clay drifts to bottomsets; distributaries avulse; river grows a bird's foot, waves round it, tides shred it) ✅ **river-delta/**
-- [x] Markov chains (one transition matrix P, walkers hop by probability, and within a few steps the distribution settles on π=πP regardless of the start; memorylessness is the whole assumption; π is P's eigenvector) · 2D ✅ **markov-chain/**
-- [x] A* pathfinding (Dijkstra floods 790 cells, greedy dashes in 38 but pays double through the swamp, A* takes f=g+h to the same optimum in 304; an admissible heuristic is fast and never cheated; the ε slider sweeps the spectrum) · 2D ✅ **a-star-search/**
-- [x] Flocking & boids (separation, alignment, cohesion — three local rules, no leader, order emerges whole; the weights sweep flock → school → locust band; a predator sends shockwaves through the murmuration) · 2D ✅ **boids-flocking/**
+- [x] Markov chains (one transition matrix P, walkers hop by probability, and within a few steps the distribution settles on π=πP regardless of the start; memorylessness is the whole assumption; π is P's eigenvector) ✅ **markov-chain/**
+- [x] A* pathfinding (Dijkstra floods 790 cells, greedy dashes in 38 but pays double through the swamp, A* takes f=g+h to the same optimum in 304; an admissible heuristic is fast and never cheated; the ε slider sweeps the spectrum) ✅ **a-star-search/**
+- [x] Flocking & boids (separation, alignment, cohesion — three local rules, no leader, order emerges whole; the weights sweep flock → school → locust band; a predator sends shockwaves through the murmuration) ✅ **boids-flocking/**
 ### Phase 37 · Cross-family gap-filling, batch 8 (12/12)
 
 - [x] Levers & pulleys (F₁·L₁=F₂·L₂ — force is bought with distance; the fulcrum position seals a lever's fate; fixed pulley turns, movable halves, an n-rope block shares W/n; efficiency pays friction and rope weight; the 9:1 Archimedes preset lifts nine with one) ✅ **lever-pulley/**
@@ -2058,12 +2058,12 @@ motor-generator/       DC motor ⇄ generator (Three.js, CDN)
 galton-board/          Galton board → central limit theorem (Three.js, CDN)
 carnot-cycle/          Carnot golden loop on a pV diagram (Three.js, CDN)
 electromagnetic-induction/ EM induction / Lenz's law (Three.js, CDN)
-monty-hall-bayes/      Monty Hall: switch or stay? 2/3 vs 1/3 (Canvas 2D, zero deps)
+monty-hall-bayes/      Monty Hall: switch or stay? 2/3 vs 1/3 (Three.js, CDN)
 doppler-effect/        Doppler effect & Mach cone (Three.js, CDN)
-activation-energy/     Maxwell-Boltzmann & Arrhenius (Canvas 2D, zero deps)
+activation-energy/     Maxwell-Boltzmann & Arrhenius (Three.js, CDN)
 orbital-mechanics/     Kepler orbits & equal areas (Three.js, CDN)
-titration-curve/       Titration curve, buffer plateau & equivalence jump (Canvas 2D, zero deps)
-fourier-series/        Fourier series from epicycles (Canvas 2D, zero deps)
+titration-curve/       Titration curve, buffer plateau & equivalence jump (Three.js, CDN)
+fourier-series/        Fourier series from epicycles (Three.js, CDN)
 cross-bridge-cycle/    Muscle cross-bridge cycle (Three.js, CDN)
 hemoglobin-mwc/        Hemoglobin MWC allostery (Three.js, CDN)
 angular-momentum/      Angular momentum conservation — three scenes (Three.js, CDN)
@@ -2073,7 +2073,7 @@ fuel-cell/             PEM fuel cell (Three.js, CDN)
 osmosis/               Osmosis & reverse osmosis (Three.js, CDN)
 neural-gradient/       Neural-net gradient descent on a 3D loss surface (Three.js, CDN)
 sorting-race/          Sorting algorithm race (Three.js, CDN)
-rsa-crypto/            RSA cryptography (Canvas 2D, zero deps)
+rsa-crypto/            RSA cryptography (Three.js, CDN)
 induction-motor/       Three-phase induction motor (Three.js, CDN)
 transformer/           Transformer & the grid (Three.js, CDN)
 speaker-microphone/    Speaker ⇄ microphone (Three.js, CDN)
@@ -2153,11 +2153,11 @@ spacetime-curvature/   Spacetime curvature (Three.js, CDN)
 shortest-path/         Navigation & shortest paths (Three.js, CDN)
 pagerank/              PageRank & Markov chains (Three.js, CDN)
 packet-switching/      How the internet ships messages (Three.js, CDN)
-error-correction/      QR code & Reed-Solomon error correction (Canvas 2D, zero deps)
-huffman-coding/        Huffman coding (Canvas 2D, zero deps)
-bayes-screening/       Bayes screening paradox (Canvas 2D, zero deps)
-fractals/              Fractals & recursion (Canvas 2D, zero deps)
-taylor-series/         Taylor series (Canvas 2D, zero deps)
+error-correction/      QR code & Reed-Solomon error correction (Three.js, CDN)
+huffman-coding/        Huffman coding (Three.js, CDN)
+bayes-screening/       Bayes screening paradox (Three.js, CDN)
+fractals/              Fractals & recursion (Three.js, CDN)
+taylor-series/         Taylor series (Three.js, CDN)
 microwave-oven/        Microwave oven (Three.js, CDN)
 touch-screen/          Capacitive touch screen (Three.js, CDN)
 gps/                   GPS positioning (Three.js, CDN)
@@ -2173,7 +2173,7 @@ hard-drive-flash/      Hard drive & flash (Three.js, CDN)
 fission-chain/         Fission chain reaction (Three.js, CDN)
 rainbow/               Rainbow & secondary bow (Three.js, CDN)
 mitosis/               Mitosis (Three.js, CDN)
-birthday-paradox/      Birthday paradox (Canvas 2D, zero dependencies)
+birthday-paradox/      Birthday paradox (Three.js, CDN)
 thermoregulation/      Thermoregulation (Three.js, CDN)
 sonar-ultrasound/      Sonar & B-mode ultrasound (Three.js, CDN)
 cosmic-expansion/      Cosmic expansion & redshift (Three.js, CDN)
