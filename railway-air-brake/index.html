@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>铁路空气制动 · 充风缓解、减压制动</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="铁路空气制动:充风即缓解,减压即制动" data-en="Railway Air Brake: Charge to Release, Vent to Brake">铁路空气制动:充风即缓解,减压即制动</h1>
+  <div class="sub" data-zh="1869 年西屋三通阀立下失败安全哲学:列车管充风到 500-600 kPa 即缓解——每辆车的三通阀滑阀停在充风位,副风缸储满风,制动缸通大气;司机减压 40-140 kPa,管压一降,滑阀换位,副风缸的风冲进制动缸推闸瓦。不用电、不用信号,压差就是命令。制动波以 250-300 m/s 沿管传播,紧急制动时尾部排气口同时放风,把波前再提速;列车在任何一点断管,两侧同时排气,全列自动紧急制动——挂多少节都刹得住。长大货车再充风需数分钟;动车组改电控空气制动,350 km/h 紧急制动距离 ≤4,500 m、平均减速度 ~1.1 m/s² · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Westinghouse's 1869 triple valve set the fail-safe creed: charge the train pipe to 500-600 kPa and every triple valve sits in release, auxiliary reservoirs full, brake cylinders vented; the driver reduces pressure by 40-140 kPa, each valve senses the drop, shifts its slide, and reservoir air floods the brake cylinders - no electricity, no signals, the pressure difference is the command. The brake wave runs along the pipe at 250-300 m/s, accelerated in emergency by venting at the rear; break the pipe anywhere and both sides dump, braking the whole train automatically. Recharging a long freight takes minutes; EMUs add electronic control - 350 km/h emergency stop within 4,500 m at ~1.1 m/s² · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">1869 年西屋三通阀立下失败安全哲学:列车管充风到 500-600 kPa 即缓解——每辆车的三通阀滑阀停在充风位,副风缸储满风,制动缸通大气;司机减压 40-140 kPa,管压一降,滑阀换位,副风缸的风冲进制动缸推闸瓦。不用电、不用信号,压差就是命令。制动波以 250-300 m/s 沿管传播,紧急制动时尾部排气口同时放风,把波前再提速;列车在任何一点断管,两侧同时排气,全列自动紧急制动——挂多少节都刹得住。长大货车再充风需数分钟;动车组改电控空气制动,350 km/h 紧急制动距离 ≤4,500 m、平均减速度 ~1.1 m/s² · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="列车管压" data-en="train-pipe pressure">列车管压</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="制动缸压" data-en="brake-cylinder pressure">制动缸压</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="制动波速" data-en="brake-wave speed">制动波速</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="减速度" data-en="deceleration">减速度</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="停车距离(80km/h)" data-en="stop dist. (80 km/h)">停车距离(80km/h)</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="副风缸储量" data-en="aux reservoir">副风缸储量</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="列车管 · 贯通全列" data-en="train pipe · through the whole train">列车管 · 贯通全列</span>
+    <span class="chip e" data-zh="三通阀 · 副风缸 · 制动缸" data-en="triple valve · aux reservoir · brake cylinder">三通阀 · 副风缸 · 制动缸</span>
+    <span class="chip g" data-zh="缓解(充风位)" data-en="released (charged)">缓解(充风位)</span>
+    <span class="chip r" data-zh="断管 · 紧急制动" data-en="pipe burst · emergency">断管 · 紧急制动</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnWave" data-zh="常用减压·制动波(招牌)" data-en="service brake wave (signature)">常用减压·制动波(招牌)</button>
+    <button class="abtn" id="btnRelease" data-zh="充风缓解" data-en="release &amp; recharge">充风缓解</button>
+    <button class="abtn" id="btnEmg" data-zh="紧急制动" data-en="emergency brake">紧急制动</button>
+    <button class="abtn hot" id="btnBreak" data-zh="断管事故" data-en="pipe burst">断管事故</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="减压量 Δp" data-en="reduction Δp">减压量 Δp</label><input id="dpk" type="range" min="40" max="140" step="5" value="70"><span class="val" id="dpkVal">70 kPa</span></div>
+  <div class="row"><label data-zh="制动波速" data-en="wave speed">制动波速</label><input id="wv" type="range" min="150" max="300" step="5" value="250"><span class="val" id="wvVal">250 m/s</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglColor" type="checkbox" checked> <span data-zh="管压着色" data-en="pipe coloring">管压着色</span></label>
+        <label><input id="tglSpark" type="checkbox" checked> <span data-zh="闸瓦火花" data-en="shoe sparks">闸瓦火花</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../train-control-system/" data-zh="列车运行控制" data-en="train control system">列车运行控制</a>
+    <a href="../abs-brakes/" data-zh="ABS 防抱死" data-en="ABS brakes">ABS 防抱死</a>
+    <a href="../disc-brakes/" data-zh="盘式制动器" data-en="disc brakes">盘式制动器</a>
+    <a href="../hydraulic-brakes/" data-zh="液压制动" data-en="hydraulic brakes">液压制动</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);          // 网格线(乘顶点色)
+  M.body.color.set(dark ? 0x4a5560 : 0x7c8894);          // 车体
+  M.roof.color.set(dark ? 0x39424c : 0x5f6a75);          // 车顶/底架
+  M.chrome.color.set(dark ? 0xc2ccd8 : 0x9aa6b4);        // 轮对/阀件
+  M.case.color.set(dark ? 0x2c333b : 0x55606a);          // 转向架构架
+  M.pipeOK.color.set(dark ? 0x63d471 : 0x2b8a3e);        // 列车管(充风)
+  M.res.color.set(dark ? 0x74a8d8 : 0x4078a8);           // 副风缸
+  M.cyl.color.set(dark ? 0xd8a84e : 0xa87828);           // 制动缸
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('铁路空气制动 · 充风缓解、减压制动', 'Railway Air Brake · Charge to Release, Vent to Brake');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateDpk();
+  updateWv();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(9.5, 6.0, 13.0);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.7, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 6);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  body: mat(0x4a5560, { roughness: 0.5, metalness: 0.55 }),
+  roof: mat(0x39424c, { roughness: 0.55, metalness: 0.5 }),
+  chrome: mat(0xc2ccd8, { roughness: 0.25, metalness: 0.85 }),
+  case: mat(0x2c333b, { roughness: 0.5, metalness: 0.6 }),
+  pipeOK: mat(0x63d471, { roughness: 0.4, metalness: 0.4, emissive: 0x2b8a3e, emissiveIntensity: 0.25 }),
+  res: mat(0x74a8d8, { roughness: 0.4, metalness: 0.5 }),
+  cyl: mat(0xd8a84e, { roughness: 0.4, metalness: 0.6 }),
+  shoe: mat(0x8a6d3a, { roughness: 0.7, metalness: 0.2 }),
+};
+
+/* ---------------- 状态 ---------------- */
+const NCAR = 5, SP = 5.4, GAP_M = 14;      // 车辆数 / 视觉间距 / 真实间距 m
+const cx = i => (i - (NCAR - 1) / 2) * SP; // 车辆中心 x
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let preset = null;                         // wave / release / emg / break
+let dpKpa = 70, waveSpeed = 250;           // 两个滑杆
+let et = 0, scenario = 0, modeT = 0;
+const pipeT = new Array(NCAR).fill(1), pipeSm = new Array(NCAR).fill(1);   // 列车管 0-1(600 kPa)
+const appT = new Array(NCAR).fill(0), appSm = new Array(NCAR).fill(0);     // 制动缸 0-1
+const aux = new Array(NCAR).fill(1);       // 副风缸储量 0-1
+const omega = new Array(NCAR).fill(5.2);   // 车轮角速度(视觉)
+let waveX = 0;                             // 波前位置(世界 x)
+const bcTarget = () => preset === 'wave' ? Math.min(450, dpKpa * 2.6) : 450;
+const decel = () => 1.1 * maxApp();        // m/s²,紧急满制动 ≈1.1
+const maxApp = () => Math.max(...appSm);
+const stopDist = () => decel() > 0.02 ? (80 / 3.6) ** 2 / (2 * decel()) : Infinity;
+
+/* ---------------- 场景装配:地面 / 轨道 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, 40), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(40, 20, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+for (const s of [-1, 1]) {
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(44, 0.09, 0.14), M.chrome);
+  rail.position.set(0, 0.045, s * 0.72);
+  scene.add(rail);
+}
+for (let k = 0; k < 36; k++) {
+  const sl = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.06, 1.9), M.case);
+  sl.position.set(-21.1 + k * 1.2, 0.005, 0);
+  scene.add(sl);
+}
+
+/* ---------------- 车辆 ---------------- */
+function buildCar(i) {
+  const g = new THREE.Group();
+  g.position.x = cx(i);
+  scene.add(g);
+  /* 车体 + 底架 */
+  const body = new THREE.Mesh(new THREE.BoxGeometry(4.7, 1.25, 1.5), M.body);
+  body.position.y = 2.12;
+  g.add(body);
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.34, 1.54), M.case);   // 车窗带
+  strip.position.y = 2.3;
+  g.add(strip);
+  const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 4.6, 14, 1, false, 0, Math.PI), M.roof);
+  roof.rotation.z = Math.PI / 2;
+  roof.position.y = 2.74;
+  g.add(roof);
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(4.7, 0.14, 1.3), M.roof);
+  frame.position.y = 1.42;
+  g.add(frame);
+  if (i === 0) {                             // 首车司机室
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, 1.4), M.roof);
+    nose.position.set(2.45, 2.0, 0);
+    g.add(nose);
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.4, 1.0), M.chrome);
+    win.position.set(2.68, 2.4, 0);
+    g.add(win);
+  }
+  /* 转向架 ×2:构架 + 轮对 + 基础制动 */
+  const car = { g, wheels: [], marks: [], shoes: [], pistons: [], levers: [], tv: null, slide: null, pipeMat: null };
+  for (const bx of [-1.6, 1.6]) {
+    const bogie = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.2, 1.3), M.case);
+    bogie.position.set(bx, 0.88, 0);
+    g.add(bogie);
+    for (const wx of [-0.62, 0.62]) {
+      const spin = new THREE.Group();
+      spin.position.set(bx + wx, 0.51, 0);
+      g.add(spin);
+      car.wheels.push(spin);
+      for (const wz of [-0.72, 0.72]) {
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.11, 24), M.chrome);
+        wheel.rotation.x = Math.PI / 2;
+        wheel.position.z = wz;
+        spin.add(wheel);
+        const mark = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.4, 0.05), M.cyl);   // 转动标记
+        mark.position.set(0, 0, wz);
+        mark.position.y = 0.22;
+        spin.add(mark);
+        car.marks.push(mark);
+        const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.16, 0.09), M.shoe);
+        shoe.position.set(bx + wx, 0.51, wz + (wz > 0 ? -0.3 : 0.3));
+        g.add(shoe);
+        car.shoes.push({ m: shoe, wz, bx, wx });
+      }
+      const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.34, 10), M.chrome);
+      axle.rotation.x = Math.PI / 2;
+      axle.position.set(bx + wx, 0.51, 0);
+      g.add(axle);
+    }
+    const bcyl = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.5, 12), M.cyl);
+    bcyl.rotation.x = Math.PI / 2;
+    bcyl.position.set(bx, 1.05, 0.42);
+    g.add(bcyl);
+    const piston = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8), M.chrome);
+    piston.rotation.x = Math.PI / 2;
+    piston.position.set(bx, 1.05, 0.72);
+    g.add(piston);
+    car.pistons.push(piston);
+    const lever = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.05, 0.06), M.chrome);
+    lever.position.set(bx, 0.72, 0.3);
+    g.add(lever);
+    car.levers.push(lever);
+  }
+  /* 三通阀 + 副风缸 + 列车管段 */
+  const tv = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.24, 0.2), M.cyl);
+  tv.position.set(-0.2, 1.06, 0.62);
+  g.add(tv);
+  car.tv = tv;
+  const slide = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.08), M.chrome);
+  slide.position.set(-0.2, 1.2, 0.62);
+  g.add(slide);
+  car.slide = slide;
+  const auxR = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.9, 14), M.res);
+  auxR.rotation.z = Math.PI / 2;
+  auxR.position.set(0.9, 1.12, 0.4);
+  g.add(auxR);
+  const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 4.75, 10),
+    M.pipeOK.clone());
+  pipe.rotation.z = Math.PI / 2;
+  pipe.position.set(0, 0.82, 0.78);
+  g.add(pipe);
+  car.pipeMat = pipe.material;
+  return car;
+}
+const cars = [];
+for (let i = 0; i < NCAR; i++) cars.push(buildCar(i));
+/* 车间软管(带下垂),断管点在 1-2 号车之间 */
+const hoseMat = M.pipeOK.clone();
+function hose(a, b) {
+  const mid = a.clone().lerp(b, 0.5);
+  mid.y -= 0.16;
+  const curve = new THREE.CatmullRomCurve3([a, mid, b]);
+  return new THREE.Mesh(new THREE.TubeGeometry(curve, 12, 0.045, 8), hoseMat);
+}
+for (let i = 0; i < NCAR - 1; i++) {
+  scene.add(hose(new THREE.Vector3(cx(i) + 2.38, 0.82, 0.78),
+    new THREE.Vector3(cx(i + 1) - 2.38, 0.82, 0.78)));
+}
+/* 断口喷气 */
+const jetMat = new THREE.MeshBasicMaterial({ color: 0xdfe8f2, transparent: true, opacity: 0.75 });
+const jets = [];
+for (let k = 0; k < 2; k++) {
+  const jet = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.5, 10), jetMat.clone());
+  jet.position.set((cx(1) + cx(2)) / 2, 1.05, 0.78);
+  jet.rotation.x = Math.PI;
+  jet.visible = false;
+  scene.add(jet);
+  jets.push(jet);
+}
+/* 闸瓦火花 */
+const sparks = [];
+for (let k = 0; k < 10; k++) {
+  const s = new THREE.Mesh(new THREE.TetrahedronGeometry(0.05),
+    new THREE.MeshBasicMaterial({ color: 0xffb347 }));
+  s.visible = false;
+  scene.add(s);
+  sparks.push({ m: s, vx: 0, vy: 0, life: 0 });
+}
+function popSpark() {
+  for (const sp of sparks) {
+    if (sp.life <= 0) {
+      const ci = Math.floor(Math.random() * NCAR);
+      const shoe = cars[ci].shoes[Math.floor(Math.random() * 4)];
+      sp.m.position.set(shoe.bx + shoe.wx + 0.3, 0.45, shoe.wz);
+      sp.vx = -2 - Math.random() * 2; sp.vy = 1.2 + Math.random() * 1.5;
+      sp.life = 0.5;
+      sp.m.visible = true;
+      return;
+    }
+  }
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+const drvLbl = addLabel(() => L(`司机阀(首车):常用减压 ${dpKpa} kPa`, `driver's valve: ${dpKpa} kPa reduction`),
+  () => 'w', new THREE.Vector3(cx(0) + 2.4, 3.6, 0));
+addLabel(() => L(`列车管 ${(pipeSm[2] * 600).toFixed(0)} kPa · 一根管贯通全列`, `train pipe ${(pipeSm[2] * 600).toFixed(0)} kPa · one pipe, whole train`),
+  () => pipeSm[2] < 0.35 ? 'bad' : 'b', new THREE.Vector3(0, 3.9, 0));
+addLabel(() => L(`三通阀:管压一降 → 滑阀换位`, `triple valve: pipe drops → slide shifts`),
+  () => 'e', new THREE.Vector3(cx(2) - 0.2, 0.6, 0));
+addLabel(() => L(`副风缸 ${(aux[2] * 100).toFixed(0)}% → 制动缸`, `aux reservoir ${(aux[2] * 100).toFixed(0)}% → brake cylinder`),
+  () => 'g', new THREE.Vector3(cx(2) + 0.9, 1.9, 0));
+addLabel(() => L(`制动缸 → 杠杆 → 闸瓦压踏面`, `brake cylinder → lever → shoe on tread`),
+  () => 'st', new THREE.Vector3(cx(1) - 1.6, 0.15, 0));
+const waveLbl = addLabel(() => L(`制动波前 · ${waveSpeed} m/s(慢放)`, `brake wavefront · ${waveSpeed} m/s (slowed)`),
+  () => 'e', new THREE.Vector3(0, 0.4, 0.9), p => p.set(waveX, 0.35, 1.05));
+const breakLbl = addLabel(() => L(`断口!两侧同时排气 → 全列紧急制动`, `burst! both sides dump → full emergency`),
+  () => 'bad', new THREE.Vector3((cx(1) + cx(2)) / 2, 2.0, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'pipe', world: 1, tgt: [0, 1.8, 3.2],
+    b: '充风与缓解:整列只有一根管', be: 'Charging and release: one pipe for the whole train',
+    d: '列车管充风到 500-600 kPa:每辆车的三通阀滑阀停在充风位——列车管的风一路给副风缸储压,制动缸另一侧通大气,闸瓦离开车轮。管里风满 = 全列缓解。这套系统没有任何电线:一根钢管从机车贯到尾车,既是压力源,也是信号线。',
+    de: 'Charge the train pipe to 500-600 kPa: every triple valve sits in release - pipe air fills the auxiliary reservoir, the brake cylinder vents to atmosphere, shoes hang off the wheels. Full pipe means full release. No wires at all: one steel pipe from loco to caboose is both the power supply and the signal line.' },
+  { hl: 'apply', world: 1, tgt: [-4, 1.4, 3.2],
+    b: '减压即制动:压差就是命令(招牌)', be: 'A drop in pressure is the command (signature)',
+    d: '司机让列车管减压 40-140 kPa:每辆车的三通阀感知「管压 < 副风缸压」,活塞带动滑阀换位——副风缸的风冲进制动缸,闸瓦压上车轮。减压越多,滑阀行程越大,制动力越强;不需要机车逐车下达指令,每辆车自己「读懂」压差。',
+    de: 'The driver reduces the pipe by 40-140 kPa: each triple valve senses pipe pressure falling below its reservoir, the piston shifts the slide valve, and reservoir air floods the brake cylinder. A bigger reduction means a bigger valve stroke and stronger braking - no per-car commands needed, every car reads the pressure drop by itself.' },
+  { hl: 'wave', world: 1, tgt: [0, 0.9, 3.0],
+    b: '制动波:250-300 m/s 的压力谷', be: 'The brake wave: a pressure trough at 250-300 m/s',
+    d: '压降以 250-300 m/s 沿管传播:20 节车厢约 400-500 m,尾车要 2-3 s 才开始动作。紧急制动时,尾部排气口同时放风——前后两头一起减压,把波前再提速一截。看下方纵断面:蓝色压力谷沿列车奔跑,橙色制动缸压紧随其后逐车升起。',
+    de: 'The pressure drop races along the pipe at 250-300 m/s: a 20-car train is 400-500 m, so the last car starts braking 2-3 s later. In emergency, a vent at the rear dumps air too - both ends reduce together, pushing the wavefront even faster. Watch the profile below: the blue trough runs down the train, orange cylinder pressure rises car by car behind it.' },
+  { hl: 'fail', world: 1, tgt: [0, 1.8, 3.0],
+    b: '失败安全:断管 = 全列急刹(招牌对照)', be: 'Fail-safe: a burst pipe brakes the train (signature)',
+    d: '风管在任一点被拉断:断口两侧同时向大气排气,两段列车管压同时骤降——所有三通阀立刻换位,全列自动紧急制动。设计方向与直觉相反:风「漏」了反而是刹车。这是 1869 年西屋三通阀定下的失败安全哲学:任何失效都倒向安全侧,挂多少节都刹得住。',
+    de: 'Break the pipe anywhere: both sides dump to atmosphere, both halves lose pressure at once - every triple valve shifts immediately and the whole train emergency-brakes itself. The design leans against intuition: losing air means braking. That is Westinghouse\'s 1869 fail-safe creed - every failure falls to the safe side, whatever the train length.' },
+  { hl: 'shoe', world: 1, tgt: [-7, 0.9, 3.0],
+    b: '闸瓦与黏着:摩擦力矩的边界', be: 'Shoes and adhesion: the friction limit',
+    d: '制动缸鞲鞴经杠杆把闸瓦压上车轮踏面,摩擦力矩通过轮轨黏着让列车减速。闸瓦压力受黏着限制:压过头车轮抱死滑行,擦伤踏面还延长距离。紧急制动平均减速度约 1.1 m/s²,350 km/h 动车组紧急制动距离 ≤4,500 m——每 100 km/h 速度约需 370 m。',
+    de: 'The cylinder piston presses the shoe onto the wheel tread through levers; friction torque decelerates the train through wheel-rail adhesion. Shoe force is capped by adhesion: squeeze harder and the wheel locks, flats the tread and lengthens the stop. Emergency averages ~1.1 m/s²; a 350 km/h EMU stops within 4,500 m - roughly 370 m per 100 km/h.' },
+  { hl: 'recharge', world: 1, tgt: [0, 1.4, 3.4],
+    b: '再充风与电控演进', be: 'Recharging and the electronic era',
+    d: '制动一次就耗掉副风缸的风:长大货车再充风需要数分钟,长下坡要「充风走一段、停车刹一阵」交替进行,防副风缸风压耗尽。动车组改为电控空气制动:电信号先到、每车响应一致,空气制动退居兜底——但三通阀「失气即制动」的逻辑,仍原封不动地留在每辆车的兜底回路里。',
+    de: 'Every application spends reservoir air: recharging a long freight takes minutes, so long descents alternate running recharge with stopped braking. EMUs moved to electronically controlled pneumatic brakes - the signal arrives first and every car responds alike, with air as backup. But the triple valve\'s "lose air and you brake" logic still sits untouched in every backup loop.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 1.7, 0);           // 步骤目标(世界坐标)
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const bc = bcTarget();
+  const d = Number.isFinite(stopDist()) ? stopDist().toFixed(0) : '—';
+  formulaEl.innerHTML =
+    L(`缓解:列车管 <b>500-600 kPa</b>;常用减压 <b>${dpKpa} kPa</b> → 制动缸 ≈ 2.6×Δp = <b>${bc.toFixed(0)} kPa</b>(≤450)`,
+      `Release: train pipe <b>500-600 kPa</b>; service reduction <b>${dpKpa} kPa</b> → brake cylinder ≈ 2.6×Δp = <b>${bc.toFixed(0)} kPa</b> (≤450)`) +
+    '<br>' +
+    L(`制动波 <b>${waveSpeed} m/s</b>(演示慢放 ~36×);紧急制动 a ≈ <b>1.1 m/s²</b> → 350 km/h 停车 <b>≤4,500 m</b>`,
+      `Brake wave <b>${waveSpeed} m/s</b> (demo slowed ~36×); emergency a ≈ <b>1.1 m/s²</b> → 350 km/h stop <b>≤4,500 m</b>`) +
+    '<br>' +
+    L(`d = v²/(2a):80 km/h 常用制动 ≈ <b>${d} m</b>;副风缸储量 ${(aux.reduce((a, b) => a + b, 0) / NCAR * 100).toFixed(0)}%(再充风需数分钟)`,
+      `d = v²/(2a): 80 km/h service stop ≈ <b>${d} m</b>; aux reservoir ${(aux.reduce((a, b) => a + b, 0) / NCAR * 100).toFixed(0)}% (recharge takes minutes)`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnWave = document.getElementById('btnWave'), btnRelease = document.getElementById('btnRelease'),
+  btnEmg = document.getElementById('btnEmg'), btnBreak = document.getElementById('btnBreak'),
+  btnReset = document.getElementById('btnReset');
+const presetBtns = { wave: btnWave, release: btnRelease, emg: btnEmg, break: btnBreak };
+const presetName = () => preset ? L({ wave: '常用减压', release: '充风缓解', emg: '紧急制动', break: '断管事故' }[preset],
+  { wave: 'service brake', release: 'release', emg: 'emergency', break: 'pipe burst' }[preset]) : L('停止', 'stopped');
+function setPreset(id) {
+  preset = id;
+  modeT = 0;
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === id);
+  updateFormula();
+}
+function resetMachine() {
+  setPreset('wave');
+  dpKpa = 70; elDpk.value = 70; updateDpk();
+  waveSpeed = 250; elWv.value = 250; updateWv();
+  pipeT.fill(1); pipeSm.fill(1); appT.fill(0); appSm.fill(0); aux.fill(1);
+  omega.fill(5.2);
+  updateFormula();
+}
+btnWave.addEventListener('click', () => setPreset('wave'));
+btnRelease.addEventListener('click', () => setPreset('release'));
+btnEmg.addEventListener('click', () => setPreset('emg'));
+btnBreak.addEventListener('click', () => setPreset('break'));
+btnReset.addEventListener('click', resetMachine);
+
+/* ---------------- 示波器:全列压力纵断面 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const px = i => i / (NCAR - 1) * (cw - 8 * dpr) + 4 * dpr;
+  const py = v => ch - clamp01(v) * ch * 0.84 - ch * 0.08;
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('沿列车纵断面:列车管(蓝)· 制动缸(橙)· 副风缸(绿)', 'along the train: pipe (blue) · brake cyl (orange) · aux (green)'), 4 * dpr, 10 * dpr);
+  scopeCtx.fillStyle = 'rgba(150,160,175,.55)';
+  scopeCtx.fillText(L('首车 → 尾车', 'head → tail'), cw - 52 * dpr, ch - 4 * dpr);
+  const plot = (arr, color, scale) => {
+    scopeCtx.strokeStyle = color;
+    scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < NCAR; i++) {
+      const x = px(i), y = py(clamp01(arr[i] * scale));
+      i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+    }
+    scopeCtx.stroke();
+  };
+  plot(pipeSm, 'rgba(116,192,252,.95)', 1);
+  plot(appSm, 'rgba(255,169,77,.95)', 1);
+  plot(aux, 'rgba(123,216,143,.95)', 1);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elDpk = document.getElementById('dpk'), elDpkVal = document.getElementById('dpkVal');
+const elWv = document.getElementById('wv'), elWvVal = document.getElementById('wvVal');
+const tglColor = document.getElementById('tglColor');
+const tglSpark = document.getElementById('tglSpark');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateDpk() {
+  dpKpa = +elDpk.value;
+  elDpkVal.textContent = dpKpa + ' kPa';
+  updateFormula();
+}
+function updateWv() {
+  waveSpeed = +elWv.value;
+  elWvVal.textContent = waveSpeed + ' m/s';
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elDpk.addEventListener('input', updateDpk);
+elWv.addEventListener('input', updateWv);
+tglColor.addEventListener('change', () => {
+  for (const c of cars) c.pipeMat.color.copy(tglColor.checked ? M.pipeOK.color : M.case.color);
+  hoseMat.color.copy(tglColor.checked ? M.pipeOK.color : M.case.color);
+});
+tglSpark.addEventListener('change', () => { for (const sp of sparks) if (!tglSpark.checked) { sp.m.visible = false; sp.life = 0; } });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const pMin = Math.min(...pipeSm);
+  stA.innerHTML = (pMin * 600).toFixed(0) + '<small> kPa</small>';
+  stA.className = 'v ' + (pMin >= 0.75 ? 'ok' : pMin >= 0.35 ? 'warn' : 'bad');
+  const bc = bcTarget() * maxApp();
+  stB.innerHTML = bc.toFixed(0) + '<small> kPa</small>';
+  stB.className = 'v ' + (bc < 20 ? 'ok' : bc < 430 ? 'warn' : 'bad');
+  stC.innerHTML = waveSpeed + '<small> m/s</small>';
+  stC.className = 'v ok';
+  const a = decel();
+  stD.innerHTML = a.toFixed(2) + '<small> m/s²</small>';
+  stD.className = 'v ' + (a > 1.0 ? 'bad' : a > 0.4 ? 'warn' : 'ok');
+  const d = stopDist();
+  stE.innerHTML = (Number.isFinite(d) ? d.toFixed(0) : '—') + '<small> m</small>';
+  stE.className = 'v ok';
+  const av = aux.reduce((x, y) => x + y, 0) / NCAR * 100;
+  stF.innerHTML = av.toFixed(0) + '<small> %</small>';
+  stF.className = 'v ' + (av > 60 ? 'ok' : av > 25 ? 'warn' : 'bad');
+}
+
+/* ---------------- 制动时序:目标值计算 ---------------- */
+function waveCycles(dp, appMax, gapVis, dur, hold, rech) {
+  /* 一个完整周期:波传播 → 保持 → 再充风,循环播放 */
+  const total = 0.5 + (NCAR - 1) * gapVis + dur + hold + rech;
+  const cyc = modeT % total;
+  waveX = cx(0) - 2.4;
+  for (let i = 0; i < NCAR; i++) {
+    const t0 = 0.5 + i * gapVis, tEnd = t0 + dur;
+    if (cyc < t0) {
+      pipeT[i] = 1; appT[i] = 0;
+    } else if (cyc < tEnd) {
+      const e = E2((cyc - t0) / dur);
+      pipeT[i] = 1 - dp / 600 * e;
+      appT[i] = appMax * E2((cyc - t0 - dur * 0.25) / (dur * 0.75));
+      if (i === 0 || cyc > 0.5 + (i - 1) * gapVis) waveX = cx(0) - 2.4 + (cyc - 0.5) / gapVis * SP;
+    } else if (cyc < tEnd + hold) {
+      pipeT[i] = 1 - dp / 600; appT[i] = appMax;
+      waveX = cx(NCAR - 1) + 2.4;
+    } else {
+      const e = E2((cyc - tEnd - hold) / rech);
+      pipeT[i] = (1 - dp / 600) + dp / 600 * e;
+      appT[i] = appMax * (1 - e);
+    }
+  }
+}
+function brakeTargets() {
+  const gapVis = GAP_M / waveSpeed * 36;   // 慢放 36×:视觉上每车间隔数秒
+  if (preset === 'wave') {
+    waveCycles(dpKpa, clamp01(dpKpa / 140 * 0.8 + 0.2), gapVis, 1.1, 4.0, 2.8);
+  } else if (preset === 'emg') {
+    waveCycles(500, 1, gapVis * 0.78, 0.8, 3.5, 2.5);
+  } else if (preset === 'break') {
+    /* 断口在 1-2 号车之间:两侧同时排气,向两边传播 */
+    const total = 0.4 + 1.5 * gapVis + 0.8 + 5.0 + 2.5;
+    const cyc = modeT % total;
+    for (let i = 0; i < NCAR; i++) {
+      const t0 = 0.4 + Math.abs(i - 1.5) * gapVis, tEnd = t0 + 0.8;
+      if (cyc < t0) { pipeT[i] = 1; appT[i] = 0; }
+      else if (cyc < tEnd) {
+        const e = E2((cyc - t0) / 0.8);
+        pipeT[i] = 1 - 0.98 * e; appT[i] = e;
+      } else if (cyc < tEnd + 5.0) {
+        pipeT[i] = 0.02; appT[i] = 1;
+      } else {
+        const e = E2((cyc - tEnd - 5.0) / 2.5);
+        pipeT[i] = 0.02 + 0.98 * e; appT[i] = 1 - e;
+      }
+    }
+  } else {
+    for (let i = 0; i < NCAR; i++) { pipeT[i] = 1; appT[i] = 0; }
+  }
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, sparkT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  if (simDt > 0) { modeT += simDt; brakeTargets(); }
+  /* 状态平滑 + 副风缸充放 */
+  for (let i = 0; i < NCAR; i++) {
+    pipeSm[i] += (pipeT[i] - pipeSm[i]) * Math.min(1, dt * 9);
+    appSm[i] += (appT[i] - appSm[i]) * Math.min(1, dt * 8);
+    if (simDt > 0) {
+      if (pipeSm[i] > 0.9) aux[i] = Math.min(1, aux[i] + simDt * 0.05);
+      else if (appSm[i] > 0.3) aux[i] = Math.max(0.05, aux[i] - simDt * 0.012);
+    }
+  }
+  /* 波前标签 */
+  const waving = preset === 'wave' || preset === 'emg' || preset === 'break';
+  waveLbl.o.visible = labelsOn && waving;
+  breakLbl.o.visible = labelsOn && preset === 'break';
+  drvLbl.o.visible = labelsOn && (preset === 'wave' || preset === 'emg');
+  for (const j of jets) {
+    j.visible = preset === 'break';
+    j.scale.set(1, 1 + 0.4 * Math.sin(et * 23 + j.position.x), 1 + 0.3 * Math.cos(et * 19));
+  }
+  /* 车辆视觉:管色 / 闸瓦 / 活塞 / 滑阀 / 车轮 */
+  for (let i = 0; i < NCAR; i++) {
+    const c = cars[i], a = appSm[i];
+    if (tglColor.checked) c.pipeMat.color.copy(M.pipeOK.color).lerp(new THREE.Color(0xff6b6b), 1 - pipeSm[i]);
+    for (const s of c.shoes) {
+      s.m.position.z = s.wz + (s.wz > 0 ? -0.3 : 0.3) + (s.wz > 0 ? -1 : 1) * a * 0.16;
+      s.m.position.x = s.bx + s.wx;
+    }
+    for (const p of c.pistons) p.position.z = 0.72 + a * 0.1;
+    for (const lv of c.levers) lv.rotation.x = a * 0.1;
+    c.slide.position.x = -0.2 + a * 0.06;
+    c.tv.material = a > 0.5 ? M.cyl : M.res;
+    const tgtW = (1 - a) * 5.2;
+    omega[i] += (tgtW - omega[i]) * Math.min(1, dt * 1.4);
+    for (const spin of c.wheels) spin.rotation.z -= omega[i] * simDt;
+  }
+  /* 紧急制动火花 */
+  if (tglSpark.checked && playing && maxApp() > 0.75 && (preset === 'emg' || preset === 'break')) {
+    sparkT += simDt;
+    if (sparkT > 0.12) { sparkT = 0; popSpark(); }
+  }
+  for (const sp of sparks) {
+    if (sp.life <= 0) continue;
+    sp.life -= simDt;
+    sp.vy -= 8 * simDt;
+    sp.m.position.x += sp.vx * simDt;
+    sp.m.position.y += sp.vy * simDt;
+    if (sp.life <= 0 || sp.m.position.y < 0.05) { sp.life = 0; sp.m.visible = false; }
+  }
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.body, M.roof, M.chrome, M.case, M.res, M.cyl, M.shoe, M.pipeOK]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.25);
+  const boost = m => { m.emissiveIntensity = 0.5 + 0.3 * hlK; };
+  if (hl === 'pipe') boost(M.pipeOK);
+  else if (hl === 'apply') boost(M.cyl);
+  else if (hl === 'wave') boost(M.pipeOK);
+  else if (hl === 'fail') { boost(M.pipeOK); boost(M.cyl); }
+  else if (hl === 'shoe') { boost(M.shoe); boost(M.chrome); }
+  else if (hl === 'recharge') boost(M.res);
+  /* 相机目标 */
+  tmpV.copy(tgtVec);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+setPreset('wave');
+tglColor.dispatchEvent(new Event('change'));
+tglSpark.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
