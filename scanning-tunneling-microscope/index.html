@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>扫描隧道显微镜 · 靠「漏电」看原子</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="扫描隧道显微镜:靠「漏电」看原子" data-en="Scanning Tunneling Microscope: Seeing Atoms by Their Leakage Current">扫描隧道显微镜:靠「漏电」看原子</h1>
+  <div class="sub" data-zh="钨针尖悬在导电样品上方 ~0.5-1 nm 处,加 10 mV-3 V 偏压,电子以量子隧穿「漏」过真空缝隙:I ∝ V·exp(−2κs),κ=√(2mΦ)/ℏ≈1 Å⁻¹(Φ~4-5 eV)——间距每变 1 Å,电流变 ~7.4 倍,这正是纵向 0.01 nm 分辨率的来源。压电陶瓷管逐点扫描,反馈回路把电流钉在设定值(0.01-10 nA),针尖高度轨迹就是原子地形(恒流模式)。1981 年 Binnig & Rohrer 发明,1986 年诺奖;1990 年 Eigler 在 4 K 用 35 个氙原子拼出 IBM,1993 年 48 个 Fe 原子围出量子围栏 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A tungsten tip hovers 0.5-1 nm above a conductive sample; with a 10 mV-3 V bias, electrons tunnel quantum-mechanically across the vacuum gap: I ∝ V·exp(−2κs) with κ=√(2mΦ)/ℏ≈1 Å⁻¹ (Φ~4-5 eV) - a 1 Å gap change multiplies the current ~7.4×, the origin of 0.01 nm vertical resolution. A piezo tube raster-scans while feedback pins the current (0.01-10 nA); the tip height traces the atomic topography (constant-current mode). Invented 1981 by Binnig & Rohrer, Nobel 1986; Eigler spelled IBM with 35 xenon atoms at 4 K in 1990, and 48 Fe atoms built the quantum corral in 1993 · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">钨针尖悬在导电样品上方 ~0.5-1 nm 处,加 10 mV-3 V 偏压,电子以量子隧穿「漏」过真空缝隙:I ∝ V·exp(−2κs),κ=√(2mΦ)/ℏ≈1 Å⁻¹(Φ~4-5 eV)——间距每变 1 Å,电流变 ~7.4 倍,这正是纵向 0.01 nm 分辨率的来源。压电陶瓷管逐点扫描,反馈回路把电流钉在设定值(0.01-10 nA),针尖高度轨迹就是原子地形(恒流模式)。1981 年 Binnig & Rohrer 发明,1986 年诺奖;1990 年 Eigler 在 4 K 用 35 个氙原子拼出 IBM,1993 年 48 个 Fe 原子围出量子围栏 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="隧穿电流" data-en="tunneling current">隧穿电流</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="针尖间距 s" data-en="gap s">针尖间距 s</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="偏置电压" data-en="bias">偏置电压</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="反馈误差" data-en="feedback error">反馈误差</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="扫描进度" data-en="scan progress">扫描进度</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="工作模式" data-en="mode">工作模式</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip o" data-zh="样品原子(铜晶格 + 台阶)" data-en="sample atoms (Cu lattice + step)">样品原子(铜晶格 + 台阶)</span>
+    <span class="chip b" data-zh="钨针尖 + 压电陶瓷管" data-en="W tip + piezo tube">钨针尖 + 压电陶瓷管</span>
+    <span class="chip r" data-zh="隧穿电流(指数敏感)" data-en="tunneling current (exponential)">隧穿电流(指数敏感)</span>
+    <span class="chip g" data-zh="可搬动的吸附原子" data-en="manipulable adatoms">可搬动的吸附原子</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnScan" data-zh="扫描成像" data-en="scan image">扫描成像</button>
+    <button class="abtn" id="btnAtom" data-zh="搬原子·拼 IBM" data-en="move atoms · spell IBM">搬原子·拼 IBM</button>
+    <button class="abtn" id="btnCH" data-zh="恒流 ⇄ 恒高" data-en="constant current ⇄ height">恒流 ⇄ 恒高</button>
+    <button class="abtn" id="btnDamp" data-zh="隔震:开" data-en="isolation: on">隔震:开</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="针尖间距 s" data-en="tip gap s">针尖间距 s</label><input id="gap" type="range" min="20" max="150" step="1" value="50"><span class="val" id="gapVal">5.0 Å</span></div>
+  <div class="row"><label data-zh="偏置电压 V" data-en="bias V">偏置电压 V</label><input id="bias" type="range" min="-300" max="300" step="10" value="100"><span class="val" id="biasVal">1.00 V</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="地形图" data-en="topograph">地形图</span></label>
+        <label><input id="tglVec" type="checkbox" checked> <span data-zh="隧穿辉光" data-en="tunnel glow">隧穿辉光</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../quantum-tunneling/" data-zh="量子隧穿" data-en="quantum tunneling">量子隧穿</a>
+    <a href="../piezoelectricity/" data-zh="压电效应" data-en="piezoelectricity">压电效应</a>
+    <a href="../crystal-packing/" data-zh="晶体堆积" data-en="crystal packing">晶体堆积</a>
+    <a href="../optical-tweezers/" data-zh="光镊" data-en="optical tweezers">光镊</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x151a20 : 0xdde3e9);
+  M.base.color.set(dark ? 0x39414c : 0x5d6774);           // 样品台
+  M.block.color.set(dark ? 0x2e353e : 0x4a525c);          // 样品块
+  M.atom.color.set(dark ? 0xd08a4a : 0xb96f2e);           // 铜原子
+  M.ads.color.set(dark ? 0x74dc84 : 0x2f9e5c);            // 吸附原子(可搬)
+  M.tip.color.set(dark ? 0xc2ccd8 : 0x9aa6b4);            // 钨针尖
+  M.piezo.color.set(dark ? 0x74c0fc : 0x3b8fd4);          // 压电陶瓷管
+  M.rig.color.set(dark ? 0x46556a : 0x74879c);            // 悬挂机架
+  M.glow.color.set(dark ? 0xffc95c : 0xd8a03a);           // 隧穿辉光
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('扫描隧道显微镜 · 靠「漏电」看原子', 'Scanning Tunneling Microscope · Seeing Atoms by Leakage');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateGap();
+  updateBias();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(5.2, 6.2, 9.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.0;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x151a20, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  base: mat(0x39414c, { roughness: 0.5, metalness: 0.6 }),
+  block: mat(0x2e353e, { roughness: 0.55, metalness: 0.5 }),
+  atom: mat(0xd08a4a, { roughness: 0.35, metalness: 0.6, emissiveIntensity: 0.08 }),
+  ads: mat(0x74dc84, { roughness: 0.35, metalness: 0.4, emissiveIntensity: 0.2 }),
+  tip: mat(0xc2ccd8, { roughness: 0.2, metalness: 0.85 }),
+  piezo: mat(0x74c0fc, { roughness: 0.3, metalness: 0.4, transparent: true, opacity: 0.55 }),
+  rig: mat(0x46556a, { roughness: 0.5, metalness: 0.6 }),
+  glow: new THREE.MeshBasicMaterial({ color: 0xffc95c, transparent: true, opacity: 0.9 }),
+  spring: new THREE.LineBasicMaterial({ color: 0x9fb0c3 }),
+};
+
+/* ---------------- 状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let gapA = 5.0;               // 设定间距 Å(0.2-1.5 nm)
+let biasV = 1.0;              // 偏置 V(-3..3)
+let constCurrent = true;      // 恒流(true)/恒高(false)
+let dampOn = true;            // 隔震
+let scanning = false, manActive = false, manIdx = 0, manPhase = 0, manDone = false;
+let tipX = -2.0, tipY = 1.0, tipZ = -1.5, scanRowZ = -1.75;
+let et = 0, scenario = 0;
+let curI = 0, curS = 5, fbErr = 0, scanProg = 0;
+const hist = [];
+
+/* ---------------- 场景装配:样品 + 针尖 ----------------
+   1 单位 = 1 nm;原子间距 0.5 nm;台阶在 x=0.5,上台高 0.5 nm */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, 60), M.ground);
+ground.position.y = -2.6;
+scene.add(ground);
+const basePlate = new THREE.Mesh(new THREE.BoxGeometry(12, 0.5, 8), M.base);
+basePlate.position.y = -1.6;
+scene.add(basePlate);
+const blockLo = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.9, 4.4), M.block);
+blockLo.position.set(0, -0.45, 0);
+scene.add(blockLo);
+const blockHi = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.9, 4.4), M.block);
+blockHi.position.set(2.1, 0.05, 0);
+scene.add(blockHi);
+const surfY = (x, z) => x > 0.5 ? 0.68 : 0.18;
+/* 晶格原子 */
+const atomGeo = new THREE.SphereGeometry(0.17, 10, 8);
+for (let ix = 0; ix < 14; ix++) {
+  const x = -3.25 + ix * 0.5;
+  for (let iz = 0; iz < 8; iz++) {
+    const z = -1.75 + iz * 0.5;
+    const a = new THREE.Mesh(atomGeo, M.atom);
+    a.position.set(x, surfY(x, z), z);
+    scene.add(a);
+  }
+}
+/* 吸附原子(可搬)+ IBM 目标槽位 */
+const adsList = [], slots = [
+  [-2.6, 1.35], [-2.6, 1.6], [-2.6, 1.85],
+  [-1.8, 1.35], [-1.8, 1.6], [-1.8, 1.85], [-1.3, 1.35], [-1.3, 1.85],
+  [-0.5, 1.35], [-0.5, 1.6], [-0.5, 1.85], [0.0, 1.6],
+];
+const adsHome = [[-2.2, -1.2], [-1.4, -0.4], [-2.8, 0.3], [-0.6, -1.5], [0.1, -0.7],
+  [-2.0, 0.9], [-1.1, 0.2], [-0.3, 1.0], [0.3, -1.9], [-2.9, -1.8], [-0.9, -1.1], [0.25, 0.4]];
+for (const [hx, hz] of adsHome) {
+  const a = new THREE.Mesh(atomGeo, M.ads);
+  a.position.set(hx, 0.18, hz);
+  scene.add(a);
+  adsList.push({ mesh: a, home: new THREE.Vector3(hx, 0.18, hz) });
+}
+/* 针尖悬臂系统 */
+const tipG = new THREE.Group();
+scene.add(tipG);
+const apex = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.1, 12), M.tip);
+apex.rotation.x = Math.PI;
+apex.position.y = 0.55;
+tipG.add(apex);
+const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.0, 8), M.tip);
+shank.position.y = 1.6;
+tipG.add(shank);
+const piezo = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.6, 18, 1, true), M.piezo);
+piezo.position.y = 2.9;
+tipG.add(piezo);
+const head = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.4, 18), M.rig);
+head.position.y = 3.9;
+tipG.add(head);
+/* 隧穿辉光 + 微光 */
+const glowOrb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), M.glow);
+scene.add(glowOrb);
+const glowLight = new THREE.PointLight(0xffc95c, 0, 3);
+scene.add(glowLight);
+/* 悬挂弹簧(软弹簧 + 涡流阻尼的示意) */
+const rigTop = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.3, 3.0), M.rig);
+rigTop.position.set(0, 6.9, 0);
+scene.add(rigTop);
+const springGeo = new THREE.BufferGeometry();
+const springPts = new Float32Array(10 * 3);
+springGeo.setAttribute('position', new THREE.BufferAttribute(springPts, 3).setUsage(THREE.DynamicDrawUsage));
+const springLine = new THREE.Line(springGeo, M.spring);
+scene.add(springLine);
+function updateSpring() {
+  for (let i = 0; i < 10; i++) {
+    const t = i / 9;
+    springPts[i * 3] = tipX + Math.sin(t * TAU * 1.5) * 0.18;
+    springPts[i * 3 + 1] = 6.75 - t * (6.75 - (tipY + 4.1));
+    springPts[i * 3 + 2] = tipZ;
+  }
+  springGeo.attributes.position.needsUpdate = true;
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+const biasName = () => biasV > 0.005 ? L('空态成像', 'empty states') : biasV < -0.005 ? L('填满态成像', 'filled states') : L('零偏置', 'zero bias');
+addLabel(() => L(`钨针尖:电化学腐蚀至原子级曲率,悬于样品上 ~0.5-1 nm`, `tungsten tip: etched to atomic curvature, hovering 0.5-1 nm above`),
+  () => 'b', new THREE.Vector3(0, 1.2, 0), p => p.set(tipX, tipY + 0.9, tipZ));
+addLabel(() => L(`压电陶瓷管:x/y 扫描 + z 进退,亚纳米步进`, `piezo tube: x/y scan + z approach, sub-nm steps`),
+  () => 'g', new THREE.Vector3(0, 1.2, 0), p => p.set(tipX, tipY + 3.2, tipZ));
+addLabel(() => L(`隧穿电流 I=${curI < 0.01 ? '<0.01' : curI.toFixed(2)} nA · s=${curS.toFixed(1)} Å(每 1 Å 电流 ×7.4)`,
+  `tunnel current I=${curI < 0.01 ? '<0.01' : curI.toFixed(2)} nA · s=${curS.toFixed(1)} Å (×7.4 per Å)`),
+  () => curI >= 0.01 && curI <= 10 ? 'g' : 'bad', new THREE.Vector3(0, 0.55, 0), p => p.set(tipX, Math.max(tipY + 0.35, 0.7), tipZ + 0.4));
+addLabel(() => L(`台阶边缘:恒高模式下电流在这里暴涨 7 倍`, `step edge: in constant-height mode the current surges ×7 here`),
+  () => 'w', new THREE.Vector3(0.5, 1.65, -1.6));
+addLabel(() => L(`吸附原子:4 K 下用针尖逐个拖动(Eigler 1990:35 个氙原子拼出 IBM)`,
+  `adatoms: dragged one by one at 4 K (Eigler 1990: 35 Xe atoms spell IBM)`),
+  () => 'e', new THREE.Vector3(-1.2, 1.35, 1.35));
+addLabel(() => L(`拼字进度 ${manIdx}/${slots.length}${manDone ? ' · IBM 完成!' : ''}`,
+  `spelling ${manIdx}/${slots.length}${manDone ? ' · IBM done!' : ''}`),
+  () => manDone ? 'g' : 'st', new THREE.Vector3(-1.3, 0.75, 2.35));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'limit', world: 1, tgt: [0, 0.6, 4.2],
+    b: '看原子的两难:衍射极限', be: 'The dilemma of seeing atoms: diffraction limit',
+    d: '最好的光学显微镜受衍射极限限制,分辨率约 λ/2 ≈ 200 nm;而原子直径只有 0.2-0.3 nm——差了一千倍。1981 年 Binnig 与 Rohrer 在 IBM 苏黎世想出第三条路:不用「看」,用一根针尖去「摸」,靠量子隧穿电流感知距离。',
+    de: 'The best optical microscopes stop at the diffraction limit, ~λ/2 ≈ 200 nm, while atoms are just 0.2-0.3 nm across - a factor of a thousand. In 1981 Binnig and Rohrer at IBM Zurich took a third path: instead of looking, feel the surface with a needle that senses distance through a quantum tunneling current.' },
+  { hl: 'tunnel', world: 1, tgt: [-2.0, 1.3, -1.5],
+    b: '隧穿电流:I ∝ V·exp(−2κs)', be: 'The tunneling current: I ∝ V·exp(−2κs)',
+    d: '给针尖与样品间加 10 mV-3 V 偏压,电子便能穿过 0.5-1 nm 的真空缝隙,形成 0.01-10 nA 的电流。关键在指数:I ∝ V·exp(−2κs),κ=√(2mΦ)/ℏ≈1 Å⁻¹(功函数 Φ~4-5 eV)——间距每变 1 Å,电流变约 7.4 倍,这正是纵向分辨率的来源。',
+    de: 'Apply a 10 mV-3 V bias and electrons tunnel across the 0.5-1 nm vacuum gap, giving 0.01-10 nA. The key is the exponential: I ∝ V·exp(−2κs) with κ=√(2mΦ)/ℏ≈1 Å⁻¹ (work function Φ~4-5 eV) - every 1 Å of gap change multiplies the current ~7.4×. Drag the gap slider and watch the readout explode or collapse exponentially.' },
+  { hl: 'scan', world: 1, tgt: [0, 2.6, 0],
+    b: '恒流扫描:针尖画出原子地形', be: 'Constant-current scan: the tip draws the topography',
+    d: '压电陶瓷管驱动针尖逐行扫描,反馈回路把电流钉在设定值:遇到原子,电流想涨,反馈就让针尖抬高;遇到台阶,电流欲断,针尖跟着下降。于是针尖高度的轨迹就是表面地形,纵向分辨率可达 0.01 nm。切到恒高模式再扫过台阶:高度不变,电流在台阶处暴涨——指数灵敏度的一面。',
+    de: 'A piezo tube raster-scans the tip while feedback pins the current: over an atom the would-be surge is answered by lifting the tip; at a step edge the tip drops to keep current flowing. The height trajectory is the surface map, with 0.01 nm vertical resolution. Switch to constant-height and cross the step: the current itself leaps ×7.' },
+  { hl: 'bias', world: 1, tgt: [1.5, 1.0, 1.5],
+    b: '偏置极性:空态与填满态', be: 'Bias polarity: empty vs filled states',
+    d: '隧穿电流是「双向海关」:样品偏置为正,电子从针尖流入样品的空态,图像勾画未占据态;偏置为负,电子从样品的填满态流出,勾画占据态。同一块表面,两种偏置可能画出不同模样——把偏置滑块从 +3 V 拉到 −3 V,这就是 STM 超越「地形仪」的地方:它能直接看电子结构。',
+    de: 'Tunneling is a two-way customs post: positive sample bias pulls electrons from tip into empty sample states (imaging unoccupied states); negative bias pushes electrons from filled states into the tip. The same surface can look different under the two polarities - slide the bias from +3 V to −3 V. This is where STM outgrows a relief map: it reads electronic structure.' },
+  { hl: 'move', world: 1, tgt: [-1.3, 0.9, 2.0],
+    b: '搬原子:针尖当镊子', be: 'Moving atoms: the tip as tweezers',
+    d: '针尖压得更近时,原子与针尖间的吸附力足以拖着原子在表面滑动。1990 年 Eigler 在 4 K 真空中用 35 个氙原子拼出 IBM;1993 年 48 个 Fe 原子在铜表面围成「量子围栏」,表面电子的驻波波纹第一次肉眼可见。点「搬原子·拼 IBM」:看绿色原子一个个被拖进字槽。',
+    de: 'Bring the tip closer and its adhesion can drag atoms along the surface. In 1990 Eigler spelled IBM with 35 xenon atoms at 4 K; in 1993, 48 Fe atoms formed the quantum corral on copper, and the standing-wave ripples of surface electrons became visible for the first time. Hit "move atoms": watch green adatoms dragged into the letter slots - the smallest man-made structure ever.' },
+  { hl: 'rig', world: 1, tgt: [0, 3.4, -0.5],
+    b: '苛刻工况:真空、隔震、低温', be: 'Brutal operating conditions: vacuum, isolation, cold',
+    d: '隧穿电流如此娇贵,任何干扰都是灾难:样品必须导电,表面要在真空中防污染,整台机器用悬挂弹簧加涡流阻尼隔绝地面振动——关掉隔震开关,针尖抖动让电流与图像当场报废。低温(4 K)锁住原子热运动,强磁场可叠加研究自旋。正是这些苛刻换来了「看见并搬动原子」的自由。',
+    de: 'A current this fragile tolerates no interference: the sample must conduct, the surface must live in vacuum, and the whole machine hangs on springs with eddy-current damping - switch the isolation off and the jitter wrecks both current and image. At 4 K thermal motion freezes; magnetic fields can be added for spin studies. Harshness here buys the freedom to see and move atoms.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 0.6, 4.2);
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function currentNA(s, v) {        // I0 = 1 nA @ s=5 Å, V=0.1 V;κ = 1 Å⁻¹
+  return Math.abs(v) / 0.1 * Math.exp(-2 * (s - 5));
+}
+function updateFormula() {
+  const iNow = currentNA(curS, biasV);
+  const iStr = iNow >= 100 ? '≫100' : iNow < 0.01 ? '<0.01' : iNow.toFixed(2);
+  formulaEl.innerHTML =
+    L(`隧穿定律:I ∝ V·exp(−2κs),κ=√(2mΦ)/ℏ ≈ <b>1 Å⁻¹</b>(Φ≈4-5 eV)→ 当前 s=<b>${curS.toFixed(1)} Å</b>、V=<b>${biasV.toFixed(2)} V</b> → I≈<b>${iStr} nA</b>`,
+      `Tunneling law: I ∝ V·exp(−2κs), κ=√(2mΦ)/ℏ ≈ <b>1 Å⁻¹</b> (Φ≈4-5 eV) → now s=<b>${curS.toFixed(1)} Å</b>, V=<b>${biasV.toFixed(2)} V</b> → I≈<b>${iStr} nA</b>`) +
+    '<br>' +
+    L(`间距每 ±1 Å → 电流 <b>×7.4 / ÷7.4</b> —— 纵向分辨率 <b>0.01 nm</b> 的来源;工作点 s≈0.5-1 nm,I≈0.01-10 nA`,
+      `Every ±1 Å of gap → current <b>×7.4 / ÷7.4</b> - the origin of <b>0.01 nm</b> vertical resolution; operating point s≈0.5-1 nm, I≈0.01-10 nA`) +
+    '<br>' +
+    L(`${constCurrent ? '恒流模式:反馈把 I 钉在设定值,针尖高度轨迹 = 原子地形' : '恒高模式:高度不变,电流随地形指数起伏(台阶处 ×7)'};偏置 ${biasV >= 0 ? '>0 → 空态' : '<0 → 填满态'}`,
+      `${constCurrent ? 'Constant current: feedback pins I; tip height traces the topography' : 'Constant height: current surges exponentially over the topography (×7 at the step)'}; bias ${biasV >= 0 ? '>0 → empty states' : '<0 → filled states'}`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnScan = document.getElementById('btnScan'), btnAtom = document.getElementById('btnAtom'),
+  btnCH = document.getElementById('btnCH'), btnDamp = document.getElementById('btnDamp'),
+  btnReset = document.getElementById('btnReset');
+btnScan.addEventListener('click', () => {
+  manActive = false;
+  scanning = true;
+  scanRowZ = -1.75; tipX = -3.5;
+  for (let i = 0; i < topoHt.length; i++) topoHt[i] = -1;
+  scanProg = 0;
+});
+btnAtom.addEventListener('click', () => {
+  scanning = false;
+  manActive = true; manPhase = 0;
+  if (manDone || manIdx >= slots.length) { manIdx = 0; manDone = false; for (const a of adsList) a.mesh.position.copy(a.home); }
+});
+btnCH.addEventListener('click', () => {
+  constCurrent = !constCurrent;
+  btnCH.classList.toggle('on', !constCurrent);
+  updateFormula();
+});
+btnDamp.addEventListener('click', () => {
+  dampOn = !dampOn;
+  btnDamp.classList.toggle('hot', !dampOn);
+  btnDamp.dataset.zh = dampOn ? '隔震:开' : '隔震:关!';
+  btnDamp.dataset.en = dampOn ? 'isolation: on' : 'isolation: off!';
+  btnDamp.textContent = LANG === 'en' ? btnDamp.dataset.en : btnDamp.dataset.zh;
+});
+btnReset.addEventListener('click', () => {
+  scanning = false; manActive = false; manIdx = 0; manPhase = 0; manDone = false;
+  for (const a of adsList) a.mesh.position.copy(a.home);
+  for (let i = 0; i < topoHt.length; i++) topoHt[i] = -1;
+  scanProg = 0;
+  tipX = -2.0; tipY = 1.0; tipZ = -1.5;
+  gapA = 5.0; elGap.value = 50; updateGap();
+  biasV = 1.0; elBias.value = 100; updateBias();
+  constCurrent = true; btnCH.classList.remove('on');
+  dampOn = true; btnDamp.classList.remove('hot');
+  hist.length = 0;
+  updateFormula();
+});
+
+/* ---------------- 示波器:I(s) 曲线 + 扫描地形图 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+const topoW = 56, topoH = 16;
+const topoHt = new Float32Array(topoW * topoH).fill(-1);
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  /* 上半:I(s) 指数曲线 + 当前点 */
+  const half = ch * 0.52;
+  const px = s => (s - 2) / (15 - 2) * cw;
+  const py = v => half - 4 * dpr - clamp(Math.log10(v) / 3, -1, 1.6) / 2.6 * (half - 6 * dpr);
+  scopeCtx.strokeStyle = 'rgba(255,169,77,.95)';
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  for (let s = 2; s <= 15; s += 0.2) {
+    const y = py(currentNA(s, Math.abs(biasV)));
+    s === 2 ? scopeCtx.moveTo(px(s), y) : scopeCtx.lineTo(px(s), y);
+  }
+  scopeCtx.stroke();
+  scopeCtx.fillStyle = 'rgba(255,169,77,.95)';
+  scopeCtx.beginPath();
+  scopeCtx.arc(px(clamp(curS, 2, 15)), py(Math.max(0.002, currentNA(curS, Math.abs(biasV)))), 3 * dpr, 0, TAU);
+  scopeCtx.fill();
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText('log I vs s (Å)', 4 * dpr, py(60));
+  /* 下半:地形图灰阶 */
+  const ty0 = half + 2 * dpr, th = ch - ty0 - 2 * dpr;
+  for (let ix = 0; ix < topoW; ix++) {
+    for (let iz = 0; iz < topoH; iz++) {
+      const v = topoHt[ix * topoH + iz];
+      if (v < 0) continue;
+      const g = Math.round(40 + v * 190);
+      scopeCtx.fillStyle = `rgb(${g},${Math.round(g * 0.92)},${Math.round(g * 0.78)})`;
+      scopeCtx.fillRect(ix / topoW * cw, ty0 + iz / topoH * th, cw / topoW + 1, th / topoH + 1);
+    }
+  }
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('扫描地形图', 'scanned topograph'), 4 * dpr, ch - 3 * dpr);
+  if (scanning) {
+    scopeCtx.fillStyle = 'rgba(255,201,92,.9)';
+    scopeCtx.fillRect(tipX / 7 * (cw / 2) * 2 - 1, ty0, 2 * dpr, th);
+  }
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elGap = document.getElementById('gap'), elGapVal = document.getElementById('gapVal');
+const elBias = document.getElementById('bias'), elBiasVal = document.getElementById('biasVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglVec = document.getElementById('tglVec');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateGap() {
+  gapA = (+elGap.value) / 10;
+  elGapVal.textContent = gapA.toFixed(1) + ' Å';
+  updateFormula();
+}
+function updateBias() {
+  biasV = (+elBias.value) / 100;
+  elBiasVal.textContent = biasV.toFixed(2) + ' V';
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elGap.addEventListener('input', updateGap);
+elBias.addEventListener('input', updateBias);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglVec.addEventListener('change', () => { glowOrb.visible = glowLight.intensity > 0 ? tglVec.checked : false; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const iStr = curI >= 100 ? '≫100' : curI < 0.01 ? '<0.01' : curI.toFixed(2);
+  stA.innerHTML = iStr + '<small> nA</small>';
+  stA.className = 'v ' + (curI >= 0.01 && curI <= 10 ? 'ok' : 'bad');
+  stB.innerHTML = curS.toFixed(1) + '<small> Å</small>';
+  stB.className = 'v ' + (curS >= 3 && curS <= 10 ? 'ok' : 'warn');
+  stC.innerHTML = biasV.toFixed(2) + '<small> V</small>';
+  stC.className = 'v ' + (Math.abs(biasV) >= 0.01 ? 'ok' : 'warn');
+  stD.innerHTML = (fbErr * 100).toFixed(0) + '<small> %</small>';
+  stD.className = 'v ' + (fbErr < 0.15 ? 'ok' : fbErr < 0.6 ? 'warn' : 'bad');
+  stE.innerHTML = (scanProg * 100).toFixed(0) + '<small> %</small>';
+  stE.className = 'v ok';
+  stF.innerHTML = '<small>' + (manActive ? L('搬原子', 'manipulation') : constCurrent ? L('恒流', 'constant I') : L('恒高', 'constant z')) + '</small>';
+  stF.className = 'v ok';
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const jit = dampOn ? 0 : 0.045 * Math.sin(et * 43) + 0.025 * Math.sin(et * 19.7);
+  if (playing) {
+    if (manActive) {
+      /* 搬原子:接近 → 拖动 → 提起 → 下一颗 */
+      if (manIdx < slots.length) {
+        const a = adsList[manIdx], slot = slots[manIdx];
+        const k = Math.min(1, dt * 2.2 * speed);
+        if (manPhase === 0) manPhase = 1;
+        else if (manPhase === 1) {
+          tipX += (a.mesh.position.x - tipX) * k;
+          tipZ += (a.mesh.position.z - tipZ) * k;
+          tipY += (a.mesh.position.y + 0.34 - tipY) * k;
+          if (Math.abs(tipX - a.mesh.position.x) < 0.05 && Math.abs(tipY - a.mesh.position.y - 0.34) < 0.05) manPhase = 2;
+        } else if (manPhase === 2) {
+          tipX += (slot[0] - tipX) * Math.min(1, dt * 1.3 * speed);
+          tipZ += (slot[1] - tipZ) * Math.min(1, dt * 1.3 * speed);
+          a.mesh.position.set(tipX, a.mesh.position.y, tipZ);
+          if (Math.abs(tipX - slot[0]) < 0.05 && Math.abs(tipZ - slot[1]) < 0.05) manPhase = 3;
+        } else {
+          tipY += (surfY(tipX, tipZ) + gapA / 10 - tipY) * k;
+          if (tipY - surfY(tipX, tipZ) > gapA / 10 - 0.03) { manIdx++; manPhase = 0; if (manIdx >= slots.length) { manDone = true; manActive = false; } }
+        }
+      }
+      curS = (tipY - surfY(tipX, tipZ)) * 10;
+      curI = currentNA(curS, biasV);
+      fbErr = 0;
+    } else if (scanning) {
+      /* 恒流/恒高逐行扫描 */
+      tipX += dt * 0.75 * speed;
+      if (tipX > 3.5) {
+        tipX = -3.5;
+        scanRowZ += 0.26;
+        if (scanRowZ > 1.9) { scanning = false; scanRowZ = -1.75; }
+      }
+      tipZ = scanRowZ;
+      const sy = surfY(tipX, tipZ);
+      if (constCurrent) {
+        tipY += (sy + gapA / 10 + jit * 0.4 - tipY) * Math.min(1, dt * 7 * speed);
+      }
+      curS = (tipY - sy) * 10 + jit * 10;
+      const iT = currentNA(curS, biasV);
+      fbErr = constCurrent ? Math.abs(iT - 1) : 0;
+      curI = iT;
+      /* 写入地形图 */
+      const ix = clamp(Math.round((tipX + 3.5) / 7 * (topoW - 1)), 0, topoW - 1);
+      const iz = clamp(Math.round((scanRowZ + 1.75) / 3.5 * (topoH - 1)), 0, topoH - 1);
+      if (topoHt[ix * topoH + iz] < 0) {
+        topoHt[ix * topoH + iz] = (sy - 0.18) / 0.5;
+      }
+      let filled = 0;
+      for (let i = 0; i < topoHt.length; i++) if (topoHt[i] >= 0) filled++;
+      scanProg = filled / topoHt.length;
+    } else {
+      /* 待机:保持设定间距 */
+      const sy = surfY(tipX, tipZ);
+      if (constCurrent) tipY += (sy + gapA / 10 + jit * 0.4 - tipY) * Math.min(1, dt * 5 * speed);
+      curS = (tipY - sy) * 10 + jit * 10;
+      curI = currentNA(curS, biasV);
+      fbErr = constCurrent ? Math.abs(curI - 1) : 0;
+    }
+    hist.push([clamp01(Math.log10(Math.max(curI, 0.002)) / 3 + 0.34), scanProg]);
+    if (hist.length > 140) hist.shift();
+  }
+  /* 针尖定位与辉光 */
+  tipG.position.set(tipX, tipY, tipZ);
+  const sNow = (tipY - surfY(tipX, tipZ)) * 10;
+  const iNow = currentNA(sNow, biasV);
+  const glow = clamp01(Math.log10(Math.max(iNow, 0.002)) / 3 + 0.5);
+  glowOrb.position.set(tipX, tipY - 0.06, tipZ);
+  glowOrb.scale.setScalar(0.5 + glow * 1.6);
+  M.glow.opacity = 0.25 + glow * 0.7;
+  glowLight.position.set(tipX, tipY, tipZ);
+  glowLight.intensity = tglVec.checked ? glow * 2.2 : 0;
+  glowOrb.visible = tglVec.checked;
+  updateSpring();
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.atom, M.ads, M.tip, M.piezo, M.base, M.rig]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.4);
+  const boost = m => { m.emissiveIntensity = 0.6 + 0.3 * hlK; };
+  if (hl === 'limit') boost(M.atom);
+  else if (hl === 'tunnel') boost(M.tip);
+  else if (hl === 'scan') boost(M.piezo);
+  else if (hl === 'bias') boost(M.atom);
+  else if (hl === 'move') boost(M.ads);
+  else if (hl === 'rig') { boost(M.rig); boost(M.base); }
+  /* 搬运中的原子高亮(叠加) */
+  if (manActive && manIdx < adsList.length) {
+    M.ads.emissiveIntensity = Math.max(M.ads.emissiveIntensity, 0.5 + 0.3 * Math.sin(et * 9));
+  }
+  /* 相机目标 */
+  tmpV.fromArray(STEPS[scenario].tgt);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglVec.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

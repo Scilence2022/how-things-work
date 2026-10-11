@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>燃气灶与熄火保护 · 一根热电偶守着气路</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="燃气灶与熄火保护:一根热电偶守着气路" data-en="Gas Stove & Flame-Failure Device: One Thermocouple Guards the Gas Line">燃气灶与熄火保护:一根热电偶守着气路</h1>
+  <div class="sub" data-zh="燃气射流从喷嘴喷出,卷吸 ~50-60% 一次空气形成预混气:火孔处内锥预混焰 + 外层扩散补燃,甲烷-空气绝热火焰温度 ~1,960 °C;火焰传播速度与气流速度要匹配——过快脱火、过慢回火。热电偶热端在火焰里烧到 ~600-800 °C,凭塞贝克效应产生 ~20-40 mV 热电势,直接吸住比例式电磁阀(无任何放大电路);点火要按住 5-15 s 等热端「喂饱」阀门,熄火后电势 ~10-30 s 内衰减到释放阈值,国标要求闭阀 ≤45 s · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The gas jet entrains ~50-60% primary air into a premixed stream: an inner premixed cone plus an outer diffusion mantle at the ports, with an adiabatic methane-air flame temperature of ~1,960 °C. Flame speed must match flow - too fast lifts off, too slow flashes back. The thermocouple tip sits in the flame at ~600-800 °C, generating ~20-40 mV by the Seebeck effect that directly holds a proportional solenoid valve (no amplifier at all). Hold the knob 5-15 s while the tip warms; after flameout the EMF decays for ~10-30 s to the release threshold, and the standard demands valve closure within 45 s · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">燃气射流从喷嘴喷出，卷吸 ~50-60% 一次空气形成预混气：火孔处内锥预混焰 + 外层扩散补燃，甲烷-空气绝热火焰温度 ~1,960 °C；火焰传播速度与气流速度要匹配——过快脱火、过慢回火。热电偶热端在火焰里烧到 ~600-800 °C，凭塞贝克效应产生 ~20-40 mV 热电势，直接吸住比例式电磁阀（无任何放大电路）；点火要按住 5-15 s 等热端「喂饱」阀门，熄火后电势 ~10-30 s 内衰减到释放阈值，国标要求闭阀 ≤45 s · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="热端温度" data-en="hot-junction temp">热端温度</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="热电势 E" data-en="EMF E">热电势 E</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="电磁阀" data-en="solenoid valve">电磁阀</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="火焰状态" data-en="flame state">火焰状态</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="松手前还需按住" data-en="hold remaining">松手前还需按住</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="熄火闭阀计时" data-en="shutdown timer">熄火闭阀计时</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="内锥预混焰 / 外层扩散焰" data-en="premixed cone / diffusion mantle">内锥预混焰 / 外层扩散焰</span>
+    <span class="chip o" data-zh="热电偶探头(热端红热)" data-en="thermocouple probe (glowing tip)">热电偶探头(热端红热)</span>
+    <span class="chip g" data-zh="一次空气卷吸" data-en="primary air entrainment">一次空气卷吸</span>
+    <span class="chip r" data-zh="电磁阀 / 气路(红色=断气)" data-en="valve / gas line (red = cut)">电磁阀 / 气路(红色=断气)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnIgnite" data-zh="点火(按住)" data-en="ignite (hold)">点火(按住)</button>
+    <button class="abtn" id="btnRelease" data-zh="现在松手" data-en="release now">现在松手</button>
+    <button class="abtn hot" id="btnBlow" data-zh="吹灭火焰" data-en="blow out flame">吹灭火焰</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="按住旋钮时长" data-en="knob hold time">按住旋钮时长</label><input id="hold" type="range" min="1" max="15" step="1" value="8"><span class="val" id="holdVal">8 s</span></div>
+  <div class="row"><label data-zh="燃气流量(风速)" data-en="gas flow">燃气流量(风速)</label><input id="flow" type="range" min="0.5" max="2" step="0.05" value="1"><span class="val" id="flowVal">1.00×</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="温度-电势曲线" data-en="temp-EMF curve">温度-电势曲线</span></label>
+        <label><input id="tglVec" type="checkbox" checked> <span data-zh="一次空气流线" data-en="air streamlines">一次空气流线</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../premixed-flame/" data-zh="预混火焰" data-en="premixed flame">预混火焰</a>
+    <a href="../thermoelectric/" data-zh="热电效应" data-en="thermoelectric effect">热电效应</a>
+    <a href="../thermostat/" data-zh="温控器" data-en="thermostat">温控器</a>
+    <a href="../candle-flame/" data-zh="蜡烛火焰" data-en="candle flame">蜡烛火焰</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);            // 网格线
+  M.body.color.set(dark ? 0x39414c : 0x5d6774);            // 灶体/阀体
+  M.metal.color.set(dark ? 0xc2ccd8 : 0x9aa6b4);           // 金属件
+  M.copper.color.set(dark ? 0xc98a4b : 0xa8713a);          // 热电偶铜管
+  M.pipe.color.set(dark ? 0x8a93a0 : 0x6f7883);            // 燃气管
+  M.flameI.color.set(0x66aaff);                            // 内锥
+  M.flameO.color.set(dark ? 0x7fb8ff : 0x5f9de0);          // 外焰壳
+  M.pot.color.set(dark ? 0x46556a : 0x74879c);             // 锅
+  M.valve.color.set(dark ? 0xd8b25c : 0xb08a35);           // 阀芯
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('燃气灶与熄火保护 · 一根热电偶守着气路', 'Gas Stove & Flame-Failure Device · One Thermocouple Guards the Gas Line');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateHold();
+  updateFlow();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(4.6, 3.4, 5.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.6;
+controls.maxDistance = 30;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  body: mat(0x39414c, { roughness: 0.5, metalness: 0.6 }),
+  metal: mat(0xc2ccd8, { roughness: 0.3, metalness: 0.8 }),
+  copper: mat(0xc98a4b, { roughness: 0.35, metalness: 0.75 }),
+  pipe: mat(0x8a93a0, { roughness: 0.4, metalness: 0.7 }),
+  flameI: mat(0x66aaff, { roughness: 0.3, metalness: 0, emissiveIntensity: 1.4, transparent: true, opacity: 0.85 }),
+  flameO: mat(0x7fb8ff, { roughness: 0.3, metalness: 0, emissiveIntensity: 0.5, transparent: true,
+    opacity: 0.26, side: THREE.DoubleSide, depthWrite: false }),
+  pot: mat(0x46556a, { roughness: 0.35, metalness: 0.7 }),
+  valve: mat(0xd8b25c, { roughness: 0.4, metalness: 0.6 }),
+  spark: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 }),
+  potB: mat(0x46556a, { roughness: 0.35, metalness: 0.7 }),
+};
+
+/* ---------------- 状态与常量 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let scenario = 0;
+let et = 0;
+const T_FLAME = 760;        // 热端目标温度 °C(600-800 区间)
+const TAU_HEAT = 4;         // 升温时间常数 s
+const TAU_COOL = 15;        // 熄火降温时间常数 s
+const S_TC = 0.04;          // 塞贝克系数 mV/K
+const E_HOLD = 20;          // 电磁阀吸持阈值 mV
+const E_REL = 12;           // 释放阈值 mV
+let state = 'off';          // off | ignite | run | flameout
+let holdReq = 8, holdT = 0, flow = 1.0;
+let temp = 25;              // 热端温度 °C
+let flameOutT = -1;         // 熄火后计时
+let sparkT = 0, lift = 0, fb = 0, fbT = 0, liftT = 0;
+let flame = 0;              // 0-1 火焰强度(视觉缓动)
+const hist = [];
+const emfOf = t => S_TC * (t - 25);
+const emfAtHold = () => S_TC * (T_FLAME - 25) * (1 - Math.exp(-holdReq / TAU_HEAT));
+
+/* ---------------- 场景装配:地面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, 60), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(30, 15, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* 灶体与燃烧器 */
+const base = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.6, 0.18, 36), M.body);
+base.position.y = 0.09;
+scene.add(base);
+const burnerHead = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.14, 12, 36), M.metal);
+burnerHead.rotation.x = Math.PI / 2;
+burnerHead.position.y = 0.42;
+scene.add(burnerHead);
+const burnerCap = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 0.34, 20), M.metal);
+burnerCap.position.y = 0.38;
+scene.add(burnerCap);
+/* 锅 */
+const potG = new THREE.Group();
+scene.add(potG);
+const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.88, 0.8, 0.5, 28, 1, true), M.pot);
+pot.position.y = 2.0;
+potG.add(pot);
+const potBottom = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.06, 28), M.potB);
+potBottom.position.y = 1.78;
+potG.add(potBottom);
+const handle = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.07, 0.12), M.body);
+handle.position.set(1.2, 2.14, 0);
+potG.add(handle);
+
+/* 火焰:10 个内锥 + 半透明外焰壳 */
+const flameG = new THREE.Group();
+scene.add(flameG);
+const coneGeo = new THREE.ConeGeometry(0.095, 0.46, 10);
+const cones = [];
+for (let i = 0; i < 10; i++) {
+  const a = i / 10 * TAU;
+  const c = new THREE.Mesh(coneGeo, M.flameI);
+  c.position.set(Math.cos(a) * 0.55, 0.78, Math.sin(a) * 0.55);
+  flameG.add(c);
+  cones.push(c);
+}
+const outerFlame = new THREE.Mesh(new THREE.ConeGeometry(0.8, 1.25, 26, 1, true), M.flameO);
+outerFlame.position.y = 1.18;
+flameG.add(outerFlame);
+const potGlow = new THREE.PointLight(0x88bbff, 0, 6);
+potGlow.position.set(0, 1.4, 0);
+scene.add(potGlow);
+
+/* 热电偶:铜管 + 热端 */
+const tcG = new THREE.Group();
+tcG.position.set(0.92, 0, 0.35);
+scene.add(tcG);
+const tcRod = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.95, 10), M.copper);
+tcRod.position.y = 0.55;
+tcG.add(tcRod);
+const tcTip = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 10), M.copper);
+tcTip.position.y = 1.04;
+tcG.add(tcTip);
+const tcClamp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.3), M.body);
+tcClamp.position.set(0, 0.12, 0);
+tcG.add(tcClamp);
+
+/* 点火电极 + 火花 */
+const sparkG = new THREE.Group();
+sparkG.position.set(-0.85, 0, 0.45);
+scene.add(sparkG);
+const rodA = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.5, 8), M.metal);
+rodA.position.set(-0.045, 0.45, 0);
+rodA.rotation.z = 0.12;
+sparkG.add(rodA);
+const rodB = rodA.clone();
+rodB.position.x = 0.045;
+rodB.rotation.z = -0.12;
+sparkG.add(rodB);
+const spark = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), M.spark);
+spark.position.y = 0.68;
+spark.visible = false;
+sparkG.add(spark);
+
+/* 燃气阀 + 阀芯 + 管路 */
+const valveBox = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.42, 0.4), M.body);
+valveBox.position.set(0, 0.45, -1.75);
+scene.add(valveBox);
+const plunger = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.3, 12), M.valve);
+plunger.position.set(0, 0.72, -1.75);
+scene.add(plunger);
+const pipe1 = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.15, 10), M.pipe);
+pipe1.rotation.x = Math.PI / 2;
+pipe1.position.set(0, 0.45, -1.05);
+scene.add(pipe1);
+const pipe2 = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.42, 10), M.pipe);
+pipe2.position.set(0, 0.24, -0.48);
+scene.add(pipe2);
+
+/* 一次空气箭头(卷吸) */
+const airArrows = [];
+for (let i = 0; i < 6; i++) {
+  const a = i / 6 * TAU;
+  const ar = new THREE.ArrowHelper(new THREE.Vector3(0, 0.5, 0).normalize(), new THREE.Vector3(), 0.5, 0x74dc84, 0.12, 0.07);
+  ar.position.set(Math.cos(a) * 1.55, 0.55, Math.sin(a) * 1.55);
+  ar.line.material.linewidth = 2;
+  scene.add(ar);
+  airArrows.push(ar);
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+addLabel(() => L(`内锥预混焰 + 外层扩散补燃 · 绝热焰温 ~1,960 °C`, `inner premixed cone + outer diffusion · adiabatic ~1,960 °C`), () => 'b',
+  new THREE.Vector3(0, 2.55, 0));
+addLabel(() => L(`喷嘴射流卷吸 ~50-60% 一次空气`, `jet entrains ~50-60% primary air`), () => 'g',
+  new THREE.Vector3(0, 0.15, 1.35));
+addLabel(() => L(`热端 ${Math.round(temp)} °C → E = ${emfOf(temp).toFixed(1)} mV(塞贝克)`, `tip ${Math.round(temp)} °C → E = ${emfOf(temp).toFixed(1)} mV (Seebeck)`), () => 'e',
+  new THREE.Vector3(0.55, 1.5, 0.35));
+addLabel(() => L(`比例电磁阀:${state === 'flameout' || state === 'off' ? (emfOf(temp) > E_REL && state === 'flameout' ? '电势衰减中' : '落座断气') : '吸持开位'} · 无放大电路`,
+  `proportional valve: ${state === 'flameout' || state === 'off' ? (emfOf(temp) > E_REL && state === 'flameout' ? 'EMF decaying' : 'seated, gas cut') : 'held open'} · no amplifier`),
+  () => state === 'run' || state === 'ignite' ? 'g' : 'bad', new THREE.Vector3(0, 1.15, -1.75));
+addLabel(() => {
+  if (state === 'flameout') return L(`熄火闭阀倒计时 ${(Math.log(Math.max(emfOf(temp), 0.1) / E_REL) * TAU_COOL).toFixed(1)} s(国标 ≤45 s)`, `valve closes in ~${(Math.log(Math.max(emfOf(temp), 0.1) / E_REL) * TAU_COOL).toFixed(1)} s (standard: ≤45 s)`);
+  if (lift > 0.3) return L('脱火!气流速度 > 火焰传播速度', 'lift-off! flow faster than flame speed');
+  if (fb > 0.3) return L('回火!气流速度 < 火焰传播速度', 'flashback! flow slower than flame speed');
+  return L('火焰传播速度 ↔ 气流速度匹配', 'flame speed matches flow');
+}, () => state === 'flameout' || lift > 0.3 || fb > 0.3 ? 'bad' : 'st',
+  new THREE.Vector3(0, 3.15, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'combust', world: 1, tgt: [0, 1.2, 0.4],
+    b: '燃烧:射流卷吸空气,内外两层火焰', be: 'Combustion: jet entrains air, two-layer flame',
+    d: '燃气从喷嘴高速喷出,靠射流卷吸把 ~50-60% 的「一次空气」带进管内预混;到了火孔,内锥是预混焰(蓝、快、脆),外层再用扩散方式补燃剩余燃气。甲烷-空气的绝热火焰温度约 1,960 °C,灶前实际能看到的是上千度的两层火。',
+    de: 'Gas jets from the injector, entraining ~50-60% "primary air" into the premixed stream. At the ports the inner cone burns premixed (blue, fast, brittle) while the outer mantle burns the rest by diffusion. The adiabatic methane-air flame temperature is ~1,960 °C; on your stove you see a two-layer fire at over a thousand degrees.' },
+  { hl: 'match', world: 1, tgt: [0, 1.0, 0],
+    b: '脱火与回火:一场速度的匹配', be: 'Lift-off and flashback: a speed-matching game',
+    d: '火焰要站稳,气流速度必须等于火焰传播速度:气流过快,火焰根部被吹离火孔——「脱火」,蓝锥悬空抖动直至熄灭;气流过慢,火焰缩回喷嘴里烧——「回火」,烧坏灶体还有回燃风险。拖动燃气流量滑块到两头,当场看这两种失稳。',
+    de: 'A flame stands only when flow speed equals flame speed. Too fast and the root blows off the port - lift-off: the blue cones hover, flutter and die. Too slow and the flame retreats into the injector - flashback, overheating the burner with a re-ignition risk. Drag the gas-flow slider to both extremes and watch both instabilities live.' },
+  { hl: 'tc', world: 1, tgt: [0.92, 1.1, 0.35],
+    b: '热电偶:一根会发电的金属丝', be: 'Thermocouple: a metal wire that generates power',
+    d: '探头立在火焰里,热端烧到 ~600-800 °C,冷端还在灶体上:两种合金的接点有温差,塞贝克效应就给出毫伏级电势,S≈0.04 mV/K → 700 °C 约 27 mV。就这么点电压,不经过任何放大电路,直接去吸住电磁阀——热电偶既是传感器也是电源。',
+    de: 'The probe stands in the flame, its hot junction at ~600-800 °C while the cold end sits on the body. Two dissimilar alloys with a temperature difference produce a millivolt EMF via the Seebeck effect: S≈0.04 mV/K → ~27 mV at 700 °C. That tiny voltage, with no amplifier at all, directly holds the solenoid - the thermocouple is both sensor and power supply.' },
+  { hl: 'seq', world: 1, tgt: [0.5, 1.0, -0.8],
+    b: '点火时序:为什么要按住 5-15 秒', be: 'Ignition: why hold the knob for 5-15 seconds',
+    d: '按下旋钮:火花点燃火焰,但热端升温要时间——E(t)=E∞(1−e^(−t/τ)),τ≈4 s。电势爬过 ~20 mV 吸持阈值之前松手,阀芯落座、火灭重来;按够 5-15 s,「喂饱」了电磁阀,松手后阀被电势自己吸住。这就是「松手就灭」的物理。',
+    de: 'Press the knob: the spark lights the flame, but the tip needs time to heat - E(t)=E∞(1−e^(−t/τ)) with τ≈4 s. Release before the EMF climbs past the ~20 mV holding threshold and the plunger seats, flame out, try again. Hold for 5-15 s and the valve stays magnetized by the EMF itself - that is the physics of "it dies when I let go".' },
+  { hl: 'fail', world: 1, tgt: [0, 0.9, -1.2],
+    b: '熄火保护:毫伏衰减,阀门落座', be: 'Flame-failure protection: EMF decays, valve seats',
+    d: '汤溢出来浇灭火焰?热端骤冷,电势按 e^(−t/τ′) 衰减(τ′≈15 s),约 10-30 s 内滑过 ~12 mV 释放阈——电磁阀失电落座,气路当场切断。国标要求闭阀 ≤45 s:不是立刻断气(否则你永远点不着火),而是断得足够快。',
+    de: 'Soup boils over and drowns the flame? The hot junction quenches, EMF decays as e^(−t/τ′) with τ′≈15 s, and within ~10-30 s it slides under the ~12 mV release threshold - the solenoid drops and the gas line is cut on the spot. The standard demands closure within 45 s: not instant (or ignition would be impossible), just fast enough.' },
+  { hl: 'reliable', world: 1, tgt: [0, 0.9, -0.6],
+    b: '可靠性哲学:零电子的全金属安全链', be: 'Reliability: an all-metal safety chain with zero electronics',
+    d: '这条安全链没有一枚芯片:火焰→热电偶→导线→电磁阀,能量全由火焰自己供给,停电、受潮、元件老化都不走「死机」这条路;最常见故障是探头积碳或热电偶疲劳导致电势不足,点着火一松手就灭——看懂这条链,你就看懂了灶台上最朴素的安全工程。',
+    de: 'This safety chain contains no chip: flame → thermocouple → wire → solenoid, all powered by the flame itself. Power cuts, moisture and aging cannot make it "crash". The commonest failure is a sooted tip or a tired thermocouple whose EMF falls short - lit, then dead the moment you release. Understand this chain and you understand the humblest safety engineering on your stove.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 1.1, 0);
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const emf = emfOf(temp);
+  formulaEl.innerHTML =
+    L(`塞贝克效应:E = S·ΔT,S ≈ <b>0.04 mV/K</b> → 热端 ${Math.round(temp)} °C → E ≈ <b>${emf.toFixed(1)} mV</b>(吸持阈 20 mV / 释放阈 12 mV)`,
+      `Seebeck effect: E = S·ΔT with S ≈ <b>0.04 mV/K</b> → tip ${Math.round(temp)} °C → E ≈ <b>${emf.toFixed(1)} mV</b> (hold threshold 20 mV / release 12 mV)`) +
+    '<br>' +
+    L(`点火:E(t) = E∞(1−e^(−t/τ)),τ ≈ <b>4 s</b> → 按住 ${holdReq} s 后 E ≈ <b>${emfAtHold().toFixed(1)} mV</b>${emfAtHold() >= E_HOLD ? L(' ≥ 20 mV,可维持', ' ≥ 20 mV, holds') : L(' < 20 mV,松手即灭', ' < 20 mV, dies on release')}`,
+      `Ignition: E(t) = E∞(1−e^(−t/τ)), τ ≈ <b>4 s</b> → after ${holdReq} s, E ≈ <b>${emfAtHold().toFixed(1)} mV</b>${emfAtHold() >= E_HOLD ? ' ≥ 20 mV, holds' : ' < 20 mV, dies on release'}`) +
+    '<br>' +
+    L(`熄火:E(t) = E₀·e^(−t/τ′),τ′ ≈ <b>15 s</b> → 约 <b>${(Math.log(27 / E_REL) * TAU_COOL).toFixed(0)} s</b> 落座(国标 ≤45 s);燃烧:一次空气 ~<b>50-60%</b>,绝热焰温 ~<b>1,960 °C</b>`,
+      `Flameout: E(t) = E₀·e^(−t/τ′), τ′ ≈ <b>15 s</b> → seats in ~<b>${(Math.log(27 / E_REL) * TAU_COOL).toFixed(0)} s</b> (standard ≤45 s); combustion: primary air ~<b>50-60%</b>, adiabatic ~<b>1,960 °C</b>`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnIgnite = document.getElementById('btnIgnite'), btnRelease = document.getElementById('btnRelease'),
+  btnBlow = document.getElementById('btnBlow'), btnReset = document.getElementById('btnReset');
+btnIgnite.addEventListener('click', () => {
+  if (state === 'off') {
+    state = 'ignite';
+    holdT = holdReq;
+    sparkT = 1.2;
+    flameOutT = -1;
+  }
+});
+btnRelease.addEventListener('click', () => {
+  if (state === 'ignite') holdT = 0;
+});
+btnBlow.addEventListener('click', () => {
+  if (state === 'run' || state === 'ignite') {
+    state = 'flameout';
+    flameOutT = 0;
+  }
+});
+function resetMachine() {
+  state = 'off'; temp = 25; flameOutT = -1; sparkT = 0;
+  lift = 0; fb = 0; fbT = 0; liftT = 0; flame = 0;
+  holdReq = 8; elHold.value = 8; updateHold();
+  flow = 1.0; elFlow.value = 1.0; updateFlow();
+  hist.length = 0;
+  updateFormula();
+}
+btnReset.addEventListener('click', resetMachine);
+
+/* ---------------- 温度-电势曲线(示波器) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const py = v => ch - (0.08 + 0.84 * clamp01(v)) * ch;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, py(0)); scopeCtx.lineTo(cw, py(0));
+  scopeCtx.stroke();
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText('T / E / 阀', 4 * dpr, 10 * dpr);
+  scopeCtx.fillStyle = 'rgba(150,160,175,.55)';
+  scopeCtx.fillText(L('最近 ~2.3 s', 'last ~2.3 s'), cw - 58 * dpr, ch - 4 * dpr);
+  if (hist.length < 2) return;
+  const series = [
+    { k: 0, c: 'rgba(255,169,77,.95)' },
+    { k: 1, c: 'rgba(116,192,252,.95)' },
+    { k: 2, c: 'rgba(123,216,143,.9)' },
+  ];
+  for (const ser of series) {
+    scopeCtx.strokeStyle = ser.c;
+    scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < hist.length; i++) {
+      const x = i / (hist.length - 1) * cw;
+      const v = clamp01(hist[i][ser.k]);
+      i === 0 ? scopeCtx.moveTo(x, py(v)) : scopeCtx.lineTo(x, py(v));
+    }
+    scopeCtx.stroke();
+  }
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elHold = document.getElementById('hold'), elHoldVal = document.getElementById('holdVal');
+const elFlow = document.getElementById('flow'), elFlowVal = document.getElementById('flowVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglVec = document.getElementById('tglVec');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateHold() {
+  holdReq = +elHold.value;
+  elHoldVal.textContent = holdReq + ' s';
+  updateFormula();
+}
+function updateFlow() {
+  flow = +elFlow.value;
+  elFlowVal.textContent = flow.toFixed(2) + '×';
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elHold.addEventListener('input', updateHold);
+elFlow.addEventListener('input', updateFlow);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglVec.addEventListener('change', () => {
+  const on = tglVec.checked;
+  for (const a of airArrows) a.visible = on;
+});
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const emf = emfOf(temp);
+  stA.innerHTML = Math.round(temp) + '<small> °C</small>';
+  stA.className = 'v ' + (temp > 550 && temp < 820 ? 'ok' : temp > 200 ? 'warn' : 'bad');
+  stB.innerHTML = emf.toFixed(1) + '<small> mV</small>';
+  stB.className = 'v ' + (emf >= E_HOLD ? 'ok' : emf >= E_REL ? 'warn' : 'bad');
+  const held = state === 'ignite' || state === 'run';
+  stC.innerHTML = held ? L('<small>吸持开位</small>', '<small>held open</small>') : L('<small>落座断气</small>', '<small>seated, cut</small>');
+  stC.className = 'v ' + (held ? 'ok' : 'bad');
+  let flameTxt, flameCls;
+  if (state === 'off') { flameTxt = L('<small>熄火</small>', '<small>out</small>'); flameCls = 'bad'; }
+  else if (lift > 0.3) { flameTxt = L('<small>脱火!</small>', '<small>lift-off!</small>'); flameCls = 'bad'; }
+  else if (fb > 0.3) { flameTxt = L('<small>回火!</small>', '<small>flashback!</small>'); flameCls = 'warn'; }
+  else if (state === 'flameout') { flameTxt = L('<small>衰减中</small>', '<small>decaying</small>'); flameCls = 'warn'; }
+  else { flameTxt = L('<small>正常燃烧</small>', '<small>normal</small>'); flameCls = 'ok'; }
+  stD.innerHTML = flameTxt;
+  stD.className = 'v ' + flameCls;
+  stE.innerHTML = state === 'ignite' ? Math.max(0, holdT).toFixed(1) + '<small> s</small>' : '—';
+  stE.className = 'v ' + (state === 'ignite' && emfOf(temp) >= E_HOLD ? 'ok' : 'warn');
+  stF.innerHTML = state === 'flameout' ? flameOutT.toFixed(1) + '<small> s / 45 s</small>' : '—';
+  stF.className = 'v ' + (state === 'flameout' ? (flameOutT < 30 ? 'ok' : 'warn') : 'ok');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function pushHist(a, b, c) {
+  hist.push([a, b, c]);
+  if (hist.length > 140) hist.shift();
+}
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  const ds = dt * speed;
+  et += ds;
+  /* 状态机推进 */
+  if (playing) {
+    if (state === 'ignite') {
+      holdT -= ds;
+      temp += (T_FLAME - temp) * Math.min(1, ds / TAU_HEAT);
+      if (holdT <= 0) {
+        state = emfOf(temp) >= E_HOLD ? 'run' : 'off';
+        if (state === 'off') temp = Math.min(temp, 300);
+      }
+    } else if (state === 'run') {
+      temp += (T_FLAME - temp) * Math.min(1, ds / TAU_HEAT) * 0.4;
+    } else if (state === 'flameout') {
+      flameOutT += ds;
+      temp -= (temp - 25) * Math.min(1, ds / TAU_COOL);
+      if (emfOf(temp) < E_REL) state = 'off';
+    } else {
+      temp += (25 - temp) * Math.min(1, ds / 20);
+    }
+    /* 脱火 / 回火(点火与燃烧中都生效) */
+    const burning = state === 'ignite' || state === 'run';
+    if (burning && flow > 1.65) {
+      lift = Math.min(1, lift + ds * 2);
+      liftT += ds;
+      if (lift > 0.6 && Math.random() < ds * 0.9) { state = 'flameout'; flameOutT = 0; }
+    } else if (burning && flow < 0.75) {
+      fb = Math.min(1, fb + ds * 2);
+      if (flow < 0.62) { fbT += ds; if (fbT > 2.5) { state = 'flameout'; flameOutT = 0; } }
+    } else {
+      lift = Math.max(0, lift - ds * 2);
+      fb = Math.max(0, fb - ds * 2);
+      fbT = 0; liftT = 0;
+    }
+    pushHist(temp / 800, emfOf(temp) / 30, state === 'ignite' || state === 'run' ? 1 : 0);
+  }
+  /* 火焰视觉 */
+  const burning = state === 'ignite' || state === 'run';
+  flame += ((burning ? 1 : 0) - flame) * Math.min(1, ds * 5);
+  const flick = 1 + 0.07 * Math.sin(et * 13) + 0.05 * Math.sin(et * 29);
+  flameG.scale.set(flame * (1 - 0.2 * fb), flame * flick * (1 - 0.45 * fb), flame * (1 - 0.2 * fb));
+  flameG.position.y = lift * 0.55 * flame - fb * 0.3;
+  flameG.visible = flame > 0.02;
+  outerFlame.material.opacity = 0.26 * flame * (1 - 0.5 * lift);
+  M.flameO.emissive.setHex(flow < 0.75 ? 0xffa94d : 0x3b6fd8);
+  potGlow.intensity = flame * 1.4;
+  potBottom.material.emissive.setHex(0xff8844);
+  potBottom.material.emissiveIntensity = flame * 0.35;
+  tcTip.material.emissive.setHex(0xff2200);
+  tcTip.material.emissiveIntensity = clamp((temp - 300) / 500, 0.03, 1.3);
+  /* 火花 */
+  if (sparkT > 0) {
+    sparkT -= ds;
+    spark.visible = Math.sin(et * 60) > 0;
+    spark.scale.setScalar(0.7 + 0.5 * Math.sin(et * 90));
+  } else spark.visible = false;
+  /* 阀芯与管路 */
+  const held = state === 'ignite' || state === 'run' || (state === 'flameout' && emfOf(temp) >= E_REL);
+  plunger.position.y += ((held ? 0.78 : 0.62) - plunger.position.y) * Math.min(1, ds * 8);
+  M.pipe.emissive.setHex(0xffa030);
+  M.pipe.emissiveIntensity = held && state !== 'off' ? 0.5 : 0.04;
+  M.pipe.color.setHex(held && state !== 'off' ? 0x8a93a0 : 0x6a3030);
+  /* 一次空气箭头 */
+  const airOn = tglVec.checked && burning;
+  for (let i = 0; i < airArrows.length; i++) {
+    const a = airArrows[i];
+    a.visible = airOn;
+    if (airOn) {
+      const p = a.position;
+      a.setDirection(tmpV.set(-p.x, 0.9, -p.z).normalize());
+      a.setLength(0.35 + 0.2 * Math.abs(Math.sin(et * 3 + i)), 0.12, 0.07);
+    }
+  }
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.copper, M.valve, M.body]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.3);
+  const boost = m => { m.emissiveIntensity = 0.55 + 0.3 * hlK; };
+  if (hl === 'combust') M.flameI.emissiveIntensity = 1.4 + 0.4 * hlK;
+  else if (hl === 'match') { M.flameI.emissiveIntensity = 1.4 + 0.4 * hlK; M.flameO.emissiveIntensity = 0.8 + 0.3 * hlK; }
+  else if (hl === 'tc') boost(M.copper);
+  else if (hl === 'seq') boost(M.valve);
+  else if (hl === 'fail') { boost(M.valve); M.pipe.emissiveIntensity = 0.7 + 0.2 * hlK; }
+  else if (hl === 'reliable') { boost(M.copper); boost(M.valve); }
+  else { M.flameI.emissiveIntensity = 1.4; M.flameO.emissiveIntensity = 0.5; }
+  /* 相机目标 */
+  tmpV.fromArray(STEPS[scenario].tgt);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglVec.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
