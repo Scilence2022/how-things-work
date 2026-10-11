@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>向量检索 · 把「意思相近」变成「距离很近」</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="向量检索:把「意思相近」变成「距离很近」" data-en="Vector Search: Meaning Becomes Distance">向量检索:把「意思相近」变成「距离很近」</h1>
+  <div class="sub" data-zh="嵌入模型把一段文本/一张图压缩成 384-1536 维向量:意思越近、夹角越小,余弦相似度 cos=(a·b)/(|a||b|) 越高——归一化后点积就是相似度,「搜索」从此变成「在高维点云里找最近的 k 个邻居」。暴力法把查询与全库逐个比对,O(N·d):十亿向量 × 768 维 = 7680 亿次乘加,单次查询数百毫秒起步,精确但不可行。近似最近邻(ANN)三板斧:IVF 倒排文件用 k-means 聚成 nlist=1024 个簇,查询只扫最近 nprobe 个桶,约 10× 加速、召回 ~0.95;HNSW 分层图上层稀疏长边、底层稠密短边,贪心跳步下行,复杂度 ~log N,ef 探索宽度调召回;PQ 乘积量化把 768 维 float32(3 KB)压到 64 B,40× 压缩再让一点召回。召回-速度-内存是没有免费午餐的三角,语义搜索、RAG 检索增强、推荐、以图搜图都在里面做选择。本页 640 个演示向量(768 维投影到 3D、6 个语义簇),三种检索策略实时对扫 · 拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Embedding models compress a text or image into a 384-1536 dim vector: closer meaning, smaller angle, higher cosine similarity cos=(a·b)/(|a||b|) - after normalization the dot product IS the similarity, and search becomes finding k nearest neighbors in a high-dimensional cloud. Brute force compares the query with every vector, O(N·d): 1B vectors x 768 dims = 768 billion multiply-adds, hundreds of ms per query - exact but infeasible. The ANN trio: IVF partitions the library into nlist=1024 k-means cells and scans only the nprobe nearest (~10x speedup, recall ~0.95); HNSW stacks a layered graph - sparse long edges on top, dense short edges below - and greedy-descends in ~log N hops, with ef as the exploration width; PQ product-quantizes a 768-dim float32 (3 KB) into 64 B, a 40x compression trading a little recall. Recall-speed-memory is a triangle with no free lunch: semantic search, RAG, recommenders and image search all pick a corner. This page: 640 demo vectors (768-dim projected to 3D, 6 semantic clusters), three strategies racing live · drag to orbit / scroll to zoom · Space = play/pause">嵌入模型把一段文本/一张图压缩成 384-1536 维向量:意思越近、夹角越小,余弦相似度 cos=(a·b)/(|a||b|) 越高——归一化后点积就是相似度,「搜索」从此变成「在高维点云里找最近的 k 个邻居」。暴力法把查询与全库逐个比对,O(N·d):十亿向量 × 768 维 = 7680 亿次乘加,单次查询数百毫秒起步,精确但不可行。近似最近邻(ANN)三板斧:IVF 倒排文件用 k-means 聚成 nlist=1024 个簇,查询只扫最近 nprobe 个桶,约 10× 加速、召回 ~0.95;HNSW 分层图上层稀疏长边、底层稠密短边,贪心跳步下行,复杂度 ~log N,ef 探索宽度调召回;PQ 乘积量化把 768 维 float32(3 KB)压到 64 B,40× 压缩再让一点召回。召回-速度-内存是没有免费午餐的三角,语义搜索、RAG 检索增强、推荐、以图搜图都在里面做选择。本页 640 个演示向量(768 维投影到 3D、6 个语义簇),三种检索策略实时对扫 · 拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="向量数" data-en="vectors">向量数</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="扫描数" data-en="scanned">扫描数</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="召回率 top-10" data-en="recall@top-10">召回率 top-10</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="延迟(演示)" data-en="latency (demo)">延迟(演示)</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="维度" data-en="dims">维度</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="压缩比" data-en="compression">压缩比</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="嵌入点云(6 语义簇)" data-en="embedding cloud (6 clusters)">嵌入点云(6 语义簇)</span>
+    <span class="chip o" data-zh="查询 q 与 top-10 结果" data-en="query q & top-10 hits">查询 q 与 top-10 结果</span>
+    <span class="chip g" data-zh="HNSW 图边与跳步" data-en="HNSW edges & hops">HNSW 图边与跳步</span>
+    <span class="chip r" data-zh="剪枝丢弃 · 已扫描染色" data-en="pruned away · scanned tint">剪枝丢弃 · 已扫描染色</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnEmbed" data-zh="嵌入空间(观察簇)" data-en="embedding space">嵌入空间(观察簇)</button>
+    <button class="abtn" id="btnBrute" data-zh="暴力扫描(扩散)" data-en="brute scan (radius)">暴力扫描(扩散)</button>
+    <button class="abtn" id="btnHnsw" data-zh="HNSW 贪心跳步(招牌)" data-en="HNSW greedy hops (signature)">HNSW 贪心跳步(招牌)</button>
+    <button class="abtn" id="btnIvf" data-zh="IVF 聚类剪枝" data-en="IVF cell pruning">IVF 聚类剪枝</button>
+    <button class="abtn" id="btnRace" data-zh="暴力 vs HNSW 竞速" data-en="brute vs HNSW race">暴力 vs HNSW 竞速</button>
+    <button class="abtn" id="btnQuant" data-zh="量化压缩 PQ" data-en="quantization PQ">量化压缩 PQ</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="nprobe 桶数" data-en="nprobe cells">nprobe 桶数</label><input id="nprobe" type="range" min="1" max="6" step="1" value="2"><span class="val" id="nprobeVal">2</span></div>
+  <div class="row"><label data-zh="ef 探索宽度" data-en="ef width">ef 探索宽度</label><input id="ef" type="range" min="4" max="64" step="4" value="16"><span class="val" id="efVal">16</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCells" type="checkbox" checked> <span data-zh="聚类胞格" data-en="cluster cells">聚类胞格</span></label>
+        <label><input id="tglEdges" type="checkbox" checked> <span data-zh="HNSW 图边" data-en="graph edges">HNSW 图边</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../k-means/" data-zh="k-means 聚类" data-en="k-means">k-means 聚类</a>
+    <a href="../attention-mechanism/" data-zh="注意力机制" data-en="attention mechanism">注意力机制</a>
+    <a href="../llm-sampling/" data-zh="LLM 采样" data-en="LLM sampling">LLM 采样</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);                 // 网格线
+  M.cloud.color.set(dark ? 0xffffff : 0x77808c);                // 点云(乘 vertexColors)
+  M.cell.color.set(dark ? 0x8fa8c8 : 0x5a708c);                 // 聚类胞格
+  M.cellHot.color.set(dark ? 0xb3873e : 0x8f6a25);              // IVF 选中胞格
+  M.q.color.set(dark ? 0xd8a94e : 0xb0852f);   M.q.emissive.set(dark ? 0xd8a94e : 0xb0852f);          // 查询点
+  M.best.color.set(dark ? 0x7dedb2 : 0x0b8a5a); M.best.emissive.set(dark ? 0x7dedb2 : 0x0b8a5a);      // top-10 标记
+  M.walker.color.set(dark ? 0xffe0ae : 0xa8791f); M.walker.emissive.set(dark ? 0xffe0ae : 0xa8791f);  // HNSW 行走者
+  M.sweep.color.set(dark ? 0xd8a94e : 0xb0852f); M.sweepW.color.set(dark ? 0xd8a94e : 0xb0852f);      // 扫描球壳
+  M.edgeS.color.set(dark ? 0x5a7ba8 : 0x7d92b5);                // L0 短边
+  M.edgeM.color.set(dark ? 0x6fae7f : 0x4a8a5a);                // L1 中边
+  M.edgeL.color.set(dark ? 0x7dedb2 : 0x0b8a5a);                // L2 长边
+  M.ghost.color.set(dark ? 0xd8b06a : 0x8a6a35);                // 上层幽灵点
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('向量检索 · 把「意思相近」变成「距离很近」', 'Vector Search · Meaning as Distance');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateNprobe();
+  updateEf();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(5.4, 3.8, 9.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.4, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 30;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.3,
+    emissive: color, emissiveIntensity: 0.12, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55, vertexColors: true, depthWrite: false }),
+  cloud: new THREE.PointsMaterial({ size: 0.082, vertexColors: true, sizeAttenuation: true }),
+  cell: mat(0x8fa8c8, { transparent: true, opacity: 0.05, depthWrite: false, emissiveIntensity: 0.05 }),
+  cellHot: mat(0xb3873e, { transparent: true, opacity: 0.16, depthWrite: false, emissiveIntensity: 0.3 }),
+  q: mat(0xd8a94e, { roughness: 0.3, emissiveIntensity: 0.35 }),
+  best: mat(0x7dedb2, { roughness: 0.35, emissiveIntensity: 0.3 }),
+  walker: mat(0xffe0ae, { roughness: 0.3, emissiveIntensity: 0.5 }),
+  sweep: new THREE.MeshBasicMaterial({ color: 0xd8a94e, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide }),
+  sweepW: new THREE.MeshBasicMaterial({ color: 0xd8a94e, transparent: true, opacity: 0.2, wireframe: true, depthWrite: false }),
+  edgeS: new THREE.LineBasicMaterial({ color: 0x5a7ba8, transparent: true, opacity: 0.16 }),
+  edgeM: new THREE.LineBasicMaterial({ color: 0x6fae7f, transparent: true, opacity: 0.3 }),
+  edgeL: new THREE.LineBasicMaterial({ color: 0x7dedb2, transparent: true, opacity: 0.5 }),
+  ghost: new THREE.PointsMaterial({ size: 0.06, color: 0xd8b06a, sizeAttenuation: true, transparent: true, opacity: 0.85 }),
+};
+
+/* ---------------- 数据:640 个演示向量(确定性生成,768 维投影到 3D) ---------------- */
+const N = 640, DIM = 768;
+let seed2 = 20240711;
+const rnd2 = () => { seed2 = (seed2 * 1664525 + 1013904223) >>> 0; return seed2 / 4294967296; };
+const g2 = () => (rnd2() + rnd2() + rnd2() + rnd2() - 2) * 0.9;
+const CL = [
+  { zh: '科技', en: 'tech', c: [1.30, 0.95, 0.35], hex: 0x4da3ff },
+  { zh: '体育', en: 'sports', c: [-1.45, 0.25, 0.75], hex: 0xffb84d },
+  { zh: '财经', en: 'finance', c: [0.15, -0.75, 1.45], hex: 0x51d88a },
+  { zh: '医学', en: 'medicine', c: [0.55, 0.15, -1.50], hex: 0xff6b81 },
+  { zh: '法律', en: 'law', c: [-1.25, -0.65, -0.70], hex: 0xb48cff },
+  { zh: '美食', en: 'food', c: [0.10, 1.45, -0.35], hex: 0x4dd8d0 },
+];
+const pos = new Float32Array(N * 3), pCl = new Uint8Array(N), cnt = [0, 0, 0, 0, 0, 0];
+for (let i = 0; i < N; i++) {
+  const ci = i % 6;
+  pCl[i] = ci; cnt[ci]++;
+  pos[i * 3] = CL[ci].c[0] + g2() * 0.46;
+  pos[i * 3 + 1] = CL[ci].c[1] + g2() * 0.38;
+  pos[i * 3 + 2] = CL[ci].c[2] + g2() * 0.46;
+}
+const qPos = [0.72, 0.35, 0.85];                       // 查询点:科技/财经簇之间
+const distQ = new Float64Array(N);
+for (let i = 0; i < N; i++)
+  distQ[i] = Math.hypot(pos[i * 3] - qPos[0], pos[i * 3 + 1] - qPos[1], pos[i * 3 + 2] - qPos[2]);
+const idxAll = Array.from({ length: N }, (_, i) => i);
+idxAll.sort((a, b) => distQ[a] - distQ[b]);
+const true10 = idxAll.slice(0, 10);                    // 真实 top-10(欧氏,演示空间)
+const trueSet = new Set(true10);
+const sortedD = Float64Array.from(distQ).sort();       // 暴力扫描半径 → 已扫计数
+/* IVF:按最近质心分桶(真实系统 nlist=1024,本页演示 nlist=6) */
+const bucketOf = new Uint8Array(N);
+const bucketLists = [[], [], [], [], [], []];
+for (let i = 0; i < N; i++) {
+  let bj = 0, bd = 1e18;
+  for (let j = 0; j < 6; j++) {
+    const c = CL[j].c;
+    const d = (pos[i * 3] - c[0]) ** 2 + (pos[i * 3 + 1] - c[1]) ** 2 + (pos[i * 3 + 2] - c[2]) ** 2;
+    if (d < bd) { bd = d; bj = j; }
+  }
+  bucketOf[i] = bj; bucketLists[bj].push(i);
+}
+for (const bl of bucketLists) bl.sort((a, b) => distQ[a] - distQ[b]);
+/* HNSW 三层图:L0 全集短边 / L1 子集中边 / L2 顶层长边 */
+const L1ids = [], L2ids = [];
+for (let i = 0; i < N; i++) if (rnd2() < 0.125) L1ids.push(i);
+for (let k = 0; k < L1ids.length; k += 3) L2ids.push(L1ids[k]);
+while (L2ids.length < 3 && L1ids.length > L2ids.length) L2ids.push(L1ids[L2ids.length]);
+const d2sq = (i, j) => (pos[i * 3] - pos[j * 3]) ** 2 + (pos[i * 3 + 1] - pos[j * 3 + 1]) ** 2 + (pos[i * 3 + 2] - pos[j * 3 + 2]) ** 2;
+function hselect(base, cands, cap) {                     // HNSW Algorithm 4:e 只要不被已选邻居支配就保留,剪掉的回填
+  const cand = cands.map(j => [d2sq(base, j), j]).sort((a, b) => a[0] - b[0]);
+  const sel = [], pruned = [];
+  for (const [, j] of cand) {
+    if (sel.length >= cap) break;
+    let ok = true;
+    for (const s of sel) if (d2sq(j, s) < d2sq(base, j)) { ok = false; break; }
+    ok ? sel.push(j) : pruned.push(j);
+  }
+  for (const j of pruned) { if (sel.length >= cap) break; sel.push(j); }
+  return sel;
+}
+function knn(ids, mo) {                                  // HNSW 启发式建图:多样化选邻 + 回填 + 双向剪枝
+  const map = new Map();
+  for (const i of ids) map.set(i, hselect(i, ids.filter(j => j !== i), mo));
+  for (const i of ids) for (const j of map.get(i)) {
+    const lst = map.get(j);
+    if (!lst.includes(i)) lst.push(i);
+    if (lst.length > mo + 2) map.set(j, hselect(j, lst, mo + 2));
+  }
+  return map;
+}
+const nbr0 = knn(idxAll, 6), nbr1 = knn(L1ids, 6), nbr2 = knn(L2ids, 5);
+const layerNbrs = [nbr0, nbr1, nbr2];
+const ENTRY = L2ids[0];
+const LY = [0, 1.3, 2.5];                              // 各层高度偏移
+const pos3 = (i, layer, v) => v.set(pos[i * 3], pos[i * 3 + 1] + LY[layer], pos[i * 3 + 2]);
+
+/* ---------------- 场景装配:地面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, 40), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(40, 20, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* ---------------- 点云舞台(整体挂 cloudGroup,便于嵌入模式整体旋转) ---------------- */
+const cloudGroup = new THREE.Group();
+cloudGroup.position.set(0, 2.35, 0);
+scene.add(cloudGroup);
+const cloudGeo = new THREE.BufferGeometry();
+const colAttr = new THREE.BufferAttribute(new Float32Array(N * 3), 3);
+const baseCol = new Float32Array(N * 3);
+const cT = new THREE.Color();
+for (let i = 0; i < N; i++) {
+  cT.setHex(CL[pCl[i]].hex).multiplyScalar(0.82 + 0.36 * rnd2());
+  baseCol[i * 3] = cT.r; baseCol[i * 3 + 1] = cT.g; baseCol[i * 3 + 2] = cT.b;
+}
+colAttr.array.set(baseCol);
+cloudGeo.setAttribute('position', new THREE.BufferAttribute(pos.slice(), 3));
+cloudGeo.setAttribute('color', colAttr);
+const cloudMat = M.cloud;
+const cloudPts = new THREE.Points(cloudGeo, cloudMat);
+cloudGroup.add(cloudPts);
+
+/* 查询点 + 扫描球壳 */
+const qMesh = new THREE.Mesh(new THREE.SphereGeometry(0.11, 20, 16), M.q);
+qMesh.position.set(qPos[0], qPos[1], qPos[2]); cloudGroup.add(qMesh);
+const sweepG = new THREE.Group();
+sweepG.add(new THREE.Mesh(new THREE.SphereGeometry(1, 36, 24), M.sweep), new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), M.sweepW));
+sweepG.position.set(qPos[0], qPos[1], qPos[2]);
+sweepG.scale.setScalar(0.02); sweepG.visible = false;
+cloudGroup.add(sweepG);
+
+/* IVF 聚类胞格(6 个半透明球) */
+const cellGeo = new THREE.SphereGeometry(1.02, 28, 18);
+const cells = CL.map(c => {
+  const m = new THREE.Mesh(cellGeo, M.cell);
+  m.position.set(c.c[0], c.c[1], c.c[2]);
+  cloudGroup.add(m);
+  return m;
+});
+
+/* HNSW:上层幽灵点 + 三层边(L0 全集短边 / L1 子集中边 / L2 顶层长边) */
+function ghostPts(ids, dy) {
+  const a = new Float32Array(ids.length * 3);
+  ids.forEach((i, k) => { a[k * 3] = pos[i * 3]; a[k * 3 + 1] = pos[i * 3 + 1] + dy; a[k * 3 + 2] = pos[i * 3 + 2]; });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(a, 3));
+  return new THREE.Points(g, M.ghost);
+}
+cloudGroup.add(ghostPts(L1ids, LY[1]), ghostPts(L2ids, LY[2]));
+function buildEdges(nbrMap, ids, layerY, stride, maxN, material) {
+  const arr = [];
+  for (let k = 0; k < ids.length; k += stride) {
+    const i = ids[k], nbs = nbrMap.get(i) || [];
+    for (let t = 0; t < Math.min(maxN, nbs.length); t++) {
+      const j = nbs[t];
+      if (j <= i) continue;
+      arr.push(pos[i * 3], pos[i * 3 + 1] + layerY, pos[i * 3 + 2], pos[j * 3], pos[j * 3 + 1] + layerY, pos[j * 3 + 2]);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
+  return new THREE.LineSegments(g, material);
+}
+const edgeL0 = buildEdges(nbr0, idxAll, LY[0], 2, 3, M.edgeS);
+const edgeL1 = buildEdges(nbr1, L1ids, LY[1], 1, 6, M.edgeM);
+const edgeL2 = buildEdges(nbr2, L2ids, LY[2], 1, 4, M.edgeL);
+edgeL1.visible = edgeL2.visible = false;
+cloudGroup.add(edgeL0, edgeL1, edgeL2);
+const entryMark = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.2, 8), M.walker);
+pos3(ENTRY, 2, entryMark.position);
+entryMark.position.y += 0.18; entryMark.rotation.x = Math.PI;
+cloudGroup.add(entryMark);
+/* HNSW 行走者 + top-10 结果标记(共享 geometry/material) */
+const walker = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 12), M.walker);
+pos3(ENTRY, 2, walker.position); walker.visible = false;
+cloudGroup.add(walker);
+const mkGeo = new THREE.SphereGeometry(0.075, 10, 10);
+const markers = [];
+for (let k = 0; k < 10; k++) {
+  const mk = new THREE.Mesh(mkGeo, M.best);
+  mk.visible = false; cloudGroup.add(mk); markers.push(mk);
+}
+
+/* ---------------- 状态量 ---------------- */
+let mode = null;                          // embed | brute | hnsw | ivf | race | quant | null
+let nprobe = 2, efWidth = 16;
+let et = 0;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+const RATE = 150;                         // 同吞吐竞速:每模拟秒的距离计算次数
+let emT = 0, quT = 0, morphQ = 0;
+let bruteAcc = 0, bruteScanned = 0, bruteFound = 0, bruteHold = 0, sweepR = 0.03;
+let hn = null, hnAcc = 0, hnIdx = 0, hnScanned = 0, hnHold = 0, hnLastT = 0, hnLayer = 2, winner = false;
+let ivList = null, ivAcc = 0, ivScanned = 0, ivHold = 0, selMask = new Uint8Array(6);
+const rsB = [], rsH = [], rsI = [];       // 各策略当前 top-10 结果
+const pstate = new Uint8Array(N);         // 0 正常 / 1 剪枝变暗 / 2 已扫(金) / 3 命中·闪烁 / 4 HNSW 已访(绿)
+let flashList = [];
+const walkerFrom = new THREE.Vector3(), walkerTo = new THREE.Vector3();
+let walkerT = 1;
+const origPos = pos;
+const snapPos = new Float32Array(N * 3);
+for (let i = 0; i < N * 3; i++) snapPos[i] = Math.round(origPos[i] / 0.34) * 0.34;   // PQ 格点
+
+function pushTop(list, i) {
+  const d = distQ[i];
+  let lo = 0, hi = list.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (distQ[list[mid]] < d) lo = mid + 1; else hi = mid; }
+  if (lo < 10 || list.length < 10) { list.splice(lo, 0, i); if (list.length > 10) list.pop(); }
+}
+function recallOf(list) {
+  let c = 0;
+  for (const i of list) if (trueSet.has(i)) c++;
+  return c / 10;
+}
+function updateMarkersList(list) {
+  for (let j = 0; j < 10; j++) {
+    const mk = markers[j], i = list ? list[j] : undefined;
+    if (i === undefined) { mk.visible = false; continue; }
+    mk.visible = true;
+    mk.position.set(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+  }
+}
+function paintPoints() {
+  const a = colAttr.array;
+  for (let i = 0; i < N; i++) {
+    const o = i * 3, s = pstate[i];
+    if (s === 1) { a[o] = 0.30; a[o + 1] = 0.34; a[o + 2] = 0.40; }                                  // 剪枝变暗
+    else if (s === 2) { a[o] = baseCol[o] * 0.3 + 0.66; a[o + 1] = baseCol[o + 1] * 0.3 + 0.47; a[o + 2] = baseCol[o + 2] * 0.3 + 0.22; }   // 已扫(金)
+    else if (s === 4) { a[o] = baseCol[o] * 0.3 + 0.30; a[o + 1] = baseCol[o + 1] * 0.3 + 0.78; a[o + 2] = baseCol[o + 2] * 0.3 + 0.45; }   // HNSW 已访(绿)
+    else if (s === 3) { a[o] = 0.95; a[o + 1] = 0.88; a[o + 2] = 0.55; }                             // 命中/闪烁
+    else { a[o] = baseCol[o]; a[o + 1] = baseCol[o + 1]; a[o + 2] = baseCol[o + 2]; }
+  }
+  colAttr.needsUpdate = true;
+}
+function resetSearch() {
+  pstate.fill(0);
+  seenH.clear();
+  flashList = [];
+  bruteAcc = bruteScanned = bruteFound = bruteHold = 0; sweepR = 0.03;
+  hnAcc = hnIdx = hnScanned = hnHold = hnLastT = 0; hnLayer = 2; winner = false;
+  ivAcc = ivScanned = ivHold = 0;
+  rsB.length = rsH.length = rsI.length = 0;
+  morphQ = 0;
+  walker.visible = false;
+  sweepG.scale.setScalar(0.02);
+  updateMarkersList(null);
+  paintPoints();
+  cloudGeo.attributes.position.array.set(origPos);
+  cloudGeo.attributes.position.needsUpdate = true;
+}
+function buildIvList() {
+  const cd = CL.map((c, j) => ({ j, d: Math.hypot(c.c[0] - qPos[0], c.c[1] - qPos[1], c.c[2] - qPos[2]) }));
+  cd.sort((a, b) => a.d - b.d);
+  selMask = new Uint8Array(6);
+  for (const o of cd.slice(0, nprobe)) selMask[o.j] = 1;
+  const merged = [];
+  for (const o of cd.slice(0, nprobe)) for (const i of bucketLists[o.j]) merged.push(i);
+  merged.sort((a, b) => distQ[a] - distQ[b]);
+  ivList = merged;
+  ivScanned = 0; ivAcc = 0;
+  for (let i = 0; i < N; i++) if (!selMask[bucketOf[i]]) pstate[i] = 1;   // 剪枝丢弃 → 变暗
+}
+function planHnsw() {
+  const ef = Math.max(4, efWidth);
+  const best = [];                        // 全局 top-ef(升序)
+  const evs = [];
+  let scanned = 0;
+  const consider = i => {
+    const d = distQ[i];
+    let lo = 0, hi = best.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (best[mid].d < d) lo = mid + 1; else hi = mid; }
+    if (best.length < ef || lo < ef) { best.splice(lo, 0, { i, d }); if (best.length > ef) best.pop(); }
+  };
+  let cur = ENTRY;
+  for (let layer = 2; layer >= 0; layer--) {
+    consider(cur);
+    const seen = new Uint8Array(N);
+    seen[cur] = 1;
+    const cand = [{ i: cur, d: distQ[cur] }];
+    while (cand.length) {
+      let bi = 0;
+      for (let k = 1; k < cand.length; k++) if (cand[k].d < cand[bi].d) bi = k;
+      const c = cand[bi];
+      cand[bi] = cand[cand.length - 1]; cand.pop();
+      if (best.length >= ef && c.d > best[best.length - 1].d) break;      // HNSW 终止条件
+      const nbs = layerNbrs[layer].get(c.i) || [];
+      const ex = [];
+      for (const n of nbs) {
+        if (seen[n]) continue;                              // visited 检查先行:不重复计算距离(与真实实现一致)
+        scanned++; ex.push(n);
+        seen[n] = 1; cand.push({ i: n, d: distQ[n] }); consider(n);
+      }
+      if (ex.length) evs.push({ hop: c.i, ex, scanned });
+    }
+    if (layer > 0) { evs.push({ down: layer - 1, to: best[0].i }); cur = best[0].i; }
+  }
+  evs.push({ done: 1 });
+  return { evs, total: scanned };
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+addLabel(() => L(`嵌入空间:${N} 个向量 · 768 维投影到 3D · 6 个语义簇`,
+  `embedding space: ${N} vectors - 768 dims projected to 3D - 6 semantic clusters`),
+  () => 'st', new THREE.Vector3(0, 3.75, 0), null, cloudGroup);
+addLabel(() => L('查询 q:目标 = 最近 top-10 邻居', 'query q: find top-10 nearest neighbors'),
+  () => 'o', new THREE.Vector3(qPos[0] + 0.15, qPos[1] + 0.42, qPos[2]), null, cloudGroup);
+const bruteLbl = addLabel(() => L(`暴力扫描:逐点比对 O(N·d) · 已扫 ${bruteScanned}/${N}`, `brute scan: compare all, O(N·d) - scanned ${bruteScanned}/${N}`),
+  () => 'r', new THREE.Vector3(qPos[0], qPos[1] - 0.85, qPos[2] + 0.7), null, cloudGroup);
+const hnswLbl = addLabel(() => L(`HNSW:贪心跳步 · 已访 ${hnScanned} 点 · ef=${efWidth}`, `HNSW: greedy hops - visited ${hnScanned} - ef=${efWidth}`),
+  () => 'g', new THREE.Vector3(0, 4.35, 0), null, cloudGroup);
+const ivfLbl = addLabel(() => L(`IVF:只扫最近 ${nprobe}/6 桶 · 已扫 ${ivScanned}/${ivList ? ivList.length : 0}`, `IVF: scan nearest ${nprobe}/6 cells - scanned ${ivScanned}/${ivList ? ivList.length : 0}`),
+  () => 'b', new THREE.Vector3(-2.4, -1.35, 1.3), null, cloudGroup);
+const quantLbl = addLabel(() => L('PQ 量化:768 维 float32 3 KB → 64 B · 40× 压缩,分辨率换内存', 'PQ: 768-dim float32 3 KB to 64 B - 40x, resolution for memory'),
+  () => 'e', new THREE.Vector3(0, -1.75, 0), null, cloudGroup);
+const raceLbl = addLabel(() => L(`HNSW 先完成:${hnScanned} 次计算 vs 暴力 ${bruteScanned} · 同吞吐竞速`, `HNSW first: ${hnScanned} evals vs brute ${bruteScanned} - same throughput`),
+  () => 'g', new THREE.Vector3(0, 4.95, 0), null, cloudGroup);
+const clusterLbls = CL.map((c, j) => addLabel(() => L(`${c.zh} 簇 · ${cnt[j]} 点`, `${c.en} cluster - ${cnt[j]} pts`),
+  () => 'st', new THREE.Vector3(c.c[0], c.c[1] + 1.12, c.c[2]), null, cloudGroup));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'emb', tgt: [0, 2.5, 3.6],
+    b: '从词到向量:嵌入空间把语义变成几何', be: 'From words to vectors: meaning becomes geometry',
+    d: '编码器(双塔 / BERT 系)把一段文本或一张图压缩成一个 384-1536 维向量:训练时让相似样本的向量互相靠近,语义就被翻译成了几何位置——同话题文档聚成一簇,跨语言同义句也相邻。本页 640 个演示向量来自 6 个语义簇(科技/体育/财经/医学/法律/美食),768 维投影到 3D 展示。检索的全部秘密就在这里:意思相近 = 距离很近,查「相似内容」变成一次「找近邻」。本质是把「理解」折叠成一次坐标定位。',
+    de: 'An encoder (bi-encoder / BERT family) compresses a text or image into a 384-1536 dim vector: training pulls similar samples together, so meaning becomes geometry - same-topic documents cluster, cross-language synonyms neighbor. The 640 demo vectors here come from 6 semantic clusters (tech/sports/finance/medicine/law/food), 768 dims projected to 3D. The whole secret of retrieval: close meaning = close distance; "find similar" becomes "find nearest neighbors". In essence, understanding folded into a coordinate.' },
+  { hl: 'brute', tgt: [0.6, 2.4, 3.2],
+    b: '余弦相似度与暴力检索的天花板', be: 'Cosine similarity and the ceiling of brute force',
+    d: '比较两个向量用余弦相似度 cos=(a·b)/(|a||b|),归一化后点积即相似度,一次计算就是 768 次乘加。暴力法把查询与全库逐个比对再排序,精确但是 O(N·d):本页 640 向量约 49 万次乘加、1 ms 内搞定;而十亿向量 × 768 维就是 7680 亿次,单查询要数百秒——「精确」在规模面前不可行。点「暴力扫描」看金色波前扩散:扫描数涨满 640 才收工。本质是用蛮力买确定性,账单随 N 线性爆炸。',
+    de: 'Compare two vectors by cosine similarity cos=(a·b)/(|a||b|); after normalization the dot product is the similarity, one comparison costs 768 multiply-adds. Brute force checks the query against the whole library, exact but O(N·d): 640 vectors here need ~490k MACs, 1 ms; a billion vectors x 768 dims is 768 billion - hundreds of seconds per query. Exact is infeasible at scale. Hit "brute scan" and watch the gold wavefront: the counter must reach 640. Brute force buys certainty; the bill explodes linearly with N.' },
+  { hl: 'ivf', tgt: [0, 2.3, 3.4],
+    b: 'IVF 倒排文件:先分库,再只搜邻近库', be: 'IVF: partition first, search only nearby cells',
+    d: 'IVF 用 k-means 把全库聚成 nlist 个簇(真实系统 nlist=1024),每个向量挂到最近质心的倒排桶;查询先算 q 离哪个质心近,只扫最近 nprobe 个桶,扫描量 ≈ N×nprobe/nlist:本页 640 点、6 桶、nprobe=2 → 只扫 ~213 点,约 10× 加速、召回 ~0.95。灰色点就是被剪枝丢弃的向量——代价是「边界损失」:真最近邻若落在没扫的桶里就永远找不到,nprobe 调大用扫描换召回。本质是把全库比对压缩成「先路由、后精查」。',
+    de: 'IVF clusters the library into nlist cells with k-means (nlist=1024 in real systems); each vector joins the inverted list of its nearest centroid. A query first finds the nprobe nearest centroids and scans only those cells: scanned ≈ N x nprobe/nlist - here 640 points, 6 cells, nprobe=2 → ~213 points, ~10x speedup, recall ~0.95. The gray points are pruned away - the cost is boundary loss: a true nearest neighbor in an unscanned cell is lost forever; raise nprobe to trade scanning for recall. Route first, search precisely second.' },
+  { hl: 'hnsw', tgt: [0, 3.3, 3.8],
+    b: 'HNSW 分层图:高速公路-省道-乡道', be: 'HNSW: highway, arterial and lane layers',
+    d: 'HNSW 把向量组织成三层图:顶层稀疏、边长(跨簇飞跃),底层稠密、边短(精细逼近);查询从顶层入口贪心下行——当前点只在邻居里挑离 q 更近的,走不动就降一层,复杂度 ~log N,十亿向量也只要几十跳。看绿色行走者的跳步:先在顶层长边上滑行,再逐层落到 q 附近。ef 是探索宽度:候选队列越长、回溯越多,召回越高、扫描也越多——拖 ef 滑杆对比扫描数与召回。本质是用内存里的「多级地图」把 O(N) 压成 O(log N)。',
+    de: 'HNSW organizes vectors into a layered graph: top layer sparse with long edges (cross-cluster leaps), bottom dense with short edges (fine approach). A query enters at the top and greedily descends - always stepping to a neighbor closer to q, dropping a layer when stuck - in ~log N hops, tens of hops even for a billion vectors. Watch the green walker: gliding on long top edges, then settling near q. ef is the beam width: longer queue, more backtracking, higher recall AND more scans - drag the ef slider to compare. A multi-level map in memory turns O(N) into O(log N).' },
+  { hl: 'trade', tgt: [0, 2.6, 4.2],
+    b: '召回-速度-内存:没有免费午餐的三角', be: 'Recall, speed, memory: a triangle with no free lunch',
+    d: '三种策略各付各的账:暴力零预处理、召回 100%,但每次查询扫全库;IVF 内存只多存 nlist 个质心(1024×768×4 B ≈ 3 MB),换 10× 提速、召回 ~0.95;HNSW 要把整张图装进内存(每向量多存 16-48 个邻居指针,十亿向量要几十 GB),换 ~log N 的速度。点「竞速」看同吞吐对比:HNSW 几十次计算完赛,暴力还在往 640 爬。没有免费午餐:工程就是在召回、延迟、内存的三角里按业务选角。本质是索引 = 预计算换查询时间。',
+    de: 'Each strategy pays differently: brute force has zero preprocessing and 100% recall but scans everything per query; IVF stores only nlist centroids (1024 x 768 x 4 B ≈ 3 MB) for a 10x speedup at recall ~0.95; HNSW keeps the whole graph in memory (16-48 neighbor pointers per vector, tens of GB for a billion) for ~log N speed. Hit "race" for the same-throughput duel: HNSW finishes in tens of evaluations while brute crawls toward 640. No free lunch - engineering picks a corner of the recall-latency-memory triangle. An index is precomputation traded for query time.' },
+  { hl: 'quant', tgt: [0, 2.3, 3.4],
+    b: '量化压缩与真实系统:RAG 的地基', be: 'Quantization and real systems: the floor under RAG',
+    d: '内存不够还有第三招:PQ 乘积量化把 768 维 float32(每向量 3 KB)切成 64 段,每段用 256 个码字的码本量化成 1 B,整向量压到 64 B——40× 压缩,召回再让一点;十亿向量从 3 TB 降到 ~76 GB,单机可放。点「量化压缩」看点云吸附到格点:分辨率换内存。真实系统把这些拼在一起:RAG 先向量检索捞 top-10 文档再喂给 LLM;推荐、以图搜图、去重同理。本质是高维空间里,「附近」就是「相关」。',
+    de: 'Memory has a third lever: PQ product quantization splits a 768-dim float32 vector (3 KB) into 64 subvectors, each coded to 1 B by a 256-entry codebook - 64 B total, 40x compression for a bit more recall loss; a billion vectors shrink from 3 TB to ~76 GB, one machine. Hit "quantization" and watch points snap to lattice: resolution traded for memory. Real systems stack these: RAG retrieves top-10 documents by vector search before the LLM answers; recommenders, image search and dedup likewise. In high-dimensional space, nearby IS relevant.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 2.4, 0);
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const ivfScan = Math.round(N * nprobe / 6);
+  formulaEl.innerHTML =
+    L(`cos(a,b) = a·b/(|a||b|),归一化后点积即相似度;本页 ${N} 向量 × ${DIM} 维 → 暴力一次查询 ≈ <b>${(N * DIM / 10000).toFixed(0)} 万次乘加</b>`,
+      `cos(a,b) = a·b/(|a||b|); dot product after normalization; ${N} vectors x ${DIM} dims → brute query ≈ <b>${((N * DIM) / 1e4).toFixed(0)}0k MACs</b>`) + '<br>' +
+    L(`IVF:扫描 ≈ N×nprobe/nlist = ${N}×${nprobe}/6 ≈ <b>${ivfScan} 点</b>(演示 nlist=6,真实 1024)· 剪枝丢弃 ~${N - ivfScan} 点`,
+      `IVF: scanned ≈ N x nprobe/nlist = ${N} x ${nprobe}/6 ≈ <b>${ivfScan} pts</b> (demo nlist=6, real 1024) - ~${N - ivfScan} pruned`) + '<br>' +
+    L(`HNSW:下行 ~log₂${N} ≈ 9.3 跳,ef=${efWidth} 调召回(越大越准越慢)· PQ:3 KB → 64 B(<b>40×</b>)`,
+      `HNSW: ~log2(${N}) ≈ 9.3 hops, ef=${efWidth} tunes recall - PQ: 3 KB → 64 B (<b>40x</b>)`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnEmbed = document.getElementById('btnEmbed'), btnBrute = document.getElementById('btnBrute'),
+  btnHnsw = document.getElementById('btnHnsw'), btnIvf = document.getElementById('btnIvf'),
+  btnRace = document.getElementById('btnRace'), btnQuant = document.getElementById('btnQuant'),
+  btnReset = document.getElementById('btnReset');
+const presetBtns = { embed: btnEmbed, brute: btnBrute, hnsw: btnHnsw, ivf: btnIvf, race: btnRace, quant: btnQuant };
+function setPreset(id) {
+  mode = mode === id ? null : id;
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === mode);
+  emT = 0; quT = 0;
+  cloudGroup.rotation.y = ((cloudGroup.rotation.y % TAU) + TAU) % TAU;    // 归一化到 (-π, π] 便于回正
+  if (cloudGroup.rotation.y > Math.PI) cloudGroup.rotation.y -= TAU;
+  resetSearch();
+  if (mode === 'hnsw' || mode === 'race') hn = planHnsw();
+  if (mode === 'ivf') buildIvList();
+  updateFormula();
+}
+function resetMachine() {
+  if (mode) setPreset(mode);              // 先按 toggle 语义清掉当前模式
+  mode = null;
+  for (const k in presetBtns) presetBtns[k].classList.remove('on');
+  cloudGroup.rotation.y = 0;
+  emT = 0; quT = 0;
+  resetSearch();
+  elNprobe.value = 2; updateNprobe();
+  elEf.value = 16; updateEf();
+  updateFormula();
+}
+btnEmbed.addEventListener('click', () => setPreset('embed'));
+btnBrute.addEventListener('click', () => setPreset('brute'));
+btnHnsw.addEventListener('click', () => setPreset('hnsw'));
+btnIvf.addEventListener('click', () => setPreset('ivf'));
+btnRace.addEventListener('click', () => setPreset('race'));
+btnQuant.addEventListener('click', () => setPreset('quant'));
+btnReset.addEventListener('click', resetMachine);
+
+/* ---------------- 召回示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const rcBuf = new Float32Array(260), scBuf = new Float32Array(260);
+let bufI = 0;
+function pushScope(rc, sc) {
+  rcBuf[bufI] = rc; scBuf[bufI] = sc;
+  bufI = (bufI + 1) % rcBuf.length;
+}
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('召回率 top-10(绿)与扫描占比(金)· 实时', 'recall@10 (green) vs scanned fraction (gold) - live'), 4 * dpr, 10 * dpr);
+  const y0 = ch - 6 * dpr, amp = ch - 20 * dpr;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.3)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, y0 - amp); scopeCtx.lineTo(cw, y0 - amp);
+  scopeCtx.moveTo(0, y0); scopeCtx.lineTo(cw, y0);
+  scopeCtx.stroke();
+  const plot = (buf, style, w) => {
+    scopeCtx.strokeStyle = style;
+    scopeCtx.lineWidth = Math.max(1.1, w * dpr);
+    scopeCtx.beginPath();
+    const n = buf.length, step = cw / n;
+    for (let i = 0; i < n; i++) {
+      const v = clamp01(buf[(bufI + i) % n]), x = i * step, y = y0 - v * amp;
+      i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+    }
+    scopeCtx.stroke();
+  };
+  plot(scBuf, 'rgba(216,169,78,.55)', 1);
+  plot(rcBuf, 'rgba(116,220,132,.95)', 1.4);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elNprobe = document.getElementById('nprobe'), elNprobeVal = document.getElementById('nprobeVal');
+const elEf = document.getElementById('ef'), elEfVal = document.getElementById('efVal');
+const tglCells = document.getElementById('tglCells'), tglEdges = document.getElementById('tglEdges');
+const tglLabels = document.getElementById('tglLabels'), tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateNprobe() {
+  nprobe = parseInt(elNprobe.value, 10);
+  elNprobeVal.textContent = nprobe + L(' 桶', ' cells');
+  if (mode === 'ivf') { resetSearch(); buildIvList(); }
+  updateFormula();
+}
+function updateEf() {
+  efWidth = parseInt(elEf.value, 10);
+  elEfVal.textContent = String(efWidth);
+  if ((mode === 'hnsw' || mode === 'race') && hn) { hn = planHnsw(); resetSearch(); }
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elNprobe.addEventListener('input', updateNprobe);
+elEf.addEventListener('input', updateEf);
+tglCells.addEventListener('change', () => { cells.forEach(c => c.visible = tglCells.checked); });
+tglEdges.addEventListener('change', () => { edgeL0.visible = tglEdges.checked; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  stA.innerHTML = N + '<small> 个 · 6 簇</small>';
+  stA.className = 'v ok';
+  const searching = mode === 'brute' || mode === 'hnsw' || mode === 'ivf' || mode === 'race';
+  if (searching) {
+    const sc = mode === 'brute' ? bruteScanned : mode === 'ivf' ? ivScanned : hnScanned;
+    const rc = recallOf(mode === 'brute' ? rsB : mode === 'ivf' ? rsI : rsH);
+    stB.innerHTML = mode === 'race' ? hnScanned + '<small> HNSW / 暴力 ' + bruteScanned + '</small>' : sc + '<small> / ' + N + '</small>';
+    const fr = sc / N;
+    stB.className = 'v ' + (fr > 0.85 ? 'bad' : fr > 0.3 ? 'warn' : 'ok');
+    stC.innerHTML = Math.round(rc * 100) + '<small> %</small>';
+    stC.className = 'v ' + (rc >= 0.9 ? 'ok' : rc >= 0.6 ? 'warn' : 'bad');
+    const lat = sc * DIM * 2 / 1e9 * 1000;               // 演示吞吐 1 GFLOPS
+    stD.innerHTML = (lat >= 1 ? lat.toFixed(1) : lat.toFixed(2)) + '<small> ms @1 GFLOPS</small>';
+    stD.className = stB.className;
+  } else {
+    stB.innerHTML = stC.innerHTML = stD.innerHTML = '—';
+    stB.className = stC.className = stD.className = 'v';
+  }
+  stE.innerHTML = DIM + '<small> 维 · float32</small>';
+  stE.className = 'v ok';
+  stF.innerHTML = '40×<small> PQ 3 KB→64 B</small>';
+  stF.className = 'v ok';
+}
+
+/* ---------------- 模式时间轴 ---------------- */
+function hnswAdvance(simDt, solo) {
+  if (!hn || hnIdx >= hn.evs.length) return;
+  hnLastT += simDt;
+  hnAcc += simDt * RATE;
+  const ev = hn.evs[hnIdx];
+  const cost = ev.ex ? ev.ex.length + 1 : 1;
+  if (hnAcc < cost || (solo && hnLastT < 0.14)) return;
+  hnAcc -= cost; hnLastT = 0; hnIdx++;
+  walker.visible = true;
+  walkerFrom.copy(walker.position);
+  if (ev.down !== undefined) {
+    hnLayer = ev.down;
+    pos3(ev.to, hnLayer, walkerTo);
+  } else if (ev.ex) {
+    hnScanned = ev.scanned;
+    pos3(ev.hop, hnLayer, walkerTo);
+    for (const n of ev.ex) {
+      if (pstate[n] !== 1 && pstate[n] !== 3) pstate[n] = 3;
+      flashList.push({ i: n, t: 0.32 }); if (!seenH.has(n)) { seenH.add(n); pushTop(rsH, n); }
+    }
+    if (!seenH.has(ev.hop)) { seenH.add(ev.hop); pushTop(rsH, ev.hop); }
+  }
+  walkerT = 0;
+}
+const seenH = new Set();
+function runModes(simDt) {
+  /* 闪烁衰减(所有模式共用):HNSW 系恢复为绿色已访,其余恢复为金色已扫 */
+  if (flashList.length) {
+    for (let k = flashList.length - 1; k >= 0; k--) {
+      const f = flashList[k];
+      f.t -= simDt > 0 ? simDt : 0.016;
+      if (f.t <= 0) { pstate[f.i] = (mode === 'hnsw' || mode === 'race') ? 4 : 2; flashList.splice(k, 1); }
+    }
+    paintPoints();
+  }
+  if (mode === 'embed') {
+    emT += simDt;
+    cloudGroup.rotation.y = emT * 0.12;
+    cloudMat.size = 0.082 + 0.02 * Math.sin(et * 2.2);
+    sweepG.visible = false;
+    walker.visible = false;
+    updateMarkersList(null);
+    return;
+  }
+  if (cloudGroup.rotation.y !== 0) cloudGroup.rotation.y *= Math.max(0, 1 - simDt * 3);   // 退出嵌入模式缓慢回正
+  if (mode === 'brute' || mode === 'race') {
+    sweepG.visible = true;
+    sweepG.scale.setScalar(Math.max(0.02, sweepR));
+    if (bruteScanned < N) {
+      bruteAcc += simDt * RATE;
+      const sc = Math.min(N, Math.floor(bruteAcc));
+      if (sc !== bruteScanned) {
+        bruteScanned = sc;
+        sweepR = sortedD[sc - 1] + 0.03;
+        for (let i = 0; i < N; i++) if (distQ[i] <= sweepR && pstate[i] === 0) pstate[i] = 2;
+        while (bruteFound < 10 && distQ[true10[bruteFound]] <= sweepR) {
+          const i = true10[bruteFound++];
+          pstate[i] = 3;
+          pushTop(rsB, i);
+        }
+        paintPoints();
+      }
+    } else bruteHold += simDt;
+    /* 同吞吐竞速:双方每模拟秒处理同样多的距离计算 */
+    if (mode === 'race' && (!hn || hnIdx < hn.evs.length)) hnswAdvance(simDt, false);
+    if (mode === 'race') {
+      for (const i of rsH) if (trueSet.has(i)) pstate[i] = 3;
+      winner = hn && hnIdx >= hn.evs.length && bruteScanned < N;
+      if (bruteScanned >= N && hn && hnIdx >= hn.evs.length && bruteHold > 1.8) resetSearch();
+    } else if (bruteScanned >= N && bruteHold > 1.8) {
+      resetSearch();
+    }
+    updateMarkersList(mode === 'race' ? rsH : rsB);
+    return;
+  }
+  if (mode === 'hnsw') {
+    hnswAdvance(simDt, true);
+    if (hn && hnIdx >= hn.evs.length) {
+      hnHold += simDt;
+      for (const i of rsH) if (trueSet.has(i)) pstate[i] = 3;
+      if (hnHold > 1.8) resetSearch();
+    }
+    updateMarkersList(rsH);
+    return;
+  }
+  if (mode === 'ivf') {
+    sweepG.visible = false;
+    cells.forEach((c, j) => c.material = selMask[j] ? M.cellHot : M.cell);
+    if (ivList && ivScanned < ivList.length) {
+      ivAcc += simDt * RATE;
+      while (ivScanned < ivList.length && ivAcc >= 1) {
+        ivAcc -= 1;
+        const i = ivList[ivScanned++];
+        if (pstate[i] === 0 || pstate[i] === 1) pstate[i] = 2;
+        pushTop(rsI, i);
+      }
+      for (const i of rsI) if (trueSet.has(i)) pstate[i] = 3;
+      paintPoints();
+    } else if (ivList) {
+      ivHold += simDt;
+      if (ivHold > 1.8) { resetSearch(); buildIvList(); }
+    }
+    updateMarkersList(rsI);
+    return;
+  }
+  if (mode === 'quant') {
+    quT += simDt / 4.8;
+    if (quT > 1) quT = 0;
+    const m = quT < 0.22 ? 0 : quT < 0.5 ? E2((quT - 0.22) / 0.28) : quT < 0.85 ? 1 : 1 - E2((quT - 0.85) / 0.15);
+    if (m !== morphQ) {
+      morphQ = m;
+      const pa = cloudGeo.attributes.position.array;
+      for (let i = 0; i < N * 3; i++) pa[i] = origPos[i] + (snapPos[i] - origPos[i]) * m;
+      cloudGeo.attributes.position.needsUpdate = true;
+    }
+    updateMarkersList(null);
+    return;
+  }
+  /* 静态 */
+  sweepG.visible = false;
+  walker.visible = false;
+  updateMarkersList(null);
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, scenario = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  /* HNSW 行走者跳跃动画(统一在这里推进,暴力/HNSW 竞速共用) */
+  if ((mode === 'hnsw' || mode === 'race') && walkerT < 1) {
+    walkerT = Math.min(1, walkerT + simDt / 0.13);
+    walker.position.lerpVectors(walkerFrom, walkerTo, E2(walkerT));
+  }
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.q, M.best, M.walker, M.cellHot]) m.emissiveIntensity = 0.15;
+  const boost = m => { m.emissiveIntensity = 0.55 + 0.3 * hlK; };
+  cloudMat.size = (mode === 'embed' || hl === 'emb') ? 0.09 + 0.022 * hlK : 0.082;
+  if (hl === 'brute' || hl === 'trade') { boost(M.q); boost(M.best); }
+  if (hl === 'ivf' || hl === 'trade') boost(M.cellHot);
+  if (hl === 'hnsw' || hl === 'quant') boost(hl === 'hnsw' ? M.walker : M.q);
+  M.edgeL.opacity = hl === 'hnsw' ? 0.75 + 0.2 * hlK : 0.5;
+  qMesh.scale.setScalar(1 + 0.12 * Math.sin(et * 4));
+  /* 图层可见性(随模式 + 开关) */
+  const hnswOn = mode === 'hnsw' || mode === 'race';
+  edgeL1.visible = edgeL2.visible = entryMark.visible = hnswOn;
+  edgeL0.visible = tglEdges.checked;
+  M.ghost.opacity = hnswOn ? 0.85 : 0.25;
+  cells.forEach((c, j) => {
+    c.visible = tglCells.checked;
+    if (mode !== 'ivf') c.material = M.cell;
+  });
+  /* 标签 */
+  refreshLabels();
+  clusterLbls.forEach(l => l.o.visible = l.o.visible && mode === 'embed');
+  bruteLbl.o.visible = bruteLbl.o.visible && (mode === 'brute' || mode === 'race');
+  hnswLbl.o.visible = hnswLbl.o.visible && (mode === 'hnsw' || mode === 'race');
+  ivfLbl.o.visible = ivfLbl.o.visible && mode === 'ivf';
+  quantLbl.o.visible = quantLbl.o.visible && mode === 'quant';
+  raceLbl.o.visible = raceLbl.o.visible && mode === 'race' && winner;
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  /* 示波器:搜索模式实时采样 */
+  if (playing && (mode === 'brute' || mode === 'hnsw' || mode === 'ivf' || mode === 'race')) {
+    const rc = mode === 'brute' ? recallOf(rsB) : mode === 'ivf' ? recallOf(rsI) : recallOf(rsH);
+    const sc = (mode === 'brute' ? bruteScanned : mode === 'ivf' ? ivScanned : hnScanned) / N;
+    pushScope(rc, sc);
+  }
+  drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCells.dispatchEvent(new Event('change'));
+tglEdges.dispatchEvent(new Event('change'));
+tglRotate.checked = qsBool('spin', true);
+controls.autoRotate = tglRotate.checked;
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
