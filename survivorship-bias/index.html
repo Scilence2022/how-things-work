@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>幸存者偏差 · 返航图上的稀疏区才是要害</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="幸存者偏差:没回来的飞机才是答案" data-en="Survivorship Bias: The Missing Planes Are the Answer">幸存者偏差:没回来的飞机才是答案</h1>
+  <div class="sub" data-zh="1943 年,统计研究组收到返航轰炸机的弹孔分布:机翼与机身密、发动机与座舱稀,军方主张哪弹多补哪;沃耳德反转视角——返航机是「中弹要害仍能飞回」的筛选样本,发动机/座舱中弹的大多坠海,弹孔图天生缺了一类数据:P(部位|返航)≠P(部位|被击中),要害恰是返航图上的稀疏区。演示:弹幕随机命中四个部位,要害中弹直接坠毁;对比返航样本与全样本热图、揭晓缺席飞机;同弹幕配对检验直觉装甲与沃耳德装甲的损失率。同类陷阱:基金业绩剔除清算者,存活者年均收益虚高约 0.5-1.5 个百分点;创业成功学与爆款复盘只听赢家说话 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="In 1943 the Statistical Research Group studied hole maps of returning bombers: wings and fuselage riddled, engines and cockpit nearly clean - the Army wanted armor where the holes were. Wald reversed the view: a returning plane is a filtered sample of hits that failed to kill; the ones hit in the engine or cockpit never came back, so the map is missing a whole class of data - P(zone | returned) ≠ P(zone | hit), and the vital areas are exactly the sparse spots. Watch the flak hit four zones, fatal hits drop planes, compare the returned-sample vs full-sample heat maps, reveal the absent aircraft, and run a paired test of intuitive vs Wald armor. Same trap: fund databases drop liquidated funds, inflating survivor returns by ~0.5-1.5 points a year; startup lore and viral-hit retrospectives only interview the winners · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">1943 年,统计研究组收到返航轰炸机的弹孔分布:机翼与机身密、发动机与座舱稀,军方主张哪弹多补哪;沃耳德反转视角——返航机是「中弹要害仍能飞回」的筛选样本,发动机/座舱中弹的大多坠海,弹孔图天生缺了一类数据:P(部位|返航)≠P(部位|被击中),要害恰是返航图上的稀疏区。演示:弹幕随机命中四个部位,要害中弹直接坠毁;对比返航样本与全样本热图、揭晓缺席飞机;同弹幕配对检验直觉装甲与沃耳德装甲的损失率。同类陷阱:基金业绩剔除清算者,存活者年均收益虚高约 0.5-1.5 个百分点;创业成功学与爆款复盘只听赢家说话 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="出击数" data-en="sorties">出击数</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="返航率(无装甲)" data-en="return rate">返航率(无装甲)</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="要害中弹 · 全样本" data-en="vital hits · all">要害中弹 · 全样本</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="要害中弹 · 返航样本" data-en="vital hits · returned">要害中弹 · 返航样本</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="偏差幅度" data-en="bias">偏差幅度</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="损失率 直觉/沃尔德" data-en="loss int/wald">损失率 直觉/沃尔德</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="返航机 · 累积弹孔图" data-en="returnee · hole map">返航机 · 累积弹孔图</span>
+    <span class="chip o" data-zh="弹幕 · 命中判定" data-en="flak · hit rolls">弹幕 · 命中判定</span>
+    <span class="chip g" data-zh="沃尔德装甲(要害)" data-en="Wald armor (vital)">沃尔德装甲(要害)</span>
+    <span class="chip r" data-zh="坠毁机 · 缺席数据" data-en="downed · missing data">坠毁机 · 缺席数据</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnSortie" data-zh="弹幕与返航(招牌)" data-en="flak & returns (signature)">弹幕与返航(招牌)</button>
+    <button class="abtn" id="btnHeat" data-zh="热图对照" data-en="heatmap duel">热图对照</button>
+    <button class="abtn" id="btnLost" data-zh="缺席数据揭晓" data-en="reveal the missing">缺席数据揭晓</button>
+    <button class="abtn hot" id="btnArmor" data-zh="加固对照(直觉 vs 沃尔德)" data-en="armor duel (intuition vs Wald)">加固对照(直觉 vs 沃尔德)</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="每机中弹" data-en="hits/plane">每机中弹</label><input id="hits" type="range" min="1" max="10" step="1" value="4"><span class="val" id="hitsVal">4 发</span></div>
+  <div class="row"><label data-zh="要害中弹占比" data-en="vital share">要害中弹占比</label><input id="vital" type="range" min="5" max="45" step="1" value="25"><span class="val" id="vitalVal">25%</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglGhost" type="checkbox" checked> <span data-zh="全样本幽灵" data-en="full-sample ghost">全样本幽灵</span></label>
+        <label><input id="tglHoles" type="checkbox" checked> <span data-zh="返航弹孔" data-en="return holes">返航弹孔</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../monty-hall-bayes/" data-zh="蒙提霍尔与贝叶斯" data-en="Monty Hall & Bayes">蒙提霍尔与贝叶斯</a>
+    <a href="../bayes-screening/" data-zh="贝叶斯筛查" data-en="Bayes screening">贝叶斯筛查</a>
+    <a href="../law-of-large-numbers/" data-zh="大数定律" data-en="law of large numbers">大数定律</a>
+    <a href="../simpson-paradox/" data-zh="辛普森悖论" data-en="Simpson's paradox">辛普森悖论</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);            // 网格线
+  M.skin.color.set(dark ? 0x9fb4c8 : 0x86a0b4);            // 返航机蒙皮
+  M.hole.color.set(dark ? 0x2e2118 : 0x40301f);            // 返航弹孔
+  M.wreck.color.set(dark ? 0x23262c : 0x4d545e);           // 坠毁机
+  M.bullet.color.set(dark ? 0xffd27a : 0xc9862a);          // 曳光弹
+  M.ghost.color.set(dark ? 0xff5252 : 0xc43a3a);           // 全样本弹孔
+  M.wing.color.set(dark ? 0x6fb8ff : 0x3a76b8);            // 机翼条形
+  M.fuse.color.set(dark ? 0x74dc84 : 0x2f9e63);            // 机身条形
+  M.eng.color.set(dark ? 0xffa94d : 0xc97f22);             // 发动机条形
+  M.cock.color.set(dark ? 0xff6b6b : 0xc43a3a);            // 座舱条形
+  M.chart.color.set(dark ? 0x2c333b : 0x55606a);           // 图表底座
+  M.armorI.color.set(dark ? 0xffa94d : 0xd08a2e);          // 直觉装甲(橙)
+  M.armorW.color.set(dark ? 0x7bd88f : 0x2f9e63);          // 沃尔德装甲(绿)
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('幸存者偏差 · 返航图上的稀疏区才是要害', 'Survivorship Bias · The Sparse Spots Are the Vital Areas');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateHits();
+  updateVital();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(8.0, 4.8, 10.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.7, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 30;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  skin: mat(0x9fb4c8, { roughness: 0.5, metalness: 0.4 }),
+  hole: mat(0x2e2118, { roughness: 0.8, metalness: 0.2, emissive: 0x4a2c14, emissiveIntensity: 0.5 }),
+  wreck: mat(0x23262c, { roughness: 0.85, metalness: 0.3 }),
+  bullet: mat(0xffd27a, { roughness: 0.3, metalness: 0.4, emissive: 0xffb84d, emissiveIntensity: 1.6 }),
+  ghost: new THREE.MeshBasicMaterial({ color: 0xff5252, transparent: true, opacity: 0.9 }),
+  wing: mat(0x6fb8ff, { roughness: 0.5, metalness: 0.35 }),
+  fuse: mat(0x74dc84, { roughness: 0.5, metalness: 0.35 }),
+  eng: mat(0xffa94d, { roughness: 0.5, metalness: 0.35 }),
+  cock: mat(0xff6b6b, { roughness: 0.5, metalness: 0.35 }),
+  chart: mat(0x2c333b, { roughness: 0.6, metalness: 0.5 }),
+  armorI: new THREE.MeshStandardMaterial({ color: 0xffa94d, roughness: 0.35, metalness: 0.3,
+    transparent: true, opacity: 0.3, emissive: 0xffa94d, emissiveIntensity: 0.25 }),
+  armorW: new THREE.MeshStandardMaterial({ color: 0x7bd88f, roughness: 0.35, metalness: 0.3,
+    transparent: true, opacity: 0.3, emissive: 0x7bd88f, emissiveIntensity: 0.25 }),
+  glass: mat(0x74c0fc, { roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.35 }),
+};
+
+/* ---------------- 命中模型(演示设定:四区命中概率 + 单发致死率) ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let scenario = 0;
+let et = 0;
+let hitsPerSortie = 4, vital = 25;         // 滑杆:每次中弹数 / 要害(发动机+座舱)中弹占比
+let streamOn = true;                        // 弹幕流(招牌)
+let mode = null;                            // 'heat' | 'lost' | 'armor'
+let sorties = 0, returnedN = 0, lostN = 0;
+const hitsAll = [0, 0, 0, 0];               // 全样本命中计数
+const hitsRet = [0, 0, 0, 0];               // 返航样本命中计数
+let armorEval = 0, lossNo = 0, lossInt = 0, lossWald = 0;   // 配对评估累计
+const winBuf = [];                          // 最近 30 次出击的配对结果(0/1)
+const histRate = [[], [], []];              // 三条滑动损失率曲线
+const FATAL = [0.05, 0.10, 0.55, 0.70];     // 机翼/机身/发动机/座舱 单发致死率(演示设定,排序真实)
+const covI = [0.5, 0.5, 0, 0];              // 直觉装甲:盖机翼+机身
+const covW = [0, 0, 0.5, 0.5];              // 沃尔德装甲:盖发动机+座舱
+const probs = () => { const v = vital / 100; return [0.53 * (1 - v), 0.47 * (1 - v), 0.6 * v, 0.4 * v]; };
+const rateOf = pol => {                     // 解析返航率:每发生存率^n
+  const p = probs(), c = pol === 1 ? covI : pol === 2 ? covW : [0, 0, 0, 0];
+  let s = 0;
+  for (let z = 0; z < 4; z++) s += p[z] * (1 - FATAL[z] * (1 - c[z]));
+  return Math.pow(s, hitsPerSortie);
+};
+const shareOf = (arr, zset) => {            // 命中区占比(指定区域集合)
+  let tot = 0, sub = 0;
+  for (let z = 0; z < 4; z++) { tot += arr[z]; if (zset.includes(z)) sub += arr[z]; }
+  return tot > 0 ? sub / tot : (zset.length ? 0.25 : 0);
+};
+
+/* ---------------- 场景装配:地面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, 40), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(40, 20, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* ---------------- 返航机(累积弹孔的样本图) ---------------- */
+const planeG = new THREE.Group();
+planeG.position.set(0, 1.55, 0);
+scene.add(planeG);
+function planeParts(g, skinMat) {
+  const fus = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, 2.7, 12), skinMat);
+  fus.rotation.x = Math.PI / 2;
+  g.add(fus);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.6, 12), skinMat);
+  nose.rotation.x = Math.PI / 2;
+  nose.position.z = 1.62;
+  g.add(nose);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.09, 0.72), skinMat);
+  wing.position.set(0, -0.05, 0.15);
+  g.add(wing);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.42), skinMat);
+  tail.position.set(0, 0.04, -1.28);
+  g.add(tail);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.6, 0.5), skinMat);
+  fin.position.set(0, 0.32, -1.3);
+  g.add(fin);
+  for (const s of [-1, 1]) {
+    const nac = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.52, 10), skinMat);
+    nac.rotation.x = Math.PI / 2;
+    nac.position.set(s * 1.35, -0.12, 0.35);
+    g.add(nac);
+  }
+  const cab = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 10), M.glass);
+  cab.scale.set(1, 0.75, 1.6);
+  cab.position.set(0, 0.22, 1.02);
+  g.add(cab);
+}
+planeParts(planeG, M.skin);
+/* 部位命中点(机体局部坐标) */
+function zonePoint(z) {
+  if (z === 0) return new THREE.Vector3((Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 1.6),
+    -0.03 + Math.random() * 0.05, 0.15 + (Math.random() - 0.5) * 0.6);
+  if (z === 1) return new THREE.Vector3((Math.random() - 0.5) * 0.36, -0.2 + Math.random() * 0.4,
+    -1.1 + Math.random() * 2.3);
+  if (z === 2) { const s = Math.random() < 0.5 ? -1 : 1;
+    return new THREE.Vector3(s * 1.35 + (Math.random() - 0.5) * 0.16, -0.12 + (Math.random() - 0.5) * 0.18,
+    0.35 + (Math.random() - 0.5) * 0.42); }
+  return new THREE.Vector3((Math.random() - 0.5) * 0.22, 0.22 + (Math.random() - 0.5) * 0.08,
+    1.02 + (Math.random() - 0.5) * 0.2);
+}
+/* 返航弹孔池(轮转覆盖) */
+const holeGeo = new THREE.SphereGeometry(0.05, 8, 6);
+const holePool = [];
+for (let i = 0; i < 70; i++) {
+  const h = new THREE.Mesh(holeGeo, M.hole);
+  h.visible = false;
+  planeG.add(h);
+  holePool.push(h);
+}
+let holeIdx = 0;
+/* 全样本幽灵机(线框 + 红色弹孔:含坠毁机的所有命中) */
+const ghostG = new THREE.Group();
+ghostG.position.set(6.2, 1.55, -0.8);
+ghostG.rotation.y = -0.35;
+scene.add(ghostG);
+const ghostWire = new THREE.MeshBasicMaterial({ color: 0xff5252, wireframe: true, transparent: true, opacity: 0.16 });
+{
+  const fus = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, 2.7, 10), ghostWire);
+  fus.rotation.x = Math.PI / 2;
+  ghostG.add(fus);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.09, 0.72), ghostWire);
+  wing.position.set(0, -0.05, 0.15);
+  ghostG.add(wing);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.42), ghostWire);
+  tail.position.set(0, 0.04, -1.28);
+  ghostG.add(tail);
+}
+const ghostHoles = [];
+for (let i = 0; i < 130; i++) {
+  const h = new THREE.Mesh(holeGeo, M.ghost);
+  h.scale.setScalar(0.8);
+  h.visible = false;
+  ghostG.add(h);
+  ghostHoles.push(h);
+}
+let ghostIdx = 0;
+
+/* ---------------- 曳光弹池 ---------------- */
+const bulletPool = [];
+for (let i = 0; i < 26; i++) {
+  const b = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), M.bullet);
+  b.visible = false;
+  scene.add(b);
+  bulletPool.push({ mesh: b, on: false, t: 0, from: new THREE.Vector3(), to: new THREE.Vector3() });
+}
+function fireBullet(localP) {
+  for (const b of bulletPool) {
+    if (b.on) continue;
+    b.on = true; b.t = 0;
+    b.to.copy(planeG.localToWorld(localP.clone()));
+    b.from.set(b.to.x - 3.4 - Math.random() * 1.6, b.to.y - 0.8 - Math.random() * 0.5, b.to.z + 2.2 + Math.random() * 1.4);
+    b.mesh.visible = true;
+    return b;
+  }
+  return null;
+}
+
+/* ---------------- 坠毁机池(缺席数据) ---------------- */
+const wrecks = [];
+for (let i = 0; i < 10; i++) {
+  const g = new THREE.Group();
+  const skin = M.wreck;
+  const fus = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, 1.7), skin);
+  g.add(fus);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.08, 0.55), skin);
+  wing.position.y = -0.06;
+  g.add(wing);
+  for (const s of [-1, 1]) {
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), M.ghost);
+    dot.position.set(s * 0.55, 0.08, 0.35);
+    g.add(dot);
+  }
+  g.visible = false;
+  scene.add(g);
+  wrecks.push({ g, on: false, t: 0, slot: new THREE.Vector3() });
+}
+let wreckIdx = 0;
+const wreckSlot = i => new THREE.Vector3(-6.6 + (i % 5) * 1.4, 0.3, Math.floor(i / 5) * 1.7 + 1.2);
+function spawnWreck() {
+  const w = wrecks[wreckIdx % wrecks.length];
+  wreckIdx++;
+  w.on = true; w.t = 0;
+  w.slot.copy(wreckSlot(wreckIdx % 10));
+  w.g.visible = true;
+  w.g.position.set((Math.random() - 0.5) * 0.5, 1.8, (Math.random() - 0.5) * 0.5);
+  w.g.rotation.set(0, Math.random() * TAU, 0);
+}
+
+/* ---------------- 命中/返航脉冲环 ---------------- */
+const pulses = [];
+for (let i = 0; i < 2; i++) {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.035, 8, 32),
+    new THREE.MeshBasicMaterial({ color: 0x7bd88f, transparent: true, opacity: 0 }));
+  ring.rotation.x = Math.PI / 2;
+  ring.visible = false;
+  scene.add(ring);
+  pulses.push({ mesh: ring, on: false, t: 0 });
+}
+function firePulse(good) {
+  for (const p of pulses) {
+    if (p.on) continue;
+    p.on = true; p.t = 0;
+    p.mesh.visible = true;
+    p.mesh.material.color.setHex(good ? 0x7bd88f : 0xff5252);
+    p.mesh.position.set(0, 1.55, 0);
+    return;
+  }
+}
+
+/* ---------------- 两张条形图:P(部位|返航) vs P(部位|被击中) ---------------- */
+const ZC = [M.wing, M.fuse, M.eng, M.cock];
+function buildChart(cx, title) {
+  const g = new THREE.Group();
+  g.position.set(cx, 0, -4.6);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.08, 1.0), M.chart);
+  base.position.y = 0.04;
+  g.add(base);
+  const bars = [];
+  for (let z = 0; z < 4; z++) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.34, 1, 0.34), ZC[z]);
+    b.geometry = b.geometry.clone();
+    b.geometry.translate(0, 0.5, 0);
+    b.position.set(-0.9 + z * 0.6, 0.08, 0);
+    b.scale.y = 0.02;
+    g.add(b);
+    bars.push(b);
+  }
+  scene.add(g);
+  return { g, bars };
+}
+const chartL = buildChart(-2.6, 'ret');
+const chartR = buildChart(2.6, 'all');
+
+/* ---------------- 装甲板(直觉 vs 沃尔德) ---------------- */
+const armorIG = new THREE.Group(), armorWG = new THREE.Group();
+planeG.add(armorIG); planeG.add(armorWG);
+{
+  for (const s of [-1, 1]) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.14, 0.8), M.armorI);
+    p.position.set(s * 1.45, 0.02, 0.15);
+    armorIG.add(p);
+  }
+  const f = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 2.4, 12, 1, true), M.armorI);
+  f.rotation.x = Math.PI / 2;
+  armorIG.add(f);
+  for (const s of [-1, 1]) {
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.21, 0.58, 10, 1, true), M.armorW);
+    r.rotation.x = Math.PI / 2;
+    r.position.set(s * 1.35, -0.12, 0.35);
+    armorWG.add(r);
+  }
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 10), M.armorW);
+  dome.scale.set(1, 0.75, 1.6);
+  dome.position.set(0, 0.22, 1.02);
+  armorWG.add(dome);
+}
+armorIG.visible = armorWG.visible = false;
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn };
+}
+const armorLbl = addLabel(() => L(`装甲对照:直觉(机翼/机身)vs 沃尔德(发动机/座舱)· 同弹幕配对`, `armor duel: intuition (wings/fuselage) vs Wald (engines/cockpit) · paired flak`),
+  () => 'g', new THREE.Vector3(0, 0.35, -0.8));
+addLabel(() => L(`返航机样本图:机翼/机身弹孔密 · 弹孔只来自幸存者`, `returnee map: wings/fuselage riddled · holes only from survivors`),
+  () => 'b', new THREE.Vector3(0, 3.15, 0));
+addLabel(() => L(`发动机/座舱稀疏 → 沃耳德:返航图上的稀疏区才是要害`, `engines/cockpit sparse → Wald: the sparse spots are the vital areas`),
+  () => 'bad', new THREE.Vector3(0.4, 0.62, 1.7));
+addLabel(() => L(`P(部位|返航):幸存者样本`, `P(zone | returned): survivor sample`),
+  () => 'b', new THREE.Vector3(-2.6, 2.6, -4.6));
+addLabel(() => L(`P(部位|被击中):全样本(含坠毁机)`, `P(zone | hit): full sample (downed included)`),
+  () => 'w', new THREE.Vector3(2.6, 2.6, -4.6));
+addLabel(() => L(`四区从左到右:机翼 · 机身 · 发动机 · 座舱`, `zones left to right: wing · fuselage · engine · cockpit`),
+  () => 'st', new THREE.Vector3(0, 0.3, -4.0));
+addLabel(() => L(`缺席数据:中弹要害的飞机没有回来`, `missing data: the planes hit where it counts never came back`),
+  () => 'bad', new THREE.Vector3(-6.2, 1.5, 2.4));
+addLabel(() => L(`全样本幽灵:所有命中的分布(开关:全样本幽灵)`, `full-sample ghost: every hit, downed included (toggle)`),
+  () => 'e', new THREE.Vector3(6.2, 3.1, -0.8));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'map', world: 1, tgt: [0, 1.8, 1.6],
+    b: '1943 年的弹孔图:军方想「哪弹多补哪」', be: 'The 1943 hole map: armor where the holes are',
+    d: '统计研究组收到返航轰炸机的弹孔分布:机翼与机身布满弹孔,发动机与座舱却出奇地稀疏。军方自然的主张是给弹孔最多的地方加装甲。看中间这架返航机:弹孔正随架次一点点累积变密——这张图没有撒谎,但它只讲了一半的故事。',
+    de: 'The Statistical Research Group received hole maps of returning bombers: wings and fuselage peppered, engines and cockpit oddly clean. The natural call was to armor the dense spots. Watch the returnee here: holes accumulate sortie by sortie. The map does not lie - but it tells only half the story.' },
+  { hl: 'wald', world: 1, tgt: [0.4, 1.6, 2.2],
+    b: '沃耳德的反转:返航机是被筛选过的样本', be: "Wald's reversal: returnees are a filtered sample",
+    d: '沃耳德问了一个反向问题:这些飞机为什么能回来?返航机是「被击中要害仍能飞回」的幸存者;发动机/座舱中弹的大多坠海,根本不会出现在这张图上。弹孔图缺了整整一类数据——坠毁的飞机才是缺席样本,样本筛选把要害从图上抹掉了。',
+    de: 'Wald asked the question backwards: why did these planes come back at all? A returnee is a survivor of hits that failed to kill; planes hit in engines or cockpit mostly fell and never made the map. The hole map is missing an entire class of data - the downed aircraft are the absent sample, and selection erased the vital areas from the picture.' },
+  { hl: 'charts', world: 1, tgt: [0, 1.5, -3.4],
+    b: '条件分布:P(部位|返航)≠P(部位|被击中)(招牌)', be: 'Conditional distributions: P(zone|returned) ≠ P(zone|hit) (signature)',
+    d: '数学上这是条件分布的错位:P(部位|返航)=P(返航|部位)·P(部位)/P(返航)。发动机/座舱单发致死率高,返航样本里它们的占比被系统压低。看两张图:左(返航样本)的橙红两根矮,右(全样本)明显更高——差值就是偏差幅度。这就是「幸存者偏差」的算术形态。',
+    de: 'Formally this is a conditional mismatch: P(zone|returned) = P(returned|zone)·P(zone)/P(returned). Engine and cockpit hits kill often, so their share is systematically squeezed in the returned sample. Compare the charts: the orange and red bars are short on the left (survivors) and taller on the right (all hits) - the gap is the bias. That is survivorship bias as arithmetic.' },
+  { hl: 'lost', world: 1, tgt: [-6.2, 1.3, 2.2],
+    b: '缺席数据揭晓:坠毁的飞机长什么样', be: 'Revealing the absent data: what the downed planes look like',
+    d: '点「缺席数据揭晓」:中弹要害的飞机坠向墓地,红色弹孔集中在发动机与座舱。它们不参与统计,却恰恰携带了最关键的信息——补齐这批缺席样本,稀疏区立刻变成密集区。数据分析的第一问永远是:谁没被算进来?',
+    de: 'Hit "reveal the missing": planes hit where it counts drop toward the graveyard, red holes clustered on engines and cockpit. They never enter the statistics yet carry the crucial information - add them back and the sparse spots light up dense. The first question of any analysis: who did not make it into the sample?' },
+  { hl: 'armor', world: 1, tgt: [0, 1.7, 2.0],
+    b: '加固对照:直觉装甲 vs 沃尔德装甲', be: 'The armor duel: intuition vs Wald',
+    d: '同样的弹幕、同样的装甲预算,两种盖法:直觉装甲盖机翼/机身(返航图上弹多),沃尔德装甲盖发动机/座舱(返航图上弹少)。配对检验:同一架次的命中序列喂给两种方案——直觉装甲损失率明显更高。看示波器里的绿色曲线:加固稀疏区才是省钱保命的方案。',
+    de: 'Same flak, same armor budget, two placements: intuitive armor on wings/fuselage (dense on the returnee map) versus Wald armor on engines/cockpit (sparse there). Paired test - the identical hit sequence feeds both schemes - and intuitive armor clearly loses more planes. The green curve in the scope says it: armor the sparse spots, save the fleet.' },
+  { hl: 'traps', world: 1, tgt: [0, 1.9, 0.8],
+    b: '同一个陷阱:基金、创业与爆款复盘', be: 'The same trap: funds, startups, and hit retrospectives',
+    d: '幸存者偏差无处不在:基金业绩表剔除已清算的基金,存活者年均收益被抬高约 0.5-1.5 个百分点;创业成功学只采访赢家,死掉的同类公司没有发布会;爆款复盘把运气当方法论。读任何「成功样本」之前先问一句:分母里的那些,后来怎么了?',
+    de: 'The bias is everywhere: fund league tables drop liquidated funds, inflating survivor returns by roughly 0.5-1.5 points a year; startup lore interviews the winners while the dead hold no press conferences; viral retrospectives mistake luck for method. Before reading any "success sample", ask one question: what happened to the rest of the denominator?' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 1.7, 0);
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const p = probs();
+  const vAll = (p[2] + p[3]) * 100;
+  const norm = p[0] * (1 - FATAL[0]) + p[1] * (1 - FATAL[1]) + p[2] * (1 - FATAL[2]) + p[3] * (1 - FATAL[3]);
+  const vRet = (p[2] * (1 - FATAL[2]) + p[3] * (1 - FATAL[3])) / norm * 100;
+  const r0 = rateOf(0) * 100, r1 = rateOf(1) * 100, r2 = rateOf(2) * 100;
+  formulaEl.innerHTML =
+    L(`条件分布:P(部位|返航) = P(返航|部位)·P(部位)/P(返航) ≠ P(部位);解析要害占比:全样本 <b>${vAll.toFixed(1)}%</b> → 返航样本 <b>${vRet.toFixed(1)}%</b>(偏差 <b>${(vRet - vAll).toFixed(1)} pp</b>)`,
+      `Conditional: P(zone|returned) = P(returned|zone)·P(zone)/P(returned) ≠ P(zone); analytic vital share: all <b>${vAll.toFixed(1)}%</b> → returned <b>${vRet.toFixed(1)}%</b> (bias <b>${(vRet - vAll).toFixed(1)} pp</b>)`) +
+    '<br>' +
+    L(`四区命中 [机翼/机身/发动机/座舱] = [${(p[0] * 100).toFixed(0)}/${(p[1] * 100).toFixed(0)}/${(p[2] * 100).toFixed(0)}/${(p[3] * 100).toFixed(0)}%],单发致死 <b>5/10/55/70%</b>(演示设定);${hitsPerSortie} 发解析返航率:无装甲 <b>${r0.toFixed(0)}%</b> · 直觉装甲 <b>${r1.toFixed(0)}%</b> · 沃尔德装甲 <b>${r2.toFixed(0)}%</b>`,
+      `Zone hit shares [wing/fuselage/engine/cockpit] = [${(p[0] * 100).toFixed(0)}/${(p[1] * 100).toFixed(0)}/${(p[2] * 100).toFixed(0)}/${(p[3] * 100).toFixed(0)}%], per-hit fatality <b>5/10/55/70%</b> (demo setting); analytic return rate at ${hitsPerSortie} hits: none <b>${r0.toFixed(0)}%</b> · intuition <b>${r1.toFixed(0)}%</b> · Wald <b>${r2.toFixed(0)}%</b>`) +
+    '<br>' +
+    L(`1943 SRG:沃耳德《由幸存飞机的损伤估计要害》——加固返航图上的<b>稀疏区</b>;同类:基金剔除清算者,存活者年收益虚高 <b>~0.5-1.5 pp</b>`,
+      `1943 SRG: Wald - armor the <b>sparse</b> spots of the returnee map; same bias: fund databases drop the liquidated, survivor returns inflated <b>~0.5-1.5 pp/yr</b>`);
+}
+
+/* ---------------- 模式 / 复位 ---------------- */
+const btnSortie = document.getElementById('btnSortie'), btnHeat = document.getElementById('btnHeat'),
+  btnLost = document.getElementById('btnLost'), btnArmor = document.getElementById('btnArmor'),
+  btnReset = document.getElementById('btnReset');
+const modeBtns = { heat: btnHeat, lost: btnLost, armor: btnArmor };
+function setMode(id) {
+  mode = mode === id ? null : id;
+  for (const k in modeBtns) modeBtns[k].classList.toggle('on', k === mode);
+  armorIG.visible = armorWG.visible = mode === 'armor';
+  ghostG.visible = tglGhost.checked || mode === 'heat';
+  if (mode === 'heat') activateStep(2);
+  else if (mode === 'lost') activateStep(3);
+  else if (mode === 'armor') activateStep(4);
+  else activateStep(scenario);
+  updateFormula();
+}
+btnSortie.addEventListener('click', () => {
+  streamOn = !streamOn;
+  btnSortie.classList.toggle('on', streamOn);
+});
+btnHeat.addEventListener('click', () => setMode('heat'));
+btnLost.addEventListener('click', () => setMode('lost'));
+btnArmor.addEventListener('click', () => setMode('armor'));
+function clearHoles() {
+  for (const h of holePool) h.visible = false;
+  for (const h of ghostHoles) h.visible = false;
+  holeIdx = ghostIdx = 0;
+}
+function resetMachine() {
+  mode = null; streamOn = true;
+  for (const k in modeBtns) modeBtns[k].classList.remove('on');
+  btnSortie.classList.add('on');
+  armorIG.visible = armorWG.visible = false;
+  sorties = returnedN = lostN = 0;
+  hitsAll.fill(0); hitsRet.fill(0);
+  armorEval = lossNo = lossInt = lossWald = 0;
+  winBuf.length = 0;
+  for (const h of histRate) h.length = 0;
+  cur = null;
+  for (const b of bulletPool) { b.on = false; b.mesh.visible = false; }
+  for (const w of wrecks) { w.on = false; w.g.visible = false; }
+  for (const p of pulses) { p.on = false; p.mesh.visible = false; }
+  clearHoles();
+  hitsPerSortie = 4; elHits.value = 4; updateHits();
+  vital = 25; elVital.value = 25; updateVital();
+  updateFormula();
+}
+btnReset.addEventListener('click', resetMachine);
+
+/* ---------------- 出击推进 ---------------- */
+let sortieT = 0.5, lostT = 1.0;
+let cur = null;   // 当前出击:{ hits, launched, t, placed[], resolved }
+function doSortie() {
+  sorties++;
+  const p = probs();
+  const hits = [];
+  for (let i = 0; i < hitsPerSortie; i++) {
+    const r = Math.random();
+    let z = 3, acc = 0;
+    for (let k = 0; k < 4; k++) { acc += p[k]; if (r < acc) { z = k; break; } }
+    hits.push({ z, local: zonePoint(z), roll: Math.random() });
+  }
+  cur = { hits, launched: 0, t: 0, placed: [], resolved: false };
+}
+function resolveSortie() {
+  if (!cur || cur.resolved) return;
+  cur.resolved = true;
+  const killedNo = cur.hits.some(h => h.roll < FATAL[h.z]);
+  const killedInt = cur.hits.some(h => h.roll < FATAL[h.z] * (1 - covI[h.z]));
+  const killedWald = cur.hits.some(h => h.roll < FATAL[h.z] * (1 - covW[h.z]));
+  armorEval++; lossNo += killedNo ? 1 : 0; lossInt += killedInt ? 1 : 0; lossWald += killedWald ? 1 : 0;
+  winBuf.push([killedNo ? 1 : 0, killedInt ? 1 : 0, killedWald ? 1 : 0]);
+  if (winBuf.length > 30) winBuf.shift();
+  for (let c = 0; c < 3; c++) {
+    let s = 0;
+    for (const w of winBuf) s += w[c];
+    histRate[c].push(s / winBuf.length);
+    if (histRate[c].length > 120) histRate[c].shift();
+  }
+  if (killedNo) {
+    lostN++;
+    for (const h of cur.placed) h.visible = false;    // 弹孔不属于返航样本
+    firePulse(false);
+    spawnWreck();
+  } else {
+    returnedN++;
+    for (const h of cur.hits) hitsRet[h.z]++;
+    firePulse(true);
+  }
+  cur = null;
+}
+
+/* ---------------- 损失率曲线(示波器) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const py = v => ch - (0.1 + 0.8 * clamp01(v)) * ch;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, py(0)); scopeCtx.lineTo(cw, py(0));
+  scopeCtx.stroke();
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('滑动损失率(窗口 30 架次)', 'rolling loss rate (30-sortie window)'), 4 * dpr, 10 * dpr);
+  const cols = ['rgba(255,107,107,.95)', 'rgba(255,169,77,.9)', 'rgba(123,216,143,.95)'];
+  for (let c = 0; c < 3; c++) {
+    const h = histRate[c];
+    if (h.length < 2) continue;
+    scopeCtx.strokeStyle = cols[c];
+    scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < h.length; i++) {
+      const x = i / 119 * cw;
+      i === 0 ? scopeCtx.moveTo(x, py(h[i])) : scopeCtx.lineTo(x, py(h[i]));
+    }
+    scopeCtx.stroke();
+    const last = h[h.length - 1];
+    scopeCtx.fillStyle = cols[c];
+    scopeCtx.fillText((last * 100).toFixed(0) + '%', cw - 30 * dpr, py(last) - 2 * dpr);
+  }
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elHits = document.getElementById('hits'), elHitsVal = document.getElementById('hitsVal');
+const elVital = document.getElementById('vital'), elVitalVal = document.getElementById('vitalVal');
+const tglGhost = document.getElementById('tglGhost');
+const tglHoles = document.getElementById('tglHoles');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateHits() {
+  hitsPerSortie = +elHits.value;
+  elHitsVal.textContent = hitsPerSortie + L(' 发', ' hits');
+  updateFormula();
+}
+function updateVital() {
+  vital = +elVital.value;
+  elVitalVal.textContent = vital + '%';
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elHits.addEventListener('input', updateHits);
+elVital.addEventListener('input', updateVital);
+tglGhost.addEventListener('change', () => { ghostG.visible = tglGhost.checked || mode === 'heat'; });
+tglHoles.addEventListener('change', () => {
+  const on = tglHoles.checked;
+  for (const h of holePool) if (h.visible) h.visible = on;
+});
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  stA.innerHTML = String(sorties);
+  stA.className = 'v ok';
+  const rr = sorties > 0 ? returnedN / sorties : rateOf(0);
+  stB.innerHTML = (rr * 100).toFixed(1) + '<small>%</small>';
+  stB.className = 'v ' + (rr > 0.55 ? 'ok' : rr > 0.35 ? 'warn' : 'bad');
+  const vA = shareOf(hitsAll, [2, 3]) * 100;
+  const vR = shareOf(hitsRet, [2, 3]) * 100;
+  stC.innerHTML = vA.toFixed(1) + '<small>%</small>';
+  stC.className = 'v ok';
+  stD.innerHTML = vR.toFixed(1) + '<small>%</small>';
+  stD.className = 'v ' + (Math.abs(vA - vR) < 1.5 ? 'ok' : 'warn');
+  const bias = vR - vA;
+  stE.innerHTML = (bias >= 0 ? '+' : '−') + Math.abs(bias).toFixed(1) + '<small> pp</small>';
+  stE.className = 'v ' + (Math.abs(bias) < 1.5 ? 'ok' : Math.abs(bias) < 6 ? 'warn' : 'bad');
+  const lrI = armorEval > 0 ? lossInt / armorEval : 1 - rateOf(1);
+  const lrW = armorEval > 0 ? lossWald / armorEval : 1 - rateOf(2);
+  stF.innerHTML = Math.round(lrI * 100) + '<small>% / ' + Math.round(lrW * 100) + '%</small>';
+  stF.className = 'v ' + (lrW < lrI ? 'ok' : 'warn');
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  /* 出击节拍 */
+  if (streamOn && playing) {
+    sortieT -= simDt;
+    if (sortieT <= 0 && !cur) { sortieT = 1.15; doSortie(); }
+  }
+  if (mode === 'lost' && playing) {
+    lostT -= simDt;
+    if (lostT <= 0) { lostT = 2.0; spawnWreck(); }
+  }
+  /* 当前出击:子弹逐发发射 → 命中 → 结算 */
+  if (cur) {
+    cur.t += simDt;
+    while (cur.launched < cur.hits.length && cur.t > cur.launched * 0.07) {
+      const h = cur.hits[cur.launched++];
+      const b = fireBullet(h.local);
+      if (!b) { cur.launched--; cur.t = cur.launched * 0.07; break; }
+      b.z = h.z; b.local = h.local; b.roll = h.roll;
+    }
+    const allGone = cur.launched >= cur.hits.length &&
+      bulletPool.every(b => !b.on || b.t >= 1);
+    if (allGone) resolveSortie();
+  }
+  /* 曳光弹飞行 + 命中放孔 */
+  for (const b of bulletPool) {
+    if (!b.on) continue;
+    b.t += simDt / 0.26;
+    if (b.t >= 1) {
+      b.on = false; b.mesh.visible = false;
+      /* 返航样本弹孔(暂放,坠毁即撤) */
+      const h = holePool[holeIdx % holePool.length];
+      holeIdx++;
+      h.position.copy(b.local);
+      h.position.x += (Math.random() - 0.5) * 0.03;
+      h.visible = tglHoles.checked;
+      if (cur) cur.placed.push(h);
+      /* 全样本幽灵弹孔(含坠毁机) */
+      const gh = ghostHoles[ghostIdx % ghostHoles.length];
+      ghostIdx++;
+      gh.position.copy(b.local);
+      gh.visible = ghostG.visible;
+    } else {
+      b.mesh.position.lerpVectors(b.from, b.to, b.t);
+    }
+  }
+  /* 坠毁机坠落(落地后留在墓地,池满轮转回收) */
+  for (const w of wrecks) {
+    if (!w.on) continue;
+    w.t += simDt / 1.5;
+    const t = E2(clamp01(w.t));
+    w.g.position.lerp(w.slot, Math.min(1, dt * speed * 2.4));
+    w.g.rotation.z = 0.5 * t;
+    w.g.rotation.x = 0.32 * t;
+    if (w.t >= 1.3) w.on = false;
+  }
+  /* 脉冲环 */
+  for (const p of pulses) {
+    if (!p.on) continue;
+    p.t += simDt / 0.6;
+    const t = clamp01(p.t);
+    p.mesh.scale.setScalar(0.5 + 1.9 * t);
+    p.mesh.material.opacity = 0.75 * (1 - t);
+    if (p.t >= 1) { p.on = false; p.mesh.visible = false; }
+  }
+  /* 条形图高度 = 实时占比 */
+  const sR = [0, 1, 2, 3].map(z => shareOf(hitsRet, [z]));
+  const sA = [0, 1, 2, 3].map(z => shareOf(hitsAll, [z]));
+  const totR = hitsRet.reduce((a, b) => a + b, 0), totA = hitsAll.reduce((a, b) => a + b, 0);
+  for (let z = 0; z < 4; z++) {
+    const hR = totR > 0 ? sR[z] * 3.2 + 0.02 : 0.02;
+    const hA = totA > 0 ? sA[z] * 3.2 + 0.02 : 0.02;
+    chartL.bars[z].scale.y += (hR - chartL.bars[z].scale.y) * Math.min(1, dt * 5);
+    chartR.bars[z].scale.y += (hA - chartR.bars[z].scale.y) * Math.min(1, dt * 5);
+  }
+  /* 机体微动 + 装甲标签可见性 */
+  planeG.position.y = 1.55 + Math.sin(et * 0.9) * 0.05;
+  planeG.rotation.z = Math.sin(et * 0.6) * 0.02;
+  armorLbl.o.visible = labelsOn && mode === 'armor';
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.skin, M.hole, M.wreck, M.wing, M.fuse, M.eng, M.cock]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.25);
+  const boost = m => { m.emissiveIntensity = 0.5 + 0.3 * hlK; };
+  if (hl === 'map') boost(M.hole);
+  else if (hl === 'wald') boost(M.skin);
+  else if (hl === 'charts') { boost(M.eng); boost(M.cock); }
+  else if (hl === 'lost') boost(M.wreck);
+  else if (hl === 'armor') { boost(M.armorI); boost(M.armorW); }
+  else if (hl === 'traps') { boost(M.wing); boost(M.fuse); }
+  /* 相机目标 */
+  tmpV.copy(tgtVec);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+btnSortie.classList.add('on');
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglGhost.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
