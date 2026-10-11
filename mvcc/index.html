@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MVCC 与快照隔离 · 每个事务读自己的时间切片</title>
+<style>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="MVCC:每个事务读自己的时间切片" data-en="MVCC: Every Transaction Reads Its Own Time Slice">MVCC:每个事务读自己的时间切片</h1>
+  <div class="sub" data-zh="锁方案里读写互斥:读者持共享锁、写者要排它锁,报表查询跑 30 秒,更新就得排队 30 秒。MVCC(多版本并发控制,PostgreSQL 行头 xmin/xmax、InnoDB read view)换一条路:每行存版本链——写 = 追加一个新版本(记下创建者 xmin、给旧版打 xmax 删除标记、prev 指向旧版),读 = 按快照挑可见版本,写不阻塞读。快照 = 事务开始时的「活跃事务列表」:版本可见 ⟺ xmin 已提交且不在我的活跃集,且 xmax 未提交或不存在。写-写冲突靠「先提交者赢」:提交时发现目标行已被并发事务改掉并提交 → 自己回滚。快照隔离防住脏读、不可重复读、丢失更新,却防不住写偏斜——两个事务各写不相交的行、各自快照都自洽,合起来击穿整体约束(经典案例:值班医生至少一人,A 看 B 在岗便请假,B 看 A 在岗也请假,双双离岗)。可串行化需要 SSI 追踪 rw-反依赖、在提交时拆环。代价:长事务钉住旧版本不让回收 → 表膨胀(PostgreSQL 靠 VACUUM 收尸)。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Under locking, readers and writers exclude each other: a 30-second report holds its lock and every update queues for 30 seconds. MVCC (multi-version concurrency control - PostgreSQL&#39;s xmin/xmax row headers, InnoDB read views) takes another road: each row keeps a version chain - a write appends a new version (recording its creator xmin, stamping the old version&#39;s xmax delete marker, prev pointing back), a read picks the visible version per its snapshot, and writers never block readers. A snapshot is the set of transactions active at begin: a version is visible iff its xmin committed before my snapshot and its xmax is uncommitted or absent. Write-write conflicts use first-committer-wins: at commit, if the row was modified and committed by a concurrent transaction, you roll back. Snapshot isolation prevents dirty reads, non-repeatable reads and lost updates - but not write skew: two transactions each write disjoint rows, each snapshot self-consistent, together breaking the invariant (the classic on-call doctors: A sees B on duty and takes leave, B sees A on duty and takes leave, nobody left). Serializable needs SSI to track rw-antidependencies and break the cycle at commit. The price: long transactions pin old versions from recycling - table bloat, reclaimed by PostgreSQL&#39;s VACUUM. 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">锁方案里读写互斥:读者持共享锁、写者要排它锁,报表查询跑 30 秒,更新就得排队 30 秒。MVCC(多版本并发控制,PostgreSQL 行头 xmin/xmax、InnoDB read view)换一条路:每行存版本链——写 = 追加一个新版本(记下创建者 xmin、给旧版打 xmax 删除标记、prev 指向旧版),读 = 按快照挑可见版本,写不阻塞读。快照 = 事务开始时的「活跃事务列表」:版本可见 ⟺ xmin 已提交且不在我的活跃集,且 xmax 未提交或不存在。写-写冲突靠「先提交者赢」:提交时发现目标行已被并发事务改掉并提交 → 自己回滚。快照隔离防住脏读、不可重复读、丢失更新,却防不住写偏斜——两个事务各写不相交的行、各自快照都自洽,合起来击穿整体约束(经典案例:值班医生至少一人,A 看 B 在岗便请假,B 看 A 在岗也请假,双双离岗)。可串行化需要 SSI 追踪 rw-反依赖、在提交时拆环。代价:长事务钉住旧版本不让回收 → 表膨胀(PostgreSQL 靠 VACUUM 收尸)。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="最近读到的值" data-en="last value read">最近读到的值</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="可见版本判定" data-en="visibility verdict">可见版本判定</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="活版本" data-en="live versions">活版本</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="死版本" data-en="dead versions">死版本</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="表膨胀倍数" data-en="bloat factor">表膨胀倍数</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="提交 / 中止事务" data-en="commits / aborts">提交 / 中止事务</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip g" data-zh="最新版本(活)" data-en="latest (live)">最新版本(活)</span>
+    <span class="chip b" data-zh="被快照钉住" data-en="pinned by snapshot">被快照钉住</span>
+    <span class="chip o" data-zh="未提交版本" data-en="uncommitted">未提交版本</span>
+    <span class="chip r" data-zh="死版本 · 冲突回滚" data-en="dead · conflict abort">死版本 · 冲突回滚</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnSnap" data-zh="快照读(可重复读)" data-en="snapshot read (repeatable)">快照读(可重复读)</button>
+    <button class="abtn" id="btnConflict" data-zh="写-写冲突回退" data-en="write-write conflict">写-写冲突回退</button>
+    <button class="abtn" id="btnSkew" data-zh="写偏斜:双医生" data-en="write skew: two doctors">写偏斜:双医生</button>
+    <button class="abtn" id="btnBloat" data-zh="膨胀与 VACUUM" data-en="bloat &amp; VACUUM">膨胀与 VACUUM</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="并发事务数" data-en="concurrent txns">并发事务数</label><input id="nConc" type="range" min="2" max="4" step="1" value="3"><span class="val" id="nConcVal">3</span></div>
+  <div class="row"><label data-zh="隔离级别" data-en="isolation level">隔离级别</label><input id="iso" type="range" min="0" max="3" step="1" value="2"><span class="val" id="isoVal">快照隔离</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglPlanes" type="checkbox" checked> <span data-zh="快照平面" data-en="snapshot planes">快照平面</span></label>
+        <label><input id="tglBeam" type="checkbox" checked> <span data-zh="读光束" data-en="read beams">读光束</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../mutex-race/" data-zh="互斥锁与竞态" data-en="mutex &amp; race">互斥锁与竞态</a>
+    <a href="../raft-consensus/" data-zh="Raft 共识" data-en="Raft consensus">Raft 共识</a>
+    <a href="../lsm-tree/" data-zh="LSM 树" data-en="LSM tree">LSM 树</a>
+    <a href="../virtual-memory/" data-zh="虚拟内存" data-en="virtual memory">虚拟内存</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search); const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; }; const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1); const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement; let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh; 
+const scene = new THREE.Scene(); function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark'; scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);            // 网格线
+  M.lane.color.set(dark ? 0x2c333b : 0x55606a);            // 行槽底座
+  M.verLive.color.set(dark ? 0x51cf66 : 0x2b8a3e);         // 最新活版本
+  M.verPin.color.set(dark ? 0x74c0fc : 0x1971c2);          // 被快照钉住的旧版本
+  M.verUn.color.set(dark ? 0xffa94d : 0xd9480f);           // 未提交版本
+  M.verDead.color.set(dark ? 0x495057 : 0xadb5bd);         // 死版本
+  M.verRoll.color.set(dark ? 0x343a40 : 0x868e96);         // 冲突回滚的版本
+  M.flashW.color.set(dark ? 0xe9ecef : 0x343a40);          // 读中闪烁
+  M.chain.color.set(dark ? 0x8d9aa8 : 0x5b6b7d);           // prev 链线
+  M.rulerM.color.set(dark ? 0x55606a : 0x8d9aa8);          // 时间尺
+  M.scanM.color.set(dark ? 0xffd43b : 0xe8a50a);           // 逻辑时钟扫描面
+  M.lockBar.color.set(dark ? 0xff6b6b : 0xc92a2a);         // 锁方案闸门
+  M.sweepM.color.set(dark ? 0x66d9e8 : 0x0b7285);          // VACUUM 扫掠面
+  M.planeM.color.set(dark ? 0x91a7ff : 0x6741d9);          // 快照平面(乘事务色)
+  M.planeM.opacity = dark ? 0.16 : 0.2;
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('MVCC 与快照隔离 · 每个事务读自己的时间切片', 'MVCC & Snapshot Isolation · Every Transaction Reads Its Own Time Slice');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer(); labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200); camera.position.set(2.2, 5.6, 12.6);
+const controls = new OrbitControls(camera, renderer.domElement); controls.target.set(0, 1.4, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 36;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9); keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5); fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.3, emissive: color, emissiveIntensity: 0.12, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }), grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55, vertexColors: true, depthWrite: false }), lane: mat(0x2c333b, { roughness: 0.6, emissiveIntensity: 0.05 }),
+  verLive: mat(0x51cf66, { roughness: 0.4, emissiveIntensity: 0.3 }), verPin: mat(0x74c0fc, { roughness: 0.45, emissiveIntensity: 0.22 }), verUn: mat(0xffa94d, { roughness: 0.4, emissiveIntensity: 0.35 }), verDead: mat(0x495057, { roughness: 0.6, emissiveIntensity: 0.04 }),
+  verRoll: mat(0x343a40, { roughness: 0.6, emissiveIntensity: 0.04 }), flashW: mat(0xe9ecef, { roughness: 0.3, emissiveIntensity: 0.55 }), chain: new THREE.LineBasicMaterial({ color: 0x8d9aa8, transparent: true, opacity: 0.75 }), rulerM: mat(0x55606a, { roughness: 0.55, emissiveIntensity: 0.05 }),
+  scanM: new THREE.MeshBasicMaterial({ color: 0xffd43b, transparent: true, opacity: 0.3, depthWrite: false }), lockBar: mat(0xff6b6b, { roughness: 0.4, emissiveIntensity: 0.4 }),
+  sweepM: new THREE.MeshBasicMaterial({ color: 0x66d9e8, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide }), planeM: new THREE.MeshBasicMaterial({ color: 0x91a7ff, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }), };
+const TXCOL = [0x8d9aa8, 0x74c0fc, 0xffa94d, 0x8ce99a, 0x9a8cff];   // T0..T4 事务色
+const txMat = TXCOL.map(c => mat(c, { roughness: 0.4, emissiveIntensity: 0.3 }));
+
+/* ---------------- MVCC 内核:版本链 + 快照 + 可见性(真实判定,动画只展示) ---------------- */
+const TX = {};                                              // id → 事务对象
+const ROWS = { A: { versions: [] }, B: { versions: [] } };  // 每行一条版本链,[0] 最旧
+const VMAP = {}; let vid = 0;
+function beginTx(id, ts) {
+  const active = []; for (const k in TX) if (!TX[k].commit && !TX[k].abort) active.push(k);
+  TX[id] = { id, begin: ts, commit: null, abort: false, snap: { ts, active }, reads: [], writes: [] };
+}
+function writeTx(id, row, val, ts) {                        // 写 = 追加新版本(未提交),旧版打 xmax 标记
+  const r = ROWS[row]; const head = r.versions[r.versions.length - 1];
+  if (head) head.xmax = id;                                 // 未提交的删除标记
+  const v = { vid: 'v' + (++vid), val, row, xmin: id, xmax: null, xmaxCommit: null, prev: head || null, writeTs: ts, commitTs: null, committed: false, block: null }; r.versions.push(v);
+  VMAP[v.vid] = v;
+  if (!TX[id].writes.includes(row)) TX[id].writes.push(row);
+  return v;
+}
+function commitTx(id, ts) {                                 // 提交:本人版本转正,被它删除的版本记下删除时刻
+  TX[id].commit = ts;
+  for (const row in ROWS) for (const v of ROWS[row].versions) {
+    if (v.xmin === id && !v.committed) { v.committed = true; v.commitTs = ts; }
+    if (v.xmax === id && v.xmaxCommit === null) v.xmaxCommit = ts;
+  }
+}
+function abortTx(id) {                                      // 中止:回滚版本与 xmax 标记
+  TX[id].abort = true;
+  for (const row in ROWS) {
+    const r = ROWS[row]; for (const v of r.versions) if (v.xmax === id) { v.xmax = null; v.xmaxCommit = null; }
+    for (let i = r.versions.length - 1; i >= 0; i--) if (r.versions[i].xmin === id) r.versions.splice(i, 1);
+  }
+}
+function visible(v, tx, level) {                            // ★ 真实可见性判定(按版本自身提交时刻)
+  if (v.committed) {
+    if (level <= 1) return true;                            // RU/RC:最新已提交即可见
+    if (v.commitTs > tx.snap.ts) return false;              // SI:创建者在快照后才提交 → 不可见
+    if (v.xmax === null) return true;
+    if (v.xmaxCommit === null) return true;                 // 删除者未提交/中止 → 仍可见
+    return v.xmaxCommit > tx.snap.ts;                       // 删除者在快照后提交 → 对快照仍可见
+  }
+  return level === 0 && !TX[v.xmin].abort;                  // 未提交版本:仅读未提交可见(脏读)
+}
+function readTx(id, row, level) {                           // 从链头向旧扫,取第一个可见版本
+  const tx = TX[id], r = ROWS[row]; if (!tx.reads.includes(row)) tx.reads.push(row);
+  const tried = []; for (let i = r.versions.length - 1; i >= 0; i--) {
+    const v = r.versions[i]; tried.push(v);
+    if (visible(v, tx, level)) return { v, tried };
+  }
+  return { v: null, tried };
+}
+function firstCommitterWins(id, row) {                      // 写-写冲突:该行被「在我开始后」提交的并发事务改过 → true
+  const tx = TX[id], r = ROWS[row];
+  for (const v of r.versions) {
+    if (v.xmin === id || !v.committed) continue;
+    if (TX[v.xmin].commit > tx.begin) return true;
+  }
+  return false;
+}
+function ssiCycle(a, b) {                                   // SSI:两事务互为 rw-反依赖 → 危险环
+  const A = TX[a], B = TX[b]; return A.reads.some(r => B.writes.includes(r)) && B.reads.some(r => A.writes.includes(r));
+}
+function pinnedBy(v) {                                      // 该旧版本是否被某个活跃快照钉住
+  for (const k in TX) {
+    const t = TX[k]; if (!t.commit && !t.abort && visible(v, t, 2)) return true;
+  }
+  return false;
+}
+function deadCount() {                                      // 死版本 = 已提交、非最新、无人能看见
+  let dead = 0;
+  for (const row in ROWS) {
+    const vs = ROWS[row].versions; for (let i = 0; i < vs.length - 1; i++) {
+      const v = vs[i]; if (v.committed && v.xmax && v.xmaxCommit !== null && !pinnedBy(v)) dead++;
+    }
+  }
+  return dead;
+}
+function liveCount() {                                      // 活版本 = 各行链头 + 被钉住的旧版
+  let live = 0;
+  for (const row in ROWS) {
+    const vs = ROWS[row].versions; for (let i = 0; i < vs.length; i++) {
+      if (i === vs.length - 1) { if (vs[i].committed) live++; }
+      else if (pinnedBy(vs[i])) live++;
+    }
+  }
+  return live;
+}
+
+/* ---------------- 状态量 ---------------- */
+let mode = null;                          // snap | waw | skew | bloat | null(默认 snap)
+let et = 0, scenario = 0;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let scT = 0, evIdx = 0, holdT = 0;
+let alarmT = 0;                                             // 写偏斜警报计时
+let sweepX = 99, sweepOn = false;                           // VACUUM 扫掠
+const xOf = ts => (ts - 8) * 0.85;                          // 逻辑时间 → 世界 x
+const isoLevel = () => parseInt(elIso.value, 10);
+const nConcV = () => parseInt(elN.value, 10); let lastRead = { val: '—', verdict: '—' };
+let lastStatus = { zh: '按「播放」或空格启动时间线', en: 'Press play or Space to start the timeline' };
+const ISONAMES = [ { zh: '读未提交 RU', en: 'read uncommitted' }, { zh: '读已提交 RC', en: 'read committed' }, { zh: '快照隔离 SI', en: 'snapshot isolation' }, { zh: '可串行化 SSI', en: 'serializable' }];
+
+/* ---------------- 场景装配:地面 / 时间尺 / 行槽 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, 40), M.ground); ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(40, 20, 0xffffff, 0xffffff); grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+const ruler = new THREE.Mesh(new THREE.BoxGeometry(15.4, 0.05, 0.06), M.rulerM); ruler.position.set(0, 0.02, -3.6);
+scene.add(ruler);
+const tickGeo = new THREE.BoxGeometry(0.03, 0.05, 0.22); for (let k = 0; k <= 16; k++) {
+  const tk = new THREE.Mesh(tickGeo, M.rulerM); tk.position.set(xOf(k), 0.03, -3.6); scene.add(tk);
+}
+const laneY = 0.45; const laneA = new THREE.Mesh(new THREE.BoxGeometry(15.4, 0.12, 1.15), M.lane);
+laneA.position.set(0, laneY - 0.36, 1.6);
+const laneB = new THREE.Mesh(new THREE.BoxGeometry(15.4, 0.12, 1.15), M.lane); laneB.position.set(0, laneY - 0.36, -1.6);
+scene.add(laneA, laneB);
+const scan = new THREE.Mesh(new THREE.BoxGeometry(0.05, 2.6, 7.6), M.scanM);   // 逻辑时钟「现在」
+scan.position.set(xOf(0), 1.3, 0);
+scene.add(scan);
+const lockBar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, 1.35), M.lockBar);  // 锁方案闸门
+lockBar.position.set(xOf(5), laneY + 0.05, 1.6);
+lockBar.visible = false;
+scene.add(lockBar);
+const sweep = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 2.6), M.sweepM);     // VACUUM 扫掠面 sweep.rotation.y = Math.PI / 2;
+sweep.position.set(20, laneY + 0.6, 1.6);
+sweep.visible = false;
+scene.add(sweep);
+
+/* ---------------- 版本块池(每行 12)+ prev 链线 ---------------- */
+const verGeo = new THREE.BoxGeometry(0.72, 0.5, 0.72); function makeVerBlock(row, z) {
+  const m = new THREE.Mesh(verGeo, M.verDead); m.position.set(0, laneY, z); m.visible = false; scene.add(m);
+  const div = document.createElement('div'); div.className = 'lbl st'; const lb = new CSS2DObject(div); lb.position.set(0, 0.55, 0); m.add(lb);
+  const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const chain = new THREE.Line(cg, M.chain); chain.frustumCulled = false; chain.visible = false; scene.add(chain);
+  return { m, div, lb, chain, row, z, sink: 0 };
+}
+const blocks = { A: [], B: [] }; for (let k = 0; k < 12; k++) blocks.A.push(makeVerBlock('A', 1.6));
+for (let k = 0; k < 12; k++) blocks.B.push(makeVerBlock('B', -1.6));
+
+/* ---------------- 事务代理池(5)+ 快照平面 + 读光束 + 提交旗 ---------------- */
+const agents = []; const capGeo = new THREE.CapsuleGeometry(0.16, 0.3, 6, 12);
+for (let k = 0; k < 5; k++) {
+  const g = new THREE.Group(); const body = new THREE.Mesh(capGeo, txMat[k]);
+  body.position.y = 2.95;
+  g.add(body);
+  const div = document.createElement('div'); div.className = 'lbl b';
+  const lb = new CSS2DObject(div); lb.position.set(0, 3.55, 0);
+  g.add(lb);
+  g.visible = false;
+  scene.add(g);
+  agents.push({ g, body, div, id: 'T' + k, ci: k });
+}
+const planes = []; for (let k = 0; k < 5; k++) {
+  const p = new THREE.Mesh(new THREE.BoxGeometry(0.05, 2.4, 5.6), M.planeM.clone()); p.material.color.setHex(TXCOL[k]);
+  p.position.set(0, 1.45, 0); p.visible = false;
+  scene.add(p);
+  planes.push(p);
+}
+const beams = []; for (let k = 0; k < 6; k++) {
+  const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const bm = new THREE.Line(bg, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 })); bm.frustumCulled = false;
+  scene.add(bm);
+  beams.push({ ln: bm, life: 0, ci: 0 });
+}
+const flags = []; for (let k = 0; k < 14; k++) {
+  const f = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.3, 10), txMat[0]); f.rotation.x = Math.PI;
+  f.visible = false; scene.add(f);
+  flags.push(f);
+}
+let flagI = 0, beamI = 0;
+
+/* ---------------- 事件执行器(每个事件都调真实内核) ---------------- */
+function status(zh, en) { lastStatus = { zh, en }; }
+function fmtVal(v) {
+  if (mode === 'skew') return v === 1 ? L('在岗', 'on duty') : L('离岗', 'off duty');
+  return String(v);
+}
+function rowName(row) { return mode === 'skew' ? (row === 'A' ? L('医生A', 'Dr.A') : L('医生B', 'Dr.B')) : (row === 'A' ? L('行 x', 'row x') : L('行 y', 'row y')); }
+function whyTxt(v, tx, level) {
+  if (!v.committed) return level === 0 ? '未提交→脏读可见' : '未提交→不可见';
+  if (level <= 1) return '最新已提交→可见';
+  if (v.commitTs > tx.snap.ts) return '提交晚于快照→不可见';
+  if (v.xmax && v.xmaxCommit !== null && v.xmaxCommit <= tx.snap.ts) return '被快照前删除→不可见';
+  return '提交≤快照→可见';
+}
+function doBegin(id, ts) {
+  beginTx(id, ts);
+  const a = agents[+id[1]]; a.g.visible = true; a.g.position.set(xOf(ts), 0, 0);
+  planes[+id[1]].visible = true; planes[+id[1]].position.x = xOf(ts);
+  status(`${id} 开始:快照 τ${ts} = 此刻活跃事务 {${TX[id].snap.active.join(', ') || '空'}}——只看得见平面左侧已提交的版本`, `${id} begins: snapshot τ${ts} = active set {${TX[id].snap.active.join(', ') || 'empty'}} - sees only committed versions left of the plane`);
+}
+function doWrite(id, row, val, ts) {
+  const v = writeTx(id, row, val, ts); const blk = blocks[row].find(b => !b.m.visible) || blocks[row][0];
+  v.block = blk;
+  blk.m.visible = true;
+  blk.sink = 0;
+  blk.m.scale.setScalar(1);
+  status(`${id} ${L('写', 'writes')} ${rowName(row)}=${fmtVal(val)}:追加新版本 ${v.vid}(xmin=${id} 未提交),旧版打 xmax 标记——写从不覆盖,只追加`, `${id} writes ${rowName(row)}=${fmtVal(val)}: appends version ${v.vid} (xmin=${id} uncommitted), stamps the old head xmax - writes never overwrite, only append`);
+}
+function doRead(id, row) {
+  const level = isoLevel(); const r = readTx(id, row, level);
+  const tx = TX[id]; const a = agents[+id[1]];
+  if (r.v && r.v.block) {                                   // 读光束:事务 → 它真正读到的版本
+    const bm = beams[beamI]; beamI = (beamI + 1) % beams.length; const pa = bm.ln.geometry.attributes.position.array;
+    pa[0] = a.g.position.x; pa[1] = 2.9; pa[2] = 0;
+    pa[3] = r.v.block.m.position.x; pa[4] = laneY; pa[5] = r.v.block.z;
+    bm.ln.geometry.attributes.position.needsUpdate = true;
+    bm.ln.material.color.setHex(TXCOL[+id[1]]); bm.ln.material.opacity = 0.95;
+    bm.life = 2.2; bm.ci = +id[1];
+    r.v.block._flash = et + 0.9;                            // 命中块闪白
+  }
+  const chain = r.tried.map(v => `${v.vid}(${whyTxt(v, tx, level)})`).join('→'); lastRead = { val: r.v ? fmtVal(r.v.val) : '∅', verdict: r.v ? r.v.vid : '∅' };
+  status(`${id} 读 ${rowName(row)}:${chain} ⇒ 读到 ${r.v ? rowName(row) + '=' + fmtVal(r.v.val) : '无可见版本'}`, `${id} reads ${rowName(row)}: ${chain} ⇒ reads ${r.v ? rowName(row) + '=' + fmtVal(r.v.val) : 'nothing visible'}`);
+  return r;
+}
+function doCommit(id, ts) {
+  const level = isoLevel(); /* 先提交者赢:目标行被并发事务先提交 → 自己回滚(读未提交连这个都防不住) */
+  for (const row of TX[id].writes) {
+    if (level >= 1 && firstCommitterWins(id, row)) {
+      abortTx(id);
+      const blk = blocks[row].find(b => b.m.visible);
+      status(`✗ ${id} 提交被拒:写-写冲突——${rowName(row)} 的最新版本已被并发事务提交(先提交者赢),${id} 回滚,其版本沉没`, `✗ ${id} commit rejected: write-write conflict - ${rowName(row)}'s latest version was committed by a concurrent tx (first-committer-wins), ${id} rolls back`);
+      pushSnd(0.9, 0.1);
+      return false;
+    }
+  }
+  /* SSI:两事务互为 rw-反依赖 → 拆环(中止后提交者) */
+  if (level === 3) {
+    for (const k in TX) {
+      if (k !== id && TX[k].commit && !TX[k].abort && TX[k].commit > TX[id].begin && ssiCycle(id, k)) {
+        abortTx(id);
+        status(`✗ SSI:${id} 与 ${k} 互为 rw-反依赖(我读过它写的行,它也读过我写的行)——危险环,中止后提交者 ${id}`, `✗ SSI: ${id} and ${k} form rw-antidependencies both ways (dangerous cycle) - aborting the later committer ${id}`);
+        pushSnd(0.9, 0.1);
+        return false;
+      }
+    }
+  }
+  commitTx(id, ts);
+  const f = flags[flagI]; flagI = (flagI + 1) % flags.length; f.material = txMat[+id[1]];
+  f.position.set(xOf(ts), laneY + 0.85, TX[id].writes.includes('B') && !TX[id].writes.includes('A') ? -1.6 : 1.6);
+  f.visible = true;
+  status(`✓ ${id} 提交(τ${ts}):其版本转正为已提交,旧版 xmax 生效——写-写无冲突,先提交者赢未触发`, `✓ ${id} commits (τ${ts}): its versions become committed, old xmax markers take effect - no conflict, first-committer-wins not triggered`);
+  /* 写偏斜检查:双双提交后看约束是否被击穿 */
+  if (mode === 'skew' && id === 'T2') {
+    const va = ROWS.A.versions, vb = ROWS.B.versions; const ha = va[va.length - 1], hb = vb[vb.length - 1];
+    if (ha && hb && ha.val === 0 && hb.val === 0 && ha.committed && hb.committed) {
+      alarmT = 4;
+      status(`⚠ 写偏斜!${rowName('A')}=${fmtVal(0)} 且 ${rowName('B')}=${fmtVal(0)}——两事务各自快照自洽、各写一行互不冲突,合起来击穿「至少一人在岗」约束。SI 防不了,可串行化(SSI)才防得住`, `⚠ Write skew! ${rowName('A')}=${fmtVal(0)} and ${rowName('B')}=${fmtVal(0)} - each snapshot self-consistent, disjoint rows, no write-write conflict, yet the invariant "at least one doctor on duty" is broken. SI allows it; serializable (SSI) prevents it`);
+    }
+  }
+  pushSnd(0.55, 0.35);
+  return true;
+}
+function doVacuum() {                                       // VACUUM:回收所有死版本
+  let n = 0;
+  for (const row in ROWS) {
+    const vs = ROWS[row].versions; for (let i = vs.length - 1; i >= 0; i--) {
+      const v = vs[i]; if (v.committed && i !== vs.length - 1 && v.xmax && v.xmaxCommit !== null) {
+        let pinned = false;
+        for (const k in TX) {
+          const t = TX[k]; if (!t.commit && !t.abort && visible(v, t, 2)) { pinned = true; break; }
+        }
+        if (!pinned) { v.block.sink = 0.001; vs.splice(i, 1); n++; }   // 交由沉没动画收尾
+      }
+    }
+  }
+  sweepOn = true;
+  status(`VACUUM:回收 ${n} 个死版本(长事务一提交,钉住解除)——不回收就会表膨胀,扫描越来越慢`, `VACUUM: reclaimed ${n} dead versions (pins released once readers commit) - without it, table bloat slows every scan down`);
+  pushSnd(0.2, 0.6);
+}
+
+/* ---------------- 四条剧本时间轴(事件都跑真实内核) ---------------- */
+function buildScenario(which) {
+  const n = nConcV(); if (which === 'snap') {
+    const evs = [ { t: 0.5, f: () => doBegin('T0', 0.5) }, { t: 0.8, f: () => doWrite('T0', 'A', 42, 0.8) }, { t: 1.2, f: () => doCommit('T0', 1.2) }, { t: 2.0, f: () => doBegin('T1', 2.0) },
+      { t: 3.0, f: () => doBegin('T2', 3.0) }, { t: 4.0, f: () => doWrite('T2', 'A', 43, 4.0) }, { t: 5.0, f: () => doRead('T1', 'A') }, { t: 6.0, f: () => doCommit('T2', 6.0) }, { t: 7.0, f: () => doRead('T1', 'A') }, { t: 8.0, f: () => doCommit('T1', 8.0) }, ];
+    if (n >= 3) evs.push( { t: 3.5, f: () => doBegin('T3', 3.5) }, { t: 7.5, f: () => doRead('T3', 'A') }, { t: 8.5, f: () => doCommit('T3', 8.5) });
+    if (n >= 4) evs.push( { t: 4.5, f: () => doBegin('T4', 4.5) }, { t: 9.0, f: () => doRead('T4', 'A') }, { t: 9.5, f: () => doCommit('T4', 9.5) });
+    return { evs, end: 11 };
+  }
+  if (which === 'waw') {
+    const evs = [ { t: 0.5, f: () => doBegin('T0', 0.5) }, { t: 0.8, f: () => doWrite('T0', 'A', 42, 0.8) }, { t: 1.2, f: () => doCommit('T0', 1.2) }, { t: 2.0, f: () => doBegin('T1', 2.0) },
+      { t: 3.0, f: () => doBegin('T2', 3.0) }, { t: 4.0, f: () => doWrite('T1', 'A', 43, 4.0) }, { t: 5.0, f: () => doWrite('T2', 'A', 44, 5.0) }, { t: 6.0, f: () => doCommit('T1', 6.0) }, { t: 7.0, f: () => doCommit('T2', 7.0) }, ];
+    if (n >= 3) evs.push( { t: 3.5, f: () => doBegin('T3', 3.5) }, { t: 5.5, f: () => doRead('T3', 'A') }, { t: 8.5, f: () => doCommit('T3', 8.5) });
+    if (n >= 4) evs.push( { t: 4.5, f: () => doBegin('T4', 4.5) }, { t: 8.0, f: () => doRead('T4', 'A') }, { t: 9.0, f: () => doCommit('T4', 9.0) });
+    return { evs, end: 10.5 };
+  }
+  if (which === 'skew') {
+    const evs = [ { t: 0.5, f: () => doBegin('T0', 0.5) }, { t: 0.7, f: () => doWrite('T0', 'A', 1, 0.7) }, { t: 0.9, f: () => doCommit('T0', 0.9) }, { t: 1.1, f: () => doWrite('T0', 'B', 1, 1.1) },
+      { t: 1.3, f: () => doCommit('T0', 1.3) }, { t: 2.0, f: () => doBegin('T1', 2.0) }, { t: 2.6, f: () => doBegin('T2', 2.6) }, { t: 3.2, f: () => doRead('T1', 'A') },
+      { t: 3.4, f: () => doRead('T1', 'B') }, { t: 3.8, f: () => doRead('T2', 'A') }, { t: 4.0, f: () => doRead('T2', 'B') }, { t: 4.6, f: () => doWrite('T1', 'A', 0, 4.6) },
+      { t: 5.6, f: () => doWrite('T2', 'B', 0, 5.6) }, { t: 6.4, f: () => doCommit('T1', 6.4) }, { t: 7.4, f: () => doCommit('T2', 7.4) }, ];
+    if (n >= 3) evs.push( { t: 3.0, f: () => doBegin('T3', 3.0) }, { t: 5.0, f: () => { doRead('T3', 'A'); doRead('T3', 'B'); } }, { t: 9.0, f: () => doCommit('T3', 9.0) });
+    if (n >= 4) evs.push( { t: 3.2, f: () => doBegin('T4', 3.2) }, { t: 5.2, f: () => { doRead('T4', 'A'); doRead('T4', 'B'); } }, { t: 9.2, f: () => doCommit('T4', 9.2) });
+    return { evs, end: 11.5 };
+  }
+  /* bloat:8 连写 + n 个读者钉快照 + VACUUM */
+  const evs = [ { t: 0.5, f: () => doBegin('T0', 0.5) }, { t: 0.8, f: () => doWrite('T0', 'A', 0, 0.8) }, { t: 1.2, f: () => doCommit('T0', 1.2) }, ];
+  const bgins = [2.5, 4.5, 6.5, 8.5]; for (let k = 0; k < n; k++) evs.push({ t: bgins[k], f: () => doBegin('T' + (k + 1), bgins[k]) });
+  for (let k = 0; k < 8; k++) {
+    const wt = 2 + k, vt = k + 1; evs.push({ t: wt, f: () => doWrite('T0', 'A', vt, wt) });
+    evs.push({ t: wt + 0.4, f: () => doCommit('T0', wt + 0.4) });
+  }
+  for (let k = 0; k < n; k++) evs.push({ t: 9.6 + k * 0.15, f: () => doRead('T' + (k + 1), 'A') });
+  for (let k = 0; k < n; k++) evs.push({ t: 10.2, f: () => doCommit('T' + (k + 1), 10.2) });
+  evs.push({ t: 10.8, f: () => doVacuum() });
+  return { evs, end: 13.5 };
+}
+let scen = null;                                           // init 时由 resetModeState 构建
+
+function resetModeState() {                                     // 清场:内核与视觉全部重置
+  for (const k in TX) delete TX[k];
+  ROWS.A.versions.length = 0; ROWS.B.versions.length = 0;
+  for (const row in blocks) for (const b of blocks[row]) {
+    b.m.visible = false; b.chain.visible = false; b.sink = 0; b.m.scale.setScalar(1);
+  }
+  for (const a of agents) a.g.visible = false;
+  for (const p of planes) p.visible = false;
+  for (const bm of beams) { bm.life = 0; bm.ln.material.opacity = 0; }
+  for (const f of flags) f.visible = false;
+  scT = 0; evIdx = 0; holdT = 0; alarmT = 0;
+  sweepOn = false; sweep.visible = false; sweep.position.x = 20;
+  lockBar.visible = false;
+  lastRead = { val: '—', verdict: '—' };
+  scen = buildScenario(mode || 'snap');
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [ { hl: 'lock', tgt: [0, 1.6, 3.8], b: '锁方案的代价:读写互斥的排队世界', be: 'The locking world: readers and writers queue',
+    d: '没有多版本时,数据库只剩一把行锁:读者拿共享锁,写者拿排它锁——读写、写写全部互斥。一个跑 30 秒的报表查询会把整表锁住,期间几百个更新排队;反过来,写 busy 时读也得等。响应时间与并发度在此直接打架,这就是 1980 年代数据库的日常。看红色闸门:读者过闸时写者被拦住。MVCC 的答案不是更聪明的锁,而是取消「读」这件事对锁的依赖——读的人去读版本,写的人去追新版本,互不见面。',
+    de: 'Without multiple versions a database has only row locks: readers take shared locks, writers exclusive - read-write and write-write all exclude each other. A 30-second report freezes a table while hundreds of updates queue; a busy writer blocks readers in return. Latency and throughput fight head-on - the 1980s database daily grind. Watch the red gate: while a reader passes, writers are held. MVCC\u2019s answer is not smarter locking but removing reads\u2019 dependence on locks altogether - readers consume versions, writers chase new ones, and they never meet.' },
+  { hl: 'chain', tgt: [0, 1.4, 3.2], b: '版本链:写 = 追加,读 = 挑选', be: 'The version chain: writes append, reads select',
+    d: 'MVCC 把「更新一行」拆成两件事:写 = 在版本链头部追加一个新版本,记下创建者事务 id(xmin),给旧版打上删除者标记(xmax),prev 指向旧版;读 = 拿着自己的快照,从链头往回扫,挑第一个对「我的时间切片」可见的版本。写入者与读取者从此无共享可争——写不阻塞读,读不阻塞写,各读各的时代。半透明平面就是快照:平面左边已提交的世界,对这个事务而言凝固不变。',
+    de: 'MVCC splits "update a row" in two: a write appends a new version at the chain head, recording the creator transaction id (xmin), stamping the old version with a deleter marker (xmax), prev pointing back; a read walks the chain from the head with its own snapshot and picks the first version visible in "my time slice". Writers and readers no longer contend for anything - writes never block reads, reads never block writes, each reads its own era. The translucent plane is the snapshot: the committed world left of it is frozen for that transaction.' },
+  { hl: 'vis', tgt: [-2, 1.6, 3.6], b: '可见性判定:逐版本过闸', be: 'Visibility: version by version through the gate',
+    d: '版本 v 可见 ⟺ 三问全过:①xmin 已提交且提交时间 ≤ 我的快照(创建者在我开始前落定);②xmin 不在我的活跃事务集里(不是我开始时还没完事的那批);③xmax 不存在,或删除者未提交/中止,或删除者在快照之后才提交。读光束扫过链头:未提交的橙块被挡下(除非隔离级别是读未提交——那就脏读了),提交晚于快照的绿块被挡下,直到找到第一个过闸的版本。切换隔离级别滑杆,同一时间线读出不同结果——规则一条,结论随级别变。',
+    de: 'Version v is visible iff three questions all pass: ① its xmin committed at or before my snapshot (the creator settled before I began); ② xmin is not in my active set (not among the transactions unfinished when I began); ③ xmax is absent, or the deleter is uncommitted/aborted, or committed after my snapshot. The read beam sweeps from the chain head: uncommitted orange blocks are stopped (unless the level is read-uncommitted - that is exactly a dirty read), green blocks committed after the snapshot are stopped, until one passes the gate. Change the isolation slider and the same timeline reads out differently - one rule, per-level verdicts.' },
+  { hl: 'waw', tgt: [0, 1.8, 3.8], b: '写-写冲突:先提交者赢', be: 'Write-write conflict: first committer wins', d: '两个事务基于同一个旧值各写一笔,都提交时听谁的?快照隔离的约定:提交时检查你写过的每一行——若它的最新版本已被一个「你开始之后才开始」的并发事务提交,你就输:回滚,重试。先提交者赢,后提交者收到序列化失败。这不是悲观锁,而是提交瞬间的一次裁决;游戏规则让「丢失更新」无处发生——两人都想把 42 改成自己的数,只有先说的算数。切换并发事务数,看旁观读者各自读到什么。',
+    de: 'Two transactions write from the same old value - who wins at commit? Snapshot isolation\u2019s rule: at commit, check every row you wrote - if its latest version was committed by a transaction concurrent with yours, you lose: roll back and retry. First committer wins; the later one gets a serialization failure. Not a pessimistic lock but an instant verdict at commit; the rule leaves no room for lost updates - two people rewriting 42 into their own number, only the first speaks. Change the concurrency slider and watch what each bystander reader sees.' },
+  { hl: 'skew', tgt: [-4.5, 1.8, 3.6], b: '写偏斜:各自自洽,合谋违约', be: 'Write skew: each self-consistent, jointly breaking the rule',
+    d: '快照隔离的盲区:两事务写不相交的行。值班表约束「至少一人在岗」:医生 A 的事务读到「B 在岗」→ 放心把自己改成离岗;医生 B 的事务读到「A 在岗」→ 也放心离岗。两个快照各自自洽,写集不相交 → 无写-写冲突 → 双双提交成功——约束被击穿,今晚没人值班。可串行化用 SSI 追踪这种「我读过你写的行」的 rw-反依赖,提交时发现两人互为反依赖、成环,拆环(中止后提交者)。把隔离级别滑到 SSI 再看:第二笔提交被拒,约束保住。',
+    de: 'Snapshot isolation\u2019s blind spot: two transactions writing disjoint rows. The on-call invariant "at least one doctor on duty": A\u2019s transaction reads "B on duty" and safely sets itself off duty; B\u2019s reads "A on duty" and does the same. Each snapshot self-consistent, write sets disjoint, no write-write conflict - both commit, the invariant is broken, nobody is on call tonight. Serializable (SSI) tracks these "I read what you wrote" rw-antidependencies; at commit it finds the cycle both ways and breaks it (abort the later committer). Slide the isolation level to SSI and replay: the second commit is rejected and the invariant survives.' },
+  { hl: 'vacuum', tgt: [2, 1.8, 4.2], b: '代价:死版本、膨胀与 VACUUM', be: 'The price: dead tuples, bloat and VACUUM',
+    d: '多版本不是白送的:每次 UPDATE 都留下一具旧版本尸体,只有当「没有任何事务还能看见它」时才能回收。长事务是头号嫌犯——一个跑一小时的大查询把快照钉住一小时,期间几百万个死版本无人敢动,表和索引持续膨胀(PostgreSQL 的著名功课:VACUUM / autovacuum;InnoDB 靠 undo log 回滚段)。看膨胀回收演示:8 连写堆积 7 具尸体,膨胀倍数一路冲到 8×;读者一提交、钉子一松,VACUUM 扫过,尸体沉底,倍数回到 1×。MVCC 用空间换并发,账要有人还。',
+    de: 'Multi-versioning is not free: every UPDATE leaves a corpse, reclaimable only when no transaction can see it anymore. Long transactions are the prime suspect - a one-hour query pins its snapshot for an hour, millions of dead tuples pile up untouched, tables and indexes bloat (PostgreSQL\u2019s famous chore: VACUUM / autovacuum; InnoDB leans on its undo log). Watch the bloat demo: 8 rapid writes leave 7 corpses, the bloat factor races to 8×; readers commit, pins release, VACUUM sweeps, corpses sink, and the factor returns to 1×. MVCC trades space for concurrency - the bill always comes due.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 1.5, 0); const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps'); el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li'); li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula'); function updateFormula() {
+  const lv = isoLevel(); formulaEl.innerHTML =
+    L(`可见(v, 快照)⟺ xmin 已提交 ∧ commit(xmin) ≤ 快照 ∧ (xmax 空 ∨ 未提交 ∨ 提交 &gt; 快照)——当前级别:<b>${ISONAMES[lv].zh}</b>`, `visible(v, snap) ⟺ xmin committed ∧ commit(xmin) ≤ snap ∧ (xmax absent ∨ uncommitted ∨ committed &gt; snap) - level: <b>${ISONAMES[lv].en}</b>`) + '<br>' +
+    L(`写 = 追加(xmin, xmax, prev)· 读 = 链头向旧扫取首个可见 · 写-写冲突 = <b>先提交者赢</b> · SSI = rw-反依赖环检测`, `write = append (xmin, xmax, prev) - read = first visible from head - write-write = <b>first committer wins</b> - SSI = rw-antidependency cycle`) + '<br>' +
+    L(`PostgreSQL 行头 xmin/xmax · InnoDB read view · 长事务钉住旧版本 → 表膨胀,VACUUM 回收 · 当前死版本 <b>${deadCount()}</b>`, `PostgreSQL xmin/xmax headers - InnoDB read view - long txns pin old versions → bloat, reclaimed by VACUUM - dead versions now: <b>${deadCount()}</b>`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnSnap = document.getElementById('btnSnap'), btnConflict = document.getElementById('btnConflict'), btnSkew = document.getElementById('btnSkew'), btnBloat = document.getElementById('btnBloat'), btnReset = document.getElementById('btnReset');
+const presetBtns = { snap: btnSnap, waw: btnConflict, skew: btnSkew, bloat: btnBloat }; function setPreset(id) {
+  mode = (mode === id) ? 'snap' : id;                       // 再点一次回到默认快照读
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === mode);
+  resetModeState();
+  updateFormula();
+}
+function resetMachine() {
+  mode = 'snap';
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === 'snap');
+  elN.value = 3; elNVal.textContent = '3';
+  elIso.value = 2; elIsoVal.textContent = L('快照隔离', 'snapshot');
+  resetModeState();
+  updateFormula();
+}
+btnSnap.addEventListener('click', () => setPreset('snap'));
+btnConflict.addEventListener('click', () => setPreset('waw'));
+btnSkew.addEventListener('click', () => setPreset('skew'));
+btnBloat.addEventListener('click', () => setPreset('bloat'));
+btnReset.addEventListener('click', resetMachine);
+
+/* ---------------- 示波器:活/死版本随时间的堆积曲线 ---------------- */
+const scope = document.getElementById('scope'); const scopeCtx = scope.getContext('2d');
+const snd = new Float32Array(260), sndN = new Float32Array(260); let sndI = 0;
+function pushSnd(liveF, deadF) {
+  snd[sndI] = liveF; sndN[sndI] = deadF;
+  sndI = (sndI + 1) % snd.length;
+}
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2); scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2); scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('版本链堆积:绿 = 活版本,红 = 死版本(事件脉冲)——只涨不跌就是在膨胀', 'version chain: green = live, red = dead (event pulses) - only rising means bloat'), 4 * dpr, 10 * dpr);
+  const mid = ch * 0.6; scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, mid); scopeCtx.lineTo(cw, mid);
+  scopeCtx.stroke();
+  const drawOne = (buf, color) => { scopeCtx.strokeStyle = color;
+    scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+    scopeCtx.beginPath();
+    const n = buf.length; for (let i = 0; i < n; i++) {
+      const v = buf[(sndI + i) % n]; const x = i / n * cw, y = mid - v * ch * 0.45;
+      i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+    }
+    scopeCtx.stroke();
+  };
+  drawOne(sndN, 'rgba(255,107,107,.9)');
+  drawOne(snd, 'rgba(125,237,178,.95)');
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play'); const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal'); const elN = document.getElementById('nConc'), elNVal = document.getElementById('nConcVal');
+const elIso = document.getElementById('iso'), elIsoVal = document.getElementById('isoVal'); const tglPlanes = document.getElementById('tglPlanes');
+const tglBeam = document.getElementById('tglBeam'); const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate'); function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateIso() {
+  const lv = isoLevel(); elIsoVal.textContent = L(ISONAMES[lv].zh, ISONAMES[lv].en);
+  resetModeState();
+  updateFormula();
+}
+function updateN() {
+  elNVal.textContent = elN.value;
+  resetModeState();
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elN.addEventListener('input', updateN);
+elIso.addEventListener('input', updateIso);
+tglBeam.addEventListener('change', () => { if (!tglBeam.checked) for (const bm of beams) bm.ln.material.opacity = 0; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = []; function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div'); div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div); o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+const lblHead = addLabel(() => L('版本链:写 = 追加新版本 · 读 = 按快照挑可见版本——写不阻塞读', 'version chain: write = append - read = pick by snapshot - writes never block reads'), () => 'st', new THREE.Vector3(0, 4.6, 0));
+const lblStatus = addLabel(() => L(lastStatus.zh, lastStatus.en), () => lastStatus.zh && lastStatus.zh[0] === '⚠' ? 'bad' : lastStatus.zh && lastStatus.zh[0] === '✗' ? 'w' : 'e', new THREE.Vector3(0, 4.05, 0));
+const lblRowA = addLabel(() => { const vs = ROWS.A.versions, h = vs[vs.length - 1];
+  return L(`${rowName('A')}(前景):最新 = ${h ? fmtVal(h.val) : '∅'}${h && !h.committed ? '(未提交)' : ''} · 共 ${vs.length} 版`, `${rowName('A')} (front): latest = ${h ? fmtVal(h.val) : '∅'}${h && !h.committed ? ' (uncommitted)' : ''} - ${vs.length} versions`);
+}, () => 'g', new THREE.Vector3(-8.6, laneY, 1.6));
+const lblRowB = addLabel(() => { const vs = ROWS.B.versions, h = vs[vs.length - 1];
+  return L(`${rowName('B')}(后景):最新 = ${h ? fmtVal(h.val) : '∅'}${h && !h.committed ? '(未提交)' : ''} · 共 ${vs.length} 版`, `${rowName('B')} (back): latest = ${h ? fmtVal(h.val) : '∅'}${h && !h.committed ? ' (uncommitted)' : ''} - ${vs.length} versions`);
+}, () => 'b', new THREE.Vector3(-8.6, laneY, -1.6));
+const lblClock = addLabel(() => L(`逻辑时钟 τ = ${scT.toFixed(1)}`, `logical clock τ = ${scT.toFixed(1)}`), () => 'w', new THREE.Vector3(0, 3.0, -3.6), pos => { pos.x = clamp(xOf(scT), xOf(0), xOf(16)); });
+const lblLock = addLabel(() => L('锁方案:读者过闸(共享锁),写者排队(排它锁)——MVCC 让这条闸门消失', 'locking: readers pass the gate (shared lock), writers queue (exclusive) - MVCC dissolves this gate'), () => 'bad', new THREE.Vector3(xOf(5), 2.2, 1.6));
+const lblMode = addLabel(() => {
+  if (mode === 'skew') return L('约束:值班医生 ≥ 1。两人各写一行、互不冲突 → SI 下双双提交成功 = 写偏斜', 'invariant: ≥1 doctor on duty. Disjoint rows, no conflict → both commit under SI = write skew');
+  if (mode === 'waw') return L('写-写冲突:T1、T2 都基于 42 改写 → 提交时先到者赢,后者回滚', 'write-write: T1 and T2 both rewrite from 42 → first to commit wins, the other rolls back');
+  if (mode === 'bloat') return L('读者长事务钉住旧版本 → 死版本只增不减 → 膨胀;VACUUM 在钉子松开后回收', 'long-running readers pin old versions → dead tuples only grow → bloat; VACUUM reclaims once pins release');
+  return L('快照读:同一事务两次读同一行,答案必须一致(可重复读)', 'snapshot read: two reads of one row in one transaction must agree (repeatable read)');
+}, () => 'w', new THREE.Vector3(0, 3.55, 0));
+lblLock.gate = () => STEPS[scenario].hl === 'lock';
+lblMode.gate = () => STEPS[scenario].hl !== 'lock';
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'), stC = document.getElementById('stC'), stD = document.getElementById('stD'), stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const live = liveCount(), dead = deadCount(); stA.innerHTML = lastRead.val + '<small> ' + (lastRead.verdict !== '—' ? '· ' + lastRead.verdict : '') + '</small>';
+  stA.className = 'v ok';
+  stB.innerHTML = lastRead.verdict === '—' ? '—' : L('见状态栏', 'see status line');
+  stB.className = 'v ok';
+  stC.innerHTML = live + '<small> 个(头 + 被钉)</small>';
+  stC.className = 'v ok';
+  stD.innerHTML = dead + '<small> 个待回收</small>';
+  stD.className = 'v ' + (dead === 0 ? 'ok' : dead <= 3 ? 'warn' : 'bad');
+  const bloat = live > 0 ? (live + dead) / live : 1; stE.innerHTML = bloat.toFixed(1) + '<small> ×(1.0 = 健康)</small>';
+  stE.className = 'v ' + (bloat < 1.6 ? 'ok' : bloat < 3.5 ? 'warn' : 'bad');
+  let nc = 0, na = 0;
+  for (const k in TX) { if (TX[k].commit) nc++; if (TX[k].abort) na++; }
+  stF.innerHTML = nc + '<small> / ' + na + (na > 0 ? ' 中止' : '') + '</small>';
+  stF.className = 'v ' + (na === 0 ? 'ok' : 'bad');
+}
+
+/* ---------------- 模式时间轴 ---------------- */
+function runModes(simDt) {
+  if (holdT > 0) {                                          // 终局停顿后重演
+    holdT -= simDt;
+    if (holdT <= 0) resetModeState();
+    return;
+  }
+  scT += simDt;
+  while (evIdx < scen.evs.length && scT >= scen.evs[evIdx].t) {
+    scen.evs[evIdx].f();
+    evIdx++;
+  }
+  if (evIdx >= scen.evs.length && scT > scen.end) holdT = 2.6;
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock(); let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05); et += dt;
+  const simDt = playing ? dt * speed : 0; runModes(simDt);
+  /* 扫描面与 VACUUM 扫掠 */
+  scan.position.x = clamp(xOf(scT), xOf(0), xOf(16));
+  if (sweepOn && sweep.position.x > xOf(16)) {
+    sweep.visible = true; sweep.position.z = 0;
+    sweep.position.x -= simDt * 6;
+  } else if (sweepOn) { sweepOn = false; sweep.visible = false; sweep.position.x = 20; }
+  /* 版本块:落位(提交后滑到提交时刻)、状态材质、链线、沉没 */
+  for (const row in ROWS) {
+    const vs = ROWS[row].versions; const head = vs[vs.length - 1];
+    for (let i = 0; i < vs.length; i++) {
+      const v = vs[i], blk = v.block; if (!blk) continue;
+      const tx = blk.m.position.x; const goal = v.committed ? xOf(v.commitTs) : xOf(v.writeTs);
+      blk.m.position.x += (goal - tx) * Math.min(1, dt * 4);
+      let mmat = M.verPin;
+      if (!v.committed) mmat = M.verUn;
+      else if (v === head) mmat = M.verLive;
+      else mmat = pinnedBy(v) ? M.verPin : M.verDead;
+      if (blk._flash && et < blk._flash) mmat = M.flashW;
+      else if (blk.m.material === M.flashW) blk._flash = 0;
+      if (blk.m.material !== mmat) blk.m.material = mmat;
+      /* prev 链线:指向旧版 */
+      const pv = v.prev; if (pv && pv.block && pv.block.m.visible) {
+        const pa = blk.chain.geometry.attributes.position.array; pa[0] = blk.m.position.x - 0.36; pa[1] = laneY; pa[2] = blk.z;
+        pa[3] = pv.block.m.position.x + 0.36; pa[4] = laneY; pa[5] = pv.block.z;
+        blk.chain.geometry.attributes.position.needsUpdate = true;
+        blk.chain.visible = true;
+      } else blk.chain.visible = false;
+      /* 沉没动画(VACUUM / 回滚收尾) */
+      if (blk.sink > 0) {
+        blk.sink += dt;
+        blk.m.scale.setScalar(Math.max(0.001, 1 - blk.sink * 1.8));
+        blk.m.position.y = laneY - blk.sink * 0.8;
+        if (blk.sink > 0.6) { blk.m.visible = false; blk.sink = 0; blk.m.position.y = laneY; blk.m.scale.setScalar(1); }
+      }
+    }
+  }
+  /* 回滚版本即时沉没:不在链上的可见块 = 已回滚 */
+  for (const row in blocks) for (const blk of blocks[row]) {
+    if (blk.m.visible && blk.sink === 0 && !ROWS[row].versions.some(v => v.block === blk)) {
+      blk.sink = 0.001;
+      blk.m.material = M.verRoll;
+    }
+  }
+  /* 读光束衰减 */
+  for (const bm of beams) {
+    if (bm.life > 0) {
+      bm.life -= dt;
+      bm.ln.material.opacity = tglBeam.checked ? clamp(bm.life / 2.2, 0, 1) * 0.95 : 0;
+    }
+  }
+  /* 快照平面 / 代理可见性(随事务状态) */
+  for (let k = 0; k < 5; k++) {
+    const id = 'T' + k, tx = TX[id], a = agents[k]; if (tx) {
+      a.g.visible = true;
+      planes[k].visible = tglPlanes.checked && !tx.commit && !tx.abort;
+      planes[k].position.x = xOf(tx.begin);
+      a.g.position.x = xOf(tx.begin);
+      const st = tx.abort ? L('已回滚', 'aborted') : tx.commit ? L('已提交 τ' + tx.commit, 'committed τ' + tx.commit)
+        : L(`活跃 · 快照 τ${tx.snap.ts} · 活跃集{${tx.snap.active.join(', ') || '空'}}`, `active - snap τ${tx.snap.ts} - set{${tx.snap.active.join(', ') || 'empty'}}`);
+      a.div.textContent = `${id} · ${st}`;
+      a.div.className = 'lbl ' + (tx.abort ? 'bad' : tx.commit ? 'g' : 'b');
+      a.body.material = tx.abort ? M.verRoll : txMat[k];
+    } else {
+      a.g.visible = false;
+      planes[k].visible = false;
+    }
+  }
+  /* 写偏斜警报:行槽闪红 */
+  if (alarmT > 0) {
+    alarmT -= dt;
+    const k = 0.4 + 0.35 * Math.sin(et * 9); laneA.material = laneB.material = M.lockBar;
+    laneA.material.emissiveIntensity = laneB.material.emissiveIntensity = k;
+    if (alarmT <= 0) { laneA.material = laneB.material = M.lane; laneA.material.emissiveIntensity = 0.05; }
+  }
+  /* 锁闸门只在第 1 步亮相 */
+  lockBar.visible = labelsOn && STEPS[scenario].hl === 'lock';
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5); const hl = STEPS[scenario].hl;
+  for (const m of [M.verLive, M.verPin, M.verUn, M.verDead, M.chain, M.lockBar]) m.emissiveIntensity = 0.16;
+  const boost = m => { m.emissiveIntensity = 0.55 + 0.3 * hlK; }; if (hl === 'lock') boost(M.lockBar);
+  else if (hl === 'chain') { boost(M.verLive); boost(M.chain); }
+  else if (hl === 'vis') { boost(M.verLive); boost(M.verUn); }
+  else if (hl === 'waw') { boost(M.verUn); boost(M.verRoll); }
+  else if (hl === 'skew') { boost(M.verLive); }
+  else if (hl === 'vacuum') { boost(M.verDead); }
+  /* 标签:基准可见性 + 门控 */
+  refreshLabels();
+  lblLock.o.visible = lblLock.o.visible && lblLock.gate();
+  lblMode.o.visible = lblMode.o.visible && lblMode.gate();
+  /* 相机目标 */
+  tmpV.copy(tgtVec);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now(); if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+resetModeState();
+const t0 = parseInt(qs.get('t'), 10); if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglPlanes.dispatchEvent(new Event('change'));
+tglBeam.dispatchEvent(new Event('change'));
+tglRotate.checked = qsBool('spin', true);
+controls.autoRotate = tglRotate.checked;
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

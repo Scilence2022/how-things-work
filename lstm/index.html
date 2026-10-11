@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LSTM 与门控记忆 · 给记忆装三道阀门</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="LSTM:给记忆装三道阀门" data-en="LSTM &amp; Gated Memory: Three Valves on Memory">LSTM:给记忆装三道阀门</h1>
+  <div class="sub" data-zh="普通 RNN 每步 h_t = tanh(W·h_{t−1} + x):反向传播时梯度要沿时间连乘雅可比矩阵,‖W‖&lt;1 时 k 步后只剩 ‖W‖^k——0.9^100 ≈ 3×10⁻⁵,记忆与梯度一起蒸发,Bengio 1994 年就指出这堵「长期依赖之墙」。LSTM(Hochreiter &amp; Schmidhuber 1997)给细胞状态开一条加法传送带:C_t = f_t⊙C_{t−1} + i_t⊙g̃_t——梯度沿 C 直通,不走连乘的匝道。三道阀门都是 σ 输出 [0,1]:f_t 遗忘门(0=清空,1=保留,偏置 b_f 决定默认开度,σ(5)=0.993 时 100 步后还剩 51%)、i_t 输入门(写多少,配 tanh 候选 g̃)、o_t 输出门(读多少,h_t = o_t⊙tanh(C_t))。同一任务「第 1 步记住主语单复数、第 T 步回答」:RNN 读出跌到 ~0.01,LSTM 靠传送带保住 ~0.6。GRU 把 4 组权重合成 3 组,参数 −25%;今天 Transformer 用注意力取代循环,但门控思想活在 GRU/RWKV/xLSTM。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A plain RNN computes h_t = tanh(W·h_{t−1} + x): backpropagation must multiply Jacobians across time, and when ‖W‖&lt;1 only ‖W‖^k survives after k steps - 0.9^100 ≈ 3×10⁻⁵ - memory and gradient evaporate together; Bengio pointed at this wall of long-term dependencies in 1994. LSTM (Hochreiter &amp; Schmidhuber 1997) routes the cell state onto an additive conveyor belt: C_t = f_t⊙C_{t−1} + i_t⊙g̃_t - gradients flow straight along C, never through the multiplicative ramp. Three gates, each a σ in [0,1]: f_t forget (0 = wipe, 1 = keep; bias b_f sets the default aperture, σ(5)=0.993 keeps 51% after 100 steps), i_t input (how much to write, with tanh candidate g̃), o_t output (how much to read, h_t = o_t⊙tanh(C_t)). On the task &quot;remember the subject&#39;s number at step 1, answer at step T&quot;: the RNN readout collapses to ~0.01 while the belt preserves ~0.6. GRU merges 4 weight groups into 3, −25% parameters; Transformers replaced recurrence with attention, but gating lives on in GRU/RWKV/xLSTM. 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">普通 RNN 每步 h_t = tanh(W·h_{t−1} + x):反向传播时梯度要沿时间连乘雅可比矩阵,‖W‖&lt;1 时 k 步后只剩 ‖W‖^k——0.9^100 ≈ 3×10⁻⁵,记忆与梯度一起蒸发,Bengio 1994 年就指出这堵「长期依赖之墙」。LSTM(Hochreiter &amp; Schmidhuber 1997)给细胞状态开一条加法传送带:C_t = f_t⊙C_{t−1} + i_t⊙g̃_t——梯度沿 C 直通,不走连乘的匝道。三道阀门都是 σ 输出 [0,1]:f_t 遗忘门(0=清空,1=保留,偏置 b_f 决定默认开度,σ(5)=0.993 时 100 步后还剩 51%)、i_t 输入门(写多少,配 tanh 候选 g̃)、o_t 输出门(读多少,h_t = o_t⊙tanh(C_t))。同一任务「第 1 步记住主语单复数、第 T 步回答」:RNN 读出跌到 ~0.01,LSTM 靠传送带保住 ~0.6。GRU 把 4 组权重合成 3 组,参数 −25%;今天 Transformer 用注意力取代循环,但门控思想活在 GRU/RWKV/xLSTM。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="LSTM 梯度 f^(T−1)" data-en="LSTM grad f^(T−1)">LSTM 梯度 f^(T−1)</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="RNN 梯度 0.9^(T−1)" data-en="RNN grad 0.9^(T−1)">RNN 梯度 0.9^(T−1)</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="记忆 C" data-en="memory C">记忆 C</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="LSTM 读出 h_T" data-en="LSTM readout h_T">LSTM 读出 h_T</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="RNN 读出 h_T" data-en="RNN readout h_T">RNN 读出 h_T</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="GRU 读出 h_T" data-en="GRU readout h_T">GRU 读出 h_T</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip g" data-zh="细胞传送带 C" data-en="cell conveyor C">细胞传送带 C</span>
+    <span class="chip b" data-zh="三道阀门 f/i/o" data-en="valves f/i/o">三道阀门 f/i/o</span>
+    <span class="chip o" data-zh="候选写入 g̃" data-en="candidate g̃">候选写入 g̃</span>
+    <span class="chip r" data-zh="RNN 连乘衰减" data-en="RNN vanishing">RNN 连乘衰减</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnVanish" data-zh="梯度消失(连乘)" data-en="vanishing gradients">梯度消失(连乘)</button>
+    <button class="abtn" id="btnGates" data-zh="三门全景(慢动作)" data-en="gates panorama (slow-mo)">三门全景(慢动作)</button>
+    <button class="abtn" id="btnRace" data-zh="长程记忆对决" data-en="long-range duel">长程记忆对决</button>
+    <button class="abtn" id="btnGru" data-zh="GRU 对比(−25%)" data-en="GRU compare (−25%)">GRU 对比(−25%)</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="序列长度 T" data-en="sequence length T">序列长度 T</label><input id="tLen" type="range" min="8" max="100" step="1" value="40"><span class="val" id="tLenVal">40</span></div>
+  <div class="row"><label data-zh="遗忘门偏置 b_f" data-en="forget bias b_f">遗忘门偏置 b_f</label><input id="bf" type="range" min="-2" max="6" step="0.5" value="5"><span class="val" id="bfVal">σ(5)=0.99</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglGhost" type="checkbox" checked> <span data-zh="RNN 影子轨" data-en="RNN ghost rail">RNN 影子轨</span></label>
+        <label><input id="tglTrail" type="checkbox" checked> <span data-zh="h 轨迹珠" data-en="h trail beads">h 轨迹珠</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../neural-network/" data-zh="神经网络" data-en="neural network">神经网络</a>
+    <a href="../neural-gradient/" data-zh="梯度下降" data-en="gradient descent">梯度下降</a>
+    <a href="../attention-mechanism/" data-zh="注意力机制" data-en="attention mechanism">注意力机制</a>
+    <a href="../llm-sampling/" data-zh="LLM 采样" data-en="LLM sampling">LLM 采样</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+const UP = new THREE.Vector3(0, 1, 0);
+const sig = x => 1 / (1 + Math.exp(-x));                         // sigmoid,门控的开关函数
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);             // 网格线
+  M.belt.color.set(dark ? 0x39434f : 0x8d9aa8);             // 传送带基体
+  M.frame.color.set(dark ? 0x2c333b : 0x55606a);            // 站架/管道/结构件
+  M.valve.color.set(dark ? 0x6db3f2 : 0x2b6cb0);            // 阀门环
+  M.flap.color.set(dark ? 0x74c0fc : 0x1971c2);             // 阀门舌片
+  M.capPos.color.set(dark ? 0x66d9e8 : 0x0b7285);           // C>0 记忆胶囊
+  M.capNeg.color.set(dark ? 0xe0b45c : 0xb0852f);           // C<0 记忆胶囊
+  M.rnnG.color.set(dark ? 0xff8787 : 0xc92a2a);             // RNN 影子胶囊
+  M.gruG.color.set(dark ? 0x9a8cff : 0x6741d9);             // GRU 胶囊
+  M.droplet.color.set(dark ? 0xffd43b : 0xe8a50a);          // 写入液滴 g̃
+  M.pulse.color.set(dark ? 0x8ce99a : 0x2b8a3e);            // 读出脉冲 h
+  M.meterR.color.set(dark ? 0xff6b6b : 0xc92a2a);           // 读出表:RNN
+  M.meterG.color.set(dark ? 0x51cf66 : 0x2b8a3e);           // 读出表:LSTM
+  M.meterB.color.set(dark ? 0x9a8cff : 0x6741d9);           // 读出表:GRU
+  M.gradR.color.set(dark ? 0xff6b6b : 0xc92a2a);            // 梯度柱:RNN
+  M.gradG.color.set(dark ? 0x51cf66 : 0x2b8a3e);            // 梯度柱:LSTM
+  M.slabL.color.set(dark ? 0x6db3f2 : 0x2b6cb0);            // LSTM 参数砖
+  M.slabG.color.set(dark ? 0x9a8cff : 0x6741d9);            // GRU 参数砖
+  M.axisM.color.set(dark ? 0x55606a : 0x8d9aa8);            // 刻度/底座
+  M.bead.color.set(dark ? 0x74c0fc : 0x1971c2);             // h 轨迹珠
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('LSTM 与门控记忆 · 给记忆装三道阀门', 'LSTM & Gated Memory · Three Valves on Memory');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateLen();
+  updateBf();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(4.6, 3.8, 10.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.9, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2;
+controls.maxDistance = 30;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.3,
+    emissive: color, emissiveIntensity: 0.12, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  belt: mat(0x39434f, { roughness: 0.6, emissiveIntensity: 0.05 }),
+  frame: mat(0x2c333b, { roughness: 0.55, metalness: 0.45 }),
+  valve: mat(0x6db3f2, { roughness: 0.4, emissiveIntensity: 0.2 }),
+  flap: mat(0x74c0fc, { roughness: 0.4, emissiveIntensity: 0.3 }),
+  capPos: mat(0x66d9e8, { roughness: 0.3, emissiveIntensity: 0.4 }),
+  capNeg: mat(0xe0b45c, { roughness: 0.3, emissiveIntensity: 0.4 }),
+  rnnG: mat(0xff8787, { roughness: 0.35, emissiveIntensity: 0.35 }),
+  gruG: mat(0x9a8cff, { roughness: 0.35, emissiveIntensity: 0.35 }),
+  droplet: mat(0xffd43b, { roughness: 0.3, emissiveIntensity: 0.5 }),
+  pulse: mat(0x8ce99a, { roughness: 0.3, emissiveIntensity: 0.5 }),
+  meterR: mat(0xff6b6b, { roughness: 0.5, emissiveIntensity: 0.18 }),
+  meterG: mat(0x51cf66, { roughness: 0.5, emissiveIntensity: 0.18 }),
+  meterB: mat(0x9a8cff, { roughness: 0.5, emissiveIntensity: 0.18 }),
+  gradR: mat(0xff6b6b, { roughness: 0.5, emissiveIntensity: 0.18 }),
+  gradG: mat(0x51cf66, { roughness: 0.5, emissiveIntensity: 0.18 }),
+  slabL: mat(0x6db3f2, { roughness: 0.45, emissiveIntensity: 0.18 }),
+  slabG: mat(0x9a8cff, { roughness: 0.45, emissiveIntensity: 0.18 }),
+  axisM: mat(0x55606a, { roughness: 0.55, emissiveIntensity: 0.05 }),
+  bead: mat(0x74c0fc, { roughness: 0.35, emissiveIntensity: 0.3 }),
+};
+
+/* ---------------- 算法本体:标量 RNN / LSTM / GRU,真实方程逐步计算 ----------------
+   任务:第 1 步给「主语单复数」s=±1(写入脉冲 xw),第 T 步给「问句」(读出脉冲 xr),
+   要求读出 |h_T| ≥ 0.4 且符号 = s。演示为 1 维细胞:门只看任务脉冲与自身偏置。 */
+const lstm = { C: 0, h: 0, f: 0, i: 0, o: 0, g: 0 };
+const rnn = { h: 0 };
+const gru = { h: 0, z: 0 };
+const TASK = { s: 1, T: 40 };
+let bFv = 5;                                                // 遗忘门偏置(滑杆)
+function lstmStep(xw, xr) {
+  lstm.f = sig(bFv);                                        // 遗忘门:偏置定默认开度
+  lstm.i = sig(6 * xw - 3);                                 // 输入门:写入脉冲时开
+  lstm.g = Math.tanh(4 * TASK.s) * xw;                      // 候选内容 = 要记的东西
+  lstm.o = sig(6 * xr - 3);                                 // 输出门:问句脉冲时开
+  lstm.C = lstm.f * lstm.C + lstm.i * lstm.g;               // ★ 加法传送带
+  lstm.h = lstm.o * Math.tanh(lstm.C);                      // 读出
+}
+function rnnStep(xw) {
+  rnn.h = Math.tanh(0.9 * rnn.h + xw);                      // w=0.9<1:每步乘 0.9,连乘蒸发
+}
+function gruStep(xw) {
+  gru.z = sig(8 * xw - 6);                                  // z 门:写时开(0.881),平时关死(0.0025)
+  const hT = Math.tanh(4 * TASK.s) * xw;
+  gru.h = (1 - gru.z) * gru.h + gru.z * hT;                 // 凸组合:无独立细胞,靠 z 兼管写与忘
+}
+const rnnGrad = k => Math.pow(0.9, k - 1);                  // ∂h_T/∂h_1 = w^(T−1)
+const lstmGrad = k => Math.pow(sig(bFv), k - 1);            // ∂C_T/∂C_1 = f^(T−1)(直通)
+
+/* ---------------- 状态量 ---------------- */
+let mode = null;                          // vanish | gates | race | gru | null
+let et = 0, scenario = 0;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let t = 0, runDone = false, doneHold = 0;
+let scrollAcc = 0, stationRate = 1.35;
+const SP = 1.4;                                             // 站距(世界单位)
+const valSweep = { f: sig(bFv), i: 0, o: 0 };               // 三门全景:手动扫掠值
+let gatePhase = 0, gateT = 0;
+let dropT = -1, pulseT = -1;                                // 液滴/读出脉冲动画时钟
+
+/* ---------------- 场景装配:地面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, 40), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(40, 20, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* ---------------- 传送带 + 站架跑马灯(时间向左流) ---------------- */
+const belt = new THREE.Mesh(new THREE.BoxGeometry(17.5, 0.14, 1.15), M.belt);
+belt.position.set(0, 1.5, 0);
+scene.add(belt);
+const beltLegL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.44, 1.0), M.frame);
+beltLegL.position.set(-8.2, 0.75, 0);
+const beltLegR = beltLegL.clone();
+beltLegR.position.x = 8.2;
+scene.add(beltLegL, beltLegR);
+const pylons = [];
+const postGeo = new THREE.BoxGeometry(0.12, 1.5, 0.12);
+const beadGeo = new THREE.SphereGeometry(0.09, 10, 8);
+for (let k = 0; k < 10; k++) {
+  const post = new THREE.Mesh(postGeo, M.frame);
+  post.position.set(-6.3 + k * SP, 0.75, 0);
+  scene.add(post);
+  pylons.push(post);
+}
+
+/* ---------------- 中央细胞单元:三道阀门 + 加法节点 + 读写管道 ---------------- */
+const unitG = new THREE.Group();
+scene.add(unitG);
+function pipe(dx, dy, dz, len, axis) {                      // 细管
+  const g = axis === 'x' ? new THREE.BoxGeometry(len, 0.1, 0.1)
+    : axis === 'y' ? new THREE.BoxGeometry(0.1, len, 0.1) : new THREE.BoxGeometry(0.1, 0.1, len);
+  const m = new THREE.Mesh(g, M.frame);
+  m.position.set(dx, dy, dz);
+  unitG.add(m);
+  return m;
+}
+pipe(-1.35, 1.86, 0, 1.5, 'x');                             // C 入口管(左)
+pipe(0.35, 1.86, 0, 1.3, 'x');                              // C 出口管(右)
+pipe(0, 2.6, 0, 1.5, 'y');                                  // 输入门立管(在 + 结点正上方)
+pipe(0.55, 2.55, 0, 1.5, 'y');                              // 输出门立管(在 + 结点之后)
+function valve(x, y) {                                      // 阀门 = 环 + 舌片(绕 x 轴开合)
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.05, 10, 26), M.valve);
+  ring.position.set(x, y, 0);
+  const flap = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.44, 0.36), M.flap);
+  flap.position.set(x, y, 0);
+  unitG.add(ring, flap);
+  return { ring, flap };
+}
+const vF = valve(-0.7, 1.86), vI = valve(0, 2.6), vO = valve(0.55, 2.2);    // f 在主带上,i 在 + 上方,o 在读出管
+const plus = new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 12), M.frame);
+plus.position.set(0, 1.86, 0);
+unitG.add(plus);
+const tank = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.42, 0.5), M.frame);
+tank.position.set(0, 3.5, 0);
+unitG.add(tank);
+const cap = new THREE.Mesh(new THREE.SphereGeometry(0.3, 18, 14), M.capPos);  // C 记忆胶囊
+cap.position.set(-0.28, 1.86, 0);
+unitG.add(cap);
+const rnnCap = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 12), M.rnnG); // RNN 影子胶囊
+rnnCap.position.set(-0.28, 0.62, 0);
+scene.add(rnnCap);
+const rnnRail = new THREE.Mesh(new THREE.BoxGeometry(15, 0.07, 0.6), M.frame); // RNN 影子轨
+rnnRail.position.set(0, 0.32, 0);
+scene.add(rnnRail);
+const droplet = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), M.droplet);  // 写入液滴
+droplet.visible = false;
+unitG.add(droplet);
+const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), M.pulse);       // 读出脉冲
+pulse.visible = false;
+unitG.add(pulse);
+
+/* ---------------- h 轨迹珠(固定池 12,每次站步推进) ---------------- */
+const beads = [];
+for (let k = 0; k < 12; k++) {
+  const b = new THREE.Mesh(beadGeo, M.bead);
+  b.position.set(-1.35 - k * 0.42, 1.86, 0);
+  b.scale.setScalar(0.05);
+  scene.add(b);
+  beads.push(b);
+}
+const hHist = [];                                           // 最近 12 步的 h
+
+/* ---------------- 读出表(右):RNN / LSTM / GRU ---------------- */
+const MX = 6.6, meterGeo = new THREE.BoxGeometry(0.34, 1, 0.34);
+const meters = [
+  { m: M.meterR, z: 1.15, key: 'rnn' },
+  { m: M.meterG, z: 0, key: 'lstm' },
+  { m: M.meterB, z: -1.15, key: 'gru' },
+].map(d => {
+  const b = new THREE.Mesh(meterGeo, d.m);
+  b.position.set(MX, 0.42, d.z);
+  b.scale.y = 0.05;
+  scene.add(b);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.06, 3.1), M.axisM);
+  base.position.set(MX, 0.4, 0);
+  scene.add(base);
+  return b;
+});
+const meterBase = meters[1].parent;                         // (底座已单独 add,仅占位引用)
+const tickT = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.03, 0.03), M.axisM);  // |h|=0.4 及格线
+tickT.position.set(MX, 0.42 + 0.05 + 0.4 * 1.6, 0);
+scene.add(tickT);
+
+/* ---------------- 梯度柱(左):k=10..100,RNN 0.9^k vs LSTM f^k ---------------- */
+const KS = [10, 20, 30, 40, 60, 80, 100];
+const GX0 = -9.6, GS = 1.05;
+const gradGeo = new THREE.BoxGeometry(0.3, 1, 0.3);
+const gradBars = KS.map((k, i) => {
+  const x = GX0 + i * GS;
+  const br = new THREE.Mesh(gradGeo, M.gradR);
+  br.position.set(x, 0.05, 0.5); br.scale.y = 0.05;
+  const bl = new THREE.Mesh(gradGeo, M.gradG);
+  bl.position.set(x, 0.05, -0.2); bl.scale.y = 0.05;
+  scene.add(br, bl);
+  return { br, bl, x };
+});
+function gradH(v) { return clamp((Math.log10(Math.max(v, 1e-12)) + 4.8) / 4.8, 0.03, 1) * 2.1; }
+
+/* ---------------- GRU 参数砖(gru 预设登场):4 组 vs 3 组 ---------------- */
+const gruG2 = new THREE.Group();
+gruG2.visible = false;
+scene.add(gruG2);
+const slabs = [];
+for (let k = 0; k < 4; k++) {
+  const s = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.34, 0.5), M.slabL);
+  s.position.set(-3.4, 0.25 + k * 0.4, -2.9);
+  gruG2.add(s); slabs.push(s);
+}
+for (let k = 0; k < 3; k++) {
+  const s = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.34, 0.5), M.slabG);
+  s.position.set(-2.4, 0.25 + k * 0.4, -2.9);
+  gruG2.add(s); slabs.push(s);
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+const lblHead = addLabel(() => L('细胞状态 C:加法传送带——梯度沿它直通,不经连乘', 'cell state C: additive conveyor - gradients flow straight through'),
+  () => 'g', new THREE.Vector3(0, 4.35, 0));
+const lblF = addLabel(() => L(`f = σ(b_f) = ${lstm.f.toFixed(3)} 遗忘门`, `f = σ(b_f) = ${lstm.f.toFixed(3)} forget gate`),
+  () => 'b', new THREE.Vector3(-0.7, 1.4, 0.55), null, unitG);
+const lblI = addLabel(() => L(`i = ${lstm.i.toFixed(3)} 输入门 · g̃ = ${lstm.g.toFixed(2)}`, `i = ${lstm.i.toFixed(3)} input gate - g̃ = ${lstm.g.toFixed(2)}`),
+  () => 'e', new THREE.Vector3(0, 3.95, 0), null, unitG);
+const lblO = addLabel(() => L(`o = ${lstm.o.toFixed(3)} 输出门`, `o = ${lstm.o.toFixed(3)} output gate`),
+  () => 'w', new THREE.Vector3(0.55, 2.85, 0.5), null, unitG);
+const lblC = addLabel(() => L(`C = ${lstm.C >= 0 ? '+' : ''}${lstm.C.toFixed(3)}`, `C = ${lstm.C >= 0 ? '+' : ''}${lstm.C.toFixed(3)}`),
+  () => lstm.C >= 0 ? 'b' : 'e', new THREE.Vector3(-0.28, 2.35, 0), null, unitG);
+const lblH = addLabel(() => L(`h = ${lstm.h >= 0 ? '+' : ''}${lstm.h.toFixed(3)}(读出)`, `h = ${lstm.h >= 0 ? '+' : ''}${lstm.h.toFixed(3)} (readout)`),
+  () => lstm.h >= 0 ? 'g' : 'w', new THREE.Vector3(0.55, 3.65, 0), null, unitG);
+const lblT = addLabel(() => {
+  const x = t === 0 ? '—' : t === 1 ? (TASK.s > 0 ? '写 +1(单数)' : '写 −1(复数)') : t >= TASK.T ? '问句(读出)' : '保持 0';
+  return L(`t = ${t}/${TASK.T} · 本步输入:${x}`, `t = ${t}/${TASK.T} - input now: ${x}`);
+}, () => 'st', new THREE.Vector3(0, 5.05, 0));
+const lblRnn = addLabel(() => L(`普通 RNN:h = ${rnn.h.toFixed(3)} · 每步乘 0.9,k 步后 0.9^k → 0.9^100 ≈ 3×10⁻⁵`,
+  `plain RNN: h = ${rnn.h.toFixed(3)} - ×0.9 per step, 0.9^100 ≈ 3×10⁻⁵`),
+  () => 'r', new THREE.Vector3(-0.28, 1.15, 0));
+const lblMeters = addLabel(() => L(`终点读出 |h_T|(及格线 0.4):红 RNN · 绿 LSTM · 紫 GRU`, `final readout |h_T| (pass ≥ 0.4): red RNN - green LSTM - violet GRU`),
+  () => 'st', new THREE.Vector3(MX, 3.35, 0));
+const lblGrad = addLabel(() => L(`BPTT 梯度 ‖∂h_T/∂h_1‖:红 = 0.9^k,绿 = f^k · 拖 b_f 看绿柱如何响应`, `BPTT grad ‖∂h_T/∂h_1‖: red = 0.9^k, green = f^k - drag b_f and watch`),
+  () => 'st', new THREE.Vector3(GX0 + 3.1, 2.75, 0));
+const lblVerdict = addLabel(() => L(`本局结算:T=${TASK.T} · LSTM 读出 ${lstm.h.toFixed(2)} ${Math.abs(lstm.h) >= 0.4 ? '✓ 记住了' : '✗ 忘了'} · RNN ${rnn.h.toFixed(3)} ✗ · GRU ${gru.h.toFixed(2)} ${Math.abs(gru.h) >= 0.4 ? '✓' : '✗'}`,
+  `this run: T=${TASK.T} - LSTM readout ${lstm.h.toFixed(2)} ${Math.abs(lstm.h) >= 0.4 ? '✓ remembered' : '✗ forgot'} - RNN ${rnn.h.toFixed(3)} ✗ - GRU ${gru.h.toFixed(2)} ${Math.abs(gru.h) >= 0.4 ? '✓' : '✗'}`),
+  () => Math.abs(lstm.h) >= 0.4 ? 'g' : 'bad', new THREE.Vector3(0, 4.85, 0));
+const lblGru = addLabel(() => L(`GRU:z 门兼管写与忘,r 门控历史 · 3 组权重 vs LSTM 4 组 → 参数 −25%`, `GRU: z gate handles write+forget, r gate the history - 3 weight groups vs LSTM 4 → −25% params`),
+  () => 'w', new THREE.Vector3(-2.9, 2.15, -2.9));
+lblVerdict.gate = () => runDone;
+lblGru.gate = () => mode === 'gru';
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'vanish', tgt: [-5.5, 1.6, 3.6],
+    b: 'RNN 的墙:梯度在连乘中蒸发', be: 'The RNN wall: gradients evaporate in the product',
+    d: '普通 RNN 每步 h_t = tanh(W·h_{t−1} + x),反向传播要求梯度沿时间连乘雅可比:d h_T/d h_1 = Π W——‖W‖<1 时指数衰减:0.9^20 ≈ 0.12,0.9^100 ≈ 3×10⁻⁵,比 float 精度还低。后果:第 100 步的损失几乎「不知道」第 1 步发生过什么,长期依赖学不到——Bengio 1994 年把这堵墙写进了论文名。看左侧红柱:每多 10 步就矮一截,到 100 步贴地;这就是「记住 100 步前的主语」在普通 RNN 里学不动的数学原因。',
+    de: 'A plain RNN computes h_t = tanh(W·h_{t−1} + x); backprop must multiply Jacobians across time: ∂h_T/∂h_1 = Π W - for ‖W‖<1 it decays exponentially: 0.9^20 ≈ 0.12, 0.9^100 ≈ 3×10⁻⁵, below float resolution. The loss at step 100 is essentially blind to what happened at step 1 - long-term dependencies cannot be learned; Bengio named this wall in his 1994 paper title. Watch the red bars on the left: each extra 10 steps shrinks them, flat on the ground by k=100 - the mathematical reason plain RNNs cannot learn to remember a subject from 100 steps back.' },
+  { hl: 'belt', tgt: [0, 2.0, 4.4],
+    b: '细胞状态传送带:用加法绕开连乘', be: 'The cell conveyor: bypassing products with addition',
+    d: 'LSTM 1997 年的核心一步:给记忆单独修一条「加法高速」——细胞状态 C_t = f_t⊙C_{t−1} + i_t⊙g̃_t。注意这是加法更新:C 的主路只有逐元素乘一个标量门再加一项,梯度沿 C 反传时每步只乘 f(和 1−o·tanh′ 因子),不再被 W 反复矩阵乘。只要 f≈1,梯度就能原封不动传 100 步——传送带上不设收费站。看中央:金色记忆胶囊躺在带上前行,遗忘门只决定「留多少」,不改变「梯度走这条直路」的事实。',
+    de: 'LSTM\u2019s 1997 core move: build the memory a separate additive highway - the cell state C_t = f_t⊙C_{t−1} + i_t⊙g̃_t. The update is additive: along C, backprop multiplies only by f (plus a mild tanh factor), never by W again and again. With f≈1 the gradient rides unchanged for 100 steps - no toll booths on this belt. Watch the center: the gold memory capsule rides the belt; the forget gate only decides how much stays, without changing the fact that gradients take this direct road.' },
+  { hl: 'fgate', tgt: [0, 2.0, 4.6],
+    b: '遗忘门:0 清空,1 保留', be: 'The forget gate: 0 wipes, 1 keeps',
+    d: 'f_t = σ(W_f·[h_{t−1}, x_t] + b_f) ∈ (0,1),逐元素乘在旧记忆上:f=0 清空,f=1 原样保留。点睛之处是偏置 b_f:初始化时把 b_f 设大(如 5,σ(5)=0.993)能让网络「默认不忘」,这是训练 LSTM 的著名技巧;把 b_f 拖到 0 或负值,f≈0.5 甚至更小,记忆像漏水一样指数流失——f^(T−1) 就是保留率,T=40、f=0.5 时只剩 10⁻¹²。拖动 b_f 滑杆,看胶囊缩水与绿柱崩塌——门的默认开度,决定记忆的寿命。',
+    de: 'f_t = σ(W_f·[h_{t−1}, x_t] + b_f) ∈ (0,1) multiplies the old memory elementwise: f=0 wipes, f=1 keeps. The subtle part is the bias b_f: initializing it large (say 5, σ(5)=0.993) makes the network "default to not forgetting" - the famous LSTM training trick. Drag b_f to 0 or below and f≈0.5 or less, the memory leaks away exponentially - f^(T−1) is the retention, at T=40 and f=0.5 only 10⁻¹² survives. Drag the b_f slider and watch the capsule shrink and the green bars collapse - a gate\u2019s default aperture sets the memory\u2019s lifespan.' },
+  { hl: 'igate', tgt: [0, 2.4, 4.2],
+    b: '输入门:写多少、写什么', be: 'The input gate: how much and what to write',
+    d: '写入是两支协同:i_t = σ(…) 决定「写多少」,g̃_t = tanh(W_g·[h,x]) 生成「写什么」的候选内容,合成的写入量是 i_t⊙g̃_t,加到传送带上——注意是加,不是覆盖。这是 LSTM 选择性记忆的来源:无关信息 i≈0 直接被拒之门外,重要事件 i≈1 全额上车。演示里第 1 步的「主语」脉冲把 i 拉到 0.95,写入 s·tanh(4)≈±0.999;之后 38 步 i≈0.05,记忆几乎不被打扰。点「三门全景」看液滴注入的慢动作。',
+    de: 'Writing is a duet: i_t = σ(…) decides how much, g̃_t = tanh(W_g·[h,x]) proposes what, and their product i_t⊙g̃_t is added onto the belt - added, not overwriting. This is where LSTM\u2019s selective memory comes from: irrelevant input meets i≈0 and is turned away at the door; an important event rides at i≈1. In the demo the subject pulse at step 1 pulls i to 0.95 and writes s·tanh(4) ≈ ±0.999; for the next 38 steps i≈0.05 leaves the memory alone. Press "gates panorama" for the slow-motion droplet injection.' },
+  { hl: 'ogate', tgt: [0, 2.6, 4.2],
+    b: '输出门:记忆不等于暴露', be: 'The output gate: memory is not exposure',
+    d: 'h_t = o_t⊙tanh(C_t):o_t = σ(…) 决定这一步把细胞状态的多少「读出去」给外部和下一时刻。设计的关键在于 C 与 h 分离:C 是长期记忆,可以整段保真;tanh(C) 是当步想要说的内容;o 是音量旋钮。没到回答的时刻就把 o 关小(演示里 38 步都 ≈0.05),记忆在带里安静待着;问句一到 o≈0.95,h_t 突然读出 ±0.6——「记得住」与「说多少」是两个独立决策,这让梯度沿 C 的直路不被读出路径的噪声污染。',
+    de: 'h_t = o_t⊙tanh(C_t): o_t = σ(…) decides how much of the cell state to expose externally at this step. The key design is separating C from h: C is the long-term memory kept faithfully; tanh(C) is what this step wants to say; o is the volume knob. Until it\u2019s time to answer, o stays low (≈0.05 for 38 steps) and the memory sits quietly on the belt; when the question arrives o≈0.95 and h_t suddenly reads out ±0.6. "What to remember" and "how much to say" are two independent decisions - and that keeps the gradient highway along C unpolluted by the readout path.' },
+  { hl: 'race', tgt: [3.2, 2.2, 5.2],
+    b: '长程对决与门控思想的去处', be: 'The long-range duel, and where gating went next',
+    d: '同一任务实测:RNN 的 h 一路按 0.9^k 衰减,40 步后读出 ≈0.01,连及格线 0.4 的影子都摸不到;LSTM 靠传送带保住 C≈0.73、读出 ≈0.6。1997 年的训练技巧(全 f 偏置 1)至今仍是默认。此后 GRU 把 f/i 合并成更新门 z、新增重置门 r,4 组权重变 3 组,参数 −25%,效果大体持平;2017 年起 Transformer 用注意力一步直达任意历史,取代了循环——但三道「σ 阀门控流量」的思想活在 GRU/RWKV/xLSTM 和一切残差网络的门控里。点「GRU 对比」看参数账。',
+    de: 'Same task, measured: the RNN\u2019s h decays by 0.9^k and its 40-step readout is ≈0.01, nowhere near the 0.4 pass line; the LSTM\u2019s belt holds C≈0.73 and reads out ≈0.6. The 1997 trick (forget biases set to 1) is still the default. GRU later merged f/i into an update gate z and added a reset gate r: 4 weight groups become 3, −25% parameters, comparable quality; since 2017 Transformers fetch any past step in one attention hop, replacing recurrence - but the idea of σ-valves metering flow lives on in GRU/RWKV/xLSTM and every gated residual network. Press "GRU compare" for the parameter bill.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 2.0, 0);
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const f = sig(bFv), keep = Math.pow(f, TASK.T - 1), rg = rnnGrad(TASK.T);
+  formulaEl.innerHTML =
+    L(`f = σ(b_f) = <b>${f.toFixed(3)}</b> · C_t = f⊙C_{t−1} + i⊙g̃ → T=${TASK.T} 步后保留 f^(T−1) = <b>${keep.toExponential(2)}</b>`,
+      `f = σ(b_f) = <b>${f.toFixed(3)}</b> - C_t = f⊙C_{t−1} + i⊙g̃ → retention after T=${TASK.T} steps f^(T−1) = <b>${keep.toExponential(2)}</b>`) + '<br>' +
+    L(`h_t = o⊙tanh(C_t):LSTM 读出 <b>${lstm.h.toFixed(3)}</b>(|h|≥0.4 记住)· RNN:∂h_T/∂h_1 = 0.9^(T−1) = <b>${rg.toExponential(2)}</b>`,
+      `h_t = o⊙tanh(C_t): LSTM readout <b>${lstm.h.toFixed(3)}</b> (pass ≥0.4) - RNN: ∂h_T/∂h_1 = 0.9^(T−1) = <b>${rg.toExponential(2)}</b>`) + '<br>' +
+    L(`0.9^100 ≈ 3×10⁻⁵(1994 之墙)· LSTM 4 组权重(f,i,g̃,o)vs GRU 3 组(z,r,h̃)→ 参数 <b>−25%</b>`,
+      `0.9^100 ≈ 3×10⁻⁵ (the 1994 wall) - LSTM 4 weight groups (f,i,g̃,o) vs GRU 3 (z,r,h̃) → params <b>−25%</b>`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnVanish = document.getElementById('btnVanish'), btnGates = document.getElementById('btnGates'),
+  btnRace = document.getElementById('btnRace'), btnGru = document.getElementById('btnGru'),
+  btnReset = document.getElementById('btnReset');
+const presetBtns = { vanish: btnVanish, gates: btnGates, race: btnRace, gru: btnGru };
+function resetRun() {                                       // 新一局:主语符号翻转,状态清零
+  TASK.s = -TASK.s;
+  t = 0; runDone = false; doneHold = 0; scrollAcc = 0;
+  lstm.C = 0; lstm.h = 0; lstm.f = sig(bFv); lstm.i = 0; lstm.o = 0; lstm.g = 0;
+  rnn.h = 0; gru.h = 0; gru.z = 0;
+  hHist.length = 0;
+  for (const b of beads) b.scale.setScalar(0.05);
+  droplet.visible = pulse.visible = false;
+  dropT = pulseT = -1;
+  updateFormula();
+}
+function resetModeState() {
+  resetRun();
+  gateT = 0; gatePhase = 0;
+}
+let gatesC0 = 0;                                            // 三门全景:冻结的起始记忆
+function setPreset(id) {
+  mode = mode === id ? null : id;
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === mode);
+  resetModeState();
+  gruG2.visible = mode === 'gru';
+  if (mode === 'gates') {                                   // 先真实写入一次,再冻结 C 供阀门实验
+    stationStep();
+    gatesC0 = lstm.C;
+  }
+  updateFormula();
+}
+function resetMachine() {
+  if (mode) setPreset(mode);                                // 先按 toggle 语义清掉当前模式
+  mode = null;
+  for (const k in presetBtns) presetBtns[k].classList.remove('on');
+  resetModeState();
+  gruG2.visible = false;
+  elLen.value = 40; updateLen();
+  elBf.value = 5; updateBf();
+  updateFormula();
+}
+btnVanish.addEventListener('click', () => setPreset('vanish'));
+btnGates.addEventListener('click', () => setPreset('gates'));
+btnRace.addEventListener('click', () => setPreset('race'));
+btnGru.addEventListener('click', () => setPreset('gru'));
+btnReset.addEventListener('click', resetMachine);
+
+/* ---------------- 示波器:C(绿)与 RNN h(红)的逐站轨迹 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+const snd = new Float32Array(260), sndN = new Float32Array(260);
+let sndI = 0;
+function pushSnd(c, rh) {
+  snd[sndI] = c; sndN[sndI] = rh;
+  sndI = (sndI + 1) % snd.length;
+}
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('逐站轨迹:C 记忆(绿)稳坐传送带 · RNN h(红)一路漏光', 'per-step traces: C (green) rides the belt - RNN h (red) leaks away'), 4 * dpr, 10 * dpr);
+  const mid = ch * 0.55;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, mid); scopeCtx.lineTo(cw, mid);
+  scopeCtx.stroke();
+  const drawOne = (buf, color) => {
+    scopeCtx.strokeStyle = color;
+    scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+    scopeCtx.beginPath();
+    const n = buf.length;
+    for (let i = 0; i < n; i++) {
+      const v = buf[(sndI + i) % n];
+      const x = i / n * cw, y = mid - v * ch * 0.42;
+      i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+    }
+    scopeCtx.stroke();
+  };
+  drawOne(sndN, 'rgba(255,135,135,.85)');
+  drawOne(snd, 'rgba(125,237,178,.95)');
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elLen = document.getElementById('tLen'), elLenVal = document.getElementById('tLenVal');
+const elBf = document.getElementById('bf'), elBfVal = document.getElementById('bfVal');
+const tglGhost = document.getElementById('tglGhost');
+const tglTrail = document.getElementById('tglTrail');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateLen() {
+  TASK.T = parseInt(elLen.value, 10);
+  elLenVal.textContent = String(TASK.T);
+  resetRun();
+}
+function updateBf() {
+  bFv = parseFloat(elBf.value);
+  elBfVal.textContent = 'σ(' + bFv + ')=' + sig(bFv).toFixed(2);
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elLen.addEventListener('input', updateLen);
+elBf.addEventListener('input', updateBf);
+tglTrail.addEventListener('change', () => { for (const b of beads) b.visible = tglTrail.checked; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const lg = lstmGrad(TASK.T), rg = rnnGrad(TASK.T);
+  stA.innerHTML = lg.toExponential(1) + '<small> 直通</small>';
+  stA.className = 'v ' + (lg >= 0.3 ? 'ok' : lg >= 0.05 ? 'warn' : 'bad');
+  stB.innerHTML = rg.toExponential(1) + '<small> 连乘</small>';
+  stB.className = 'v ' + (rg >= 0.1 ? 'ok' : rg >= 0.01 ? 'warn' : 'bad');
+  stC.innerHTML = (lstm.C >= 0 ? '+' : '') + lstm.C.toFixed(3) + '<small> C(目标 ±' + TASK.s + ')</small>';
+  stC.className = 'v ' + (Math.abs(lstm.C) >= 0.4 ? 'ok' : Math.abs(lstm.C) >= 0.1 ? 'warn' : 'bad');
+  stD.innerHTML = lstm.h.toFixed(3) + '<small> · ≥0.4 ✓</small>';
+  stD.className = 'v ' + (Math.abs(lstm.h) >= 0.4 ? 'ok' : Math.abs(lstm.h) >= 0.15 ? 'warn' : 'bad');
+  stE.innerHTML = rnn.h.toFixed(3) + '<small> · ≥0.4 ✓</small>';
+  stE.className = 'v ' + (Math.abs(rnn.h) >= 0.4 ? 'ok' : Math.abs(rnn.h) >= 0.15 ? 'warn' : 'bad');
+  stF.innerHTML = gru.h.toFixed(3) + '<small> · z 门兼写忘</small>';
+  stF.className = 'v ' + (Math.abs(gru.h) >= 0.4 ? 'ok' : Math.abs(gru.h) >= 0.15 ? 'warn' : 'bad');
+}
+
+/* ---------------- 站步:真实方程推进一格 ---------------- */
+function stationStep() {
+  t++;
+  const xw = t === 1 ? 1 : 0, xr = t >= TASK.T ? 1 : 0;
+  lstmStep(xw, xr);
+  rnnStep(xw);
+  gruStep(xw);
+  if (xw) dropT = 0;                                        // 写入:液滴动画
+  if (xr) { pulseT = 0; runDone = true; }                   // 问句:读出脉冲 + 结算
+  hHist.push(lstm.h);
+  if (hHist.length > beads.length) hHist.shift();
+  for (let k = 0; k < beads.length; k++) {                  // 轨迹珠:高度 ∝ |h|,符号染色
+    const hv = hHist[hHist.length - 1 - k];
+    if (hv === undefined) { beads[k].scale.setScalar(0.05); continue; }
+    beads[k].scale.setScalar(0.15 + Math.abs(hv) * 0.75);
+    beads[k].material = hv >= 0 ? M.capPos : M.capNeg;
+  }
+  pushSnd(clamp(lstm.C, -1.2, 1.2), clamp(rnn.h, -1.2, 1.2));
+}
+
+/* ---------------- 模式时间轴 ---------------- */
+function runModes(simDt) {
+  if (mode === 'vanish') {                                  // 梯度消失:双脉冲右行,红按 0.9^k 缩
+    gateT += simDt;
+    if (gateT > 8.4) gateT = 0;
+    const kk = clamp(gateT / 8, 0, 1) * 100;                // 脉冲行进代表第 kk 步
+    for (let i = 0; i < gradBars.length; i++) {
+      const k = KS[i];
+      gradBars[i].br.scale.y = clamp(gradH(rnnGrad(k)) * E2(clamp01((gateT - 0.2 - i * 0.35) / 0.5)), 0.03, 2.1);
+      gradBars[i].bl.scale.y = clamp(gradH(lstmGrad(k)) * E2(clamp01((gateT - 0.45 - i * 0.35) / 0.5)), 0.03, 2.1);
+      gradBars[i].br.position.y = 0.05 + gradBars[i].br.scale.y / 2;
+      gradBars[i].bl.position.y = 0.05 + gradBars[i].bl.scale.y / 2;
+    }
+    const xT = -7.2 + 14.4 * kk / 100;
+    pulse.visible = true;                                   // 绿脉冲 = LSTM 梯度沿 C 直通,几乎不缩
+    pulse.position.set(xT, 1.86, 0);
+    pulse.scale.setScalar(clamp(0.25 + 0.75 * lstmGrad(Math.max(1, kk)), 0.02, 1.1));
+    rnnCap.visible = true;                                  // 红胶囊 = RNN 梯度,一路指数缩水
+    rnnCap.position.set(xT, 0.62, 0);
+    rnnCap.scale.setScalar(clamp(0.25 + 0.75 * rnnGrad(Math.max(1, kk)), 0.015, 1.0));
+    stationRate = 0;
+    return;
+  }
+  if (mode === 'gates') {                                   // 三门全景:手动扫掠阀门,单步预览 C/h
+    gateT += simDt;
+    if (gateT > 12) gateT = 0;
+    const ph = gateT / 4;                                   // 0-1 f 门 / 1-2 i 门 / 2-3 o 门
+    gatePhase = Math.min(2, Math.floor(ph));
+    const u = ph - Math.floor(ph), osc = 0.5 - 0.5 * Math.cos(u * TAU);   // 0→1→0 扫掠
+    lstm.f = gatePhase === 0 ? 0.02 + 0.96 * osc : sig(bFv);
+    lstm.i = gatePhase === 1 ? osc : gatePhase === 2 ? 1 : 0;
+    lstm.g = gatePhase >= 1 ? Math.tanh(4 * TASK.s) : 0;
+    lstm.o = gatePhase === 2 ? osc : 0;
+    lstm.C = lstm.f * gatesC0 + lstm.i * lstm.g;            // 单步预览:C' = f⊙C + i⊙g̃
+    lstm.h = lstm.o * Math.tanh(lstm.C);
+    if (gatePhase === 1 && lstm.i > 0.5 && dropT < 0) dropT = 0;    // 注入液滴
+    if (gatePhase === 2 && lstm.o > 0.5 && pulseT < 0) pulseT = 0;  // 读出脉冲
+    stationRate = 0;
+    return;
+  }
+  /* 默认 / race / gru:跑马灯推进,逐站跑真实方程 */
+  stationRate = mode === 'race' ? 3.2 : 1.35;
+  if (!runDone) {
+    scrollAcc += stationRate * SP * simDt;
+    while (scrollAcc >= SP && !runDone) {
+      scrollAcc -= SP;
+      stationStep();
+    }
+  } else {
+    doneHold += simDt;
+    if (doneHold > 2.4) resetRun();
+  }
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  /* 跑马灯站架左移 */
+  if (playing && stationRate > 0) {
+    const v = stationRate * SP;
+    for (const p of pylons) {
+      p.position.x -= v * simDt;
+      if (p.position.x < -7.7) p.position.x += 14;
+    }
+  }
+  /* 阀门舌片:开度 → 角度 */
+  vF.flap.rotation.x = (1 - lstm.f) * 1.25;
+  vI.flap.rotation.x = (1 - lstm.i) * 1.25;
+  vO.flap.rotation.x = (1 - lstm.o) * 1.25;
+  /* C 胶囊:大小 ∝ |C|,符号染色(vanish 模式下红胶囊被梯度脉冲占用) */
+  cap.scale.setScalar(clamp(0.3 + Math.abs(lstm.C) * 0.75, 0.08, 1.25));
+  cap.material = lstm.C >= 0 ? M.capPos : M.capNeg;
+  rnnRail.visible = tglGhost.checked || mode === 'vanish';
+  /* 液滴与读出脉冲(液滴沿 i 立管落入 +,脉冲沿 o 立管升起) */
+  if (dropT >= 0) {
+    dropT += simDt;
+    const u = clamp01(dropT / 0.55);
+    droplet.visible = u < 1;
+    droplet.position.set(0, 3.28 - 1.36 * u, 0);
+    droplet.scale.setScalar(Math.max(0.05, lstm.i * (1 - u * 0.3)));
+    if (u >= 1) dropT = -1;
+  } else droplet.visible = false;
+  if (mode === 'vanish') {
+    /* vanish:绿脉冲与红胶囊的位置/缩放由 runModes 驱动 */
+  } else {
+    rnnCap.position.set(-0.28, 0.62, 0);
+    rnnCap.scale.setScalar(clamp(0.22 + Math.abs(rnn.h) * 0.7, 0.06, 1.0));
+    rnnCap.visible = tglGhost.checked;
+    if (pulseT >= 0) {
+      pulseT += simDt;
+      const u = clamp01(pulseT / 0.6);
+      pulse.visible = u < 1;
+      pulse.position.set(0.55, 2.28 + 1.35 * u, 0);
+      pulse.scale.setScalar(Math.max(0.05, lstm.o * (1 - u * 0.25)));
+      if (u >= 1) pulseT = -1;
+    } else pulse.visible = false;
+  }
+  /* 读出表与梯度柱 */
+  const mvals = [rnn.h, lstm.h, gru.h];
+  for (let k = 0; k < 3; k++) {
+    const s = clamp(0.05 + Math.abs(mvals[k]) * 1.6, 0.05, 1.75);
+    meters[k].scale.y = s;
+    meters[k].position.y = 0.42 + s / 2;
+  }
+  if (mode !== 'vanish') {
+    for (let i = 0; i < gradBars.length; i++) {
+      gradBars[i].br.scale.y = gradH(rnnGrad(KS[i]));
+      gradBars[i].bl.scale.y = gradH(lstmGrad(KS[i]));
+      gradBars[i].br.position.y = 0.05 + gradBars[i].br.scale.y / 2;
+      gradBars[i].bl.position.y = 0.05 + gradBars[i].bl.scale.y / 2;
+    }
+  }
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.belt, M.valve, M.flap, M.capPos, M.capNeg, M.rnnG, M.meterR, M.meterG, M.gradR]) m.emissiveIntensity = 0.16;
+  const boost = m => { m.emissiveIntensity = 0.55 + 0.3 * hlK; };
+  if (hl === 'vanish') { boost(M.gradR); boost(M.rnnG); }
+  else if (hl === 'belt') { boost(M.belt); boost(M.capPos); }
+  else if (hl === 'fgate') { boost(M.valve); boost(M.flap); }
+  else if (hl === 'igate') { boost(M.droplet); boost(M.flap); }
+  else if (hl === 'ogate') { boost(M.pulse); boost(M.meterG); }
+  else if (hl === 'race') { boost(M.meterR); boost(M.meterG); boost(M.meterB); }
+  /* 标签:基准可见性 + 门控 */
+  refreshLabels();
+  lblVerdict.o.visible = lblVerdict.o.visible && lblVerdict.gate();
+  lblGru.o.visible = lblGru.o.visible && lblGru.gate();
+  lblRnn.o.visible = lblRnn.o.visible && tglGhost.checked;
+  /* 相机目标 */
+  tmpV.copy(tgtVec);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglGhost.dispatchEvent(new Event('change'));
+tglTrail.dispatchEvent(new Event('change'));
+tglRotate.checked = qsBool('spin', true);
+controls.autoRotate = tglRotate.checked;
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
