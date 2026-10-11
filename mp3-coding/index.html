@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MP3 与心理声学压缩 · 把「听不见」的比特扔掉</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="MP3 与心理声学压缩:把「听不见」的比特扔掉" data-en="MP3 & Psychoacoustic Coding: Throwing Away the Bits You Cannot Hear">MP3 与心理声学压缩:把「听不见」的比特扔掉</h1>
+  <div class="sub" data-zh="CD 立体声 44.1 kHz × 16 bit × 2 = 1.411 Mbps,MP3 常用 128 kbps——约 10:1,靠「耳朵听不见的不编」:①绝对听阈,2-4 kHz 最灵,20 Hz 与 16 kHz 处阈值抬高 40-60 dB;②同时掩蔽,强音把邻近临界频带(Bark 尺度,0-16 kHz 约 24 个)的掩蔽阈抬到自身之下 ~10-25 dB;③时间掩蔽,前 ~5-20 ms、后 ~50-200 ms 的弱音被盖。引擎:32 子带滤波器组 + MDCT(576/192 点)→ 按 SMR 分比特;128 kbps 大部分人难分辨,320 kbps 几乎透明 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="CD stereo is 44.1 kHz × 16 bit × 2 = 1.411 Mbps; MP3 runs at 128 kbps - roughly 10:1 - by simply not coding what the ear cannot hear: (1) the absolute threshold, most sensitive at 2-4 kHz, raised 40-60 dB near 20 Hz and 16 kHz; (2) simultaneous masking, where a strong tone lifts the masking threshold ~10-25 dB below itself across neighboring critical bands (Bark scale, ~24 bands from 0-16 kHz); (3) temporal masking, pre ~5-20 ms and post ~50-200 ms. The engine: a 32-subband filter bank + MDCT (576/192 points), bits allocated by SMR; 128 kbps is already hard to distinguish, 320 kbps nearly transparent · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">CD 立体声 44.1 kHz × 16 bit × 2 = 1.411 Mbps,MP3 常用 128 kbps——约 10:1,靠「耳朵听不见的不编」：①绝对听阈，2-4 kHz 最灵，20 Hz 与 16 kHz 处阈值抬高 40-60 dB；②同时掩蔽，强音把邻近临界频带（Bark 尺度，0-16 kHz 约 24 个）的掩蔽阈抬到自身之下 ~10-25 dB；③时间掩蔽，前 ~5-20 ms、后 ~50-200 ms 的弱音被盖。引擎：32 子带滤波器组 + MDCT（576/192 点）→ 按 SMR 分比特；128 kbps 大部分人难分辨，320 kbps 几乎透明 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="当前码率" data-en="bitrate">当前码率</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="压缩比(对 1.411 Mbps)" data-en="ratio (vs 1.411 Mbps)">压缩比(对 1.411 Mbps)</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="被剪频带" data-en="cut bands">被剪频带</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="保留能量" data-en="kept energy">保留能量</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="掩蔽音" data-en="masker">掩蔽音</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="SMR 剪切阈" data-en="SMR cut threshold">SMR 剪切阈</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="频谱柱(声音能量)" data-en="spectrum bars (energy)">频谱柱(声音能量)</span>
+    <span class="chip g" data-zh="掩蔽音(金)" data-en="masker (gold)">掩蔽音(金)</span>
+    <span class="chip o" data-zh="掩蔽阈曲线" data-en="masking threshold curve">掩蔽阈曲线</span>
+    <span class="chip r" data-zh="被剪频带(幽灵柱)" data-en="cut bands (ghost bars)">被剪频带(幽灵柱)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnTone" data-zh="1 kHz 强音" data-en="1 kHz tone">1 kHz 强音</button>
+    <button class="abtn" id="btnRock" data-zh="摇滚全频" data-en="rock mix">摇滚全频</button>
+    <button class="abtn" id="btnSpeech" data-zh="语音场景" data-en="speech">语音场景</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="掩蔽音频率" data-en="masker frequency">掩蔽音频率</label><input id="mfreq" type="range" min="250" max="8000" step="50" value="1000"><span class="val" id="mfreqVal">1000 Hz</span></div>
+  <div class="row"><label data-zh="掩蔽音响度" data-en="masker level">掩蔽音响度</label><input id="mlev" type="range" min="50" max="100" step="1" value="90"><span class="val" id="mlevVal">90 dB</span></div>
+  <div class="row"><label data-zh="码率" data-en="bitrate">码率</label><input id="brate" type="range" min="32" max="320" step="16" value="128"><span class="val" id="brateVal">128 kbps</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="编码前后频谱" data-en="pre/post spectrum">编码前后频谱</span></label>
+        <label><input id="tglVec" type="checkbox" checked> <span data-zh="高亮被剪频带" data-en="highlight cuts">高亮被剪频带</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../jpeg-compression/" data-zh="JPEG 压缩" data-en="JPEG compression">JPEG 压缩</a>
+    <a href="../timbre-harmonics/" data-zh="音色与谐波" data-en="timbre & harmonics">音色与谐波</a>
+    <a href="../sampling-aliasing/" data-zh="采样与混叠" data-en="sampling & aliasing">采样与混叠</a>
+    <a href="../compression-lz/" data-zh="LZ 压缩" data-en="LZ compression">LZ 压缩</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);            // 网格线
+  M.barOn.color.set(dark ? 0x6fb8ff : 0x3f7fb5);           // 保留频带
+  M.barCut.color.set(dark ? 0x3a414c : 0x9aa4ae);          // 被剪(暗)
+  M.barCutHi.color.set(dark ? 0xff6b6b : 0xc43a3a);        // 被剪(高亮)
+  M.masker.color.set(dark ? 0xffc95c : 0xb08a35);          // 掩蔽音
+  M.thr.color.set(0xffd43b);                               // 掩蔽阈曲线
+  M.ath.color.set(dark ? 0x9fb0c3 : 0x5b6b7d);             // 绝对听阈曲线
+  M.metal.color.set(dark ? 0xc2ccd8 : 0x9aa6b4);           // 金属件
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('MP3 与心理声学压缩 · 把「听不见」的比特扔掉', 'MP3 & Psychoacoustic Coding · Throwing Away the Bits You Cannot Hear');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateMaskF();
+  updateMaskL();
+  updateBitrate();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(4.8, 3.4, 10.2);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.0;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  barOn: mat(0x6fb8ff, { roughness: 0.4, metalness: 0.35, emissiveIntensity: 0.3 }),
+  barCut: mat(0x3a414c, { roughness: 0.6, metalness: 0.2, transparent: true, opacity: 0.35 }),
+  barCutHi: mat(0xff6b6b, { roughness: 0.5, metalness: 0.2, transparent: true, opacity: 0.5, emissiveIntensity: 0.25 }),
+  masker: mat(0xffc95c, { roughness: 0.35, metalness: 0.45, emissiveIntensity: 0.5 }),
+  metal: mat(0xc2ccd8, { roughness: 0.3, metalness: 0.8 }),
+  thr: new THREE.LineBasicMaterial({ color: 0xffd43b }),
+  ath: new THREE.LineBasicMaterial({ color: 0x9fb0c3, transparent: true, opacity: 0.6 }),
+};
+
+/* ---------------- 状态与常量 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let scenario = 0;
+let et = 0;
+let maskF = 1000, maskL = 90, bitrate = 128;
+let cutHi = true;
+const NB = 56;                       // 频带数
+const specS = new Float32Array(NB);  // 信号 dB
+const specT = new Float32Array(NB);  // 掩蔽阈 dB
+const kept = new Array(NB).fill(true);
+let cutN = 0, keepE = 100, smrCut = 0;
+const hist = [];
+const fOf = i => 20 * Math.pow(1000, i / (NB - 1));
+const barOfF = f => Math.round(Math.log(f / 20) / Math.LN10 / 3 * (NB - 1));
+const barkOf = f => 13 * Math.atan(0.00076 * f) + 3.5 * Math.atan((f / 7500) * (f / 7500));
+const athOf = f => {                 // 绝对听阈 dB SPL(f 取 kHz)
+  const fk = f / 1000;
+  return Math.max(-5, 3.64 * Math.pow(fk, -0.8) - 6.5 * Math.exp(-0.6 * (fk - 3.3) * (fk - 3.3)) + 0.001 * fk * fk * fk * fk);
+};
+const smrCutOf = br => {             // 码率→SMR 剪切阈(dB)
+  const pts = [[32, 26], [64, 18], [96, 13], [128, 9], [192, 5], [256, 2], [320, 0]];
+  for (let i = 1; i < pts.length; i++) {
+    if (br <= pts[i][0]) {
+      const [a, b] = pts[i - 1], [c, d] = pts[i];
+      return b + (d - b) * (br - a) / (c - a);
+    }
+  }
+  return 0;
+};
+const notes = [                      // 旋律音符(随机游走)
+  { pos: 12, amp: 24, drift: 0.35 },
+  { pos: 26, amp: 19, drift: -0.28 },
+  { pos: 44, amp: 15, drift: 0.22 },
+];
+
+/* ---------------- 场景装配:地面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(80, 0.1, 60), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(50, 25, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* 频谱柱 */
+const barGeo = new THREE.BoxGeometry(0.15, 1, 0.15);
+const bars = [];
+for (let i = 0; i < NB; i++) {
+  const mesh = new THREE.Mesh(barGeo, M.barOn);
+  const x = -5.5 + i / (NB - 1) * 11;
+  mesh.position.set(x, 0.02, 0);
+  mesh.scale.y = 0.02;
+  scene.add(mesh);
+  bars.push(mesh);
+}
+/* 掩蔽阈曲线 + 绝对听阈曲线 */
+const thrGeo = new THREE.BufferGeometry();
+thrGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NB * 3), 3));
+const thrLine = new THREE.Line(thrGeo, M.thr);
+scene.add(thrLine);
+const athGeo = new THREE.BufferGeometry();
+athGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NB * 3), 3));
+const athLine = new THREE.Line(athGeo, M.ath);
+scene.add(athLine);
+/* 掩蔽音标记 */
+const maskMark = new THREE.Mesh(new THREE.OctahedronGeometry(0.16), M.masker);
+scene.add(maskMark);
+
+/* ---------------- 频谱合成与掩蔽计算 ---------------- */
+function updateSpectrum(t) {
+  const barM = clamp(barOfF(maskF), 1, NB - 2);
+  const barkM = barkOf(maskF);
+  cutN = 0;
+  let eAll = 0, eKeep = 0;
+  smrCut = smrCutOf(bitrate);
+  for (const nt of notes) nt.pos = clamp(nt.pos + nt.drift * 0.016 * speed * (playing ? 1 : 0), 2, NB - 3);
+  for (let i = 0; i < NB; i++) {
+    const f = fOf(i);
+    /* 信号:粉底 + 摆动 + 节拍 + 音符 + 掩蔽音 */
+    let s = 42 - 14 * Math.log10(Math.max(f, 80) / 700);
+    s = clamp(s, 12, 62);
+    s += 5 * Math.sin(t * 1.1 + i * 0.37) + 3 * Math.sin(t * 2.3 + i * 1.7);
+    s += 7 * Math.max(0, Math.sin(t * TAU * 1.9)) * (f < 1500 ? 1 : 0.35);
+    for (const nt of notes) {
+      const d = i - nt.pos;
+      s += nt.amp * Math.exp(-d * d / 4);
+    }
+    const dm = Math.log10(f / maskF);
+    s += maskL * Math.exp(-dm * dm / (2 * 0.0022));
+    specS[i] = s;
+    /* 掩蔽阈 = max(绝对听阈, 各掩蔽源扩散) */
+    let th = athOf(f);
+    const bk = barkOf(f);
+    const db = bk - barkM;
+    th = Math.max(th, maskL - 12 + (db < 0 ? db * 9 : -db * 7));
+    for (const nt of notes) {
+      const dn = bk - barkOf(fOf(Math.round(clamp(nt.pos, 0, NB - 1))));
+      const lvl = 40 + nt.amp;
+      th = Math.max(th, lvl - 12 + (dn < 0 ? dn * 9 : -dn * 7));
+    }
+    specT[i] = th;
+    /* 剪切决策:SMR = S − T */
+    kept[i] = s >= th + smrCut;
+    if (!kept[i]) cutN++;
+    const p = Math.pow(10, s / 10);
+    eAll += p;
+    if (kept[i]) eKeep += p;
+  }
+  keepE = eAll > 0 ? eKeep / eAll * 100 : 100;
+  /* 应用到 3D 柱与曲线 */
+  const thrPos = thrGeo.attributes.position.array;
+  const athPos = athGeo.attributes.position.array;
+  for (let i = 0; i < NB; i++) {
+    const h = clamp(specS[i] / 78, 0.015, 1) * 3.4;
+    const b = bars[i];
+    b.scale.y = kept[i] ? Math.max(0.03, h) : Math.max(0.02, h * 0.09);
+    b.position.y = b.scale.y / 2 + 0.01;
+    b.material = kept[i] ? M.barOn : (cutHi ? M.barCutHi : M.barCut);
+    const x = b.position.x;
+    thrPos[i * 3] = x; thrPos[i * 3 + 1] = clamp(specT[i] / 78, 0.005, 1.02) * 3.4 + 0.02; thrPos[i * 3 + 2] = 0.16;
+    athPos[i * 3] = x; athPos[i * 3 + 1] = clamp(athOf(fOf(i)) / 78, 0.005, 1.02) * 3.4 + 0.02; athPos[i * 3 + 2] = 0.16;
+  }
+  thrGeo.attributes.position.needsUpdate = true;
+  athGeo.attributes.position.needsUpdate = true;
+  const bm = bars[barM];
+  maskMark.position.set(bm.position.x, clamp(specS[barM] / 78, 0.02, 1) * 3.4 + 0.35, 0);
+  maskMark.rotation.y = t * 2;
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+addLabel(() => L('f(对数轴):20 Hz → 20 kHz', 'f (log axis): 20 Hz → 20 kHz'), () => 'st',
+  new THREE.Vector3(-5.5, 0.35, 0.3));
+addLabel(() => L('白线:绝对听阈——之下=听不见,不编', 'white: absolute threshold - below it, inaudible, not coded'), () => 'b',
+  new THREE.Vector3(-3.6, 3.9, 0.16));
+addLabel(() => L('黄线:掩蔽阈(听阈 + 同时掩蔽扩散)', 'yellow: masking threshold (ATH + simultaneous masking)'), () => 'e',
+  new THREE.Vector3(2.6, 3.5, 0.16));
+addLabel(() => L(`掩蔽音 ${maskF} Hz @ ${maskL} dB SPL`, `masker ${maskF} Hz @ ${maskL} dB SPL`), () => 'g',
+  new THREE.Vector3(0, 0.5, 0), p => p.copy(maskMark.position).add(new THREE.Vector3(0, 0.42, 0)));
+addLabel(() => L(`被剪 ${cutN}/${NB} 带 · 保留能量 ${keepE.toFixed(0)}% · 码率 ${bitrate} kbps`,
+  `cut ${cutN}/${NB} bands · kept energy ${keepE.toFixed(0)}% · ${bitrate} kbps`), () => cutN > NB * 0.55 ? 'bad' : 'st',
+  new THREE.Vector3(0, 4.45, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'bitrate', world: 1, tgt: [0, 1.8, 0.6],
+    b: '码率账:从 1.411 Mbps 到 128 kbps', be: 'The bitrate ledger: 1.411 Mbps down to 128 kbps',
+    d: 'CD 立体声每秒 44,100 个采样 × 16 bit × 2 声道 = 1.411 Mbps;MP3 常用 128 kbps,压缩约 10:1。省下的 90% 不是乱扔——耳朵听不见的成分,编码器一个比特都不给。这排 3D 频谱柱就是编码器眼里的声音:每一根柱子都要为自己「值得几个比特」答辩。',
+    de: 'CD stereo is 44,100 samples per second × 16 bits × 2 channels = 1.411 Mbps; MP3 runs at 128 kbps, about 10:1. The missing 90% is not discarded at random - whatever the ear cannot hear gets zero bits. This row of 3D spectrum bars is the encoder\'s view of sound: every band must argue for its own bits.' },
+  { hl: 'ath', world: 1, tgt: [-3.2, 1.8, 0.4],
+    b: '第一件武器:绝对听阈', be: 'Weapon one: the absolute threshold',
+    d: '人耳不是线性话筒:2-4 kHz 最灵,接近 0 dB SPL 就能听见;往 20 Hz 和 16 kHz 两头走,听阈抬高 40-60 dB。白色曲线之下的一切——低沉的隆隆、极高频的嘶声——声压再高也进不了意识,编码器按「不存在」处理,一个比特都不花。',
+    de: 'The ear is not a linear microphone: it is most sensitive at 2-4 kHz, hearing down near 0 dB SPL, while toward 20 Hz and 16 kHz the threshold rises by 40-60 dB. Everything under the white curve - deep rumbles, extreme hiss - never reaches consciousness no matter its level, and the encoder treats it as nonexistent: zero bits spent.' },
+  { hl: 'mask', world: 1, tgt: [0, 2.2, 0.8],
+    b: '第二件武器:同时掩蔽', be: 'Weapon two: simultaneous masking',
+    d: '打一个 1 kHz 强音,邻近临界频带(Bark 尺度,0-16 kHz 约 24 个)的听阈被整体抬高到强音之下 ~10-25 dB,两侧衰减的坡度还不对称——黄色掩蔽阈曲线像山峦压过周边频带。峰下的信号被当场「隐形」:它们明明存在,你却听不见,于是按听不见处理。',
+    de: 'Strike a loud 1 kHz tone and the threshold of neighboring critical bands (Bark scale, ~24 bands from 0-16 kHz) jumps to within ~10-25 dB of it, with asymmetric falloff on either side - the yellow masking curve looms over the neighbors like a mountain. Signals under that mountain are invisible: fully present, yet unheard - so they are treated as unheard.' },
+  { hl: 'temporal', world: 1, tgt: [0, 2.4, -0.8],
+    b: '第三件武器:时间掩蔽', be: 'Weapon three: temporal masking',
+    d: '掩蔽还沿时间轴延伸:强音之前 ~5-20 ms(前掩蔽)与之后 ~50-200 ms(后掩蔽)内的弱音都被盖住——后掩蔽比前掩蔽长一个量级。看金色掩蔽音随节拍脉动:每个瞬态都在时间上开出一朵「听不见的伞」,伞下的弱信号可以按更低精度编码。',
+    de: 'Masking extends along time: weak sounds within ~5-20 ms before a strong one (pre-masking) and ~50-200 ms after (post-masking) are covered - post-masking lasts an order of magnitude longer. Watch the gold masker pulse with the beat: every transient opens an umbrella of inaudibility in time, and signals under it get fewer bits.' },
+  { hl: 'engine', world: 1, tgt: [0, 1.6, 1.2],
+    b: '引擎:32 子带 + MDCT,按 SMR 分比特', be: 'The engine: 32 subbands + MDCT, bits by SMR',
+    d: '信号经 32 子带滤波器组 + MDCT(长块 576 / 短块 192 点)搬进频域,逐带计算掩蔽阈,再按信号-掩蔽比 SMR = S−T 从高到低分配比特——把比特花在刀刃上。SMR 高的频带给足精度,SMR 不够的直接剪掉:红色幽灵柱就是被扔掉的「听不见」。',
+    de: 'The signal runs through a 32-subband filter bank plus MDCT (576/192-point blocks) into the frequency domain; each band gets its masking threshold, then bits flow to the highest signal-to-mask ratios, SMR = S−T - spend on the blade\'s edge. Bands with insufficient SMR are dropped outright: the red ghost bars are the inaudible, thrown away.' },
+  { hl: 'rate', world: 1, tgt: [2.8, 1.6, 0],
+    b: '码率与透明度:128 难分辨,320 近乎透明', be: 'Bitrate and transparency: 128 hard to tell, 320 nearly transparent',
+    d: '拉低码率滑块,亲眼看预算收紧:剪切阈抬高,先剪高频、再剪被掩蔽的频带,幽灵柱一片片蔓延。128 kbps 大部分人已难与 CD 分辨,320 kbps 几乎透明;AAC/Opus 效率再高一截接棒流媒体,但「心理声学 + 变换编码」的思路一脉相承——压缩的本质是扔掉耳朵听不见的。',
+    de: 'Drag the bitrate slider down and watch the budget tighten: the cut threshold rises, highs go first, then masked bands - ghost bars spread one by one. Most listeners cannot tell 128 kbps from CD, and 320 kbps is nearly transparent; AAC and Opus squeeze further and took over streaming, but the idea - psychoacoustics + transform coding - is one lineage. Compression means discarding what the ear cannot hear.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 1.2, 0);
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const barM = clamp(barOfF(maskF), 1, NB - 2);
+  const thAt = specT[barM];
+  formulaEl.innerHTML =
+    L(`原始:44.1 kHz × 16 bit × 2 = <b>1.411 Mbps</b> → 当前 <b>${bitrate} kbps</b> ≈ <b>${(1411 / bitrate).toFixed(1)}:1</b>;MDCT 576/192 点 + 32 子带`,
+      `Raw: 44.1 kHz × 16 bit × 2 = <b>1.411 Mbps</b> → now <b>${bitrate} kbps</b> ≈ <b>${(1411 / bitrate).toFixed(1)}:1</b>; MDCT 576/192 points + 32 subbands`) +
+    '<br>' +
+    L(`绝对听阈:2-4 kHz 最灵(~0 dB SPL),20 Hz 与 16 kHz 抬高 <b>40-60 dB</b>;掩蔽音 ${maskF} Hz @ ${maskL} dB → 该带掩蔽阈 ≈ <b>${thAt.toFixed(0)} dB</b>(自身之下 ~10-25 dB 起,两侧按 Bark 衰减)`,
+      `Absolute threshold: best at 2-4 kHz (~0 dB SPL), raised <b>40-60 dB</b> at 20 Hz and 16 kHz; masker ${maskF} Hz @ ${maskL} dB → band threshold ≈ <b>${thAt.toFixed(0)} dB</b> (from ~10-25 dB below it, decaying in Bark)`) +
+    '<br>' +
+    L(`SMR = S − T → 剪切阈 <b>${smrCut.toFixed(0)} dB</b>@${bitrate} kbps:剪 <b>${cutN}/${NB}</b> 带、保留能量 <b>${keepE.toFixed(0)}%</b>;时间掩蔽:前 <b>5-20 ms</b> / 后 <b>50-200 ms</b>`,
+      `SMR = S − T → cut threshold <b>${smrCut.toFixed(0)} dB</b> @ ${bitrate} kbps: <b>${cutN}/${NB}</b> bands cut, <b>${keepE.toFixed(0)}%</b> energy kept; temporal masking: pre <b>5-20 ms</b> / post <b>50-200 ms</b>`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnTone = document.getElementById('btnTone'), btnRock = document.getElementById('btnRock'),
+  btnSpeech = document.getElementById('btnSpeech'), btnReset = document.getElementById('btnReset');
+function setCfg(f, lv, br) {
+  maskF = f; maskL = lv; bitrate = br;
+  elMfreq.value = f; elMlev.value = lv; elBrate.value = br;
+  updateMaskF(); updateMaskL(); updateBitrate();
+}
+btnTone.addEventListener('click', () => setCfg(1000, 90, 128));
+btnRock.addEventListener('click', () => setCfg(200, 85, 320));
+btnSpeech.addEventListener('click', () => setCfg(3000, 75, 96));
+function resetMachine() {
+  setCfg(1000, 90, 128);
+  notes[0].pos = 12; notes[1].pos = 26; notes[2].pos = 44;
+  hist.length = 0;
+  updateFormula();
+}
+btnReset.addEventListener('click', resetMachine);
+
+/* ---------------- 编码前后频谱(示波器) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const py = v => ch - clamp01(v) * (ch - 6 * dpr) - 3 * dpr;
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('灰=原始', 'grey=raw'), 4 * dpr, 10 * dpr);
+  scopeCtx.fillStyle = 'rgba(150,160,175,.55)';
+  scopeCtx.fillText(L('蓝=编码后', 'blue=coded'), 4 * dpr, ch - 4 * dpr);
+  const bw = cw / NB;
+  /* 原始(灰填充) */
+  scopeCtx.fillStyle = 'rgba(150,160,175,.4)';
+  for (let i = 0; i < NB; i++) {
+    const h = clamp01(specS[i] / 90) * (ch - 8 * dpr);
+    scopeCtx.fillRect(i * bw, ch - h - 2 * dpr, bw - 1, h);
+  }
+  /* 编码后(蓝线) */
+  scopeCtx.strokeStyle = 'rgba(116,192,252,.95)';
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  for (let i = 0; i < NB; i++) {
+    const v = kept[i] ? clamp01(specS[i] / 90) : 0.01;
+    const x = (i + 0.5) * bw;
+    i === 0 ? scopeCtx.moveTo(x, py(v)) : scopeCtx.lineTo(x, py(v));
+  }
+  scopeCtx.stroke();
+  /* 掩蔽阈(黄线) */
+  scopeCtx.strokeStyle = 'rgba(255,212,59,.9)';
+  scopeCtx.beginPath();
+  for (let i = 0; i < NB; i++) {
+    const x = (i + 0.5) * bw;
+    i === 0 ? scopeCtx.moveTo(x, py(clamp01(specT[i] / 90))) : scopeCtx.lineTo(x, py(clamp01(specT[i] / 90)));
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elMfreq = document.getElementById('mfreq'), elMfreqVal = document.getElementById('mfreqVal');
+const elMlev = document.getElementById('mlev'), elMlevVal = document.getElementById('mlevVal');
+const elBrate = document.getElementById('brate'), elBrateVal = document.getElementById('brateVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglVec = document.getElementById('tglVec');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateMaskF() {
+  maskF = +elMfreq.value;
+  elMfreqVal.textContent = maskF + ' Hz';
+  updateFormula();
+}
+function updateMaskL() {
+  maskL = +elMlev.value;
+  elMlevVal.textContent = maskL + ' dB';
+  updateFormula();
+}
+function updateBitrate() {
+  bitrate = +elBrate.value;
+  elBrateVal.textContent = bitrate + ' kbps';
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elMfreq.addEventListener('input', updateMaskF);
+elMlev.addEventListener('input', updateMaskL);
+elBrate.addEventListener('input', updateBitrate);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglVec.addEventListener('change', () => { cutHi = tglVec.checked; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  stA.innerHTML = bitrate + '<small> kbps</small>';
+  stA.className = 'v ok';
+  const ratio = 1411 / bitrate;
+  stB.innerHTML = ratio.toFixed(1) + '<small>:1</small>';
+  stB.className = 'v ' + (ratio < 12 ? 'ok' : ratio < 20 ? 'warn' : 'bad');
+  stC.innerHTML = cutN + '<small>/' + NB + '</small>';
+  stC.className = 'v ' + (cutN < NB * 0.4 ? 'ok' : cutN < NB * 0.6 ? 'warn' : 'bad');
+  stD.innerHTML = keepE.toFixed(0) + '<small>%</small>';
+  stD.className = 'v ' + (keepE > 90 ? 'ok' : keepE > 70 ? 'warn' : 'bad');
+  stE.innerHTML = maskF + '<small> Hz @ ' + maskL + ' dB</small>';
+  stE.className = 'v ok';
+  stF.innerHTML = smrCut.toFixed(0) + '<small> dB</small>';
+  stF.className = 'v ok';
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt * speed;
+  updateSpectrum(et);
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  M.barOn.emissiveIntensity = Math.min(M.barOn.emissiveIntensity, 0.3);
+  const boost = m => { m.emissiveIntensity = 0.55 + 0.3 * hlK; };
+  if (hl === 'bitrate' || hl === 'engine') boost(M.barOn);
+  else if (hl === 'ath') M.ath.opacity = 0.75 + 0.2 * hlK;
+  else if (hl === 'mask' || hl === 'temporal') { boost(M.masker); M.thr.color.setHex(0xffe066); }
+  else if (hl === 'rate') M.barCutHi.emissiveIntensity = 0.5 + 0.3 * hlK;
+  if (hl !== 'mask' && hl !== 'temporal') M.thr.color.setHex(0xffd43b);
+  if (hl !== 'ath') M.ath.opacity = 0.6;
+  if (hl !== 'rate') M.barCutHi.emissiveIntensity = 0.25;
+  /* 相机目标 */
+  tmpV.fromArray(STEPS[scenario].tgt);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglVec.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

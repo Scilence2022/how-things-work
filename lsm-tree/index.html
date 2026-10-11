@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LSM 树与写放大 · 把随机写改成顺序写</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#b3873e;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8f6a25;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="LSM 树:把随机写改成顺序写" data-en="LSM Trees: Turning Random Writes into Sequential Writes">LSM 树:把随机写改成顺序写</h1>
+  <div class="sub" data-zh="数据库写入先追加预写日志 WAL、再进内存 memtable(跳表),攒满 64-256 MB 冻结成不可变 SSTable 顺序落盘;leveled 压实每层容量约为上层 10 倍、写放大 10-30×,size-tiered 写放大低但读放大高;布隆过滤器用 ~10 bit/key 换 1% 误报,读每层只探测约 1 个文件;空间放大 ~1.1-2×,压实落后还要 write stall 限流 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A write appends to the write-ahead log, lands in the in-memory memtable (a skiplist), and once 64-256 MB accumulate, freezes into an immutable SSTable flushed sequentially to disk. Leveled compaction gives each level ~10x the capacity of the one above at 10-30x write amplification; size-tiered writes cheaper but reads more. A bloom filter spends ~10 bits/key to reach 1% false positives, probing about one file per level; space amplification runs ~1.1-2x, and a lagging compaction triggers write stalls · 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">数据库写入先追加预写日志 WAL、再进内存 memtable(跳表),攒满 64-256 MB 冻结成不可变 SSTable 顺序落盘;leveled 压实每层容量约为上层 10 倍、写放大 10-30×,size-tiered 写放大低但读放大高;布隆过滤器用 ~10 bit/key 换 1% 误报,读每层只探测约 1 个文件;空间放大 ~1.1-2×,压实落后还要 write stall 限流 · 3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="写放大" data-en="write amp">写放大</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="读放大" data-en="read amp">读放大</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="空间放大" data-en="space amp">空间放大</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="memtable 占用" data-en="memtable fill">memtable 占用</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="累计落盘" data-en="flushed total">累计落盘</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="压实策略" data-en="compaction">压实策略</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="写入流(key/value)" data-en="write stream (key/value)">写入流(key/value)</span>
+    <span class="chip o" data-zh="L0-L3 SSTable 薄饼" data-en="L0-L3 SSTable runs">L0-L3 SSTable 薄饼</span>
+    <span class="chip r" data-zh="墓碑删除标记" data-en="tombstone markers">墓碑删除标记</span>
+    <span class="chip g" data-zh="读路径探测球" data-en="read-path probe">读路径探测球</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnLev" data-zh="leveled 分层" data-en="leveled">leveled 分层</button>
+    <button class="abtn" id="btnTier" data-zh="size-tiered" data-en="size-tiered">size-tiered</button>
+    <button class="abtn" id="btnFlush" data-zh="立即 flush" data-en="flush now">立即 flush</button>
+    <button class="abtn" id="btnBurst" data-zh="写入风暴" data-en="write burst">写入风暴</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="写入速率" data-en="write rate">写入速率</label><input id="rate" type="range" min="0.5" max="8" step="0.5" value="3"><span class="val" id="rateVal">3.0 条/s</span></div>
+  <div class="row"><label data-zh="memtable 大小" data-en="memtable size">memtable 大小</label><input id="memsz" type="range" min="0" max="2" step="1" value="1"><span class="val" id="memVal">128 MB</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="写入-压实曲线" data-en="write/compact curve">写入-压实曲线</span></label>
+        <label><input id="tglVec" type="checkbox" checked> <span data-zh="布隆过滤器" data-en="bloom filter">布隆过滤器</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../b-tree/" data-zh="B+ 树" data-en="B+ tree">B+ 树</a>
+    <a href="../hash-table/" data-zh="哈希表" data-en="hash table">哈希表</a>
+    <a href="../garbage-collection/" data-zh="垃圾回收" data-en="garbage collection">垃圾回收</a>
+    <a href="../virtual-memory/" data-zh="虚拟内存" data-en="virtual memory">虚拟内存</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);            // 网格线
+  M.mem.color.set(dark ? 0x74c0fc : 0x3f7fb5);             // memtable 玻璃
+  M.slab0.color.set(dark ? 0xffa94d : 0xc97f22);           // L0 薄饼
+  M.slab1.color.set(dark ? 0x74dc84 : 0x2f9e63);           // L1
+  M.slab2.color.set(dark ? 0x6fb8ff : 0x3a76b8);           // L2
+  M.slab3.color.set(dark ? 0xc792ea : 0x8a5fb0);           // L3
+  M.key.color.set(dark ? 0xbde9ff : 0x4a86ad);             // key 数据块
+  M.tomb.color.set(dark ? 0xff6b6b : 0xc43a3a);            // 墓碑
+  M.metal.color.set(dark ? 0xc2ccd8 : 0x9aa6b4);           // 金属件
+  M.platter.color.set(dark ? 0x46556a : 0x74879c);         // B+ 对照盘片
+  M.gate.color.set(dark ? 0x7bd88f : 0x1f8a4d);            // 布隆门
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('LSM 树与写放大 · 把随机写改成顺序写', 'LSM Trees & Write Amplification · Random Writes Become Sequential');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateRate();
+  updateMem();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(8.2, 5.2, 9.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.0, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.0;
+controls.maxDistance = 34;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.05, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  mem: mat(0x74c0fc, { roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.22 }),
+  slab0: mat(0xffa94d, { roughness: 0.5, metalness: 0.35 }),
+  slab1: mat(0x74dc84, { roughness: 0.5, metalness: 0.35 }),
+  slab2: mat(0x6fb8ff, { roughness: 0.5, metalness: 0.35 }),
+  slab3: mat(0xc792ea, { roughness: 0.5, metalness: 0.35 }),
+  key: mat(0xbde9ff, { roughness: 0.35, metalness: 0.3 }),
+  tomb: mat(0xff6b6b, { roughness: 0.4, metalness: 0.3 }),
+  metal: mat(0xc2ccd8, { roughness: 0.3, metalness: 0.8 }),
+  plate: mat(0x39414c, { roughness: 0.6, metalness: 0.5, transparent: true, opacity: 0.45 }),
+  gate: mat(0x7bd88f, { roughness: 0.4, metalness: 0.4 }),
+  platter: mat(0x46556a, { roughness: 0.35, metalness: 0.75 }),
+};
+
+/* ---------------- 状态与常量 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let scenario = 0;
+let et = 0;
+
+const LVY = [2.15, 1.25, 0.4, -0.45];        // L0..L3 平台高度
+const LVR = [1.05, 1.75, 2.55, 3.45];        // 平台半径
+const CAP_LEV = [4, 5, 6];                   // leveled:各层触发压实的文件数
+const CAP_TIER = [3, 3, 3];                  // tiered
+const TOMB_FRAC = 0.15;                      // 墓碑占比
+let writeRate = 3;                           // 条/s
+let memSizeMB = 128;
+let strat = 'leveled';
+let bloomOn = true;
+let burstT = 0;
+let memCount = 0, flushT = -1;
+let userMB = 0, writtenMB = 0, discardedMB = 0;
+let stall = false;
+let spawnCarry = 0, probeT = 2;
+const counts = [0, 0, 0, 0];                 // 各层 slab 数
+const hist = [];
+const memCap = () => memSizeMB === 64 ? 14 : memSizeMB === 128 ? 20 : 26;
+const capOf = l => (strat === 'leveled' ? CAP_LEV : CAP_TIER)[l];
+
+/* ---------------- 场景装配:地面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(140, 0.1, 140), M.ground);
+ground.position.y = -0.05;
+scene.add(ground);
+const grid = new THREE.GridHelper(60, 30, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* 层平台 L0..L3(半径逐层变大的圆盘) */
+const levelGrp = [];
+for (let l = 0; l < 4; l++) {
+  const g = new THREE.Group();
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(LVR[l], LVR[l], 0.08, 48), M.plate);
+  g.add(disc);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(LVR[l], 0.025, 8, 64),
+    new THREE.MeshBasicMaterial({ color: [0xffa94d, 0x74dc84, 0x6fb8ff, 0xc792ea][l], transparent: true, opacity: 0.5 }));
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
+  g.position.y = LVY[l];
+  scene.add(g);
+  levelGrp.push(g);
+}
+
+/* 写入漏斗 + memtable 玻璃盒 */
+const spout = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.55, 14), M.metal);
+spout.rotation.x = Math.PI;
+spout.position.y = 5.5;
+scene.add(spout);
+const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.5, 10), M.metal);
+pipe.position.y = 5.0;
+scene.add(pipe);
+const memBox = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.1, 1.7), M.mem);
+memBox.position.y = 4.0;
+scene.add(memBox);
+const memEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.7, 1.1, 1.7)),
+  new THREE.LineBasicMaterial({ color: 0x74c0fc, transparent: true, opacity: 0.75 }));
+memEdge.position.y = 4.0;
+scene.add(memEdge);
+
+/* key 数据块池 */
+const keyGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+const keys = [];
+for (let i = 0; i < 44; i++) {
+  const mesh = new THREE.Mesh(keyGeo, M.key);
+  mesh.visible = false;
+  scene.add(mesh);
+  keys.push({ mesh, on: false, st: 0, slot: new THREE.Vector3() }); // st: 0空闲 1下落 2mem 3冻结 4丢弃下坠
+}
+function spawnKey(tomb, drop) {
+  for (const k of keys) {
+    if (k.on) continue;
+    k.on = true;
+    k.mesh.visible = true;
+    k.mesh.material = tomb ? M.tomb : M.key;
+    k.mesh.scale.set(1, 1, 1);
+    if (drop) {                                  // 墓碑在最底层被丢弃
+      k.st = 4;
+      k.mesh.position.set(drop.x, drop.y, drop.z);
+    } else {
+      k.st = 1;
+      k.mesh.position.set((Math.random() - 0.5) * 0.4, 4.95, (Math.random() - 0.5) * 0.4);
+    }
+    return k;
+  }
+  return null;
+}
+function memSlot(i) {
+  return new THREE.Vector3(-0.6 + (i % 5) * 0.3, 3.6 + ((i / 20) | 0) * 0.26, -0.45 + (((i / 5) | 0) % 4) * 0.3);
+}
+
+/* SSTable 薄饼池 */
+const slabGeo = new THREE.CylinderGeometry(0.52, 0.52, 0.15, 26);
+const slabs = [];
+for (let i = 0; i < 24; i++) {
+  const mesh = new THREE.Mesh(slabGeo, M.slab0);
+  mesh.visible = false;
+  scene.add(mesh);
+  slabs.push({ mesh, on: false, level: 0, bytes: 0, tombs: 0, st: 0, t: 0, from: new THREE.Vector3(), to: new THREE.Vector3() });
+}
+function slabSlot(l, idx) {                    // 薄饼竖直堆叠
+  return new THREE.Vector3(0, LVY[l] + 0.12 + 0.17 * idx, 0);
+}
+function newSlab(level, bytes) {
+  for (const s of slabs) {
+    if (s.on) continue;
+    s.on = true; s.level = level; s.bytes = bytes; s.tombs = bytes * TOMB_FRAC; s.st = 1; s.t = 0;
+    s.mesh.visible = true;
+    s.mesh.material = [M.slab0, M.slab1, M.slab2, M.slab3][level];
+    s.mesh.scale.set(1, 1, 1);
+    s.mesh.position.set(0, 3.55, 0);
+    s.to.copy(slabSlot(level, counts[level]));
+    return s;
+  }
+  return null;
+}
+function freeSlab(s) { s.on = false; s.mesh.visible = false; }
+function idleSlabsAt(l) { return slabs.filter(s => s.on && s.level === l && s.st === 0); }
+
+/* 压实队列 */
+const compQ = [];
+let activeC = null;   // { level, t, parts:[slabs], sum }
+function queueCompact(l) { compQ.push(l); }
+function startCompact(l) {
+  const parts = idleSlabsAt(l);
+  if (parts.length === 0) return;
+  let sum = 0, tombs = 0;
+  for (const s of parts) { sum += s.bytes; tombs += s.tombs; s.st = 2; s.t = 0; s.from.copy(s.mesh.position); }
+  activeC = { level: l, t: 0, parts, sum, tombs };
+  writtenMB += sum;                              // 压实 = 重写一遍
+}
+function finishCompact() {
+  const { level, parts, sum, tombs } = activeC;
+  for (const s of parts) freeSlab(s);
+  counts[level] = 0;
+  const ns = newSlab(level + 1, Math.max(1, sum * 0.95));
+  ns.st = 1;
+  ns.tombs = tombs;
+  ns.mesh.position.copy(new THREE.Vector3(0, LVY[level] + 0.7, 0));
+  ns.to.copy(slabSlot(level + 1, counts[level + 1]));
+  if (level + 1 === 3) {                         // 最底层:墓碑真正丢弃
+    discardedMB += tombs;
+    for (let i = 0; i < 5; i++) {
+      const k = spawnKey(true, new THREE.Vector3(ns.to.x + (Math.random() - 0.5) * 0.4, ns.to.y, ns.to.z + (Math.random() - 0.5) * 0.4));
+      if (!k) break;
+    }
+  }
+  const cap = capOf(level + 1);
+  if (cap && counts[level + 1] > cap) queueCompact(level + 1);
+  activeC = null;
+}
+
+/* B+ 树对照:盘片 + 随机跳的磁头 */
+const btreeG = new THREE.Group();
+btreeG.position.set(4.0, 0, -2.3);
+scene.add(btreeG);
+const platter = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 0.09, 40), M.platter);
+platter.position.y = 0.12;
+btreeG.add(platter);
+const hubDot = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.12, 12), M.metal);
+hubDot.position.y = 0.14;
+btreeG.add(hubDot);
+const armPivot = new THREE.Group();
+armPivot.position.set(0, 0.3, 1.1);
+btreeG.add(armPivot);
+const arm = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 1.15), M.metal);
+arm.position.set(0, 0, -0.55);
+armPivot.add(arm);
+const headDot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.09, 0.12), M.tomb);
+headDot.position.set(0, 0, -1.05);
+armPivot.add(headDot);
+let armTarget = 0, armT = 0, pageSpotT = 0;
+const pageSpot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.1),
+  new THREE.MeshBasicMaterial({ color: 0xff5252, transparent: true, opacity: 0.9 }));
+pageSpot.visible = false;
+btreeG.add(pageSpot);
+
+/* 布隆过滤器门 + 读探测球 */
+const gateG = new THREE.Group();
+gateG.position.set(-3.1, 2.6, 0);
+scene.add(gateG);
+const gateRing = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.05, 10, 32), M.gate);
+gateG.add(gateRing);
+const gateMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 1.05, 5, 5),
+  new THREE.MeshBasicMaterial({ color: 0x7bd88f, wireframe: true, transparent: true, opacity: 0.55 }));
+gateG.add(gateMesh);
+let gateFlash = 0;
+const probeGeo = new THREE.SphereGeometry(0.13, 14, 10);
+const probes = [];
+for (let i = 0; i < 2; i++) {
+  const mesh = new THREE.Mesh(probeGeo, M.gate);
+  mesh.visible = false;
+  scene.add(mesh);
+  probes.push({ mesh, on: false, st: 0, t: 0, lvl: 1 });
+}
+function spawnProbe() {
+  for (const p of probes) {
+    if (p.on) continue;
+    p.on = true; p.st = 0; p.t = 0;
+    p.lvl = Math.random() < 0.12 ? 0 : 1 + ((Math.random() * 3) | 0);
+    p.mesh.visible = true;
+    p.mesh.position.set(-3.1, 4.9, 0);
+    return;
+  }
+}
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return o;
+}
+const fmtMB = v => v >= 1024 ? (v / 1024).toFixed(2) + ' GB' : Math.round(v) + ' MB';
+const wAmpOf = () => userMB > 0 ? writtenMB / userMB : 1;
+addLabel(() => L(`写入流:先追加 WAL(顺序),再进 memtable`, `write path: append WAL (sequential), then memtable`), () => 'b',
+  new THREE.Vector3(0.95, 5.7, 0));
+addLabel(() => L(`memtable ${memSizeMB} MB · ${memCount}/${memCap()} 条`, `memtable ${memSizeMB} MB · ${memCount}/${memCap()} entries`), () => 'e',
+  new THREE.Vector3(0, 4.72, 0));
+addLabel(() => L(`L0:刚冻结的 SSTable,允许重叠`, `L0: freshly frozen SSTables, may overlap`), () => 'w',
+  new THREE.Vector3(1.35, 3.0, 0.4));
+addLabel(() => L(strat === 'leveled' ? `每层容量 ≈ 10× 上层(leveled)` : `size-tiered:满 T 个 run 整体下移`, strat === 'leveled' ? `each level holds ~10x the level above (leveled)` : `size-tiered: T runs per level merge down`), () => 'g',
+  new THREE.Vector3(-2.1, 1.55, 0));
+addLabel(() => L(`最底层压实:墓碑在这里真正丢弃`, `deepest level: tombstones are truly discarded here`), () => 'bad',
+  new THREE.Vector3(0.9, -0.15, 0.6));
+addLabel(() => L(`B+ 树对照:每写一条原地改一页 · 随机 IO`, `B+ tree contrast: in-place page updates · random IO`), () => 'st',
+  new THREE.Vector3(4.0, 1.45, -2.3));
+addLabel(() => L(`布隆过滤器:1% 误报 ≈ 9.6 bit/key`, `bloom filter: 1% fpp ≈ 9.6 bits/key`), () => 'g',
+  new THREE.Vector3(-3.1, 3.45, 0));
+addLabel(() => stall ? L('write stall!压实落后 · 写入限流中', 'write stall! compaction lagging · throttling writes') : L(`写放大 ${wAmpOf().toFixed(1)}× · 落盘 ${fmtMB(writtenMB)}`, `write amp ${wAmpOf().toFixed(1)}x · flushed ${fmtMB(writtenMB)}`),
+  () => stall ? 'bad' : 'st', new THREE.Vector3(-3.4, 0.35, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'btree', world: 1, tgt: [4.0, 1.0, -2.3],
+    b: '起点:B+ 树的随机写困境', be: 'The starting point: B+ tree random-write pain',
+    d: '右侧盘片上的磁头每写一条就跳一次:B+ 树要原地改页,一条记录牵动数据页、上层索引甚至再平衡,随机 IO 满天飞。机械盘一次寻道几毫秒,闪存也要为随机小写付出垃圾回收的代价。数据库最贵的往往不是计算,而是把字节搬进存储的那几步——LSM 的答案:把随机写整体改成顺序写。',
+    de: 'On the platter at right, the head jumps for every record: a B+ tree updates pages in place - data page, parent index, sometimes rebalancing - random IO everywhere. A hard drive spends milliseconds per seek, and flash pays for random small writes in garbage collection. The costly part is rarely compute; it is moving bytes into storage. The LSM answer: turn random writes into sequential ones.' },
+  { hl: 'mem', world: 1, tgt: [0, 4.0, 0],
+    b: '写路径:WAL + memtable(跳表)', be: 'Write path: WAL + memtable (skiplist)',
+    d: '一条写入先顺序追加到预写日志 WAL——掉电后可重放——再插进内存里的 memtable,通常是一张跳表,并发读写都友好。memtable 攒到 64-256 MB 就冻结成不可变结构。整条写入路径没有一次随机落盘:看蓝色数据块哗哗灌进顶上的内存表。',
+    de: 'A write first appends sequentially to the write-ahead log - replayable after a crash - then lands in the in-memory memtable, usually a skiplist that handles concurrency well. At 64-256 MB the memtable freezes into an immutable structure. The whole write path never issues a random disk write: watch the blue blocks pour into the memory table.' },
+  { hl: 'flush', world: 1, tgt: [0, 2.5, 0.3],
+    b: 'flush:冻结成 SSTable 落盘', be: 'Flush: freeze into an SSTable on disk',
+    d: 'memtable 攒满,一把顺序写成磁盘上的 SSTable——排序的不可变文件——落到 L0。L0 的文件允许相互重叠:同一段键域可能被新文件盖住,这是读取要付的小代价。拖动写入速率滑块:写得越猛,薄饼落得越快,盘上的层也长得越快。',
+    de: 'When the memtable fills, it is written out in one sequential pass as an SSTable - a sorted, immutable file - onto L0. L0 files may overlap each other: the same key range can be covered by a newer file, a small price paid at read time. Drag the write-rate slider: the harder you write, the faster the pancakes stack and the levels grow.' },
+  { hl: 'levels', world: 1, tgt: [-0.4, 1.5, 0],
+    b: '分层:每层容量 ≈ 10× 上一层', be: 'Leveling: each level holds ~10x the one above',
+    d: 'leveled 策略把空间切成 L0、L1、L2……L_i 的容量约为上一层的 T≈10 倍;某层超限,就挑出与下层重叠的文件合并进去。读一条 key 从 memtable 一层层往下找,布隆过滤器先把不含它的文件整个跳过。RocksDB、LevelDB、Cassandra、HBase 都走这条路线。',
+    de: 'Leveled compaction slices capacity into L0, L1, L2...; level L_i holds roughly T≈10 times the level above. When a level overflows, files overlapping the next level are picked and merged down. A read walks memtable, L0, L1 and on, with a bloom filter skipping whole files that cannot contain the key. RocksDB, LevelDB, Cassandra and HBase all follow this route.' },
+  { hl: 'compact', world: 1, tgt: [0.4, 0.5, 0],
+    b: '压实:合并重写,墓碑的终点', be: 'Compaction: merge, rewrite, and the end of tombstones',
+    d: '压实把几层里的重叠薄饼摊开重排,合成更下层的新文件;删除并不是原地擦除,而是先写一条墓碑标记,直到最底层压实才真正丢弃——看红色小方块坠出盘外。压实一旦落后于写入,会被 write stall 卡住限流,这是 LSM 最著名的脾气。',
+    de: 'Compaction spreads overlapping pancakes across levels and rewrites them into deeper files. A delete never erases in place: it writes a tombstone first, and only compaction at the deepest level truly discards it - watch the red blocks fall off the disc. When compaction falls behind, writes hit a write stall and get throttled - the most famous temper of LSM trees.' },
+  { hl: 'bloom', world: 1, tgt: [-3.1, 2.6, 0],
+    b: '布隆与调参:三种放大的平衡术', be: 'Bloom and tuning: balancing three amplifications',
+    d: '布隆过滤器用 ~10 bit/key 换 1% 误报,读放大骤降;size-tiered 满几个合并几个,写放大低但读要翻层内多个 run;leveled 读快,写放大 10-30×;空间放大 ~1.1-2×(旧版本未清)。memtable 调大、压实提速、限流兜底——没有免费的顺序写,只有精心的取舍。',
+    de: 'A bloom filter spends ~10 bits per key for a 1% false-positive rate, slashing read amplification. Size-tiered merges whenever a level fills: cheap writes, but reads scan several runs per level. Leveled reads fast at 10-30x write amplification; space amplification runs ~1.1-2x with stale versions. Bigger memtables, faster compaction, throttling as backstop - sequential writes are never free, only carefully traded.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 2.0, 0);
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const rAmp = bloomOn ? 1.05 + 0.12 * counts[0] : 1 + counts[0] + counts[1] + counts[2] + counts[3];
+  const totalBytes = slabs.reduce((a, s) => a + (s.on ? s.bytes : 0), 0);
+  const sAmp = totalBytes / Math.max(1, userMB - discardedMB);
+  formulaEl.innerHTML =
+    L(`布隆过滤器:fpp ≈ (1−e^(−kn/m))^k;1% 误报 → m/n ≈ <b>9.6 bit/key</b>(k=7)——读每层只探测 ~1 个文件,当前<b>${bloomOn ? '开启' : '关闭'}</b>`,
+      `Bloom filter: fpp ≈ (1−e^(−kn/m))^k; 1% fpp → m/n ≈ <b>9.6 bits/key</b> (k=7) - about one file probed per level; currently <b>${bloomOn ? 'on' : 'off'}</b>`) +
+    '<br>' +
+    L(`leveled:L_(i+1) = <b>10</b>×L_i,挑重叠文件并入下层,写放大 <b>10-30×</b>;size-tiered:满 T 个 run 整体合并,写放大低、读放大 = 层内 run 数;当前 <b>${strat === 'leveled' ? 'leveled 分层' : 'size-tiered'}</b>`,
+      `Leveled: L_(i+1) = <b>10</b>×L_i, overlapping files merge down, write amp <b>10-30x</b>; size-tiered: T runs merge at once, cheap writes, read amp = runs per level; now <b>${strat === 'leveled' ? 'leveled' : 'size-tiered'}</b>`) +
+    '<br>' +
+    L(`实时账:memtable <b>${memSizeMB} MB</b> 满即冻结;累计落盘 <b>${fmtMB(writtenMB)}</b> ÷ 用户写入 <b>${fmtMB(userMB)}</b> = 写放大 <b>${wAmpOf().toFixed(1)}×</b>;读放大 <b>${rAmp.toFixed(2)}×</b> · 空间放大 <b>${Math.min(sAmp, 9.9).toFixed(2)}×</b>`,
+      `Live ledger: memtable <b>${memSizeMB} MB</b> freezes when full; flushed <b>${fmtMB(writtenMB)}</b> ÷ user writes <b>${fmtMB(userMB)}</b> = write amp <b>${wAmpOf().toFixed(1)}x</b>; read amp <b>${rAmp.toFixed(2)}x</b> · space amp <b>${Math.min(sAmp, 9.9).toFixed(2)}x</b>`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnLev = document.getElementById('btnLev'), btnTier = document.getElementById('btnTier'),
+  btnFlush = document.getElementById('btnFlush'), btnBurst = document.getElementById('btnBurst'),
+  btnReset = document.getElementById('btnReset');
+const presetBtns = { lev: btnLev, tier: btnTier };
+function setStrat(id) {
+  strat = id === 'tier' ? 'tiered' : 'leveled';
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === id);
+  updateFormula();
+}
+function forceFlush() {
+  if (memCount > 0 && flushT < 0) startFlush();
+}
+btnLev.addEventListener('click', () => setStrat('lev'));
+btnTier.addEventListener('click', () => setStrat('tier'));
+btnFlush.addEventListener('click', forceFlush);
+btnBurst.addEventListener('click', () => { burstT = 5; });
+function resetMachine() {
+  for (const k of keys) { k.on = false; k.mesh.visible = false; }
+  for (const s of slabs) freeSlab(s);
+  for (const p of probes) { p.on = false; p.mesh.visible = false; }
+  memCount = 0; flushT = -1; userMB = 0; writtenMB = 0; discardedMB = 0;
+  counts.fill(0); compQ.length = 0; activeC = null; stall = false; burstT = 0; spawnCarry = 0;
+  writeRate = 3; elRate.value = 3; updateRate();
+  memSizeMB = 128; elMem.value = 1; updateMem();
+  setStrat('lev');
+  hist.length = 0;
+  updateFormula();
+}
+btnReset.addEventListener('click', resetMachine);
+
+/* ---------------- 写入 / flush / 压实推进 ---------------- */
+function startFlush() {
+  flushT = 0;
+  userMB += memSizeMB;
+  writtenMB += memSizeMB;
+  for (const k of keys) if (k.on && k.st === 2) k.st = 3;      // 冻结
+  newSlab(0, memSizeMB);                                        // 落盘中的薄饼
+}
+function pushHist(a, b, c) {
+  hist.push([a, b, c]);
+  if (hist.length > 140) hist.shift();
+}
+
+/* ---------------- 写入-压实曲线(示波器) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+function drawScope() {
+  const cw = scope.width, ch = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, cw, ch);
+  const py = v => ch - (0.08 + 0.84 * clamp01(v)) * ch;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, py(0)); scopeCtx.lineTo(cw, py(0));
+  scopeCtx.stroke();
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText('memtable', 4 * dpr, py(0) - 4 * dpr);
+  scopeCtx.fillStyle = 'rgba(150,160,175,.55)';
+  scopeCtx.fillText(L('最近 ~2.3 s', 'last ~2.3 s'), cw - 58 * dpr, ch - 4 * dpr);
+  if (hist.length < 2) return;
+  const series = [
+    { k: 0, c: 'rgba(116,192,252,.95)' },
+    { k: 1, c: 'rgba(255,169,77,.95)' },
+    { k: 2, c: 'rgba(123,216,143,.9)' },
+  ];
+  for (const ser of series) {
+    scopeCtx.strokeStyle = ser.c;
+    scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < hist.length; i++) {
+      const x = i / (hist.length - 1) * cw;
+      const v = clamp01(hist[i][ser.k]);
+      i === 0 ? scopeCtx.moveTo(x, py(v)) : scopeCtx.lineTo(x, py(v));
+    }
+    scopeCtx.stroke();
+  }
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elRate = document.getElementById('rate'), elRateVal = document.getElementById('rateVal');
+const elMem = document.getElementById('memsz'), elMemVal = document.getElementById('memVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglVec = document.getElementById('tglVec');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateRate() {
+  writeRate = +elRate.value;
+  elRateVal.textContent = writeRate.toFixed(1) + L(' 条/s', ' rec/s');
+}
+function updateMem() {
+  memSizeMB = [64, 128, 256][+elMem.value];
+  elMemVal.textContent = memSizeMB + ' MB';
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elRate.addEventListener('input', updateRate);
+elMem.addEventListener('input', updateMem);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglVec.addEventListener('change', () => { bloomOn = tglVec.checked; updateFormula(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const wAmp = wAmpOf();
+  stA.innerHTML = wAmp.toFixed(1) + '<small>×</small>';
+  stA.className = 'v ' + (wAmp < 12 ? 'ok' : wAmp < 25 ? 'warn' : 'bad');
+  const rAmp = bloomOn ? 1.05 + 0.12 * counts[0] : 1 + counts[0] + counts[1] + counts[2] + counts[3];
+  stB.innerHTML = rAmp.toFixed(2) + '<small>×</small>';
+  stB.className = 'v ' + (rAmp < 2 ? 'ok' : rAmp < 6 ? 'warn' : 'bad');
+  const totalBytes = slabs.reduce((a, s) => a + (s.on ? s.bytes : 0), 0);
+  const sAmp = Math.min(9.9, totalBytes / Math.max(1, userMB - discardedMB));
+  stC.innerHTML = sAmp.toFixed(2) + '<small>×</small>';
+  stC.className = 'v ' + (sAmp < 1.5 ? 'ok' : sAmp < 2 ? 'warn' : 'bad');
+  const fill = memCount / memCap();
+  stD.innerHTML = Math.round(fill * 100) + '<small>%</small>';
+  stD.className = 'v ' + (fill < 0.8 ? 'ok' : fill < 1 ? 'warn' : 'bad');
+  stE.innerHTML = '<small>' + fmtMB(writtenMB) + '</small>';
+  stE.className = 'v ok';
+  stF.innerHTML = '<small>' + (strat === 'leveled' ? L('leveled 分层', 'leveled') : L('size-tiered', 'size-tiered')) + '</small>';
+  stF.className = 'v ok';
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  if (burstT > 0) burstT -= dt;
+  /* 写入 */
+  let compactAct = 0;
+  if (playing) {
+    const eff = writeRate * (stall ? 0.3 : 1) * (burstT > 0 ? 3 : 1) * (flushT >= 0 ? 0 : 1);
+    spawnCarry += eff * dt * speed;
+    while (spawnCarry >= 1) {
+      spawnCarry -= 1;
+      if (flushT < 0) {
+        const k = spawnKey(Math.random() < TOMB_FRAC);
+        if (k) { k.slot.copy(memSlot(memCount)); memCount++; }
+        if (memCount >= memCap()) startFlush();
+      }
+    }
+    pushHist(memCount / memCap(), (activeC || compQ.length) ? 1 : 0, eff / 8);
+    probeT -= dt;
+    if (probeT <= 0) { probeT = 2.8; spawnProbe(); }
+  }
+  compactAct = (activeC || compQ.length) ? 1 : 0;
+  /* flush 动画:冻结块收缩 */
+  if (flushT >= 0) {
+    flushT += dt * speed;
+    for (const k of keys) if (k.on && k.st === 3) {
+      const s = Math.max(0.001, 1 - flushT / 0.6);
+      k.mesh.scale.set(s, s, s);
+      if (flushT > 0.6) { k.on = false; k.mesh.visible = false; }
+    }
+    if (flushT > 0.8) { flushT = -1; memCount = 0; }
+  }
+  /* key 数据块运动 */
+  for (const k of keys) {
+    if (!k.on) continue;
+    if (k.st === 1) {
+      k.mesh.position.y -= 4.5 * dt * speed;
+      const slotY = k.slot.y;
+      if (k.mesh.position.y <= slotY) {
+        k.mesh.position.copy(k.slot);
+        k.st = 2;
+      } else {
+        k.mesh.position.x += (k.slot.x - k.mesh.position.x) * Math.min(1, dt * 4);
+        k.mesh.position.z += (k.slot.z - k.mesh.position.z) * Math.min(1, dt * 4);
+      }
+    } else if (k.st === 2) {
+      k.mesh.position.lerp(k.slot, Math.min(1, dt * 8));
+    } else if (k.st === 4) {
+      k.mesh.position.y -= 3.2 * dt * speed;
+      if (k.mesh.position.y < -1.4) { k.on = false; k.mesh.visible = false; }
+    }
+  }
+  /* 薄饼运动:落盘 / 合并 / 退役 */
+  for (const s of slabs) {
+    if (!s.on) continue;
+    if (s.st === 1) {                                   // 落向层平台
+      s.mesh.position.lerp(s.to, Math.min(1, dt * 2.6 * speed));
+      if (s.mesh.position.distanceTo(s.to) < 0.03) {
+        s.mesh.position.copy(s.to); s.st = 0;
+        counts[s.level]++;
+        const cap = capOf(s.level);
+        if (cap && counts[s.level] > cap && !activeC && !compQ.includes(s.level)) queueCompact(s.level);
+      }
+    } else if (s.st === 2) {                            // 参与合并
+      s.t += dt * speed / 0.9;
+      const mp = tmpV.set(0, (LVY[s.level] + (s.level < 3 ? LVY[s.level + 1] : LVY[3])) / 2 + 0.55, 0);
+      s.mesh.position.lerpVectors(s.from, mp, Math.min(1, s.t));
+      const sc = 1 - 0.25 * Math.min(1, s.t);
+      s.mesh.scale.set(sc, sc, sc);
+    } else if (s.st === 3) {                            // 退役(L3 满后冷归档)
+      s.t += dt * speed;
+      s.mesh.scale.multiplyScalar(Math.max(0.0, 1 - dt * speed * 1.6));
+      s.mesh.position.y -= dt * speed * 0.4;
+      if (s.t > 1.1) freeSlab(s);
+    }
+  }
+  if (activeC) {
+    activeC.t += dt * speed;
+    if (activeC.t > 0.95) finishCompact();
+  } else if (compQ.length && playing) {
+    const l = compQ.shift();
+    const parts = idleSlabsAt(l);
+    if (parts.length >= 1) startCompact(l);
+  }
+  /* write stall 判定 */
+  stall = !!activeC && counts[0] > capOf(0) + 2;
+  if (stall && compQ.length === 0 && !activeC) stall = false;
+  /* L3 满则退役最旧薄饼 */
+  if (counts[3] > 5) {
+    const old = idleSlabsAt(3)[0];
+    if (old) { old.st = 3; old.t = 0; counts[3]--; }
+  }
+  /* B+ 对照:磁头随机跳 + 改页闪点 */
+  armT -= dt;
+  if (armT <= 0) {
+    armT = 0.55 + Math.random() * 0.5;
+    armTarget = (Math.random() - 0.5) * 2.4;
+    pageSpot.position.set(Math.sin(armTarget) * -0.72, 0.18, -Math.cos(armTarget) * 0.72);
+    pageSpot.rotation.y = armTarget;
+    pageSpot.visible = true;
+    pageSpotT = 0.5;
+  }
+  armPivot.rotation.y += (armTarget - armPivot.rotation.y) * Math.min(1, dt * 9);
+  if (pageSpotT > 0) { pageSpotT -= dt; pageSpot.material.opacity = Math.max(0, pageSpotT) * 1.8; if (pageSpotT <= 0) pageSpot.visible = false; }
+  /* 读探测球 */
+  for (const p of probes) {
+    if (!p.on) continue;
+    p.t += dt * speed;
+    if (p.st === 0) {                                   // 下降到门
+      p.mesh.position.y -= 3.4 * dt * speed;
+      if (p.mesh.position.y <= 2.6) {
+        p.st = bloomOn ? 2 : 1;
+        if (bloomOn) gateFlash = 0.6;
+      }
+    } else if (p.st === 1) {                            // 无布隆:逐层悬停
+      const lvl = Math.min(3, Math.floor(p.t / 0.5));
+      p.mesh.position.set(-3.1, LVY[lvl] + 0.55, 0);
+      if (p.t > 0.5 * (p.lvl + 1)) p.st = 2;
+    } else if (p.st === 2) {                            // 直奔目标层
+      const tp = tmpV.copy(slabSlot(p.lvl, Math.max(0, counts[p.lvl] - 1)));
+      p.mesh.position.lerp(tp, Math.min(1, dt * 3.2));
+      if (p.mesh.position.distanceTo(tp) < 0.15) { p.on = false; p.mesh.visible = false; }
+    }
+  }
+  if (gateFlash > 0) { gateFlash -= dt; gateRing.scale.setScalar(1 + (0.6 - gateFlash) * 0.5); }
+  else gateRing.scale.setScalar(1);
+  /* 步骤高亮 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.mem, M.slab0, M.slab1, M.slab2, M.slab3, M.gate, M.key, M.tomb, M.platter]) m.emissiveIntensity = Math.min(m.emissiveIntensity, 0.2);
+  const boost = m => { m.emissiveIntensity = 0.5 + 0.3 * hlK; };
+  if (hl === 'btree') boost(M.platter);
+  else if (hl === 'mem') boost(M.mem);
+  else if (hl === 'flush') { boost(M.slab0); boost(M.key); }
+  else if (hl === 'levels') { boost(M.slab1); boost(M.slab2); }
+  else if (hl === 'compact') { boost(M.slab2); boost(M.slab3); boost(M.tomb); }
+  else if (hl === 'bloom') boost(M.gate);
+  /* 相机目标 */
+  tmpV.fromArray(STEPS[scenario].tgt);
+  controls.target.lerp(tmpV, 0.04);
+  /* 标签 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglVec.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
