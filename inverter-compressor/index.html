@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>变频空调压缩机 · 开停锯齿 vs 连续调频</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4fc7a8;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1f9d7f;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="变频空调压缩机:开停锯齿 vs 连续调频" data-en="Inverter AC Compressor: On-Off Sawtooth vs Continuous Modulation">变频空调压缩机:开停锯齿 vs 连续调频</h1>
+  <div class="sub" data-zh="空调温控有两种人生。定频压缩机直接接电网,转速锁死在 50 Hz(4 极约 1450 rpm),制冷量不可调,只能「开-停」控制:室温涨到设定值以上 0.9 °C 才开机、降到此下 0.9 °C 才停,室温在 ±1-2 °C 的锯齿上振荡;更糟的是每次启动,转子静止、没有反电动势,启动电流冲到额定的 5-10 倍,绕组发热按平方涨,而且停机后冷凝器与蒸发器压差被平衡,开机头一两分钟几乎不产冷。变频空调改成「连续调音」:市电 220 V 经整流桥变成约 311 V 脉动直流,PFC 功率因数校正把电流修成与电压同相的正弦(功率因数 0.6→0.99)并稳到 380 V 母线,再由六只 IGBT 组成的 IPM 以 2-16 kHz 载波 PWM 斩波,输出 20-120 Hz 连续可调的三相电,驱动涡旋压缩机的永磁电机——4 极对应 600-3600 rpm,制冷量在约 10-100%(最高 4.2 kW)无级匹配负荷:刚开机高频快拉,接近设定后降频细水长流,室温贴线 ±0.5 °C,而且低压比下 COP 反升 30-40%。频率有下限:低于约 20 Hz,吸气气流带不动润滑油回压缩机(管内气速 <6 m/s),必须周期性强制升频回油。综合省电 20-40%,季节能效比 SEER 从定频的约 3.2 提到 4.5 以上。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Room temperature control has two lives. A fixed-speed compressor plugs straight into the grid, locked at 50 Hz (about 1450 rpm for 4 poles), with fixed capacity and nothing but bang-bang control: the room must climb 0.9 deg C above setpoint before it starts and fall 0.9 deg below before it stops, so temperature rides a ±1-2 deg C sawtooth. Worse, every start hits a standstill rotor with no back-EMF: inrush current surges to 5-10x rated, winding heating rises with its square, and since each stop equalizes condenser and evaporator pressures the first minute or two of every run produces almost no cooling. The inverter version plays continuously: 220 V mains is rectified to ~311 V pulsating DC, a PFC stage sculpts the current into a sine in phase with the voltage (power factor 0.6 to 0.99) and holds a 380 V bus, then six IGBTs in the IPM chop it with a 2-16 kHz PWM carrier into three-phase AC of continuously adjustable frequency, 20-120 Hz, driving the permanent-magnet motor of a scroll compressor - 600-3600 rpm at 4 poles, capacity anywhere from about 10% to 100% (4.2 kW max). High frequency to pull the room down fast, low frequency to sip once setpoint is reached: temperature hugs the line within ±0.5 deg C, and COP actually rises 30-40% at low pressure ratio. Frequency has a floor: below roughly 20 Hz the suction gas can no longer carry oil back to the compressor (under 6 m/s in the risers), so the controller periodically forces a high-speed oil-return run. Net saving 20-40%; SEER climbs from about 3.2 to 4.5+. 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">空调温控有两种人生。定频压缩机直接接电网,转速锁死在 50 Hz(4 极约 1450 rpm),制冷量不可调,只能「开-停」控制:室温涨到设定值以上 0.9 °C 才开机、降到此下 0.9 °C 才停,室温在 ±1-2 °C 的锯齿上振荡;更糟的是每次启动,转子静止、没有反电动势,启动电流冲到额定的 5-10 倍,绕组发热按平方涨,而且停机后冷凝器与蒸发器压差被平衡,开机头一两分钟几乎不产冷。变频空调改成「连续调音」:市电 220 V 经整流桥变成约 311 V 脉动直流,PFC 功率因数校正把电流修成与电压同相的正弦(功率因数 0.6→0.99)并稳到 380 V 母线,再由六只 IGBT 组成的 IPM 以 2-16 kHz 载波 PWM 斩波,输出 20-120 Hz 连续可调的三相电,驱动涡旋压缩机的永磁电机——4 极对应 600-3600 rpm,制冷量在约 10-100%(最高 4.2 kW)无级匹配负荷:刚开机高频快拉,接近设定后降频细水长流,室温贴线 ±0.5 °C,而且低压比下 COP 反升 30-40%。频率有下限:低于约 20 Hz,吸气气流带不动润滑油回压缩机(管内气速 <6 m/s),必须周期性强制升频回油。综合省电 20-40%,季节能效比 SEER 从定频的约 3.2 提到 4.5 以上。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="压缩机频率" data-en="frequency">压缩机频率</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="变频房室温" data-en="room temp">变频房室温</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="制冷量" data-en="cooling">制冷量</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="输入功率" data-en="input power">输入功率</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="SEER(变频)" data-en="SEER (inverter)">SEER(变频)</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="定频启停" data-en="fixed starts">定频启停</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="电能:整流→PFC→逆变" data-en="power: rect→PFC→inverter">电能:整流→PFC→逆变</span>
+    <span class="chip g" data-zh="制冷剂回路" data-en="refrigerant loop">制冷剂回路</span>
+    <span class="chip o" data-zh="定频启停锯齿" data-en="fixed on-off sawtooth">定频启停锯齿</span>
+    <span class="chip r" data-zh="回油风险 / 冲击电流" data-en="oil-return risk / inrush">回油风险 / 冲击电流</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnCmp" data-zh="定频 vs 变频对照" data-en="fixed vs inverter">定频 vs 变频对照</button>
+    <button class="abtn" id="btnSoft" data-zh="软启动演示" data-en="soft-start demo">软启动演示</button>
+    <button class="abtn" id="btnSweep" data-zh="频率扫描 20-120 Hz" data-en="frequency sweep 20-120 Hz">频率扫描 20-120 Hz</button>
+    <button class="abtn hot" id="btnOil" data-zh="回油保护(低频困境)" data-en="oil-return guard (low-f limit)">回油保护(低频困境)</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="设定温度" data-en="setpoint">设定温度</label><input id="vset" type="range" min="16" max="30" step="0.5" value="26"><span class="val" id="vsetVal">26.0 °C</span></div>
+  <div class="row"><label data-zh="室外温度" data-en="outdoor temp">室外温度</label><input id="tout" type="range" min="25" max="45" step="1" value="35"><span class="val" id="toutVal">35 °C</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="温度/功率波形" data-en="temp/power waveform">温度/功率波形</span></label>
+        <label><input id="tglVec" type="checkbox"> <span data-zh="能流箭头" data-en="energy arrows">能流箭头</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../heat-pump/" data-zh="热泵" data-en="heat pump">热泵</a>
+    <a href="../inverter/" data-zh="逆变器" data-en="inverter">逆变器</a>
+    <a href="../induction-motor/" data-zh="感应电机" data-en="induction motor">感应电机</a>
+    <a href="../buck-converter/" data-zh="降压变换器" data-en="buck converter">降压变换器</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);             // 网格线
+  M.slab.color.set(dark ? 0x3a434d : 0x8a97a3);             // 房间地板/顶板
+  M.wall.color.set(dark ? 0x8fb4c9 : 0x7fa3b8);             // 房间墙体(透明)
+  M.furn.color.set(dark ? 0x4a5560 : 0xb9c2cc);             // 家具
+  M.wallAC.color.set(dark ? 0xe8eef2 : 0xdde5eb);           // 挂机内机
+  M.compA.color.set(dark ? 0xc06a38 : 0x9c5426);            // 定频室外机
+  M.steelB.color.set(dark ? 0x9aa6b2 : 0x6f7d8a);           // 风扇/支架
+  M.coilFins.color.set(dark ? 0x7fa8c9 : 0x4f7fa0);         // 冷凝器翅片
+  M.compB.color.set(dark ? 0x3a4652 : 0x5a6773);            // 变频压缩机壳
+  M.shellB.color.set(dark ? 0x9fb4c8 : 0x7f95a8);           // 剖视半壳
+  M.scrollFix.color.set(dark ? 0xd8b45e : 0xb0852f);        // 静涡旋
+  M.scrollOrb.color.set(dark ? 0x6fc0ff : 0x2e7fc2);        // 动涡旋
+  M.motorEnd.color.set(dark ? 0xd4693b : 0xa84e26);         // 电机端
+  M.cabT.color.set(dark ? 0x9fb4c8 : 0x8ba3b8);             // 电控柜透明壳
+  M.caseD.color.set(dark ? 0x2c333b : 0x55606a);            // 隔板/端盖
+  M.rect.color.set(dark ? 0x4a545e : 0x5a646e);             // 整流桥
+  M.copper.color.set(dark ? 0xd08a4a : 0xa86a30);           // PFC 电感
+  M.cap.color.set(dark ? 0x4f6bc7 : 0x35509e);              // 母线电容
+  for (const m of M.igbtU) m.color.set(dark ? 0x4fc7a8 : 0x1f9d7f);   // 上管
+  for (const m of M.igbtL) m.color.set(dark ? 0x7d8894 : 0x68727e);   // 下管
+  M.ring.color.set(dark ? 0x4fc7a8 : 0x1f9d7f);             // 容量环
+  M.thermGlass.color.set(dark ? 0x9fb4c8 : 0x7f95a8);       // 温度计玻璃
+  M.acc.color.set(dark ? 0x7d8894 : 0x68727e);              // 气液分离器
+  M.pipeIns.color.set(dark ? 0x4a545e : 0x5a646e);          // 保温管
+  M.gridM.color.set(dark ? 0x39424c : 0x7a8794);            // 市电表
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('变频空调压缩机 · 开停锯齿 vs 连续调频', 'Inverter AC Compressor · Sawtooth vs Continuous Modulation');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateVset();
+  updateTout();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(8.8, 6.0, 10.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 38;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质(颜色统一在 applyTheme 换) ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  slab: mat(0x3a434d, { roughness: 0.9, metalness: 0.05 }),
+  wall: mat(0x8fb4c9, { roughness: 0.3, metalness: 0.1, transparent: true, opacity: 0.16, side: THREE.DoubleSide }),
+  furn: mat(0x4a5560, { roughness: 0.8, metalness: 0.1 }),
+  wallAC: mat(0xe8eef2, { roughness: 0.5, metalness: 0.2 }),
+  compA: mat(0xc06a38, { roughness: 0.5, metalness: 0.5 }),
+  steelB: mat(0x9aa6b2, { roughness: 0.35, metalness: 0.8 }),
+  coilFins: mat(0x7fa8c9, { roughness: 0.5, metalness: 0.4 }),
+  compB: mat(0x3a4652, { roughness: 0.4, metalness: 0.6 }),
+  shellB: mat(0x9fb4c8, { roughness: 0.25, metalness: 0.3, transparent: true, opacity: 0.22, side: THREE.DoubleSide }),
+  scrollFix: mat(0xd8b45e, { roughness: 0.35, metalness: 0.6 }),
+  scrollOrb: mat(0x6fc0ff, { roughness: 0.3, metalness: 0.5, emissiveIntensity: 0.3 }),
+  motorEnd: mat(0xd4693b, { roughness: 0.45, metalness: 0.55 }),
+  cabT: mat(0x9fb4c8, { roughness: 0.25, metalness: 0.3, transparent: true, opacity: 0.16, side: THREE.DoubleSide }),
+  caseD: mat(0x2c333b, { roughness: 0.5, metalness: 0.55 }),
+  rect: mat(0x4a545e, { roughness: 0.5, metalness: 0.5 }),
+  copper: mat(0xd08a4a, { roughness: 0.35, metalness: 0.75 }),
+  cap: mat(0x4f6bc7, { roughness: 0.4, metalness: 0.4 }),
+  igbtU: [mat(0x4fc7a8, { emissiveIntensity: 0.2 }), mat(0x4fc7a8, { emissiveIntensity: 0.2 }), mat(0x4fc7a8, { emissiveIntensity: 0.2 })],
+  igbtL: [mat(0x7d8894, { emissiveIntensity: 0.12 }), mat(0x7d8894, { emissiveIntensity: 0.12 }), mat(0x7d8894, { emissiveIntensity: 0.12 })],
+  ring: mat(0x4fc7a8, { roughness: 0.35, metalness: 0.4, emissiveIntensity: 0.5 }),
+  thermGlass: mat(0x9fb4c8, { roughness: 0.2, metalness: 0.2, transparent: true, opacity: 0.35 }),
+  fillA: mat(0xe8a33d, { roughness: 0.4, metalness: 0.2, emissiveIntensity: 0.35 }),
+  fillB: mat(0x4fc7a8, { roughness: 0.4, metalness: 0.2, emissiveIntensity: 0.35 }),
+  acc: mat(0x7d8894, { roughness: 0.45, metalness: 0.6 }),
+  pipeIns: mat(0x4a545e, { roughness: 0.6, metalness: 0.4 }),
+  gridM: mat(0x39424c, { roughness: 0.5, metalness: 0.4 }),
+  diodeA: mat(0xffd27a, { emissiveIntensity: 0.5 }),
+  diodeB: mat(0x6fc8ff, { emissiveIntensity: 0.5 }),
+  setMark: mat(0xffd27a, { emissiveIntensity: 0.6 }),
+  beadHot: mat(0xff7a5a, { emissiveIntensity: 0.75 }),
+  beadWarm: mat(0xe8a33d, { emissiveIntensity: 0.6 }),
+  beadCold: mat(0x6fd4e8, { emissiveIntensity: 0.65 }),
+  oil: mat(0x8a6a15, { roughness: 0.4, metalness: 0.3, emissiveIntensity: 0.25 }),
+  spike: new THREE.MeshBasicMaterial({ color: 0xff5a5a, transparent: true, opacity: 0.85 }),
+  shimmer: new THREE.MeshBasicMaterial({ color: 0xffa060, transparent: true, opacity: 0.4 }),
+  chill: new THREE.MeshBasicMaterial({ color: 0x7fd8e8, transparent: true, opacity: 0.45 }),
+  arrow: new THREE.MeshBasicMaterial({ color: 0xff7a5a, transparent: true, opacity: 0.9 }),
+  arrowC: new THREE.MeshBasicMaterial({ color: 0x6fc8ff, transparent: true, opacity: 0.9 }),
+};
+
+/* ---------------- 物理状态(单位:kW / °C / Hz / kJ·K⁻¹;室温演化加速 40×) ---------------- */
+const TSCALE = 40;        // 时间加速:热惯性为分钟级,演示压缩 40×
+const C_ROOM = 700;       // 房间有效热容 kJ/K(约 15 m² 含家具)
+const UA = 0.25;          // 围护结构热导 kW/K
+const Q_INT = 0.4;        // 人员+设备内热 kW
+const Q_FIX = 3.5;        // 定频额定制冷量 kW(1.5 匹)
+const Q_INV = 4.2;        // 变频 120 Hz 最大制冷量 kW
+const F_MIN = 20, F_MAX = 120;
+let Tset = 26, Tout = 35;                       // 滑杆:设定/室外温度
+let TA = 30.5, TB = 30.5;                       // 两房室温 °C
+let aOn = false, aCnt = 0, aInrushT = 0, aWarm = 1;
+let f = 60, integ = 0, cf = 0.5;
+let Qin = 0, Pin = 0, copI = 4, QfA = 0, PfA = 0, copF = 3.2;
+let Eci = 0, Ewi = 0, Ecf = 0, Ewf = 0;         // 累计冷量/电量 kWh(变频 i / 定频 f)
+let wearH = 0, oilAcc = 0, tOn = 0, tTot = 1e-6;
+let et = 0, scenario = 0, preset = null;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let arrowsOn = false;
+let cmpT = 0, softT = 0, sweepT = 0, oilT = 0, softKicked = false;
+
+/* ---------------- 地面 / 网格 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(64, 0.1, 44), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(44, 22, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* ---------------- 房间 ×2:开顶墙 + 家具 + 挂机 + 温度计(见证柱) ---------------- */
+const setMarkA = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.02, 8, 20), M.setMark);
+const setMarkB = setMarkA.clone();
+function buildRoom(x) {
+  const g = new THREE.Group();
+  const W = 2.7, D = 2.0, H = 2.1, t = 0.06;
+  const mk = (w, h, d, m, px, py, pz) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    mesh.position.set(px, py, pz);
+    g.add(mesh);
+    return mesh;
+  };
+  mk(W + 0.12, 0.08, D + 0.12, M.slab, 0, 0.04, 0);                 // 地板
+  mk(W, H, t, M.wall, 0, H / 2, -D / 2);                            // 后墙
+  mk(W, H, t, M.wall, 0, H / 2, D / 2);                             // 前墙(低反射观察)
+  mk(t, H, D, M.wall, -W / 2, H / 2, 0);                            // 左墙
+  mk(t, H, D, M.wall, W / 2, H / 2, 0);                             // 右墙
+  mk(1.05, 0.32, 0.62, M.furn, -0.55, 0.24, 0.42);                  // 床
+  mk(0.52, 0.44, 0.42, M.furn, 0.72, 0.3, -0.38);                   // 桌
+  mk(0.3, 0.3, 0.24, M.furn, 0.05, 0.23, 0.52);                     // 凳
+  mk(0.92, 0.26, 0.2, M.wallAC, 0.55, H - 0.36, -D / 2 + 0.18);     // 挂机
+  mk(0.88, 0.05, 0.24, M.steelB, 0.55, H - 0.5, -D / 2 + 0.16);     // 导风板
+  /* 温度计见证柱:几何原点移到底部,scale.y = f(温度),量程 14-36 °C */
+  const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.5, 10), M.thermGlass);
+  glass.position.y = 0.85;
+  const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.12, 12), M.caseD);
+  stand.position.y = 0.06;
+  g.add(glass, stand);
+  g.position.x = x;
+  scene.add(g);
+  return g;
+}
+const roomA = buildRoom(-6.6);
+const roomB = buildRoom(-3.2);
+const fillGeo = new THREE.CylinderGeometry(0.045, 0.045, 1.5, 8);
+fillGeo.translate(0, 0.75, 0);                                      // 底部锚点
+const fillA = new THREE.Mesh(fillGeo, M.fillA); fillA.position.set(-6.6, 0.12, 0.62);
+const fillB = new THREE.Mesh(fillGeo, M.fillB); fillB.position.set(-3.2, 0.12, 0.62);
+scene.add(fillA, fillB);
+setMarkA.position.set(-6.6, 0.9, 0.62);
+setMarkB.position.set(-3.2, 0.9, 0.62);
+scene.add(setMarkA, setMarkB);
+
+/* ---------------- 定频室外机(启停 + 冲击电流柱 + 小风扇) ---------------- */
+const unitA = new THREE.Group();
+unitA.position.set(-8.3, 0.75, -0.75);
+scene.add(unitA);
+const boxA = new THREE.Mesh(new THREE.BoxGeometry(0.75, 1.05, 0.4), M.compA);
+unitA.add(boxA);
+const grillA = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.028, 8, 22), M.steelB);
+grillA.position.z = 0.21;
+unitA.add(grillA);
+const fanA = new THREE.Group();
+fanA.position.z = 0.22;
+for (let k = 0; k < 3; k++) {
+  const bl = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.36, 0.02), M.steelB);
+  bl.position.y = 0.15;
+  bl.rotation.z = 0.5;
+  const hold = new THREE.Group();
+  hold.rotation.z = k / 3 * TAU;
+  hold.add(bl);
+  fanA.add(hold);
+}
+unitA.add(fanA);
+const spikeBar = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1, 0.09), M.spike);
+spikeBar.geometry.translate(0, 0.5, 0);
+spikeBar.position.set(-8.3, 1.35, -0.3);
+spikeBar.visible = false;
+scene.add(spikeBar);
+
+/* ---------------- 电控柜:整流桥 → PFC+母线电容 → 六管 IPM ---------------- */
+const CAB = new THREE.Vector3(0.3, 0, 0.4);
+const cabShell = new THREE.Mesh(new THREE.BoxGeometry(1.35, 2.35, 1.0), M.cabT);
+cabShell.position.set(CAB.x, 1.18, CAB.z);
+scene.add(cabShell);
+for (const sy of [0.5, 1.2, 1.9]) {                                 // 三层隔板
+  const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 0.9), M.caseD);
+  shelf.position.set(CAB.x, sy - 0.16, CAB.z);
+  scene.add(shelf);
+}
+const mainsBox = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.26), M.gridM);
+mainsBox.position.set(CAB.x - 0.72, 0.5, CAB.z);
+scene.add(mainsBox);
+const rect = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.3, 0.45), M.rect);
+rect.position.set(CAB.x, 0.5, CAB.z);
+scene.add(rect);
+const diodes = [];
+for (const [dx, dz, m] of [[-0.16, -0.14, M.diodeA], [0.16, -0.14, M.diodeB], [-0.16, 0.14, M.diodeB], [0.16, 0.14, M.diodeA]]) {
+  const d = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), m);
+  d.position.set(CAB.x + dx, 0.68, CAB.z + dz);
+  scene.add(d);
+  diodes.push(d);
+}
+const pfc = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.055, 10, 22), M.copper);
+pfc.position.set(CAB.x - 0.25, 1.2, CAB.z);
+scene.add(pfc);
+const capD = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.34, 14), M.cap);
+capD.position.set(CAB.x + 0.34, 1.2, CAB.z);
+scene.add(capD);
+const ipmBase = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.06, 0.5), M.caseD);
+ipmBase.position.set(CAB.x, 1.9, CAB.z);
+scene.add(ipmBase);
+const igbtU = [], igbtL = [];
+for (let k = 0; k < 3; k++) {
+  const u = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), M.igbtU[k]);
+  u.position.set(CAB.x - 0.2 + k * 0.2, 2.06, CAB.z);
+  const lo = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), M.igbtL[k]);
+  lo.position.set(CAB.x - 0.2 + k * 0.2, 1.8, CAB.z);
+  scene.add(u, lo);
+  igbtU.push(u); igbtL.push(lo);
+}
+
+/* ---------------- 柜内导线与电能珠流 ---------------- */
+function tubeOf(pts, m) {
+  const c = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p)));
+  scene.add(new THREE.Mesh(new THREE.TubeGeometry(c, 32, 0.045, 8, false), m));
+  return c;
+}
+const cAC = tubeOf([[CAB.x - 0.6, 0.5, CAB.z], [CAB.x - 0.34, 0.5, CAB.z], [CAB.x - 0.12, 0.52, CAB.z]], M.pipeIns);
+const cDC = tubeOf([[CAB.x, 0.68, CAB.z], [CAB.x - 0.2, 0.95, CAB.z], [CAB.x - 0.25, 1.2, CAB.z],
+  [CAB.x + 0.05, 1.55, CAB.z], [CAB.x, 1.82, CAB.z], [CAB.x, 1.9, CAB.z]], M.pipeIns);
+const cOut = [];
+for (let k = 0; k < 3; k++) {
+  const z = CAB.z - 0.12 + k * 0.12;
+  cOut.push(tubeOf([[CAB.x + 0.45, 1.95, z], [1.35, 1.7, z - 0.06], [2.1, 1.25, z - 0.16], [2.75, 0.95, z - 0.2], [3.05, 0.82, 0.1 + k * 0.06]], M.pipeIns));
+}
+
+/* ---------------- 变频压缩机(涡旋剖视 + 电机端 + 容量环) ---------------- */
+const COMP = new THREE.Vector3(3.3, 0.78, 0);
+const skid = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.1, 0.95), M.caseD);
+skid.position.set(COMP.x, 0.2, COMP.z);
+scene.add(skid);
+const compBody = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 1.25, 26), M.compB);
+compBody.rotation.z = Math.PI / 2;
+compBody.position.copy(COMP);
+scene.add(compBody);
+const shellHalf = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 1.3, 28, 1, true, 0, Math.PI), M.shellB);
+shellHalf.rotation.z = Math.PI / 2;                                 // 半壳盖住上半,剖视内部
+shellHalf.position.copy(COMP);
+scene.add(shellHalf);
+function scrollGeo(rMax) {                                          // 阿基米德涡线(平面 XZ)
+  const pts = [];
+  const thMax = Math.PI * 3.4;
+  for (let i = 0; i <= 110; i++) {
+    const th = i / 110 * thMax;
+    const r = 0.05 + (rMax - 0.05) * th / thMax;
+    pts.push(new THREE.Vector3(Math.cos(th) * r, 0, Math.sin(th) * r));
+  }
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 90, 0.026, 6, false);
+}
+const scrollS = new THREE.Mesh(scrollGeo(0.34), M.scrollFix);
+scrollS.position.set(COMP.x, COMP.y + 0.24, COMP.z);
+scene.add(scrollS);
+const orbG = new THREE.Group();
+orbG.position.set(COMP.x, COMP.y + 0.1, COMP.z);
+scene.add(orbG);
+const scrollO = new THREE.Mesh(scrollGeo(0.3), M.scrollOrb);
+orbG.add(scrollO);
+const orbPlate = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.03, 22), M.scrollOrb);
+orbG.add(orbPlate);
+const motorEnd = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.4, 18), M.motorEnd);
+motorEnd.rotation.z = Math.PI / 2;
+motorEnd.position.set(COMP.x + 0.78, COMP.y, COMP.z);
+scene.add(motorEnd);
+const rotorSpin = new THREE.Group();
+rotorSpin.position.set(COMP.x + 1.0, COMP.y, COMP.z);
+scene.add(rotorSpin);
+const rotorCap = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.07, 14), M.steelB);
+rotorCap.rotation.z = Math.PI / 2;
+rotorSpin.add(rotorCap);
+for (const s of [-1, 1]) {                                          // 两个磁极标记
+  const pole = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.1), M.compA);
+  pole.position.set(0.05, s * 0.11, 0);
+  rotorSpin.add(pole);
+}
+const accum = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.55, 14), M.acc);
+accum.position.set(2.58, 0.58, -0.28);
+scene.add(accum);
+/* 容量环:24 段预分配,亮起段数 = 容量百分比(零新建) */
+const ringSegs = [];
+{
+  const segGeo = new THREE.BoxGeometry(0.1, 0.05, 0.16);
+  for (let i = 0; i < 24; i++) {
+    const a = i / 24 * TAU;
+    const seg = new THREE.Mesh(segGeo, M.ring);
+    seg.position.set(COMP.x, COMP.y + Math.sin(a) * 0.72, COMP.z + Math.cos(a) * 0.72);
+    seg.rotation.x = a;
+    seg.visible = false;
+    scene.add(seg);
+    ringSegs.push(seg);
+  }
+}
+
+/* ---------------- 变频室外机:冷凝翅片 + 轴流风扇 + 热浪粒子 ---------------- */
+const OUTD = new THREE.Vector3(5.8, 0.68, 0.15);
+const unitB = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.2, 0.55), M.compB);
+unitB.position.copy(OUTD);
+scene.add(unitB);
+for (let k = 0; k < 7; k++) {                                       // 冷凝器翅片
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.6, 0.36), M.coilFins);
+  fin.position.set(OUTD.x - 0.36 + k * 0.12, 1.02, OUTD.z);
+  scene.add(fin);
+}
+const grillB = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.03, 8, 26), M.steelB);
+grillB.position.set(OUTD.x, OUTD.y, OUTD.z + 0.29);
+scene.add(grillB);
+const fanB = new THREE.Group();
+fanB.position.set(OUTD.x, OUTD.y, OUTD.z + 0.3);
+for (let k = 0; k < 3; k++) {
+  const bl = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.48, 0.02), M.steelB);
+  bl.position.y = 0.2;
+  bl.rotation.z = 0.5;
+  const hold = new THREE.Group();
+  hold.rotation.z = k / 3 * TAU;
+  hold.add(bl);
+  fanB.add(hold);
+}
+scene.add(fanB);
+const expv = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.22, 10), M.copper);
+expv.rotation.z = Math.PI / 2;
+expv.position.set(5.0, 0.32, 0.5);                                  // 电子膨胀阀
+scene.add(expv);
+
+/* ---------------- 制冷剂主回路(闭合曲线)与珠流(固定池,零新建) ---------------- */
+const loopPts = [
+  [3.3, 1.38, 0],          // 压缩机排气(高温高压)
+  [4.4, 1.2, 0.28], [5.45, 0.98, 0.3], [6.15, 0.62, 0.32],          // → 冷凝器
+  [5.4, 0.3, 0.55],        // → 膨胀阀
+  [3.5, 0.18, 0.62], [1.0, 0.18, 0.68], [-1.4, 0.18, 0.62],         // 液管沿地
+  [-2.4, 0.4, 0.3], [-2.68, 1.55, -0.45], [-2.95, 1.82, -0.72],     // → 室内机(蒸发器)
+  [-3.45, 1.82, -0.78], [-3.78, 1.45, -0.72],
+  [-3.6, 0.18, -0.4], [-1.0, 0.16, -0.25], [1.6, 0.16, -0.2],       // 回气管沿地
+  [2.55, 0.3, -0.28], [2.85, 0.75, -0.35],                          // → 气分 → 吸气
+];
+const loopCurve = new THREE.CatmullRomCurve3(loopPts.map(p => new THREE.Vector3(...p)), true);
+scene.add(new THREE.Mesh(new THREE.TubeGeometry(loopCurve, 160, 0.05, 8, true), M.pipeIns));
+function zoneOf(t) {                                                // 按回路位置分段着色
+  if (t < 0.1 || t > 0.8) return M.beadHot;                         // 排气/缸内:高温
+  if (t < 0.2) return M.beadWarm;                                   // 冷凝器出口液管
+  return M.beadCold;                                                // 膨胀后低温
+}
+const loopBeads = [];
+{
+  const g = new THREE.SphereGeometry(0.07, 10, 8);
+  for (let k = 0; k < 14; k++) {
+    const m = new THREE.Mesh(g, M.beadCold);
+    scene.add(m);
+    loopBeads.push({ m, t: k / 14, zone: M.beadCold });
+  }
+}
+/* 定频小回路(独立封闭环) */
+const loopA = new THREE.CatmullRomCurve3([
+  [-6.05, 1.78, -0.86], [-6.7, 1.5, -1.3], [-7.6, 0.9, -1.3], [-8.25, 0.95, -0.95],
+  [-8.45, 0.55, -0.8], [-7.6, 0.35, -0.9], [-6.8, 0.7, -1.0], [-6.3, 1.6, -0.95],
+].map(p => new THREE.Vector3(...p)), true);
+scene.add(new THREE.Mesh(new THREE.TubeGeometry(loopA, 80, 0.04, 8, true), M.pipeIns));
+const beadsA = [];
+{
+  const g = new THREE.SphereGeometry(0.055, 8, 6);
+  for (let k = 0; k < 5; k++) {
+    const m = new THREE.Mesh(g, M.beadCold);
+    scene.add(m);
+    beadsA.push({ m, t: k / 5 });
+  }
+}
+/* 电能珠流:市电 3 + 母线 3 + 三相输出 6 */
+const eBeads = [];
+{
+  const g = new THREE.SphereGeometry(0.05, 8, 6);
+  const plans = [[cAC, 3, 0.5], [cDC, 3, 0.45], [cOut[0], 2, 0], [cOut[1], 2, 0], [cOut[2], 2, 0]];
+  for (const [c, n, base] of plans) {
+    for (let k = 0; k < n; k++) {
+      const m = new THREE.Mesh(g, k % 2 ? M.diodeA : M.diodeB);
+      scene.add(m);
+      eBeads.push({ m, c, t: k / n + base, out: c !== cAC && c !== cDC });
+    }
+  }
+}
+/* 回油困境:油珠积在吸气水平段(低点),回油时被冲走 */
+const oilPocket = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(-0.7, 0.14, -0.23), new THREE.Vector3(0, 0.12, -0.21),
+  new THREE.Vector3(0.7, 0.13, -0.2), new THREE.Vector3(1.4, 0.16, -0.2),
+]);
+const oilBeads = [];
+{
+  const g = new THREE.SphereGeometry(0.06, 8, 6);
+  for (let k = 0; k < 5; k++) {
+    const m = new THREE.Mesh(g, M.oil);
+    m.visible = false;
+    scene.add(m);
+    oilBeads.push(m);
+  }
+}
+/* 热浪(冷凝器上方)与冷 swirl(变频房内)粒子池 */
+const shimmer = [];
+for (let k = 0; k < 6; k++) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), M.shimmer);
+  m.visible = false;
+  scene.add(m);
+  shimmer.push({ m, p: k / 6 });
+}
+const chill = [];
+for (let k = 0; k < 5; k++) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), M.chill);
+  m.visible = false;
+  scene.add(m);
+  chill.push({ m, p: k / 5 });
+}
+
+/* ---------------- 能流箭头 ---------------- */
+function makeArrow(m) {
+  const g = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 10), m);
+  shaft.position.y = 0.5;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.095, 0.22, 12), m);
+  tip.position.y = 1.1;
+  g.add(shaft, tip);
+  return g;
+}
+const arrowP = makeArrow(M.arrow);            // 电功率 → 电控柜
+arrowP.rotation.z = -Math.PI / 2;
+arrowP.position.set(-1.15, 1.5, 0.4);
+arrowP.visible = false;
+scene.add(arrowP);
+const arrowQ = makeArrow(M.arrowC);           // 冷量 → 变频房
+arrowQ.rotation.x = Math.PI / 2;
+arrowQ.position.set(-2.95, 1.35, 0.15);
+arrowQ.visible = false;
+scene.add(arrowQ);
+const arrowH = makeArrow(M.arrow);            // 排热 ↑ 室外机
+arrowH.position.set(OUTD.x, 1.55, OUTD.z);
+arrowH.visible = false;
+scene.add(arrowH);
+const arrowPF = makeArrow(M.arrowC);          // 定频电耗 ↑
+arrowPF.position.set(-8.3, 1.55, -0.75);
+arrowPF.visible = false;
+scene.add(arrowPF);
+
+/* ---------------- 状态标签(实时读数) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,不是 CSS2DObject!
+}
+addLabel(() => L(`能路:市电 220 V → 整流 311 V → PFC 母线 380 V → PWM ${f.toFixed(0)} Hz → 压缩机 → 冷量 ${Qin.toFixed(2)} kW`,
+  `power: mains 220 V → rect 311 V → PFC bus 380 V → PWM ${f.toFixed(0)} Hz → compressor → ${Qin.toFixed(2)} kW cooling`),
+  () => 'st', new THREE.Vector3(0.3, 3.6, 0.4));
+const lblRoomA = addLabel(() => {
+  const s = aOn ? L('运行', 'ON') : L('停机', 'OFF');
+  const ir = aInrushT > 0.02 ? ` · ${L('启动电流', 'inrush')} ×${(1 + 7 * aInrushT / 0.5).toFixed(1)}` : '';
+  return L(`定频房 ${TA.toFixed(1)} °C · ${s} · 启停 ${aCnt} 次${ir}`,
+    `fixed room ${TA.toFixed(1)} C · ${s} · ${aCnt} starts${ir}`);
+}, () => aInrushT > 0.02 ? 'bad' : 'e', new THREE.Vector3(-6.6, 2.95, 0));
+const lblRoomB = addLabel(() => {
+  const err = TB - Tset;
+  return L(`变频房 ${TB.toFixed(1)} °C · 误差 ${err >= 0 ? '+' : ''}${err.toFixed(1)} · 频率 ${f.toFixed(0)} Hz`,
+    `inverter room ${TB.toFixed(1)} C · error ${err >= 0 ? '+' : ''}${err.toFixed(1)} · ${f.toFixed(0)} Hz`);
+}, () => Math.abs(TB - Tset) <= 0.5 ? 'g' : Math.abs(TB - Tset) <= 1.2 ? 'w' : 'bad',
+  new THREE.Vector3(-3.2, 2.55, 0));
+const lblInv = addLabel(() => L(`IPM 六管:PFC 母线 380 V · PWM 载波 8 kHz(演示降频 9 Hz 显示)· 调制比 ${(f / F_MAX).toFixed(2)}`,
+  `IPM 6-pack: PFC bus 380 V - PWM carrier 8 kHz (slowed to 9 Hz) - modulation ${(f / F_MAX).toFixed(2)}`),
+  () => 'b', new THREE.Vector3(0.3, 2.5, 0.4));
+const lblComp = addLabel(() => L(`涡旋压缩机:${f.toFixed(0)} Hz → ${Math.round(f * 30)} rpm(4 极;转速慢放 ~1/30)· 容量 ${(cf * 100).toFixed(0)}%`,
+  `scroll compressor: ${f.toFixed(0)} Hz → ${Math.round(f * 30)} rpm (4-pole; ~1/30 speed) - capacity ${(cf * 100).toFixed(0)}%`),
+  () => 'b', new THREE.Vector3(3.3, 1.9, 0));
+const lblOut = addLabel(() => L(`室外机:环温 ${Tout} °C · COP ≈ ${copI.toFixed(2)} · 排热 ${(Qin + Pin).toFixed(2)} kW(冷量+电耗)`,
+  `outdoor unit: ${Tout} C ambient - COP ~ ${copI.toFixed(2)} - rejecting ${(Qin + Pin).toFixed(2)} kW (cooling + power)`),
+  () => 'o', new THREE.Vector3(OUTD.x, 2.0, OUTD.z));
+const lblCmpG = addLabel(() => {
+  const sav = Ewf > 0.02 ? ` · ${L('变频省', 'inverter saves')} ${(100 * (1 - Ewi / Ewf)).toFixed(0)}%` : '';
+  return L(`能耗累计:定频 ${Ewf.toFixed(2)} kWh(启停 ${aCnt})vs 变频 ${Ewi.toFixed(2)} kWh${sav}`,
+    `energy: fixed ${Ewf.toFixed(2)} kWh (${aCnt} starts) vs inverter ${Ewi.toFixed(2)} kWh${sav}`);
+}, () => 'e', new THREE.Vector3(-4.9, 3.75, 0));
+const lblSoftG = addLabel(() => L('软启动:定频硬启动 ×5-10 冲击电流 vs 变频 0→额定 约 2 s 平滑斜坡,电流永不超额定',
+  'soft start: fixed hard start 5-10x surge vs inverter 0-to-rated smooth ramp in ~2 s, never above rated'),
+  () => 'bad', new THREE.Vector3(-1.5, 4.2, 0));
+const lblSweepG = addLabel(() => L(`频率扫描:${f.toFixed(0)} Hz → 容量 ${(cf * 100).toFixed(0)}% → ${Math.round(f * 30)} rpm —— 制冷量近似正比转速`,
+  `sweep: ${f.toFixed(0)} Hz → capacity ${(cf * 100).toFixed(0)}% → ${Math.round(f * 30)} rpm - cooling scales with speed`),
+  () => 'b', new THREE.Vector3(3.3, 2.65, 0));
+const lblOilG = addLabel(() => L(`回油困境:吸气气速 <6 m/s 带不动润滑油 · 已积油 ${(oilAcc / 5 * 100).toFixed(0)}% · 强制升频回油中 · 磨损累计 ${wearH.toFixed(2)} h`,
+  `oil dilemma: suction gas <6 m/s cannot carry oil - pooled ${(oilAcc / 5 * 100).toFixed(0)}% - forced high-speed return - wear ${wearH.toFixed(2)} h`),
+  () => 'bad', new THREE.Vector3(3.3, 2.65, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'saw', tgt: [-5.2, 1.6, 3.0],
+    b: '定频:一开一停,温度荡秋千', be: 'Fixed speed: bang-bang on-off, the temperature swings',
+    d: '定频压缩机的电机直接接电网,转速锁死在 50 Hz(4 极约 1450 rpm),制冷量不可调。温控器只能「bang-bang」:室温升到设定值以上 0.9 °C 才开机,降到其下 0.9 °C 才停机,室温因此在 ±1-2 °C 的锯齿上振荡,一个启停周期 6-15 分钟。频繁启动代价双重:启动瞬间转子静止、没有反电动势,电流冲到额定的 5-10 倍(绕组发热按平方涨);停机后冷凝/蒸发压差被平衡,再开机头一两分钟只顾重建压差、几乎不产冷。演示中室温时间轴加速 40×。',
+    de: 'A fixed-speed motor plugs straight into the grid: locked at 50 Hz (about 1450 rpm at 4 poles), capacity not adjustable. The thermostat can only bang-bang - start when the room climbs 0.9 deg above setpoint, stop 0.9 deg below - so temperature rides a ±1-2 deg sawtooth with a 6-15 min cycle. Every start is doubly expensive: the standstill rotor generates no back-EMF and inrush hits 5-10x rated (winding heating rises with the square), and each stop equalizes condenser/evaporator pressures, so the first minute or two of a run merely rebuilds them while producing almost no cooling. Room time here is sped up 40x.' },
+  { hl: 'rect', tgt: [0.3, 0.9, 2.3],
+    b: '逆变器第一级:整流桥 + PFC', be: 'Inverter stage one: rectifier bridge + PFC',
+    d: '变频的第一步是变直流。4-6 只二极管把 220 V/50 Hz 市电整成约 311 V 的脉动直流;但不加处理时电流是一串尖峰,功率因数只有 0.6-0.7,谐波还倒灌电网。PFC(功率因数校正)用高频开关把输入电流「修」成与电压同相的正弦,同时把母线电压抬稳到约 380 V——功率因数 0.99,电流总谐波失真从 >100% 降到 <10%。旁边的大容量电解电容是能量蓄水池,吸收压缩机功率的脉动,让网侧只看到平滑的负载。观察柜底整流桥两对二极管的交替导通。',
+    de: 'Step one of an inverter is making DC. Four to six diodes rectify 220 V/50 Hz mains into ~311 V of pulsating DC - but left alone the current is a spray of spikes with a power factor of 0.6-0.7, and harmonics flow back into the grid. The PFC stage switches at high frequency to sculpt input current into a sine in phase with the voltage while regulating the bus at ~380 V: power factor 0.99, current THD from over 100% down to under 10%. The big electrolytic capacitor next to it is an energy reservoir that absorbs compressor power ripple so the grid sees a smooth load. Watch the two diode pairs of the bottom bridge alternate.' },
+  { hl: 'pwm', tgt: [0.3, 2.0, 1.9],
+    b: '六管逆变:PWM 斩出三相变频电', be: 'Six-pack inverter: PWM chops out variable-frequency three phase',
+    d: '380 V 直流母线接到 IPM 里的六只 IGBT(U/V/W 三相各上下两管)。控制器以 2-16 kHz 载波做 PWM:上管占空比决定输出电压,三束相位差 120° 的调制波决定输出频率——电压随频率同步下降以保持磁通恒定。旋转磁场拖着永磁转子转:4 极电机 n = 60f/2 = 30f,20 Hz 时 600 rpm,120 Hz 时 3600 rpm。示波器上这叫 SVPWM;演示里载波从 8 kHz 降到 9 Hz 以便肉眼看到六只管子按占空比轮流通断。',
+    de: 'The 380 V bus feeds six IGBTs in the IPM (an upper/lower pair per phase U/V/W). The controller runs PWM on a 2-16 kHz carrier: upper-switch duty sets output voltage, three 120-degree-shifted modulation waves set output frequency - voltage scales with frequency to keep flux constant. The rotating magnetic field drags the permanent-magnet rotor: a 4-pole machine turns at n = 60f/2 = 30f, i.e. 600 rpm at 20 Hz and 3600 rpm at 120 Hz. On a scope this is SVPWM; here the carrier is slowed from 8 kHz to 9 Hz so you can watch all six devices switch on and off by duty cycle.' },
+  { hl: 'loop', tgt: [-0.5, 1.3, 3.2],
+    b: '连续调频:制冷量 10-100% 无级匹配', be: 'Continuous modulation: capacity 10-100% matched to the load',
+    d: '涡旋压缩机每一转排量固定,制冷量近似正比转速:20 Hz 约 0.7 kW(≈17%),120 Hz 满打 4.2 kW,中间无级连续。房间负荷由围护结构决定(本演示 35 °C 时约 2.65 kW):定频只能「满负荷运转+停机等待」平均出这个数;变频把频率精确停在匹配点——开机高频快拉,接近设定后降到 50-80 Hz 细水长流,室温贴线 ±0.5 °C。小温差搬运还让冷凝压力更低、蒸发压力更高,低压比下 COP 反升:半载 COP 可达 4.5-5,比满载高 30-40%——省电 20-40% 的物理来源。',
+    de: 'A scroll compressor displaces a fixed volume per revolution, so capacity is roughly proportional to speed: ~0.7 kW (about 17%) at 20 Hz up to 4.2 kW at 120 Hz, continuously. The room load is set by the envelope (~2.65 kW at 35 deg C here): a fixed unit can only average that by running full-tilt then stopping, while the inverter parks the frequency at the match point - high frequency to pull down fast, then 50-80 Hz sipping, temperature within ±0.5 deg. Small differentials also lower condensing and raise evaporating pressure, so COP improves at part load: 4.5-5 at half capacity, 30-40% above full load - the physics behind the 20-40% saving.' },
+  { hl: 'soft', tgt: [3.3, 0.9, 2.6],
+    b: '软启动消掉 ×5-10 冲击;但频率有下限', be: 'Soft start kills the 5-10x surge; but frequency has a floor',
+    d: '定频启动是硬启动:电流尖峰 5-10 倍额定,冲击电网、烘烤绕组、让灯光闪一下。变频启动是软启动:频率从 0 缓升,电流始终不超额定,约 2 秒滑到目标转速。但频率有下限:转速太低时吸气质量流量小,上升立管里气流速度掉到 6 m/s 以下,带不动润滑油回压缩机——油积在蒸发器和管路里,轴承缺油磨损。所以控制器把最低频率钳在约 20 Hz,并每隔几小时强制升频跑一次「回油」。点「回油保护」看这个两难:低频省电与润滑油运输的矛盾。',
+    de: 'A fixed unit starts hard: a 5-10x current spike that jolts the grid, bakes the windings and dims the lights. An inverter starts soft: frequency ramps from zero, current never exceeds rated, and it glides to target speed in about two seconds. But there is a floor: at low speed the refrigerant mass flow is small, gas velocity in suction risers drops under 6 m/s and can no longer carry oil back to the compressor - oil pools in the evaporator and bearings run dry. So the controller clamps the minimum near 20 Hz and forces a high-speed oil-return run every few hours. Hit "oil-return guard" to watch the dilemma: saving watts vs shipping lubricant.' },
+  { hl: 'seer', tgt: [0.2, 1.6, 4.2],
+    b: 'SEER:一整个季节的能效账', be: 'SEER: the bill for a whole season',
+    d: '单点 COP = 制冷量/输入功率会骗人:空调大部分时间跑在部分负荷。SEER(季节能效比)把整个制冷季的冷量与电耗分别积分再相除;中国一级能效要求定频约 3.4 以上、变频一级 5.0 以上。本页实时积分两套系统:定频因启停损失、启动冲击与满载低压比效率,SEER 约 2.8-3.2;变频靠连续匹配与部分负荷高 COP,SEER 约 4.0-5.0——同样冷量省电 20-40%,一个夏天省出的电费就能抹平差价。拉动设定/室外温度滑杆,看两个数字如何拉开:室外越热,定频满载时间越长,差距越大。',
+    de: 'A single-point COP flatters: air conditioners spend most of their life at partial load. SEER divides integrated seasonal cooling by integrated electrical input; Chinese level-1 efficiency asks roughly 3.4+ from fixed-speed and 5.0+ from inverter units. This page integrates both systems live: the fixed one lands near 2.8-3.2 SEER (start losses, inrush, full-load pressure ratio), the inverter near 4.0-5.0 (continuous matching, high part-load COP) - the same cooling for 20-40% less electricity, repaying the price gap within a summer. Drag the setpoint and outdoor sliders and watch the gap widen: the hotter it gets, the longer the fixed unit runs flat out.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 1.5, 0);
+const camV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const qMax = Q_INV * clamp(1 - 0.012 * (Tout - 35), 0.88, 1.05);
+  formulaEl.innerHTML =
+    L(`变频容量:Q = Qmax·(f/120) = ${qMax.toFixed(2)} × ${(f / F_MAX).toFixed(2)} ≈ <b>${Qin.toFixed(2)} kW</b>(f = ${f.toFixed(0)} Hz → ${Math.round(f * 30)} rpm,4 极)`,
+      `Capacity: Q = Qmax·(f/120) = ${qMax.toFixed(2)} × ${(f / F_MAX).toFixed(2)} ≈ <b>${Qin.toFixed(2)} kW</b> (f = ${f.toFixed(0)} Hz → ${Math.round(f * 30)} rpm, 4-pole)`) +
+    '<br>' +
+    L(`功率:P = Q/COP,COP ≈ 4.3−0.075(Tout−25)+0.9(1−f/120) = <b>${copI.toFixed(2)}</b> → P ≈ <b>${Pin.toFixed(2)} kW</b>`,
+      `Power: P = Q/COP, COP ~ 4.3-0.075(Tout-25)+0.9(1-f/120) = <b>${copI.toFixed(2)}</b> → P ≈ <b>${Pin.toFixed(2)} kW</b>`) +
+    '<br>' +
+    L(`SEER = ∫Q/∫P = <b>${Ewi > 0.015 ? (Eci / Ewi).toFixed(2) : '…'}</b>(变频)vs <b>${Ewf > 0.015 ? (Ecf / Ewf).toFixed(2) : '…'}</b>(定频)· 启动电流 <b>5-10×</b> · 温差 <b>±0.5 vs ±1-2 °C</b>`,
+      `SEER = ∫Q/∫P = <b>${Ewi > 0.015 ? (Eci / Ewi).toFixed(2) : '…'}</b> (inverter) vs <b>${Ewf > 0.015 ? (Ecf / Ewf).toFixed(2) : '…'}</b> (fixed) - inrush <b>5-10x</b> - swing <b>±0.5 vs ±1-2 deg C</b>`);
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnCmp = document.getElementById('btnCmp'), btnSoft = document.getElementById('btnSoft'),
+  btnSweep = document.getElementById('btnSweep'), btnOil = document.getElementById('btnOil'),
+  btnReset = document.getElementById('btnReset');
+const presetBtns = { cmp: btnCmp, soft: btnSoft, sweep: btnSweep, oil: btnOil };
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === preset);
+  cmpT = softT = sweepT = oilT = 0;
+  softKicked = false;
+  oilAcc = 0;
+  if (preset === 'soft') { f = 0; aOn = false; aInrushT = 0; }
+  updateFormula();
+}
+function resetMachine() {
+  if (preset) setPreset(preset);
+  preset = null;
+  for (const k in presetBtns) presetBtns[k].classList.remove('on');
+  TA = 30.5; TB = 30.5;
+  aOn = false; aCnt = 0; aInrushT = 0; aWarm = 1;
+  f = 60; integ = 0; cf = 0.5;
+  Eci = Ewi = Ecf = Ewf = 0;
+  wearH = 0; oilAcc = 0; tOn = 0; tTot = 1e-6;
+  Tset = 26; elVset.value = 26; updateVset();
+  Tout = 35; elTout.value = 35; updateTout();
+  updateFormula();
+}
+btnCmp.addEventListener('click', () => setPreset('cmp'));
+btnSoft.addEventListener('click', () => setPreset('soft'));
+btnSweep.addEventListener('click', () => setPreset('sweep'));
+btnOil.addEventListener('click', () => setPreset('oil'));
+btnReset.addEventListener('click', resetMachine);
+
+/* ---------------- 示波器:琥珀 = 定频通道,青 = 变频通道 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);
+let sndI = 0;
+function chIsTemp() { return preset !== 'cmp' && preset !== 'soft'; }
+function scopeTitle() {
+  if (preset === 'cmp') return L('输入功率:琥珀=定频(启停)vs 青=变频(连续)· 实时', 'input power: amber = fixed (on/off) vs teal = inverter (continuous) - live');
+  if (preset === 'soft') return L('启动电流(额定=0.1 刻度):琥珀=定频 ×8 冲击 vs 青=变频软斜坡', 'start current (rated = 0.1): amber = fixed 8x surge vs teal = inverter soft ramp');
+  return L('室温:琥珀=定频房(锯齿)vs 青=变频房(贴线)· 虚线=设定值', 'room temp: amber = fixed room (sawtooth) vs teal = inverter room (hugging) - dashed = setpoint');
+}
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, 0, 1);
+  sndA[sndI] = clamp(b, 0, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.42;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(scopeTitle(), 4 * dpr, 10 * dpr);
+  const mid = ch * 0.52;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, mid); scopeCtx.lineTo(cw, mid);
+  scopeCtx.stroke();
+  if (chIsTemp()) {
+    const y = mid - clamp((Tset - 14) / 22, 0, 1) * ch * 0.42;
+    scopeCtx.setLineDash([4 * dpr, 4 * dpr]);
+    scopeCtx.strokeStyle = 'rgba(255,210,122,.55)';
+    scopeCtx.beginPath();
+    scopeCtx.moveTo(0, y); scopeCtx.lineTo(cw, y);
+    scopeCtx.stroke();
+    scopeCtx.setLineDash([]);
+  }
+  drawTrace(sndT, 'rgba(255,163,61,.95)', mid, ch, dpr);
+  drawTrace(sndA, 'rgba(111,212,232,.95)', mid, ch, dpr);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elVset = document.getElementById('vset'), elVsetVal = document.getElementById('vsetVal');
+const elTout = document.getElementById('tout'), elToutVal = document.getElementById('toutVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglVec = document.getElementById('tglVec');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateVset() {
+  Tset = +elVset.value;
+  elVsetVal.textContent = Tset.toFixed(1) + ' °C';
+  const yMark = 0.12 + clamp((Tset - 14) / 22, 0.02, 1) * 1.5;
+  setMarkA.position.y = yMark;
+  setMarkB.position.y = yMark;
+  updateFormula();
+}
+function updateTout() {
+  Tout = +elTout.value;
+  elToutVal.textContent = Tout + ' °C';
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elVset.addEventListener('input', updateVset);
+elTout.addEventListener('input', updateTout);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglVec.addEventListener('change', () => { arrowsOn = tglVec.checked; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const oilFault = preset === 'oil' && oilT < 3.5;
+  stA.innerHTML = f.toFixed(0) + '<small> Hz(20-120)</small>';
+  stA.className = 'v ' + (oilFault ? 'bad' : f >= F_MIN && f <= F_MAX ? 'ok' : 'warn');
+  const err = TB - Tset;
+  stB.innerHTML = TB.toFixed(1) + `<small> °C(Δ ${err >= 0 ? '+' : ''}${err.toFixed(1)})</small>`;
+  stB.className = 'v ' + (Math.abs(err) <= 0.5 ? 'ok' : Math.abs(err) <= 1.2 ? 'warn' : 'bad');
+  stC.innerHTML = Qin.toFixed(2) + '<small> kW(≤4.2)</small>';
+  stC.className = 'v ' + (Qin <= 4.2 ? 'ok' : 'warn');
+  stD.innerHTML = Pin.toFixed(2) + '<small> kW</small>';
+  stD.className = 'v ' + (Pin <= 1.6 ? 'ok' : Pin <= 2.6 ? 'warn' : 'bad');
+  if (Ewi > 0.015) {
+    const si = Eci / Ewi;
+    stE.innerHTML = si.toFixed(2) + `<small> ${L('定频', 'fixed')} ${Ewf > 0.015 ? (Ecf / Ewf).toFixed(2) : '…'}</small>`;
+    stE.className = 'v ' + (si >= 3.6 ? 'ok' : si >= 2.8 ? 'warn' : 'bad');
+  } else { stE.innerHTML = '…<small> 累计中</small>'; stE.className = 'v'; }
+  const duty = tOn / tTot * 100;
+  stF.innerHTML = aCnt + `<small> ${L('次 · 占空', 'x · duty')} ${duty.toFixed(0)}%</small>`;
+  stF.className = 'v ' + (duty > 95 ? 'warn' : 'ok');
+}
+
+/* ---------------- 模式时间轴 + 热物理(核心仿真) ---------------- */
+function runModes(simDt) {
+  const dt = simDt;
+  let forceF = null, softOn = false;
+  /* ---- 预设时间轴(4-9 s 循环) ---- */
+  if (preset === 'sweep') {
+    sweepT = (sweepT + dt) % 9;
+    forceF = 20 + 100 * (0.5 - 0.5 * Math.cos(sweepT / 4.5 * Math.PI));   // 20→120→20 Hz
+  } else if (preset === 'oil') {
+    oilT += dt;
+    if (oilT > 8) { oilT = 0; oilAcc = 0; }
+    if (oilT < 3.5) { forceF = 13; oilAcc = Math.min(5, oilAcc + dt * 1.6); wearH += dt * 0.02; }
+    else { forceF = 72; oilAcc = Math.max(0, oilAcc - dt * 2.2); }
+  } else if (preset === 'soft') {
+    softT += dt;
+    if (softT > 8) { softT = 0; f = 0; aOn = false; softKicked = false; }
+    if (softT < 4.5) {
+      softOn = true;
+      if (!softKicked && dt > 0) { softKicked = true; aOn = true; aCnt++; aInrushT = 0.5; }
+      f = Math.min(96, f + 48 * dt);                                       // 约 2 s 到 96 Hz
+    }
+  }
+  /* ---- 定频房:迟滞控制 + 热模型 ---- */
+  const derate = clamp(1 - 0.012 * (Tout - 35), 0.88, 1.05);
+  if (!softOn) {
+    if (!aOn && TA > Tset + 0.9) { aOn = true; aCnt++; aInrushT = 0.5; aWarm = 0.82; }
+    else if (aOn && TA < Tset - 0.9) aOn = false;
+  }
+  if (aInrushT > 0) aInrushT = Math.max(0, aInrushT - dt);
+  aWarm = Math.min(1, aWarm + dt * 0.004);             // 开机约 45 s 才到满出力(重建压差)
+  QfA = aOn ? Q_FIX * derate * aWarm : 0;
+  copF = 3.9 - 0.075 * (Tout - 25);
+  PfA = aOn ? QfA / copF : 0.02;
+  Ecf += QfA * dt / 3600;
+  Ewf += PfA * dt / 3600;
+  const gainA = UA * (Tout - TA) + Q_INT;
+  TA += (gainA - QfA) * dt * TSCALE / C_ROOM;
+  tTot += dt;
+  if (aOn) tOn += dt;
+  /* ---- 变频:PI 调频 + 热模型 ---- */
+  if (forceF !== null) f = forceF;
+  else if (!softOn) {
+    const err = TB - Tset;
+    integ = clamp(integ + err * dt * 0.9, -1.5, 1.5);
+    const fTgt = clamp(46 + 55 * err + 160 * integ, F_MIN, F_MAX);
+    f += clamp(fTgt - f, -30 * dt, 30 * dt);           // 30 Hz/s 限速
+  }
+  cf = clamp(f / F_MAX, 0, 1);
+  const oilFoul = 1 - 0.02 * oilAcc;                   // 积油让换热变差
+  Qin = Q_INV * cf * derate * (preset === 'oil' ? oilFoul : 1);
+  copI = (4.3 - 0.075 * (Tout - 25)) + 0.9 * (1 - cf); // 低压比下 COP 反升
+  Pin = Qin / copI + (f > 1 ? 0.03 + 0.0015 * f : 0);
+  Eci += Qin * dt / 3600;
+  Ewi += Pin * dt / 3600;
+  const gainB = UA * (Tout - TB) + Q_INT;
+  TB += (gainB - Qin) * dt * TSCALE / C_ROOM;
+  /* ---- 示波器进样(按预设切换通道) ---- */
+  if (playing) {
+    let a, b;
+    if (preset === 'cmp') { a = PfA / 2.5; b = Pin / 2.5; }
+    else if (preset === 'soft') {
+      a = aOn ? (1 + 7 * aInrushT / 0.5) / 10 : 0;
+      b = f / F_MAX;
+    } else { a = (TA - 14) / 22; b = (TB - 14) / 22; }
+    pushSnd(a, b);
+  }
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  /* 室温见证柱:量程 14-36 °C */
+  fillA.scale.y = clamp((TA - 14) / 22, 0.02, 1);
+  fillB.scale.y = clamp((TB - 14) / 22, 0.02, 1);
+  const devCol = d => Math.abs(d) <= 0.8 ? 0x4fc7a8 : Math.abs(d) <= 1.8 ? 0xe8a33d : 0xff6b6b;
+  const devColA = d => Math.abs(d) <= 1.0 ? 0x4fc7a8 : Math.abs(d) <= 2.2 ? 0xe8a33d : 0xff6b6b;
+  M.fillA.color.set(devColA(TA - Tset)); M.fillA.emissive.set(devColA(TA - Tset));
+  M.fillB.color.set(devCol(TB - Tset)); M.fillB.emissive.set(devCol(TB - Tset));
+  /* 定频:冲击电流柱 + 压缩机风扇 */
+  if (aInrushT > 0.02) {
+    spikeBar.visible = true;
+    spikeBar.scale.y = 0.25 + 0.22 * (1 + 7 * aInrushT / 0.5);
+  } else spikeBar.visible = false;
+  if (aOn) fanA.rotation.z += dt * speed * 9;
+  /* 整流桥:两对二极管按市电半波交替导通(视觉 2 Hz) */
+  const half = Math.sin(et * 4) > 0;
+  M.diodeA.emissiveIntensity = 0.18 + (half ? 0.55 : 0.08);
+  M.diodeB.emissiveIntensity = 0.18 + (half ? 0.08 : 0.55);
+  /* IPM 六管:三相互差 120° 的 PWM,占空比 = 调制比 = f/120(载波演示 9 Hz) */
+  const duty = clamp(f / F_MAX, 0.05, 0.95);
+  for (let k = 0; k < 3; k++) {
+    const on = (et * 9 + k / 3) % 1 < duty;
+    M.igbtU[k].emissiveIntensity = on ? 0.85 : 0.1;
+    M.igbtL[k].emissiveIntensity = on ? 0.12 : 0.55;
+  }
+  /* 电能珠流:网侧/母线匀速,三相输出随频率 */
+  for (const b of eBeads) {
+    b.t = (b.t + (b.out ? 0.1 + 0.3 * cf : 0.32) * simDt) % 1;
+    b.c.getPointAt(clamp01(b.t), tmpV);
+    b.m.position.copy(tmpV);
+  }
+  /* 压缩机:动涡旋公转(不自转,真实涡旋运动)+ 电机端旋转 */
+  const thO = et * speed * 0.055 * f;
+  orbG.position.x = COMP.x + Math.cos(thO) * 0.055;
+  orbG.position.z = COMP.z + Math.sin(thO) * 0.055;
+  rotorSpin.rotation.x += 0.14 * f * dt * speed;
+  /* 容量环:亮起段数 = 容量百分比 */
+  const nOn = Math.round(cf * 24);
+  for (let i = 0; i < 24; i++) ringSegs[i].visible = i < nOn;
+  /* 制冷剂珠流:速度随容量,颜色按管段(排气热→液管暖→蒸发后冷) */
+  for (const b of loopBeads) {
+    b.t = (b.t + (0.02 + 0.05 * cf) * simDt) % 1;
+    const z = zoneOf(b.t);
+    if (z !== b.zone) { b.zone = z; b.m.material = z; }
+    loopCurve.getPointAt(b.t, tmpV);
+    b.m.position.copy(tmpV);
+  }
+  for (const b of beadsA) {
+    if (aOn) b.t = (b.t + 0.07 * simDt) % 1;
+    loopA.getPointAt(b.t, tmpV);
+    b.m.position.copy(tmpV);
+    b.m.material = b.t < 0.35 ? M.beadHot : b.t < 0.55 ? M.beadWarm : M.beadCold;
+  }
+  /* 回油困境:油珠在吸气低段积聚 → 强制升频时被冲走 */
+  for (let k = 0; k < 5; k++) {
+    const show = k < Math.floor(oilAcc + 0.001);
+    oilBeads[k].visible = show;
+    if (show) {
+      oilPocket.getPointAt(clamp01(k / 5), tmpV);
+      oilBeads[k].position.copy(tmpV);
+    }
+  }
+  /* 热浪与冷 swirl 粒子(固定池) */
+  const flowOn = Qin > 0.3;
+  for (const s of shimmer) {
+    s.m.visible = flowOn;
+    if (flowOn) {
+      const yy = (et * 0.22 * speed + s.p) % 1;
+      s.m.position.set(OUTD.x + Math.sin(et * 1.7 + s.p * 9) * 0.28, 1.45 + yy * 1.25, OUTD.z + Math.cos(et * 1.3 + s.p * 7) * 0.18);
+      s.m.scale.setScalar(0.6 + yy * 0.9);
+    }
+  }
+  for (const s of chill) {
+    s.m.visible = flowOn;
+    if (flowOn) {
+      const a = et * 0.7 * speed + s.p * TAU;
+      s.m.position.set(-3.2 + Math.cos(a) * 0.5, 1.35 + Math.sin(et * 1.1 + s.p * 8) * 0.18, -0.45 + Math.sin(a) * 0.3);
+    }
+  }
+  fanB.rotation.z += (0.15 + 0.45 * cf) * dt * speed * 12;
+  /* 步骤高亮(发射强度呼吸脉冲) */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (const m of [M.compA, M.compB, M.rect, M.fillA, M.fillB, M.ring, M.beadHot, M.beadCold]) m.emissiveIntensity = 0.1;
+  const boost = m => { m.emissiveIntensity = 0.45 + 0.3 * hlK; };
+  if (hl === 'saw') { boost(M.compA); boost(M.fillA); }
+  else if (hl === 'rect') { boost(M.rect); }
+  else if (hl === 'pwm') { for (const m of M.igbtU) m.emissiveIntensity += 0.3 * hlK; for (const m of M.igbtL) m.emissiveIntensity += 0.3 * hlK; }
+  else if (hl === 'loop') { boost(M.ring); boost(M.beadHot); boost(M.beadCold); }
+  else if (hl === 'soft') { boost(M.compA); boost(M.compB); }
+  else if (hl === 'seer') { boost(M.ring); boost(M.fillA); boost(M.fillB); }
+  /* 能流箭头 */
+  arrowP.visible = arrowsOn;
+  arrowQ.visible = arrowsOn;
+  arrowH.visible = arrowsOn;
+  arrowPF.visible = arrowsOn;
+  if (arrowsOn) {
+    arrowP.scale.setScalar(clamp(0.3 + Pin / 1.4, 0.15, 1.7));
+    arrowQ.scale.setScalar(clamp(0.3 + Qin / 3.2, 0.15, 1.7));
+    arrowH.scale.setScalar(clamp(0.3 + (Qin + Pin) / 4, 0.15, 1.8));
+    arrowPF.scale.setScalar(clamp(0.25 + PfA / 3, 0.12, 1.6));
+  }
+  /* 预设门控标签 */
+  lblCmpG.o.visible = labelsOn && preset === 'cmp';
+  lblSoftG.o.visible = labelsOn && preset === 'soft';
+  lblSweepG.o.visible = labelsOn && preset === 'sweep';
+  lblOilG.o.visible = labelsOn && preset === 'oil';
+  /* 相机目标缓动 */
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+const tmpV = new THREE.Vector3();
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglVec.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

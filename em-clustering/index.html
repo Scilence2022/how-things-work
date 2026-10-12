@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EM 算法与高斯混合 · 责任与重估</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#6bb3d4;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#2f86a8;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="EM 算法与高斯混合:责任与重估" data-en="EM &amp; Gaussian Mixture: Responsibilities and Re-estimation">EM 算法与高斯混合:责任与重估</h1>
+  <div class="sub" data-zh="EM 算法解开一团「鸡生蛋」死结:240 个数据点来自 3 个高斯簇(权重 π=0.40/0.33/0.27,均值与协方差各不相同),但每个点的标签看不见、每座钟的形状也未知。标签已知,估参数只是加权平均;参数已知,算标签只是贝叶斯后验——EM 让两半互相喂养:E 步按当前参数算责任 γₙₖ=πₖN(xₙ|μₖ,Σₖ)/ΣⱼπⱼN(xₙ|μⱼ,Σⱼ)∈[0,1],每点求和恰为 1,相当于软标签;M 步把责任当权重闭式重估 μₖ=Σγx/Σγ、Σₖ=Σγ(x−μ)(x−μ)ᵀ/Σγ(加 10⁻⁴I 防奇异)、πₖ=Σγ/N。对数似然 LL=ΣlnΣπN 每轮单调不减(Dempster 等 1977),前期一轮涨几十 nats,后期每轮不足 0.001,直到 ΔLL 低于 10⁻⁶ 判收敛,典型 20-60 轮;但单调只保证局部最优——坏初始化会停进差得多的小山坳,工程上靠随机重启 5-10 次、k-means++ 式散开初始化规避。KMeans 是它的硬分配特例:γ 只取 0/1、协方差锁成球形、目标换成 WCSS(簇内平方和)——快而糙;GMM 柔而贵,仍是说话人识别、天文测光分类、异常检测的主力模型。选 K 用 BIC=p·lnN−2LL(p=6K−1)给复杂度记账,取最小 BIC 即最优。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="EM untangles a chicken-and-egg knot: 240 data points come from 3 Gaussian clusters (weights pi = 0.40/0.33/0.27, each with its own mean and covariance), yet every point's label is hidden and every bell's shape is unknown. Given labels, estimating parameters is a weighted average; given parameters, computing labels is a Bayes posterior - EM feeds each half with the other. The E step scores responsibilities gamma_nk = pi_k N(x_n|mu_k,S_k) / sum_j pi_j N(x_n|mu_j,S_j) in [0,1], summing to 1 per point - soft labels. The M step re-estimates in closed form: mu_k = sum gamma x / sum gamma, S_k = sum gamma (x-mu)(x-mu)^T / sum gamma (plus 1e-4 I against singularity), pi_k = sum gamma / N. The log-likelihood LL = sum ln sum pi N is monotonically non-decreasing (Dempster et al. 1977): tens of nats per round early, under 0.001 late, until delta-LL drops below 1e-6 to declare convergence, typically in 20-60 rounds. Monotone only promises a local optimum: a bad initialization can strand EM in a far poorer basin - dodge it with 5-10 random restarts and k-means++ style spreading. KMeans is its hard-assignment special case: gamma in {0,1}, covariance locked spherical, objective swapped to WCSS - fast but blunt. GMM stays a workhorse for speaker recognition, photometric classification and anomaly detection. Pick K with BIC = p lnN - 2LL (p = 6K-1). 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">EM 算法解开一团「鸡生蛋」死结:240 个数据点来自 3 个高斯簇(权重 π=0.40/0.33/0.27,均值与协方差各不相同),但每个点的标签看不见、每座钟的形状也未知。标签已知,估参数只是加权平均;参数已知,算标签只是贝叶斯后验——EM 让两半互相喂养:E 步按当前参数算责任 γₙₖ=πₖN(xₙ|μₖ,Σₖ)/ΣⱼπⱼN(xₙ|μⱼ,Σⱼ)∈[0,1],每点求和恰为 1,相当于软标签;M 步把责任当权重闭式重估 μₖ=Σγx/Σγ、Σₖ=Σγ(x−μ)(x−μ)ᵀ/Σγ(加 10⁻⁴I 防奇异)、πₖ=Σγ/N。对数似然 LL=ΣlnΣπN 每轮单调不减(Dempster 等 1977),前期一轮涨几十 nats,后期每轮不足 0.001,直到 ΔLL 低于 10⁻⁶ 判收敛,典型 20-60 轮;但单调只保证局部最优——坏初始化会停进差得多的小山坳,工程上靠随机重启 5-10 次、k-means++ 式散开初始化规避。KMeans 是它的硬分配特例:γ 只取 0/1、协方差锁成球形、目标换成 WCSS(簇内平方和)——快而糙;GMM 柔而贵,仍是说话人识别、天文测光分类、异常检测的主力模型。选 K 用 BIC=p·lnN−2LL(p=6K−1)给复杂度记账,取最小 BIC 即最优。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="迭代轮次" data-en="iterations">迭代轮次</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="对数似然" data-en="log-likelihood">对数似然</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="步进 ΔLL" data-en="step ΔLL">步进 ΔLL</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="簇权重 π" data-en="weights π">簇权重 π</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="责任熵" data-en="resp. entropy">责任熵</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="BIC / 状态" data-en="BIC / status">BIC / 状态</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="数据点 · 按责任染色" data-en="points · responsibility-tinted">数据点 · 按责任染色</span>
+    <span class="chip o" data-zh="高斯钟面 ∝πₖ·pdf(高度 ×8)" data-en="Gaussian bells ∝ πk·pdf (height x8)">高斯钟面 ∝πₖ·pdf(高度 ×8)</span>
+    <span class="chip g" data-zh="1σ/2σ 等高线" data-en="1σ/2σ contours">1σ/2σ 等高线</span>
+    <span class="chip r" data-zh="LL 阶梯 · 单调不减" data-en="LL staircase · monotone">LL 阶梯 · 单调不减</span>
+  </div>
+  <div id="actions"><button class="abtn" id="btnConv" data-zh="标准收敛" data-en="standard convergence">标准收敛</button><button class="abtn" id="btnKm" data-zh="KMeans 对照" data-en="KMeans comparison">KMeans 对照</button><button class="abtn" id="btnLocal" data-zh="局部最优陷阱" data-en="local-optimum trap">局部最优陷阱</button><button class="abtn" id="btnKscan" data-zh="K 扫描 · BIC" data-en="K sweep · BIC">K 扫描 · BIC</button><button class="abtn" id="btnRestart" data-zh="随机重启" data-en="random restart">随机重启</button><button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="簇数 K" data-en="clusters K">簇数 K</label><input id="elK" type="range" min="1" max="5" step="1" value="3"><span class="val" id="elKVal">3 簇</span></div>
+  <div class="row"><label data-zh="数据散布" data-en="data spread">数据散布</label><input id="elSpread" type="range" min="50" max="200" step="5" value="100"><span class="val" id="elSpreadVal">×1.00</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="LL/熵波形" data-en="LL/entropy waveform">LL/熵波形</span></label>
+        <label><input id="tglVec" type="checkbox"> <span data-zh="参数漂移箭头" data-en="parameter drift arrows">参数漂移箭头</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel"><span data-zh="相关:" data-en="Related:">相关:</span><a href="../k-means/" data-zh="KMeans 聚类" data-en="k-means">KMeans 聚类</a><a href="../pca-eigenvectors/" data-zh="PCA 特征向量" data-en="PCA eigenvectors">PCA 特征向量</a><a href="../mcmc/" data-zh="MCMC 采样" data-en="MCMC">MCMC 采样</a><a href="../neural-gradient/" data-zh="神经网络梯度" data-en="neural gradient">神经网络梯度</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const E2 = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);   // smoothstep 缓动
+const UP = new THREE.Vector3(0, 1, 0);
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+/* 簇配色(深/浅两套):蓝/琥珀/绿/紫/珊瑚,最多 K=5 */
+const PAL_D = [0x5fb0e8, 0xf0a83c, 0x5cd88e, 0xb489ea, 0xef8070];
+const PAL_L = [0x2274b8, 0xa8720f, 0x159a62, 0x7d55c2, 0xc2503c];
+const palC = [];                                    // 逐帧混色用的 Color 池(预分配)
+for (let k = 0; k < 5; k++) palC.push(new THREE.Color(0xffffff));
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  const pal = dark ? PAL_D : PAL_L;
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x14181d : 0xdde3e9);
+  M.grid.color.set(dark ? 0x27313d : 0xa9b6c2);               // 网格线
+  M.planeD.color.set(dark ? 0x1a212a : 0xc9d2da);             // 数据平面(1 单位 = 1σ)
+  M.edge.color.set(dark ? 0x3f8db0 : 0x2f86a8);               // 平面边框
+  for (let k = 0; k < 5; k++) {
+    palC[k].setHex(pal[k]);
+    M.bellS[k].color.setHex(pal[k]);  M.bellS[k].emissive.setHex(pal[k]);
+    M.bellW[k].color.setHex(pal[k]);
+    M.ring[k].color.setHex(pal[k]);
+    M.stem[k].color.setHex(pal[k]);
+    M.center[k].color.setHex(pal[k]); M.center[k].emissive.setHex(pal[k]);
+  }
+  M.slab.color.set(dark ? 0x6bb3d4 : 0x2f86a8);               // LL 阶梯砖
+  M.slabBest.color.set(dark ? 0x62d98f : 0x159a62);           // BIC 最优砖
+  M.arrD.color.set(0xffd27a);                                 // 参数漂移箭头
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('EM 算法与高斯混合 · 责任与重估', 'EM & Gaussian Mixture · Responsibilities and Re-estimation');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  syncKUI();
+  syncSpreadUI();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(9.6, 6.4, 10.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.6, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+/* ---------------- 材质(颜色统一在 applyTheme 里换) ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x14181d, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x27313d, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  planeD: mat(0x1a212a, { roughness: 0.85, metalness: 0.1, emissive: 0x000000 }),
+  edge: new THREE.LineBasicMaterial({ color: 0x3f8db0, transparent: true, opacity: 0.8 }),
+  bellS: [], bellW: [], ring: [], stem: [], center: [],
+  slab: new THREE.MeshBasicMaterial({ color: 0x6bb3d4, transparent: true, opacity: 1 }),
+  slabBest: new THREE.MeshBasicMaterial({ color: 0x62d98f, transparent: true, opacity: 1 }),
+  arrD: new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.9 }),
+};
+for (let k = 0; k < 5; k++) {
+  M.bellS.push(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.1,
+    emissive: 0xffffff, emissiveIntensity: 0.18, transparent: true, opacity: 0.2,
+    side: THREE.DoubleSide, depthWrite: false }));
+  M.bellW.push(new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true,
+    transparent: true, opacity: 0.3, depthWrite: false }));
+  M.ring.push(new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }));
+  M.stem.push(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4, metalness: 0.3,
+    emissive: 0xffffff, emissiveIntensity: 0.35 }));
+  M.center.push(mat(0xffffff, { emissiveIntensity: 0.5 }));
+}
+/* ---------------- 状态量(1 场景单位 = 1σ,标准化数据) ---------------- */
+const NPTS = 240;                     // 数据点(150-300 区间内)
+const KMAX = 5;
+const PLANE = 6.5;                    // 数据平面半宽(±6.5σ)
+const TOWER_N = 24;                   // LL 阶梯最多 24 块
+let K = 3;
+let spread = 1;                       // 数据散布倍率(协方差 ×spread)
+let et = 0, preset = null, scenario = 0;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let arrowsOn = false;
+/* ---------------- 数据:240 点,种子化生成自真实三高斯混合 ---------------- */
+/* 真参数:μx, μz, Σ=[[a,b],[b,c]],权重 w,样本数 n;协方差取自典型二维相关结构 */
+const TRUE_MIX = [
+  { mx: -2.2, mz: 1.4, a: 0.55, b: 0.30, c: 0.45, w: 0.40, n: 96 },
+  { mx: 1.8, mz: 1.9, a: 0.38, b: -0.12, c: 0.50, w: 0.33, n: 80 },
+  { mx: 0.2, mz: -2.0, a: 0.72, b: 0.05, c: 0.42, w: 0.27, n: 64 },
+];
+const XS = new Float32Array(NPTS), ZS = new Float32Array(NPTS);
+const SEED0 = 20240612;
+let seed = SEED0;
+function rnd() {                      // mulberry32:同一种子 → 同一批数据,散布滑杆可复现
+  seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+  let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+}
+function gauss() {                    // Box-Muller 标准正态
+  let u = 0, v = 0;
+  while (u === 0) u = rnd();
+  while (v === 0) v = rnd();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v);
+}
+function genData(s) {                 // Cholesky 采样:x = μ + L·g,协方差 [[a,b],[b,c]]×s
+  seed = SEED0;
+  let i = 0;
+  for (const t of TRUE_MIX) {
+    const A = t.a * s, B = t.b * s, C = t.c * s;
+    const l11 = Math.sqrt(A), l21 = B / (l11 || 1e-9);
+    const l22 = Math.sqrt(Math.max(1e-6, C - l21 * l21));
+    for (let j = 0; j < t.n && i < NPTS; j++, i++) {
+      const g1 = gauss(), g2 = gauss();
+      XS[i] = t.mx + l11 * g1;
+      ZS[i] = t.mz + l21 * g1 + l22 * g2;
+    }
+  }
+}
+/* ---------------- EM 核心:E 步 / M 步 / KMeans / BIC(全部真实计算) ---------------- */
+const mu = [], sig = [], wgt = [];    // 目标参数(每轮 M 步写入)
+const muPrev = [], muD = [], sigD = [], wD = [];   // 上轮快照 / 显示插值参数
+for (let k = 0; k < KMAX; k++) {
+  mu.push({ x: 0, z: 0 }); sig.push({ a: 0.45, b: 0, c: 0.45 }); wgt.push(1 / KMAX);
+  muPrev.push({ x: 0, z: 0 }); muD.push({ x: 0, z: 0 });
+  sigD.push({ a: 0.45, b: 0, c: 0.45 }); wD.push(1 / KMAX);
+}
+const GAM = new Float32Array(NPTS * KMAX);    // 目标责任 γₙₖ(E 步写入)
+const GAMV = new Float32Array(NPTS * KMAX);   // 显示插值责任(逐帧向 GAM 靠拢)
+const tmpLP = new Float64Array(KMAX);
+let llCur = 0, llPrev = 0, dll = 0, converged = false;
+let wcssCur = 0, wcss0 = 1, kmChanged = 0, kmStable = false, kmIters = 0;
+let iterN = 0, iterPhase = 0;
+const llHist = [];
+let llMin = 0, llMax = 1;
+const bicByK = [null, null, null, null, null, null];   // bicByK[1..5]
+function logNrm(x, z, m, s) {          // ln N(x|μ,Σ) = −½(q + ln|Σ| + 2ln2π),log 域保数值稳定
+  const dx = x - m.x, dz = z - m.z;
+  const det = Math.max(1e-6, s.a * s.c - s.b * s.b);
+  const q = (s.c * dx * dx - 2 * s.b * dx * dz + s.a * dz * dz) / det;
+  return -0.5 * (q + Math.log(det) + Math.log(TAU * TAU));
+}
+function estep() {                    // E 步:γₙₖ = πₖN(xₙ|μₖ,Σₖ)/ΣⱼπⱼN(xₙ|μⱼ,Σⱼ),返回 LL
+  let ll = 0;
+  for (let n = 0; n < NPTS; n++) {
+    const x = XS[n], z = ZS[n], base = n * KMAX;
+    let mx = -1e30;
+    for (let k = 0; k < K; k++) {
+      const lp = Math.log(Math.max(wgt[k], 1e-12)) + logNrm(x, z, mu[k], sig[k]);
+      tmpLP[k] = lp;
+      if (lp > mx) mx = lp;
+    }
+    let se = 0;
+    for (let k = 0; k < K; k++) se += Math.exp(tmpLP[k] - mx);
+    const lse = mx + Math.log(se);
+    for (let k = 0; k < K; k++) GAM[base + k] = Math.exp(tmpLP[k] - lse);
+    ll += lse;
+  }
+  return ll;
+}
+function mstep() {                    // M 步闭式解:μₖ=Σγx/Σγ · Σₖ=Σγ(x−μ)(x−μ)ᵀ/Σγ+10⁻⁴I · πₖ=Σγ/N
+  for (let k = 0; k < K; k++) {
+    let sk = 0, sx = 0, sz = 0;
+    for (let n = 0; n < NPTS; n++) {
+      const g = GAM[n * KMAX + k];
+      sk += g; sx += g * XS[n]; sz += g * ZS[n];
+    }
+    if (sk < 1e-6) {                  // 空簇:踢到随机数据点重新生长
+      const idx = (Math.random() * NPTS) | 0;
+      mu[k].x = XS[idx]; mu[k].z = ZS[idx];
+      sig[k].a = 0.45; sig[k].b = 0; sig[k].c = 0.45;
+      wgt[k] = 1 / K;
+      continue;
+    }
+    const mx = sx / sk, mz = sz / sk;
+    let a = 0, b = 0, c = 0;
+    for (let n = 0; n < NPTS; n++) {
+      const g = GAM[n * KMAX + k], dx = XS[n] - mx, dz = ZS[n] - mz;
+      a += g * dx * dx; b += g * dx * dz; c += g * dz * dz;
+    }
+    mu[k].x = mx; mu[k].z = mz;
+    sig[k].a = a / sk + 1e-4; sig[k].b = b / sk; sig[k].c = c / sk + 1e-4;
+    wgt[k] = sk / NPTS;
+  }
+}
+function kmAssign() {                 // KMeans:硬分配到最近质心,返回 WCSS(簇内平方和)
+  kmChanged = 0;
+  let w = 0;
+  for (let n = 0; n < NPTS; n++) {
+    const base = n * KMAX;
+    let bk = 0, bd = 1e30;
+    for (let k = 0; k < K; k++) {
+      const dx = XS[n] - mu[k].x, dz = ZS[n] - mu[k].z, d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; bk = k; }
+    }
+    for (let k = 0; k < K; k++) {
+      const v = k === bk ? 1 : 0;
+      if (GAM[base + k] !== v) kmChanged++;
+      GAM[base + k] = v;
+    }
+    w += bd;
+  }
+  return w;
+}
+function kmUpdate() {                 // KMeans:M 步退化为质心=簇内均值,Σ 锁成全体等大球形
+  const cnt = [], ox = [], oz = [];
+  for (let k = 0; k < K; k++) { cnt[k] = 0; ox[k] = 0; oz[k] = 0; }
+  for (let n = 0; n < NPTS; n++) {
+    const base = n * KMAX;
+    for (let k = 0; k < K; k++) if (GAM[base + k] > 0.5) { cnt[k]++; ox[k] += XS[n]; oz[k] += ZS[n]; }
+  }
+  for (let k = 0; k < K; k++) {
+    if (cnt[k] < 1) {
+      const idx = (Math.random() * NPTS) | 0;
+      mu[k].x = XS[idx]; mu[k].z = ZS[idx];
+    } else {
+      mu[k].x = ox[k] / cnt[k]; mu[k].z = oz[k] / cnt[k];
+    }
+    wgt[k] = Math.max(cnt[k], 1) / NPTS;
+  }
+  let ss = 0;
+  for (let n = 0; n < NPTS; n++) {
+    let bk = 0;
+    for (let k = 0; k < K; k++) if (GAM[n * KMAX + k] > 0.5) bk = k;
+    const dx = XS[n] - mu[bk].x, dz = ZS[n] - mu[bk].z;
+    ss += dx * dx + dz * dz;
+  }
+  const v = Math.max(2e-3, ss / (NPTS * 2));   // 各向同性方差 = 总簇内 SS/(N·2 维)
+  for (let k = 0; k < K; k++) { sig[k].a = v; sig[k].b = 0; sig[k].c = v; }
+}
+function meanEntropy() {              // 平均责任熵 H = −(1/N)ΣₙΣₖγlnγ(0ln0=0),上限 lnK
+  let H = 0;
+  for (let n = 0; n < NPTS; n++) {
+    const base = n * KMAX;
+    for (let k = 0; k < K; k++) {
+      const g = GAMV[base + k];
+      if (g > 1e-9) H -= g * Math.log(g);
+    }
+  }
+  return H / NPTS;
+}
+const lnK = () => K > 1 ? Math.log(K) : 0;
+function bicNow() {                   // BIC = p·lnN − 2LL,p = 6K−1(K−1 权重 + 2K 均值 + 3K 协方差)
+  const p = 6 * K - 1;
+  return p * Math.log(NPTS) - 2 * llCur;
+}
+function pushLL(v) {
+  llHist.push(v);
+  if (llHist.length > TOWER_N) llHist.shift();
+  llMin = Math.min(...llHist);
+  llMax = Math.max(...llHist);
+}
+function resetRun() {                 // 重置一轮 EM(保留当前参数为起点)
+  iterN = 0; iterPhase = 0; converged = false;
+  kmStable = false; kmIters = 0; kmChanged = 1; holdT = 0;
+  llHist.length = 0; llMin = 0; llMax = 1; llCur = 0; llPrev = 0; dll = 0;
+  GAMV.fill(0);
+  if (preset === 'kmeans') {
+    kmAssign(); kmUpdate();
+    wcss0 = kmAssign(); wcssCur = wcss0;
+    pushLL(1 - wcssCur / (wcss0 || 1));
+  } else {
+    llCur = estep();
+    GAMV.set(GAM);
+  }
+  for (let k = 0; k < KMAX; k++) snapDisp(k);
+}
+function snapDisp(k) {                // 初始化显示插值参数(防跳变)
+  muD[k].x = mu[k].x; muD[k].z = mu[k].z;
+  sigD[k].a = sig[k].a; sigD[k].b = sig[k].b; sigD[k].c = sig[k].c;
+  wD[k] = wgt[k];
+}
+/* ---------------- 三种初始化:随机 / 引导(近真值) / 局部最优陷阱 ---------------- */
+function initRandom() {               // 经典做法:不重复地抽 K 个数据点当 μ,Σ=0.45I,π=1/K
+  const used = new Set();
+  for (let k = 0; k < K; k++) {
+    let idx;
+    do { idx = (Math.random() * NPTS) | 0; } while (used.has(idx));
+    used.add(idx);
+    mu[k].x = XS[idx]; mu[k].z = ZS[idx];
+    sig[k].a = 0.45; sig[k].b = 0; sig[k].c = 0.45;
+    wgt[k] = 1 / K;
+    snapDisp(k);
+  }
+}
+function initGuided() {               // 好初始化:真值附近 ±0.4σ 抖动 → 收敛到全局最优
+  const off = [[0.4, -0.3], [-0.35, 0.25], [0.2, 0.4], [-0.3, -0.35], [0.35, 0.3]];
+  for (let k = 0; k < K; k++) {
+    if (k < 3) {                      // 真 K=3:引导到真中心;K>3 的多余簇落在随机数据点上
+      mu[k].x = TRUE_MIX[k].mx + off[k][0];
+      mu[k].z = TRUE_MIX[k].mz + off[k][1];
+    } else {
+      const idx = (Math.random() * NPTS) | 0;
+      mu[k].x = XS[idx]; mu[k].z = ZS[idx];
+    }
+    sig[k].a = 0.6; sig[k].b = 0; sig[k].c = 0.6;
+    wgt[k] = 1 / K;
+    snapDisp(k);
+  }
+}
+function initLocal() {                // 对称陷阱:全部 μ 叠在同一点 → EM 的对称性永不破缺,
+  for (let k = 0; k < K; k++) {       // 责任恒为 1/K,三钟锁死在全局均值上(实测 LL≈−973 vs 全局 −742)
+    mu[k].x = TRUE_MIX[0].mx; mu[k].z = TRUE_MIX[0].mz;
+    sig[k].a = 1.0; sig[k].b = 0; sig[k].c = 1.0;
+    wgt[k] = 1 / K;
+    snapDisp(k);
+  }
+}
+/* ---------------- 场景装配:地面 / 网格 / 数据平面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, 40), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(44, 22, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+const planeD = new THREE.Mesh(new THREE.BoxGeometry(13, 0.08, 13), M.planeD);   // 13σ×13σ 数据平面
+planeD.position.y = -0.04;
+scene.add(planeD);
+const edgeGeo = new THREE.BufferGeometry();
+edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute([
+  -PLANE, 0.05, -PLANE, PLANE, 0.05, -PLANE, PLANE, 0.05, PLANE, -PLANE, 0.05, PLANE], 3));
+scene.add(new THREE.LineLoop(edgeGeo, M.edge));
+/* ---------------- 点云:240 点,颜色 = Σγₖ·簇色(责任混合染色) ---------------- */
+const ptGeo = new THREE.BufferGeometry();
+{
+  const pos = new Float32Array(NPTS * 3);
+  for (let n = 0; n < NPTS; n++) { pos[n * 3] = XS[n]; pos[n * 3 + 1] = 0.06; pos[n * 3 + 2] = ZS[n]; }
+  ptGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+}
+const ptCol = new Float32Array(NPTS * 3);
+ptGeo.setAttribute('color', new THREE.BufferAttribute(ptCol, 3));
+const ptsMat = new THREE.PointsMaterial({ size: 0.09, vertexColors: true, sizeAttenuation: true });
+const ptCloud = new THREE.Points(ptGeo, ptsMat);
+scene.add(ptCloud);
+/* ---------------- 高斯钟面 ×5:网格面 + 线框 + 1σ/2σ 等高线 + 中轴 + 中心点 ---------------- */
+/* 高度 = 8 × πₖ·pdf峰值(视觉放大 8×,否则钟面只有 0.1-0.2 单位高,看不见) */
+const GRES = 25, GV = GRES * GRES;
+const bellGeo = [], bellDome = [], bellWired = [], ringGeo = [], ringA = [], ringB = [];
+const stemM = [], centerM = [], hPkArr = new Float64Array(KMAX);
+const domeGeo0 = new THREE.PlaneGeometry(2, 2, GRES - 1, GRES - 1);
+domeGeo0.rotateX(-Math.PI / 2);
+const stemGeo = new THREE.CylinderGeometry(0.016, 0.016, 1, 6);
+const centerGeo = new THREE.SphereGeometry(0.06, 10, 8);
+function makeRing() {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(64 * 3), 3));
+  return g;
+}
+for (let k = 0; k < KMAX; k++) {
+  const g = domeGeo0.clone();
+  const dome = new THREE.Mesh(g, M.bellS[k]); dome.renderOrder = 4;
+  const wire = new THREE.Mesh(g, M.bellW[k]); wire.renderOrder = 5;
+  scene.add(dome, wire);
+  bellGeo.push(g); bellDome.push(dome); bellWired.push(wire);
+  const ra = makeRing(), rb = makeRing();
+  const la = new THREE.LineLoop(ra, M.ring[k]), lb = new THREE.LineLoop(rb, M.ring[k]);
+  la.renderOrder = 2; lb.renderOrder = 2;
+  scene.add(la, lb);
+  ringGeo.push([ra, rb]); ringA.push(la); ringB.push(lb);
+  const st = new THREE.Mesh(stemGeo, M.stem[k]);
+  scene.add(st); stemM.push(st);
+  const cm = new THREE.Mesh(centerGeo, M.center[k]);
+  scene.add(cm); centerM.push(cm);
+  hPkArr[k] = 0.5;
+}
+function writeRing(g, mx, mz, r1, r2, ct, st, rho, y) {
+  const arr = g.attributes.position.array;
+  for (let j = 0; j < 64; j++) {
+    const ph = j / 64 * TAU, ex = rho * r1 * Math.cos(ph), ez = rho * r2 * Math.sin(ph);
+    arr[j * 3] = mx + ct * ex - st * ez;
+    arr[j * 3 + 1] = y;
+    arr[j * 3 + 2] = mz + st * ex + ct * ez;
+  }
+  g.attributes.position.needsUpdate = true;
+}
+function updateBells() {              // 逐帧:由显示参数重算 2×2 特征分解 → 钟面/等高线姿态
+  for (let k = 0; k < KMAX; k++) {
+    const on = k < K;
+    bellDome[k].visible = bellWired[k].visible = on;
+    ringA[k].visible = ringB[k].visible = stemM[k].visible = centerM[k].visible = on;
+    if (!on) continue;
+    const s = sigD[k], a = s.a, b = s.b, c = s.c;
+    const tr = a + c, df = a - c;
+    const disc = Math.sqrt(Math.max(0, df * df + 4 * b * b)) || 1e-9;
+    const l1 = (tr + disc) / 2, l2 = Math.max(1e-6, (tr - disc) / 2);
+    const th = 0.5 * Math.atan2(2 * b, df);
+    const ct = Math.cos(th), st = Math.sin(th);
+    const s1 = Math.sqrt(l1), s2 = Math.sqrt(l2);
+    const det = Math.max(1e-6, a * c - b * b);
+    const hPk = Math.min(4.2, 8 * wD[k] / (TAU * Math.sqrt(det)));   // 峰高 = 8×πₖ·pdf(μₖ),封顶防奇异爆炸
+    hPkArr[k] = hPk;
+    const posA = bellGeo[k].attributes.position;
+    const uvA = bellGeo[k].attributes.uv.array;
+    for (let i = 0; i < GV; i++) {
+      const u = (uvA[i * 2] * 2 - 1) * 1.55, v = (uvA[i * 2 + 1] * 2 - 1) * 1.55;   // ±4.7σ 覆盖
+      const ex = u * s1, ez = v * s2;
+      posA.setXYZ(i,
+        muD[k].x + ct * ex - st * ez,
+        hPk * Math.exp(-0.5 * (u * u + v * v)),
+        muD[k].z + st * ex + ct * ez);
+    }
+    posA.needsUpdate = true;
+    writeRing(ringGeo[k][0], muD[k].x, muD[k].z, s1, s2, ct, st, 1, 0.055);   // 1σ 等高线
+    writeRing(ringGeo[k][1], muD[k].x, muD[k].z, s1, s2, ct, st, 2, 0.065);   // 2σ 等高线
+    stemM[k].scale.set(1, Math.max(0.02, hPk), 1);
+    stemM[k].position.set(muD[k].x, hPk / 2, muD[k].z);
+    centerM[k].position.set(muD[k].x, 0.05, muD[k].z);
+  }
+}
+/* ---------------- LL 阶梯塔:每轮一格,只升不降(右翼 x≈6.8-15.3) ---------------- */
+const slabGeo = new THREE.BoxGeometry(0.3, 1, 0.3);
+const slabs = [];
+for (let i = 0; i < TOWER_N; i++) {
+  const sl = new THREE.Mesh(slabGeo, M.slab);
+  sl.visible = false;
+  scene.add(sl);
+  slabs.push(sl);
+}
+const pedestal = new THREE.Mesh(new THREE.BoxGeometry(9.4, 0.06, 0.9), M.planeD);
+pedestal.position.set(10.9, 0.028, 0);
+scene.add(pedestal);
+/* ---------------- 参数漂移箭头 ×5(每轮 M 步 μ 的位移,切线于平面) ---------------- */
+function makeArrow(m) {
+  const g = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 10), m);
+  shaft.position.y = 0.5;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.095, 0.22, 12), m);
+  tip.position.y = 1.1;
+  g.add(shaft, tip);
+  return g;
+}
+const arrD = [];
+for (let k = 0; k < KMAX; k++) {
+  const a = makeArrow(M.arrD);
+  a.visible = false;
+  scene.add(a);
+  arrD.push(a);
+}
+const dAr = [];
+for (let k = 0; k < KMAX; k++) dAr.push({ x: 0, z: 0, m: 0 });
+function snapshotMu() { for (let k = 0; k < KMAX; k++) { muPrev[k].x = mu[k].x; muPrev[k].z = mu[k].z; } }
+function computeDrift() {
+  for (let k = 0; k < KMAX; k++) dAr[k].m = 0;
+  for (let k = 0; k < K; k++) {
+    const dx = mu[k].x - muPrev[k].x, dz = mu[k].z - muPrev[k].z;
+    dAr[k].x = dx; dAr[k].z = dz; dAr[k].m = Math.hypot(dx, dz);
+  }
+}
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,不是 CSS2DObject
+}
+const dllStr = () => converged
+  ? L('≈0 已收敛', '≈0 converged')
+  : (Math.abs(dll) >= 0.01 ? dll.toFixed(2) : dll.toExponential(1));
+const piStr = () => { let t = ''; for (let k = 0; k < K; k++) t += (k ? '/' : '') + wD[k].toFixed(2); return t; };
+addLabel(() => L('看不见的标签 · N=240 点 · 1 场景单位=1σ · 责任 γ∈[0,1] 软分配', 'hidden labels · N=240 points · 1 unit = 1σ · responsibilities γ∈[0,1] soft assignment'),
+  () => 'st', new THREE.Vector3(0, 7.7, 0));
+addLabel(() => preset === 'kmeans'
+  ? L(`WCSS 目标:${wcssCur.toFixed(1)}(初始 ${wcss0.toFixed(0)})· 质心=簇内均值`, `WCSS objective: ${wcssCur.toFixed(1)} (from ${wcss0.toFixed(0)}) - centroids = cluster means`)
+  : L(`LL 阶梯:LL=${llCur.toFixed(1)} nats · ΔLL=${dllStr()} · 每步只升不降`, `LL staircase: LL=${llCur.toFixed(1)} nats - ΔLL=${dllStr()} - never decreases`),
+  () => 'e', new THREE.Vector3(8.8, 4.7, 0));
+addLabel(() => L(`E 步:平均熵 ${meanEntropy().toFixed(2)}/lnK=${lnK().toFixed(2)} nats · 重叠区 γ≈对半`, `E step: mean entropy ${meanEntropy().toFixed(2)}/lnK=${lnK().toFixed(2)} nats - overlap γ≈even`),
+  () => 'b', new THREE.Vector3(0, 0.85, 7.0));
+addLabel(() => L(`M 步:μₖ=Σγx/Σγ · Σₖ=Σγ(x−μ)(x−μ)ᵀ/Σγ · πₖ=Σγ/N = ${piStr()}`, `M step: μk=Σγx/Σγ - Σk=Σγ(x−μ)(x−μ)ᵀ/Σγ - πk=Σγ/N = ${piStr()}`),
+  () => 'g', new THREE.Vector3(-4.8, 5.6, -3.4));
+const lblC1 = addLabel(() => L(`簇1 π=${wD[0].toFixed(2)} μ=(${muD[0].x.toFixed(1)}, ${muD[0].z.toFixed(1)})`, `c1 π=${wD[0].toFixed(2)} μ=(${muD[0].x.toFixed(1)}, ${muD[0].z.toFixed(1)})`),
+  () => 'b', new THREE.Vector3(0, 1.6, 0));
+const lblC2 = addLabel(() => L(`簇2 π=${wD[1].toFixed(2)} μ=(${muD[1].x.toFixed(1)}, ${muD[1].z.toFixed(1)})`, `c2 π=${wD[1].toFixed(2)} μ=(${muD[1].x.toFixed(1)}, ${muD[1].z.toFixed(1)})`),
+  () => 'e', new THREE.Vector3(0, 1.6, 0));
+const lblC3 = addLabel(() => L(`簇3 π=${wD[2].toFixed(2)} μ=(${muD[2].x.toFixed(1)}, ${muD[2].z.toFixed(1)})`, `c3 π=${wD[2].toFixed(2)} μ=(${muD[2].x.toFixed(1)}, ${muD[2].z.toFixed(1)})`),
+  () => 'g', new THREE.Vector3(0, 1.6, 0));
+const lblKm = addLabel(() => L('KMeans 对照:γ=0/1 硬分配 · Σ 锁成等大球 · 目标从 LL 换成 WCSS · 熵恒 0', 'KMeans: hard γ=0/1 - Σ locked spherical equal - objective WCSS - entropy 0'),
+  () => 'w', new THREE.Vector3(0, 6.4, 0));
+const lblLocal = addLabel(() => L(`对称死锁!三钟叠在同一点,责任恒 1/3 · LL=${llCur.toFixed(1)} 远差于全局 · 点「随机重启」逃离`, `symmetry lock! bells stacked at one point, γ stuck at 1/K - LL=${llCur.toFixed(1)} far worse - hit "random restart"`),
+  () => 'bad', new THREE.Vector3(2.2, 6.0, -2.5));
+const lblKscan = addLabel(() => {
+  let t = L('BIC 扫描:p·lnN−2LL · ', 'BIC sweep: p·lnN−2LL · ');
+  for (let i = 1; i <= 5; i++) {
+    if (bicByK[i] !== null) t += `K${i} ${bicByK[i].toFixed(0)}${bicByK[i] === bestBic() ? '★' : ''} `;
+  }
+  return t + L('· 最小者最优', '- lower is better');
+}, () => 'b', new THREE.Vector3(9.0, 5.9, 0));
+function bestBic() {
+  let m = null;
+  for (let i = 1; i <= 5; i++) if (bicByK[i] !== null) m = m === null ? bicByK[i] : Math.min(m, bicByK[i]);
+  const b = bicNow();
+  return m === null ? b : Math.min(m, b);
+}
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'mix', tgt: [0, 3.8, 6.8],
+    b: '混合模型:标签看不见,参数也看不见', be: 'Mixture: labels hidden, parameters hidden',
+    d: '240 个点其实来自 3 个高斯:π=0.40/0.33/0.27,各有各的均值与协方差,但平面上的点没有身份牌。若标签已知,μ 就是组内均值;若参数已知,标签就是贝叶斯后验——两头互为前提。EM 的破局:先随便信一组参数,用它们算「软标签」(E 步),再用软标签重估参数(M 步),循环到不动点。三座透明钟面只是当前的 belief,不是真相。',
+    de: 'The 240 points truly come from 3 Gaussians: pi = 0.40/0.33/0.27, each with its own mean and covariance - yet no point carries a name tag. Given labels, mu is just a within-group average; given parameters, labels are just a Bayes posterior - each half presumes the other. EM breaks the loop: trust some parameters, use them to score soft labels (E), then re-estimate parameters from those soft labels (M), and iterate to a fixed point. The three translucent bells are the current belief, not the truth.' },
+  { hl: 'estep', tgt: [0, 2.6, 5.6],
+    b: 'E 步:责任 γ∈[0,1],按当前 belief 分账', be: 'E step: responsibilities γ∈[0,1] from current belief',
+    d: 'γₙₖ=πₖN(xₙ|μₖ,Σₖ)/ΣⱼπⱼN(xₙ|μⱼ,Σⱼ):点 n 由簇 k 生成的后验概率,每点对 K 求和恰为 1。看染色:深蓝=约 0.9 属簇1,灰白=两边各半。钟面重叠区责任接近对半,熵最大 ln3≈1.10 nats;钟面分开后熵掉到 0.1 以下。EM 不武断扔掉模糊点,而是按 0.62/0.38 这样分账——软分配是它比 KMeans 稳的根本原因。',
+    de: 'gamma_nk = pi_k N(x_n|mu_k,S_k) / sum_j pi_j N(x_n|mu_j,S_j): the posterior probability that point n came from cluster k, summing to exactly 1 over K. Watch the tinting: deep blue = about 0.9 in cluster 1, gray-white = fifty-fifty. Where bells overlap, responsibilities near half-and-half and entropy peaks at ln3 = 1.10 nats; once bells separate, entropy falls below 0.1. EM never discards ambiguous points - it books them 0.62/0.38 - and that soft accounting is why it beats hard assignment.' },
+  { hl: 'mstep', tgt: [-0.5, 4.6, 5.2],
+    b: 'M 步:责任当权重,重估全是闭式解', be: 'M step: weights in, closed-form re-estimation',
+    d: '拿到责任,优化一步到位:μₖ=Σγx/Σγ 是加权质心;Σₖ=Σγ(x−μ)(x−μ)ᵀ/Σγ 是加权散布(加 10⁻⁴I 防奇异);πₖ=Σγ/N。看钟面被自己的高责任点拽向质心,椭圆沿数据散布方向变胖变瘦、旋转对齐。240 点×5 簇单轮不到 1 ms——EM 的代价不在单轮计算,而在可能要 20-60 轮才收敛,且不保证停在全局最优。',
+    de: 'With responsibilities in hand, each update is closed-form: mu_k = Σγx/Σγ is a weighted centroid; S_k = Σγ(x−μ)(x−μ)ᵀ/Σγ is a weighted scatter (plus 1e-4 I against singularity); pi_k = Σγ/N. Watch each bell get tugged toward the weighted centroid of its high-responsibility points, ellipses fattening, thinning and rotating to match the spread. 240 points × 5 clusters costs well under 1 ms per round - the price of EM is not per-round compute but the 20-60 rounds to converge, with no global-optimum guarantee.' },
+  { hl: 'll', tgt: [6.5, 3.2, 4.6],
+    b: '似然阶梯:每步只升不降,直到 ΔLL≈0', be: 'Likelihood staircase: never decreases until ΔLL≈0',
+    d: 'LL=ΣₙlnΣₖπₖN(xₙ|μₖ,Σₖ) 衡量「这组参数解释数据的把握」。E 步构造 LL 的一个下界并贴住它,M 步抬高下界——所以每轮 ΔLL≥0(Dempster 等 1977)。看右侧阶梯:头几轮一轮涨几十 nats,随后骤减,低于 10⁻⁶ 判收敛。单调不等于最优:它只保证你停进某个山坳,山坳有好有坏——这正是最后一幕的主题。',
+    de: 'LL = Σₙ ln Σₖ πₖN(xₙ|·) measures how well the parameters explain the data. The E step builds a lower bound that touches LL, the M step raises that bound - hence ΔLL ≥ 0 every round (Dempster et al. 1977). Watch the staircase on the right: tens of nats per round at first, then rapidly shrinking, below 1e-6 to declare convergence. Monotone does not mean optimal: it only guarantees you settle into some basin, and basins differ - the subject of the final scene.' },
+  { hl: 'kmeans', tgt: [0, 5.2, 6.2],
+    b: 'KMeans=等方差高斯+硬分配的特例', be: 'KMeans = equal-variance Gaussians + hard assignment',
+    d: '把 γ 硬化成 0/1(只归最近质心)、Σ 锁成所有簇等大的球、目标从 LL 换成 WCSS(簇内平方和),GMM 就退化成 KMeans。对照看:椭圆被压成等大圆,重叠区的点被武断切开,颜色非蓝即绿,熵恒为 0——边界的置信度信息全部丢失。KMeans 快(每轮 O(NK)),适合给 EM 热身;簇细长、相嵌或大小悬殊时,请用 GMM。',
+    de: 'Harden γ into 0/1 (nearest centroid only), lock Σ into identical spheres for all clusters, swap the objective from LL to WCSS (within-cluster sum of squares) - and GMM degenerates into KMeans. Compare: ellipses collapse into equal circles, overlap-zone points are split by fiat, colors go purely blue-or-green, entropy sits at 0 - all boundary confidence is lost. KMeans is fast (O(NK) per round) and a good EM warmer; for elongated, nested or lopsided clusters, use GMM.' },
+  { hl: 'local', tgt: [1.6, 4.4, 6.4],
+    b: '局部最优与选 K:重启与 BIC', be: 'Local optima and choosing K: restarts and BIC',
+    d: 'LL 面是多山地形:把三座钟的 μ 全叠在同一点,对称性永不破缺——责任恒为 1/3,三钟锁死在全局均值上,LL 停在约 −973(散布 ×1 时全局最优约 −742,差 230 nats)。点「局部最优陷阱」看这场事故,再点「随机重启」逃离。工程惯例:重启 5-10 次取最高 LL,或用 KMeans/k-means++ 先热身。K 也要选:BIC=p·lnN−2LL(p=6K−1)给复杂度记账,扫 K=1-5 取最小——散布 ×1 时真 K=3 会被挑中,簇重叠越重需要的轮数越多。',
+    de: 'The LL surface is mountainous: stack all three bells at one point and the symmetry never breaks - responsibilities stay 1/3, the bells stay locked on the global mean, and LL settles near -973 (about -742 at the global optimum with spread x1, a 230-nat gap). Hit "local-optimum trap" to watch the accident, then "random restart" to escape. Standard practice: 5-10 restarts keeping the best LL, or warm up with KMeans / k-means++. K must be chosen too: BIC = p·lnN − 2LL (p = 6K−1) charges for complexity, and sweeping K = 1-5 for the minimum picks the true K = 3 at spread x1 - the heavier the overlap, the more rounds it needs.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 2.6, 0);
+const tmpV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  const bic = bicNow(), p = 6 * K - 1;
+  formulaEl.innerHTML =
+    L(`E 步:γₙₖ = πₖN(xₙ|μₖ,Σₖ) / ΣⱼπⱼN(xₙ|μⱼ,Σⱼ) · 平均熵 <b>${meanEntropy().toFixed(2)}</b>/${lnK().toFixed(2)} nats`,
+      `E: γ_nk = π_k N(x_n|μ_k,S_k) / Σ_j π_j N(x_n|μ_j,S_j) · mean entropy <b>${meanEntropy().toFixed(2)}</b>/${lnK().toFixed(2)} nats`) +
+    '<br>' +
+    L(`M 步:μₖ=Σγx/Σγ · Σₖ=Σγ(x−μ)(x−μ)ᵀ/Σγ+10⁻⁴I · πₖ=Σγ/N → <b>${piStr()}</b>`,
+      `M: μ_k=Σγx/Σγ - S_k=Σγ(x−μ)(x−μ)ᵀ/Σγ+1e-4I - π_k=Σγ/N → <b>${piStr()}</b>`) +
+    '<br>' +
+    (preset === 'kmeans'
+      ? L(`KMeans 目标:WCSS = <b>${wcssCur.toFixed(1)}</b>(簇内平方和,越小越好)· 熵恒 <b>0</b>`,
+        `KMeans objective: WCSS = <b>${wcssCur.toFixed(1)}</b> (within-cluster SS, lower better) · entropy <b>0</b>`)
+      : L(`LL = <b>${llCur.toFixed(1)}</b> nats · ΔLL = <b>${dllStr()}</b>(单调不减)· BIC = p·lnN − 2LL = <b>${bic.toFixed(0)}</b>(p=${p}, N=240)`,
+        `LL = <b>${llCur.toFixed(1)}</b> nats - ΔLL = <b>${dllStr()}</b> (monotone) - BIC = p·lnN − 2LL = <b>${bic.toFixed(0)}</b> (p=${p}, N=240)`));
+}
+/* ---------------- 预设 / 复位 ---------------- */
+const btnConv = document.getElementById('btnConv'), btnKm = document.getElementById('btnKm'),
+  btnLocal = document.getElementById('btnLocal'), btnKscan = document.getElementById('btnKscan'),
+  btnRestart = document.getElementById('btnRestart'), btnReset = document.getElementById('btnReset');
+const presetBtns = { conv: btnConv, kmeans: btnKm, local: btnLocal, kscan: btnKscan };
+let holdT = 0, ksK = 1, ksPhase = 'scan', ksHold = 0;
+function clearPresetBtns() { for (const key in presetBtns) presetBtns[key].classList.remove('on'); }
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const key in presetBtns) presetBtns[key].classList.toggle('on', key === preset);
+  holdT = 0; ksPhase = 'scan'; ksHold = 0; bicByK.fill(null);
+  if (preset === 'conv') { initGuided(); resetRun(); }
+  else if (preset === 'kmeans') { initRandom(); resetRun(); }
+  else if (preset === 'local') { initLocal(); resetRun(); }
+  else if (preset === 'kscan') { ksK = 1; K = 1; syncKUI(); initRandom(); resetRun(); }
+  else { initRandom(); resetRun(); }
+  updateFormula();
+}
+btnConv.addEventListener('click', () => setPreset('conv'));
+btnKm.addEventListener('click', () => setPreset('kmeans'));
+btnLocal.addEventListener('click', () => setPreset('local'));
+btnKscan.addEventListener('click', () => setPreset('kscan'));
+btnRestart.addEventListener('click', () => {           // 随机重启:逃离局部最优的一键逃生门
+  preset = null; clearPresetBtns(); bicByK.fill(null);
+  initRandom(); resetRun(); updateFormula();
+});
+btnReset.addEventListener('click', () => {
+  preset = null; clearPresetBtns(); bicByK.fill(null);
+  K = 3; syncKUI();
+  spread = 1; elSpread.value = 100; syncSpreadUI();
+  genData(spread); initRandom(); resetRun();
+  updateFormula();
+});
+/* ---------------- 示波器:LL(蓝)与 责任熵/BIC(绿) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, 0, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr, signed) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * (signed ? 0.34 : 0.42);
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+function q1() {                       // 通道 1:soft=LL 归一;km=WCSS 归一(下降=变好→画上升曲线)
+  if (preset === 'kmeans') return clamp01(1 - wcssCur / (wcss0 || 1));
+  return llMax > llMin ? clamp01((llCur - llMin) / (llMax - llMin)) : 1;
+}
+function q2() {                       // 通道 2:责任熵/lnK;kscan 时换 BIC 归一(1=最优)
+  if (preset === 'kscan') {
+    const b = bicNow(), lo = bestBic();
+    let hi = lo;
+    for (let i = 1; i <= 5; i++) if (bicByK[i] !== null) hi = Math.max(hi, bicByK[i]);
+    return hi > lo ? clamp01(1 - (b - lo) / (hi - lo)) : 1;
+  }
+  return lnK() > 0 ? clamp01(meanEntropy() / lnK()) : 0;
+}
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  const ttl = preset === 'kmeans'
+    ? L('WCSS 归一(蓝)· KMeans 硬分配 · 熵恒 0(绿)', 'WCSS norm (blue) - KMeans hard assignment - entropy 0 (green)')
+    : preset === 'kscan'
+      ? L('LL(蓝)vs BIC 归一(绿,越小越好)· K 扫描', 'LL (blue) vs BIC norm (green, lower better) - K sweep')
+      : L('对数似然 LL 归一(蓝,阶梯)vs 责任熵(绿)· 实时', 'log-likelihood LL norm (blue, staircase) vs responsibility entropy (green) - live');
+  scopeCtx.fillText(ttl, 4 * dpr, 10 * dpr);
+  const mid = ch * 0.52;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, mid); scopeCtx.lineTo(cw, mid);
+  scopeCtx.stroke();
+  drawTrace(sndT, 'rgba(116,192,252,.95)', mid, ch, dpr, true);
+  drawTrace(sndA, 'rgba(116,220,132,.95)', mid, ch, dpr, false);
+}
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elK = document.getElementById('elK'), elKVal = document.getElementById('elKVal');
+const elSpread = document.getElementById('elSpread'), elSpreadVal = document.getElementById('elSpreadVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglVec = document.getElementById('tglVec');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function syncKUI() {
+  elK.value = K;
+  elKVal.textContent = K + L(' 簇', ' clusters');
+}
+function syncSpreadUI() {
+  elSpreadVal.textContent = '×' + spread.toFixed(2);
+}
+function applyK() {
+  K = clamp(parseInt(elK.value, 10) || 3, 1, KMAX);
+  syncKUI();
+  preset = null; clearPresetBtns(); bicByK.fill(null);
+  initRandom(); resetRun(); updateFormula();
+}
+function syncPointPositions() {       // 数据坐标写入点云 buffer(genData 之后必须调用)
+  const pos = ptGeo.attributes.position.array;
+  for (let n = 0; n < NPTS; n++) { pos[n * 3] = XS[n]; pos[n * 3 + 2] = ZS[n]; }
+  ptGeo.attributes.position.needsUpdate = true;
+}
+function applySpread() {
+  spread = (+elSpread.value) / 100;
+  syncSpreadUI();
+  preset = null; clearPresetBtns(); bicByK.fill(null);
+  genData(spread);
+  syncPointPositions();
+  initRandom(); resetRun(); updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elK.addEventListener('input', applyK);
+elSpread.addEventListener('input', applySpread);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglVec.addEventListener('change', () => { arrowsOn = tglVec.checked; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+/* ---------------- stats 刷新(150 ms 节流) ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  const km = preset === 'kmeans';
+  stA.innerHTML = iterN + '<small> ' + L('轮(典型 20-60)', 'rounds (typ. 20-60)') + '</small>';
+  stA.className = 'v ok';
+  if (km) {
+    stB.innerHTML = wcssCur.toFixed(1) + '<small> WCSS</small>';
+    stB.className = 'v ok';
+    stC.innerHTML = kmStable ? L('已稳定', 'stable') : L('迭代中', 'running');
+    stC.className = 'v ' + (kmStable ? 'ok' : '');
+  } else {
+    stB.innerHTML = llCur.toFixed(1) + '<small> nats</small>';
+    stB.className = 'v ok';
+    stC.innerHTML = dllStr() + '<small> ' + L('达 10⁻⁶ 以下收敛', 'converged under 1e-6') + '</small>';
+    stC.className = 'v ' + (converged ? 'ok' : '');
+  }
+  stD.innerHTML = piStr() + '<small> Σ=1</small>';
+  let piMin = 1;
+  for (let k = 0; k < K; k++) piMin = Math.min(piMin, wD[k]);
+  stD.className = 'v ' + (piMin < 0.05 ? 'warn' : 'ok');    // π<0.05 = 簇塌缩预警
+  const H = meanEntropy(), LK = lnK();
+  stE.innerHTML = H.toFixed(2) + '<small> nats · ≤lnK=' + LK.toFixed(2) + '</small>';
+  stE.className = 'v ' + (LK > 0 && H / LK > 0.85 ? 'warn' : LK > 0 && H / LK < 0.5 ? 'ok' : '');
+  if (km) {
+    stF.innerHTML = 'K=' + K + '<small> ' + L('硬分配', 'hard assignment') + '</small>';
+    stF.className = 'v ok';
+  } else {
+    const bic = bicNow();
+    stF.innerHTML = bic.toFixed(0) + '<small> BIC · p=' + (6 * K - 1) + '</small>';
+    stF.className = 'v ' + (Math.abs(bic - bestBic()) < 1e-6 ? 'ok' : '');
+  }
+}
+/* ---------------- 模式调度:EM 轮推进 + 预设时间轴(循环 4-10 s) ---------------- */
+function advanceSoft(simDt, period) {  // 标准 EM:每轮 E→M→E,LL 单调不减
+  if (converged) return;
+  iterPhase += simDt / period;
+  if (iterPhase >= 1) {
+    iterPhase = 0;
+    estep();                           // E 步:当前参数的责任(动画源)
+    const llA = llCur;
+    snapshotMu();
+    mstep();                           // M 步:闭式重估
+    computeDrift();
+    llCur = estep();                   // 新参数下的责任与 LL(即下一轮的 E)
+    dll = llCur - llA;
+    llPrev = llA;
+    pushLL(llCur);
+    iterN++;
+    if (iterN > 2 && Math.abs(dll) < 1e-6) converged = true;
+  }
+}
+function advanceKm(simDt, period) {    // KMeans:硬分配→质心→再分配,WCSS 下降
+  iterPhase += simDt / period;
+  if (iterPhase >= 1) {
+    iterPhase = 0;
+    kmAssign();
+    snapshotMu();
+    kmUpdate();
+    computeDrift();
+    wcssCur = kmAssign();
+    pushLL(1 - wcssCur / (wcss0 || 1));
+    iterN++; kmIters++;
+    if (kmChanged === 0 && iterN > 1) kmStable = true;
+  }
+}
+function runKscan(simDt) {             // K=1→5 各 9 轮快扫 → 记录 BIC → 停 1.0 s → 重扫(10 s 循环)
+  if (ksPhase === 'scan') {
+    if (!converged && iterN < 9) { advanceSoft(simDt, 0.2); return; }
+    bicByK[ksK] = bicNow();
+    if (ksK >= 5) { ksPhase = 'hold'; ksHold = 0; }
+    else { ksK++; K = ksK; syncKUI(); initRandom(); resetRun(); }
+  } else {
+    ksHold += simDt;
+    if (ksHold > 1.0) {
+      bicByK.fill(null); ksK = 1; K = 1; syncKUI();
+      initRandom(); resetRun(); ksPhase = 'scan';
+    }
+  }
+}
+function runModes(simDt) {
+  if (preset === 'kscan') { runKscan(simDt); return; }
+  if (preset === 'local') {            // 局部最优:坏初始化跑到收敛 → 停 2.6 s → 重演同一陷阱(≈9 s)
+    if (converged) {
+      holdT += simDt;
+      if (holdT > 2.6) { initLocal(); resetRun(); }
+    } else advanceSoft(simDt, 0.5);
+    return;
+  }
+  if (preset === 'kmeans') {           // KMeans:收敛 → 停 1.8 s → 换一批随机质心(≈4-10 s)
+    if (!kmStable) {
+      advanceKm(simDt, 0.55);
+      if (kmIters > 14) { kmStable = true; holdT = 0; }
+    } else {
+      holdT += simDt;
+      if (holdT > 1.8) { initRandom(); resetRun(); }
+    }
+    return;
+  }
+  advanceSoft(simDt, 0.85);            // 默认 / 标准收敛:0.85 s 一轮,直到 ΔLL<10⁻⁶
+}
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  /* 显示插值:责任色 + 钟面参数(暂停时冻结) */
+  const gL = Math.min(1, simDt * 4.5), pL = E2(Math.min(1, simDt * 3.8));
+  for (let n = 0; n < NPTS; n++) {
+    const base = n * KMAX;
+    for (let k = 0; k < K; k++) GAMV[base + k] += (GAM[base + k] - GAMV[base + k]) * gL;
+    let r = 0, g = 0, b = 0;
+    for (let k = 0; k < K; k++) {
+      const gv = GAMV[base + k];
+      r += gv * palC[k].r; g += gv * palC[k].g; b += gv * palC[k].b;
+    }
+    ptCol[n * 3] = r; ptCol[n * 3 + 1] = g; ptCol[n * 3 + 2] = b;
+  }
+  ptGeo.attributes.color.needsUpdate = true;
+  for (let k = 0; k < K; k++) {
+    muD[k].x += (mu[k].x - muD[k].x) * pL;
+    muD[k].z += (mu[k].z - muD[k].z) * pL;
+    sigD[k].a += (sig[k].a - sigD[k].a) * pL;
+    sigD[k].b += (sig[k].b - sigD[k].b) * pL;
+    sigD[k].c += (sig[k].c - sigD[k].c) * pL;
+    wD[k] += (wgt[k] - wD[k]) * pL;
+  }
+  updateBells();
+  /* LL 阶梯塔 / BIC 柱(同一预分配池) */
+  const kscan = preset === 'kscan';
+  for (let i = 0; i < TOWER_N; i++) {
+    const sl = slabs[i];
+    if (kscan) {
+      if (i < 5 && bicByK[i + 1] !== null) {
+        const bV = bicByK[i + 1], lo = bestBic();
+        let hi = lo;
+        for (let j = 1; j <= 5; j++) if (bicByK[j] !== null) hi = Math.max(hi, bicByK[j]);
+        const nrm = hi > lo ? (bV - lo) / (hi - lo) : 0;      // 0=最优,1=最差 → 高度反着给
+        const h = 0.3 + 3.0 * (1 - nrm);
+        sl.visible = true;
+        sl.scale.set(2.0, h, 1);
+        sl.position.set(6.8 + i * 0.85, h / 2, 0);
+        sl.material = Math.abs(bV - lo) < 1e-9 ? M.slabBest : M.slab;
+      } else sl.visible = false;
+    } else if (i < llHist.length) {
+      const nrm = (llHist[i] - llMin) / Math.max(1e-9, llMax - llMin);
+      const h = 0.25 + 3.1 * nrm;
+      sl.visible = true;
+      sl.scale.set(1, h, 1);
+      sl.position.set(6.8 + i * 0.36, h / 2, 0);
+      sl.material = M.slab;
+    } else sl.visible = false;
+  }
+  /* 漂移箭头 */
+  for (let k = 0; k < KMAX; k++) {
+    const show = arrowsOn && k < K && dAr[k].m > 0.02;
+    arrD[k].visible = show;
+    if (show) {
+      arrD[k].position.set(muD[k].x, 0.3, muD[k].z);
+      tmpV.set(dAr[k].x, 0, dAr[k].z).normalize();
+      arrD[k].quaternion.setFromUnitVectors(UP, tmpV);
+      arrD[k].scale.set(1, clamp(dAr[k].m * 2.2, 0.15, 1.4), 1);
+    }
+  }
+  /* 步骤高亮脉冲 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const hl = STEPS[scenario].hl;
+  for (let k = 0; k < K; k++) {
+    M.bellS[k].emissiveIntensity = (hl === 'mstep' || hl === 'local') ? 0.32 + 0.3 * hlK : 0.18;
+    M.bellW[k].opacity = hl === 'kmeans' ? 0.4 + 0.3 * hlK : 0.3;
+  }
+  ptsMat.size = (hl === 'mix' || hl === 'estep') ? 0.09 + 0.05 * hlK : 0.09;
+  M.slab.opacity = hl === 'll' ? 0.7 + 0.3 * hlK : 1;
+  /* 标签门控与跟随 */
+  lblC1.o.visible = labelsOn && K >= 1;
+  lblC2.o.visible = labelsOn && K >= 2;
+  lblC3.o.visible = labelsOn && K >= 3;
+  lblC1.o.position.set(muD[0].x, hPkArr[0] + 0.45, muD[0].z);
+  if (K >= 2) lblC2.o.position.set(muD[1].x, hPkArr[1] + 0.45, muD[1].z);
+  if (K >= 3) lblC3.o.position.set(muD[2].x, hPkArr[2] + 0.45, muD[2].z);
+  lblKm.o.visible = labelsOn && preset === 'kmeans';
+  lblLocal.o.visible = labelsOn && preset === 'local';
+  lblKscan.o.visible = labelsOn && preset === 'kscan';
+  /* 相机目标 */
+  controls.target.lerp(tgtVec, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) {
+    if (playing) pushSnd(q1(), q2());
+    drawScope();
+  }
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+/* ---------------- 初始化 ---------------- */
+genData(spread);
+syncPointPositions();
+initRandom();
+resetRun();
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglVec.dispatchEvent(new Event('change'));
+schedule();</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
