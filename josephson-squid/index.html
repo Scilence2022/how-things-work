@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>约瑟夫森结与 SQUID · 库珀对隧穿与磁通干涉</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#6fc0ff;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#2e7fc2;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+
+<div id="title">
+  <h1 data-zh="约瑟夫森结与 SQUID:库珀对隧穿、磁通干涉" data-en="Josephson Junction &amp; SQUID: Pair Tunneling, Flux Interference">约瑟夫森结与 SQUID:库珀对隧穿、磁通干涉</h1>
+  <div class="sub" data-zh="1962 年,22 岁的布赖恩·约瑟夫森预言:库珀对能整体隧穿过 1-3 nm 的绝缘势垒,零电压下也流着超流 I=Ic·sinδ——次年即被贝尔实验室证实,他因此分享 1973 年诺贝尔奖。给结加直流电压 V,隧穿就以 f=2eV/h≈483.6 GHz/mV 振荡;反用它做成的约瑟夫森电压基准自 1990 年起定义全世界的「伏特」:10 GHz 微波照射结,I-V 曲线上出现间隔 20.7 μV 的量子化台阶。把两个结并联进超导环就是 DC SQUID:磁通量子化把两支路相位差锁成 δ₂−δ₁=2πΦ/Φ₀,总临界电流 Ic=2Ic₀|cos(πΦ/Φ₀)| 以磁通量子 Φ₀=h/2e≈2.07×10⁻¹⁵ Wb 为周期干涉摆动——正是光的双缝干涉的电路版。把偏置设在略高于最大临界电流、工作点钉在三角波最陡的 Φ₀/4 处,磁通灵敏度达 ~10⁻⁶ Φ₀/√Hz、场灵敏度 ~1-5 fT/√Hz(10⁻¹⁵ T,地磁的百亿分之一);再靠磁通锁定环 FLL 把周期性输出拉成线性,量程扩展百万倍。于是皮层神经元 10-100 fT 的脑磁、~50 pT 的心磁都能毫秒级成像;超导量子比特的读出用的也是同一族器件。代价只有一个:4.2 K 液氦或 mK 级稀释制冷机。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="In 1962 Brian Josephson, then 22, predicted that Cooper pairs tunnel intact through a 1-3 nm insulating barrier, sustaining a supercurrent I=Ic·sin(delta) at exactly zero voltage - Bell Labs confirmed it within a year, and he shared the 1973 Nobel Prize. Apply a DC voltage V and the tunneling oscillates at f=2eV/h, about 483.6 GHz per mV; run it backwards and you get the Josephson voltage standard that has defined the world's volt since 1990: irradiate the junction with 10 GHz microwaves and quantized steps appear, exactly 20.7 uV apart. Wire two junctions in parallel on a superconducting loop and you have a DC SQUID: flux quantization locks the branch phase difference to delta2-delta1=2·pi·Phi/Phi0, so the critical current Ic=2·Ic0·|cos(pi·Phi/Phi0)| interferes with period one flux quantum Phi0=h/2e, about 2.07e-15 Wb - the circuit version of the optical double slit. Bias just above peak critical current, pin the operating point on the steepest quarter period, and flux noise reaches ~1e-6 Phi0/sqrt(Hz), about 1-5 fT/sqrt(Hz) in field (10^-15 tesla, ten billion times below geomagnetism); a flux-locked loop then straightens the periodic response into a linear ramp with a million-fold dynamic range. That is how 10-100 fT brain waves (MEG) and ~50 pT heart fields are imaged millisecond by millisecond, and how superconducting qubits are read out. The only price: 4.2 K liquid helium or an mK dilution refrigerator. 3D interactive demo · drag to orbit / scroll to zoom · Space = play/pause">1962 年,22 岁的布赖恩·约瑟夫森预言:库珀对能整体隧穿过 1-3 nm 的绝缘势垒,零电压下也流着超流 I=Ic·sinδ——次年即被贝尔实验室证实,他因此分享 1973 年诺贝尔奖。给结加直流电压 V,隧穿就以 f=2eV/h≈483.6 GHz/mV 振荡;反用它做成的约瑟夫森电压基准自 1990 年起定义全世界的「伏特」:10 GHz 微波照射结,I-V 曲线上出现间隔 20.7 μV 的量子化台阶。把两个结并联进超导环就是 DC SQUID:磁通量子化把两支路相位差锁成 δ₂−δ₁=2πΦ/Φ₀,总临界电流 Ic=2Ic₀|cos(πΦ/Φ₀)| 以磁通量子 Φ₀=h/2e≈2.07×10⁻¹⁵ Wb 为周期干涉摆动——正是光的双缝干涉的电路版。把偏置设在略高于最大临界电流、工作点钉在三角波最陡的 Φ₀/4 处,磁通灵敏度达 ~10⁻⁶ Φ₀/√Hz、场灵敏度 ~1-5 fT/√Hz(10⁻¹⁵ T,地磁的百亿分之一);再靠磁通锁定环 FLL 把周期性输出拉成线性,量程扩展百万倍。于是皮层神经元 10-100 fT 的脑磁、~50 pT 的心磁都能毫秒级成像;超导量子比特的读出用的也是同一族器件。代价只有一个:4.2 K 液氦或 mK 级稀释制冷机。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="偏置电流" data-en="bias current">偏置电流</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="相位差 Δδ" data-en="phase diff Δδ">相位差 Δδ</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="环内磁通" data-en="loop flux">环内磁通</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="临界电流" data-en="critical current">临界电流</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="结电压" data-en="junction voltage">结电压</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="磁噪声 / 信号" data-en="noise / signal">磁噪声 / 信号</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="库珀对(成对小珠)" data-en="Cooper pairs (paired beads)">库珀对(成对小珠)</span>
+    <span class="chip o" data-zh="磁通量子 Φ₀(黄线)" data-en="flux quanta Phi0 (amber)">磁通量子 Φ₀(黄线)</span>
+    <span class="chip g" data-zh="FLL 反馈线圈" data-en="FLL feedback coil">FLL 反馈线圈</span>
+    <span class="chip r" data-zh="结口闪光 = 相位滑移" data-en="junction flash = phase slip">结口闪光 = 相位滑移</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnIV" data-zh="单结 I-V 曲线" data-en="single-junction I-V curve">单结 I-V 曲线</button>
+    <button class="abtn" id="btnInt" data-zh="双结干涉扫描" data-en="two-junction interference sweep">双结干涉扫描</button>
+    <button class="abtn" id="btnMEG" data-zh="脑磁 MEG 演示" data-en="MEG brain-wave demo">脑磁 MEG 演示</button>
+    <button class="abtn" id="btnFLL" data-zh="磁通锁定 FLL" data-en="flux-locked loop (FLL)">磁通锁定 FLL</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="外磁通 Φext" data-en="external flux">外磁通 Φext</label><input id="vflux" type="range" min="0" max="3" step="0.01" value="0.35"><span class="val" id="vfluxVal">0.35 Φ₀</span></div>
+  <div class="row"><label data-zh="偏置电流 Ib" data-en="bias current Ib">偏置电流 Ib</label><input id="vib" type="range" min="0" max="60" step="0.5" value="25"><span class="val" id="vibVal">25.0 μA</span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="V/Ic 波形" data-en="V/Ic waveform">V/Ic 波形</span></label>
+        <label><input id="tglVec" type="checkbox"> <span data-zh="电流箭头" data-en="current arrows">电流箭头</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../quantum-tunneling/" data-zh="量子隧穿" data-en="quantum tunneling">量子隧穿</a>
+    <a href="../superconductivity/" data-zh="超导" data-en="superconductivity">超导</a>
+    <a href="../double-slit/" data-zh="双缝干涉" data-en="double slit">双缝干涉</a>
+    <a href="../dilution-refrigerator/" data-zh="稀释制冷机" data-en="dilution refrigerator">稀释制冷机</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const UP = new THREE.Vector3(0, 1, 0);
+const deg = x => ((x * 180 / Math.PI) % 360 + 360) % 360;   // 弧度 → 0-360°
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  const dark = THEME === 'dark';
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);             // 网格线
+  M.plate.color.set(dark ? 0x233042 : 0x9db2c4);            // 冷台(制冷机冷级)
+  M.post.color.set(dark ? 0x39434e : 0x5f6c78);             // 支柱 / 指针盘座
+  M.ring.color.set(dark ? 0xa9c9e8 : 0x5d87ad);             // Nb 超导环
+  M.pad.color.set(dark ? 0xd4e2f0 : 0x7d9cb8);              // 结电极 pads
+  M.barrier.color.set(dark ? 0xe8e2d8 : 0xa89e90);          // AlOx 绝缘势垒
+  M.pair.color.set(dark ? 0x6fc0ff : 0x2e7fc2);             // 库珀对
+  M.pair.emissive.set(dark ? 0x6fc0ff : 0x2e7fc2);
+  M.glow.color.set(dark ? 0x6fc0ff : 0x2e7fc2);             // 结口发光(相位滑移)
+  M.glow.emissive.set(dark ? 0x6fc0ff : 0x2e7fc2);
+  M.coil.color.set(dark ? 0xc9885e : 0x9c6438);             // 场线圈(铜)
+  M.fbCoil.color.set(0x6fe08a);                             // FLL 反馈线圈
+  M.shield.color.set(dark ? 0x9fc0d8 : 0x5d87ad);           // 超导屏蔽筒
+  M.head.color.set(dark ? 0xd4a98a : 0xb8896a);             // 头部模型
+  M.cortex.color.set(dark ? 0xe08a9b : 0xb85f77);           // 皮层(α 波光源)
+  M.pickup.color.set(dark ? 0x8fb0c8 : 0x5f87a8);           // 磁通变换器输入线圈
+  M.witness.color.set(dark ? 0xffd27a : 0xb08428);          // 相位指针
+  M.arrowM.color.set(0xff7a5a);
+  M.arrowB.color.set(0x6fc8ff);
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L('约瑟夫森结与 SQUID · 库珀对隧穿与磁通干涉', 'Josephson Junction & SQUID · Pair Tunneling, Flux Interference');
+  buildSteps();
+  setPlayLabel();
+  markStep();
+  syncPhase();
+  updateVflux();
+  updateVib();
+  updateFormula();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(10.8, 8.2, 12.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 45;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.55,
+    vertexColors: true, depthWrite: false }),
+  plate: mat(0x233042, { roughness: 0.6, metalness: 0.4 }),          // 冷台
+  post: mat(0x39434e, { roughness: 0.55, metalness: 0.5 }),          // 支柱
+  ring: mat(0xa9c9e8, { roughness: 0.28, metalness: 0.85, emissiveIntensity: 0.1 }),  // Nb 环
+  pad: mat(0xd4e2f0, { roughness: 0.3, metalness: 0.8 }),            // 结电极
+  barrier: mat(0xe8e2d8, { roughness: 0.4, metalness: 0.1, emissive: 0x000000 }),     // 氧化势垒
+  pair: mat(0x6fc0ff, { roughness: 0.3, metalness: 0.3, emissiveIntensity: 0.55 }),   // 库珀对
+  glow: mat(0x6fc0ff, { roughness: 0.3, metalness: 0.2, emissiveIntensity: 0.15 }),   // 结口发光
+  coil: mat(0xc9885e, { roughness: 0.45, metalness: 0.6, emissiveIntensity: 0.12 }),  // 场线圈
+  fbCoil: mat(0x6fe08a, { roughness: 0.4, metalness: 0.4, emissiveIntensity: 0.1 }),  // 反馈线圈
+  shield: mat(0x9fc0d8, { roughness: 0.5, metalness: 0.6, transparent: true, opacity: 0.09,
+    side: THREE.DoubleSide, emissive: 0x000000 }),                   // 超导屏蔽筒
+  head: mat(0xd4a98a, { roughness: 0.7, metalness: 0.05, emissive: 0x000000 }),
+  cortex: mat(0xe08a9b, { roughness: 0.6, metalness: 0.1, emissiveIntensity: 0.3 }),
+  pickup: mat(0x8fb0c8, { roughness: 0.4, metalness: 0.6 }),
+  witness: mat(0xffd27a, { roughness: 0.4, metalness: 0.3, emissiveIntensity: 0.5 }), // 相位指针
+  arrowM: new THREE.MeshBasicMaterial({ color: 0xff7a5a, transparent: true, opacity: 0.9 }),
+  arrowB: new THREE.MeshBasicMaterial({ color: 0x6fc8ff, transparent: true, opacity: 0.9 }),
+};
+
+/* ---------------- 状态量与器件参数 ----------------
+   场景尺度:1 单位 = 1 mm(环半径 5 单位 = 5 mm,与真实集成 SQUID 同量级,1:1)。
+   势垒实际厚 1-3 nm,图中放大 ~10⁷×,否则不可见;库珀对为示意(真实尺寸 ~nm)。
+   电学量用真实单位:电流 μA、电压 μV、磁通以 Φ₀ 计。 */
+const PHIQ = 2.07e-15;               // 磁通量子 Φ₀ = h/2e ≈ 2.07×10⁻¹⁵ Wb
+const IC0 = 10;                      // 单结临界电流 μA(Nb-AlOx-Nb 典型 1-100 μA)
+const RN = 4;                        // 结分流电阻 Ω(RSJ 模型,典型 1-10 Ω)
+const FJV = 483.6;                   // 交流约瑟夫森系数 GHz/mV(f = 2eV/h)
+const IC_OP = IC0 * Math.SQRT2;      // 锁定工作点 Φ₀/4 处临界电流 = 14.1 μA
+const V_OP = RN * Math.sqrt(25 * 25 - IC_OP * IC_OP);   // 工作点电压 ≈ 82.5 μV(Ib=25 μA)
+const SLOPE_FLL = 230;               // FLL 输出斜率 μV/Φ₀(锁定后)
+let fluxX = 0.35, ib = 25;           // 滑杆:外磁通(Φ₀ 单位)· 偏置电流 μA
+let icNow = 0, icOL = 0, vOut = 0, fAC = 0, vState = false;
+let fluxRing = fluxX;                // 环内磁通(FLL 锁定时恒为 Φ₀/4)
+let fDemo = 0;                       // 演示降频后的相位滑移频率 Hz(真实 ~10⁹-10¹⁰ Hz)
+let deltaAvg = 0;                    // 平均相位 δ
+let megFt = 55;                      // 脑磁信号强度 fT(MEG 预设)
+let et = 0, scenario = 0, preset = null;
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+let arrowsOn = false;
+let ivT = 0, intT = 0, megT = 0, fllT = 0;   // 预设时间轴
+
+/* ---------------- 地面 / 冷台 / 支柱 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(60, 0.1, 40), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(40, 20, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+const plate = new THREE.Mesh(new THREE.BoxGeometry(11, 0.24, 11), M.plate);   // 制冷机冷级
+plate.position.y = 0.9;
+scene.add(plate);
+for (const [px, pz] of [[-4.6, -4.6], [4.6, -4.6], [-4.6, 4.6], [4.6, 4.6]]) {
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.9, 10), M.post);
+  post.position.set(px, 0.45, pz);
+  scene.add(post);
+}
+for (const [px, pz, a] of [[2.26, 2.26, Math.PI * 0.25], [-2.26, 2.26, Math.PI * 0.75],
+  [-2.26, -2.26, Math.PI * 1.25], [2.26, -2.26, Math.PI * 1.75]]) {
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.56, 8), M.post);
+  leg.position.set(px, 1.8, pz);
+  scene.add(leg);
+}
+
+/* ---------------- 超导环(Nb,环半径 5 单位 = 5 mm) ---------------- */
+const ring = new THREE.Mesh(new THREE.TorusGeometry(5, 0.42, 18, 96), M.ring);
+ring.rotation.x = Math.PI / 2;
+ring.position.y = 3;
+scene.add(ring);
+
+/* ---------------- 约瑟夫森结 ×2:x=±5 处,pads+势垒+发光口+相位指针 ---------------- */
+const needleGeo = new THREE.BoxGeometry(0.62, 0.03, 0.05);
+function buildJunction(sx, name) {
+  const g = new THREE.Group();
+  g.position.set(5 * sx, 3, 0);
+  const padA = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.62, 0.5), M.pad);
+  padA.position.z = -0.42;
+  const padB = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.62, 0.5), M.pad);
+  padB.position.z = 0.42;
+  const barrier = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.52, 0.14), M.barrier);
+  const glow = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.44, 0.05), M.glow);
+  const dial = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.035, 8, 28), M.post);
+  dial.rotation.x = Math.PI / 2;
+  dial.position.y = 0.95;
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.08, 8), M.witness);
+  hub.position.y = 0.95;
+  const needle = new THREE.Mesh(needleGeo, M.witness);
+  needle.position.set(0.31, 0.95, 0);
+  const needleG = new THREE.Group();                    // 指针随 δ 旋转(相位可视化)
+  needleG.position.y = 0.95;
+  needleG.add(needle);
+  g.add(padA, padB, barrier, glow, dial, hub, needleG);
+  scene.add(g);
+  return { g, glow, needleG, name };
+}
+const jR = buildJunction(1, 'J1');    // J1:x=+5
+const jL = buildJunction(-1, 'J2');   // J2:x=−5
+
+/* ---------------- 库珀对粒子池(成对小珠,预分配,循环零 new) ---------------- */
+const PAIR_N = 18;
+const pairs = [];
+{
+  const geoS = new THREE.SphereGeometry(0.065, 10, 8);
+  for (let k = 0; k < PAIR_N; k++) {
+    const g = new THREE.Group();
+    const a = new THREE.Mesh(geoS, M.pair); a.position.x = -0.1;
+    const b = new THREE.Mesh(geoS, M.pair); b.position.x = 0.1;
+    g.add(a, b);
+    scene.add(g);
+    pairs.push({ g, a0: k / PAIR_N * TAU });
+  }
+}
+
+/* ---------------- 环内磁通线池:4 根(≤3 整条 + 1 条分数) ---------------- */
+const fluxMats = [];
+const fluxLines = [];
+{
+  const geoL = new THREE.CylinderGeometry(0.024, 0.024, 2.4, 6);
+  const geoT = new THREE.ConeGeometry(0.08, 0.2, 8);
+  for (let k = 0; k < 4; k++) {
+    const fm = new THREE.MeshStandardMaterial({ color: 0xffb45f, roughness: 0.35, metalness: 0.1,
+      emissive: 0xffb45f, emissiveIntensity: 0.6, transparent: true, opacity: 0.85 });
+    const g = new THREE.Group();
+    const line = new THREE.Mesh(geoL, fm);
+    const tip = new THREE.Mesh(geoT, fm);
+    tip.position.y = 1.32;
+    g.add(line, tip);
+    g.position.set(-0.75 + k * 0.5, 3, 0);
+    scene.add(g);
+    fluxMats.push(fm);
+    fluxLines.push(g);
+  }
+}
+
+/* ---------------- 场线圈 / 反馈线圈 / 超导屏蔽筒 ---------------- */
+const fieldCoil = new THREE.Mesh(new THREE.TorusGeometry(8.3, 0.11, 10, 72), M.coil);
+fieldCoil.rotation.x = Math.PI / 2;
+fieldCoil.position.y = 5.6;
+scene.add(fieldCoil);
+const fbCoil = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.08, 10, 32), M.fbCoil);
+fbCoil.position.set(0, 3, 5);                       // 套在前支路上
+fbCoil.rotation.y = Math.PI / 2;
+scene.add(fbCoil);
+const shield = new THREE.Mesh(new THREE.CylinderGeometry(7.2, 7.2, 7, 40, 1, true), M.shield);
+shield.position.y = 3.5;
+scene.add(shield);
+
+/* ---------------- 脑磁演示:头部 + 皮层 + 磁通变换器输入线圈 ---------------- */
+const headG = new THREE.Group();
+headG.position.set(-9.2, 0, 0);
+headG.visible = false;
+scene.add(headG);
+const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.9, 1.7, 16), M.post);
+pedestal.position.y = 0.85;
+headG.add(pedestal);
+const head = new THREE.Mesh(new THREE.SphereGeometry(1.15, 28, 22), M.head);
+head.position.y = 2.55;
+headG.add(head);
+const cortex = new THREE.Mesh(new THREE.SphereGeometry(0.72, 24, 18), M.cortex);
+cortex.position.set(-0.16, 2.68, 0.12);
+headG.add(cortex);
+const pickup = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.06, 10, 28), M.pickup);
+pickup.position.set(-6.9, 3, 0);
+pickup.rotation.y = Math.PI / 2;                    // 轴向指向环
+scene.add(pickup);
+
+/* ---------------- 电流箭头(左右支路,预分配) ---------------- */
+function makeArrow(m) {
+  const g = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 10), m);
+  shaft.position.y = 0.5;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.095, 0.22, 12), m);
+  tip.position.y = 1.1;
+  g.add(shaft, tip);
+  return g;
+}
+const arrR = makeArrow(M.arrowM);                   // 右支路电流
+arrR.rotation.z = -Math.PI / 2;
+arrR.position.set(0, 3.75, 5);
+arrR.visible = false;
+scene.add(arrR);
+const arrL = makeArrow(M.arrowB);                   // 左支路电流
+arrL.rotation.z = -Math.PI / 2;
+arrL.position.set(0, 3.75, -5);
+arrL.visible = false;
+scene.add(arrL);
+
+/* ---------------- 状态标签 ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,不是 CSS2DObject!
+}
+addLabel(() => L('器件:Nb 环(半径 5 mm,1:1)+ 双约瑟夫森结 · 4.2 K 液氦 / mK 稀释制冷机 · 势垒厚 1-3 nm(放大 ~10⁷×)',
+  'device: Nb loop (radius 5 mm, true scale) + 2 Josephson junctions - 4.2 K helium / mK fridge - barrier 1-3 nm (enlarged ~1e7x)'),
+  () => 'st', new THREE.Vector3(0, 7.2, 0));
+addLabel(() => {
+    const d1 = deg(deltaAvg / 2 + Math.PI * fluxRing);
+    const iR = ib * (1 + Math.cos(Math.PI * fluxRing)) / 2;
+    return L(`结 J1:δ₁ = ${d1.toFixed(0)}° · 支路电流 ${iR.toFixed(1)} μA`, `junction J1: delta1 = ${d1.toFixed(0)} deg - branch current ${iR.toFixed(1)} uA`);
+  }, () => 'b', new THREE.Vector3(5, 4.6, 0));
+addLabel(() => {
+    const d2 = deg(deltaAvg / 2 - Math.PI * fluxRing);
+    const iL = ib * (1 - Math.cos(Math.PI * fluxRing)) / 2;
+    return L(`结 J2:δ₂ = ${d2.toFixed(0)}° · 支路电流 ${iL.toFixed(1)} μA`, `junction J2: delta2 = ${d2.toFixed(0)} deg - branch current ${iL.toFixed(1)} uA`);
+  }, () => 'b', new THREE.Vector3(-5, 4.6, 0));
+addLabel(() => L(`外磁通 ${fluxX.toFixed(2)} Φ₀ = ${(fluxX * 2.07).toFixed(2)}×10⁻¹⁵ Wb · 环内 ${fluxRing.toFixed(2)} Φ₀(FLL 时被钉在 0.25)`,
+  `external flux ${fluxX.toFixed(2)} Phi0 = ${(fluxX * 2.07).toFixed(2)}e-15 Wb - loop flux ${fluxRing.toFixed(2)} Phi0 (pinned at 0.25 in FLL)`),
+  () => 'e', new THREE.Vector3(0, 5.05, 0));
+addLabel(() => L(`偏置 ${ib.toFixed(1)} μA ${vState ? '→ 电压态(SQUID 工作区)' : '→ 超流态,V = 0'}`,
+  `bias ${ib.toFixed(1)} uA ${vState ? '-> voltage state (operating)' : '-> supercurrent, V = 0'}`),
+  () => vState ? 'g' : 'w', new THREE.Vector3(0, 5.55, -2.4));
+addLabel(() => L(`V = ${vOut.toFixed(1)} μV → f = 2eV/h ≈ ${fAC.toFixed(1)} GHz(演示降频 ~10⁹×)`,
+  `V = ${vOut.toFixed(1)} uV -> f = 2eV/h ≈ ${fAC.toFixed(1)} GHz (slowed ~1e9x for demo)`),
+  () => 'w', new THREE.Vector3(2.8, 6.0, 0));
+addLabel(() => L('灵敏度:磁通 ~10⁻⁶ Φ₀/√Hz ≈ 场 ~1-5 fT/√Hz —— 地磁(50 μT)的百亿分之一',
+  'sensitivity: ~1e-6 Phi0/sqrt(Hz) ≈ 1-5 fT/sqrt(Hz) - ten billion times below Earth field (50 uT)'),
+  () => 'st', new THREE.Vector3(-4.8, 6.5, 0));
+const lblIV = addLabel(() => L('单结 I-V:|I| 低于 Ic 时零压超流;一超过立即跳入电压态 V = R·√(I²−Ic²),台阶由微波刻出',
+  'single junction I-V: zero-voltage below Ic; jumps to V = R·sqrt(I^2-Ic^2) above; microwave steps mark it'),
+  () => 'e', new THREE.Vector3(5, 5.5, 0));
+const lblInt = addLabel(() => L('干涉扫描:磁通每变 1 Φ₀,Ic 从 2Ic₀ = 20 μA 摆到 0 再回来 —— 周期锁死在量子',
+  'interference sweep: every 1 Phi0 of flux swings Ic from 2Ic0 = 20 uA to zero and back - period locked to the quantum'),
+  () => 'b', new THREE.Vector3(0, 6.75, 0));
+const lblMeg = addLabel(() => L('脑磁:α 节律 ~10 Hz · 信号 10-100 fT = 10⁻⁶-10⁻⁵ Φ₀ · 真实输出摆幅 <1 μV(本演示放大 60×)',
+  'MEG: alpha rhythm ~10 Hz - signal 10-100 fT = 1e-6-1e-5 Phi0 - real output swing <1 uV (amplified 60x here)'),
+  () => 'b', new THREE.Vector3(-9.2, 5.0, 0));
+const lblFll = addLabel(() => L('FLL:反馈磁通 = −Φext,工作点钉死 Φ₀/4 → 输出与外磁通成正比,量程 ×10⁶,带宽至 MHz',
+  'FLL: feedback flux = -Phi_ext, loop pinned at Phi0/4 -> output proportional to flux, range x1e6, bandwidth to MHz'),
+  () => 'g', new THREE.Vector3(4.8, 5.3, 0.6));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'pair', tgt: [3.6, 3.2, 2.6],
+    b: '库珀对:低温下电子结伴,隧穿过势垒', be: 'Cooper pairs: electrons buddy up and tunnel through the barrier',
+    d: '低温金属里,电子借晶格振动(声子)两两结成库珀对,凝聚进同一个量子态,超导体就此诞生。两块超导体之间只隔 1-3 nm 的氧化势垒,库珀对仍能整体隧穿:不耗能量、不产生电压,却携带超流 I = Ic·sinδ——δ 是两侧量子态的相位差。临界电流 Ic 典型 1-100 μA,由势垒厚度与结面积决定。看发光的成对小珠:它们穿「墙」而过,结两端电压恒为零,这就是直流约瑟夫森效应。',
+    de: 'In a cold metal, electrons pair up through lattice vibrations (phonons) and condense into one quantum state - that is superconductivity. Two superconductors separated by a 1-3 nm oxide barrier still let whole pairs tunnel across: no energy lost, no voltage developed, yet the junction carries a supercurrent I = Ic·sin(delta), delta being the phase difference across it. Critical current Ic, typically 1-100 uA, is set by barrier thickness and junction area. Watch the glowing bead-pairs slip straight through the wall while the voltage stays exactly zero - the DC Josephson effect.' },
+  { hl: 'ac', tgt: [4.4, 3.9, 1.8],
+    b: '交流约瑟夫森:给电压,它用频率报告', be: 'AC Josephson: apply voltage, it reports in frequency',
+    d: '给结两端加直流电压 V,每次隧穿的库珀对获得能量 2eV,量子态相位便以 f = 2eV/h ≈ 483.6 GHz/mV 振荡——结会自己辐射微波。反过来用就是约瑟夫森电压基准:用频率 ν 的微波照射,I-V 曲线长出 V = n·hν/2e 的量子化台阶,10 GHz 微波的台阶间隔恰为 20.7 μV;1990 年起全世界的「伏特」由它定义。演示把 10⁹-10¹⁰ Hz 的振荡降频到几 Hz,肉眼才看得见指针旋转与结口闪光——每次闪光 = 一对库珀对完成隧穿。',
+    de: 'Put a DC voltage V across the junction and each tunneling pair gains energy 2eV, so the phase advances at f = 2eV/h, about 483.6 GHz per mV - the junction radiates microwaves by itself. Run backwards, this is the Josephson voltage standard: drive it with microwaves of frequency nu and the I-V curve grows quantized steps at V = n·h·nu/2e; 10 GHz microwaves give steps exactly 20.7 uV apart, and since 1990 the world volt is defined this way. The demo slows the 1e9-1e10 Hz oscillation to a few Hz: each junction flash is one Cooper pair completing the tunnel.' },
+  { hl: 'loop', tgt: [0, 3.0, 0],
+    b: '双结并联:超导环里的双缝干涉', be: 'Two junctions in parallel: double-slit interference in a loop',
+    d: '把两个约瑟夫森结并联进同一超导环,就得到 DC SQUID。磁通量子化强迫环内磁通取 Φ₀ 的整数倍,两结相位差因此被锁成 δ₂−δ₁ = 2πΦ/Φ₀;两支路超流像双缝光一样相干叠加,总临界电流 Ic = 2Ic₀·|cos(πΦ/Φ₀)|。磁通每挪半个 Φ₀,干涉从相长变相消:临界电流从最大 20 μA 摆到零再摆回。Φ₀ = h/2e ≈ 2.07×10⁻¹⁵ Wb——量子世界送来的天然磁通刻度,精确且免费。',
+    de: 'Wire two Josephson junctions in parallel on one superconducting loop and you have a DC SQUID. Flux quantization forces the loop flux to integer quanta and locks the junction phase difference to delta2 - delta1 = 2·pi·Phi/Phi0; the branch supercurrents interfere like light through a double slit, giving Ic = 2·Ic0·|cos(pi·Phi/Phi0)|. Every half quantum flips the interference from constructive to destructive: critical current swings from 20 uA to zero and back. Phi0 = h/2e = 2.07e-15 Wb is a free, exact magnetic ruler handed to us by quantum mechanics.' },
+  { hl: 'flux', tgt: [0, 3.4, 0],
+    b: 'Φ₀ 有多小,fT 有多灵:灵敏度的来源', be: 'How small is Phi0, how sharp is fT: where sensitivity comes from',
+    d: '地磁场约 50 μT,穿过 1 cm² 探测线圈约含 2.4×10⁹ 个 Φ₀,而 SQUID 能分辨 10⁻⁶ Φ₀——折合场噪声 1-5 fT/√Hz,比地磁小十个数量级。诀窍一:偏置电流设在略高于最大临界电流,工作点钉在三角波最陡处(Φ₀/4),磁通的微小变化被线性放大成电压;诀窍二:磁通变换器把大面积信号线圈耦合进小环,像听诊器收集心音。剩下的热激发与 1/f 噪声,靠稀释制冷机再压一个量级。',
+    de: 'Earth field is about 50 uT; through a 1 cm2 pickup coil that is some 2.4e9 flux quanta, yet a SQUID resolves a millionth of one - field noise of 1-5 fT/sqrt(Hz), ten orders below geomagnetism. Trick one: bias just above peak critical current and pin the operating point on the steepest stretch of the triangle (Phi0/4), where tiny flux changes convert linearly into voltage. Trick two: a flux transformer couples a large signal coil into the tiny loop, a stethoscope for magnetism. Residual thermal hops and 1/f flutter are crushed further by dilution refrigerators.' },
+  { hl: 'fll', tgt: [1.8, 3.3, 2.2],
+    b: '磁通锁定 FLL:把三角波拉成直线', be: 'Flux-locked loop: straightening the triangle into a line',
+    d: '三角波输出只在半个周期内单调,磁通超过 ±Φ₀/2 就折叠,读不了大信号。实际 SQUID 都工作在磁通锁定环(FLL)模式:积分器把误差电压变成反馈电流注入线圈,产生与外磁通大小相等、方向相反的磁通,把环内磁通死死钉在 Φ₀/4。于是反馈量与外磁通成正比:量程扩展百万倍、带宽到 MHz、线性度 10⁻⁵。类比运算放大器的虚地:SQUID 是「虚磁通」节点。看反馈线圈变绿、绿色开环三角波被蓝色直线取代。',
+    de: 'The periodic triangle is only monotonic over half a cycle; beyond plus/minus Phi0/2 it folds back and cannot read large signals. Real SQUIDs run in a flux-locked loop (FLL): an integrator turns the error voltage into a feedback current that injects exactly opposing flux, pinning the loop at Phi0/4 forever. The feedback signal then tracks the input flux linearly: dynamic range up a million-fold, bandwidth into the MHz, linearity 1e-5. Think of an op-amp virtual ground; the SQUID is a virtual-flux node. Watch the green open-loop triangle get replaced by a straight blue ramp.' },
+  { hl: 'app', tgt: [-5.5, 3.0, 0.5],
+    b: '应用:从脑磁图到量子比特读出', be: 'Applications: from MEG to qubit readout',
+    d: '最壮观的战场是脑磁图 MEG:几千个锥体神经元同步放电,在头皮外留下 10-100 fT 的磁场,全头 300 余个 SQUID 通道以毫秒分辨率定位癫痫灶,无须接触皮肤。心磁约 50 pT,胎儿心磁再弱一个量级,比心电图更能看出心律起源。另一端是量子计算:超导量子比特的读出用的正是微型 SQUID 与约瑟夫森参量放大器;磁强计还服务于 NMR、地磁勘测与未爆弹探测。所有这些的代价都一样——4.2 K 液氦或 mK 级稀释制冷机。',
+    de: 'The grandest stage is magnetoencephalography: a few thousand cortical pyramidal neurons firing in sync leave a 10-100 fT field at the scalp, and whole-head arrays of 300-plus SQUID channels map epilepsy foci millisecond by millisecond, contactless. The heart fields about 50 pT; the fetal heart an order weaker. At the other extreme, superconducting qubits are read out by miniature SQUIDs and Josephson parametric amplifiers; magnetometers also serve NMR, aeromagnetic surveys and ordnance detection. All of it pays the same rent: 4.2 K helium or an mK dilution refrigerator.' },
+];
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+const tgtVec = new THREE.Vector3(0, 3, 0);
+const camV = new THREE.Vector3();
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep();
+  syncPhase();
+  updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 公式框 ---------------- */
+const formulaEl = document.getElementById('formula');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`直流约瑟夫森:I = Ic·sinδ · 偏置 <b>${ib.toFixed(1)} μA</b> vs 临界 <b>${icNow.toFixed(1)} μA</b> → ${vState ? '<b>电压态</b>' : '<b>超流态</b>'}`,
+      `DC Josephson: I = Ic·sin(delta) - bias <b>${ib.toFixed(1)} uA</b> vs critical <b>${icNow.toFixed(1)} uA</b> -> ${vState ? '<b>voltage state</b>' : '<b>supercurrent</b>'}`) +
+    '<br>' +
+    L(`交流 f = 2eV/h = 483.6 GHz/mV × ${vOut.toFixed(1)} μV ≈ <b>${fAC.toFixed(1)} GHz</b> · 干涉 Ic = 2Ic₀|cos(πΦ/Φ₀)| = <b>${icNow.toFixed(1)} μA</b>`,
+      `AC f = 2eV/h = 483.6 GHz/mV x ${vOut.toFixed(1)} uV ≈ <b>${fAC.toFixed(1)} GHz</b> - Ic = 2Ic0|cos(pi·Phi/Phi0)| = <b>${icNow.toFixed(1)} uA</b>`) +
+    '<br>' +
+    (preset === 'fll'
+      ? L(`锁定:Vout = ${V_OP.toFixed(0)} μV + 230 μV/Φ₀ × ${fluxX.toFixed(2)} Φ₀ = <b>${vOut.toFixed(0)} μV</b> · 反馈磁通 <b>−${fluxX.toFixed(2)} Φ₀</b>`,
+          `locked: Vout = ${V_OP.toFixed(0)} uV + 230 uV/Phi0 x ${fluxX.toFixed(2)} Phi0 = <b>${vOut.toFixed(0)} uV</b> - feedback flux <b>-${fluxX.toFixed(2)} Phi0</b>`)
+      : L(`灵敏度:磁通 <b>~10⁻⁶ Φ₀/√Hz</b> ≈ 场 <b>~2 fT/√Hz</b> · Φ₀ = h/2e ≈ <b>2.07×10⁻¹⁵ Wb</b> · 脑磁 <b>10-100 fT</b> · 心磁 <b>~50 pT</b>`,
+          `sensitivity: <b>~1e-6 Phi0/sqrt(Hz)</b> ≈ <b>~2 fT/sqrt(Hz)</b> in field - Phi0 = h/2e ≈ <b>2.07e-15 Wb</b> - MEG <b>10-100 fT</b> - MCG <b>~50 pT</b>`));
+}
+
+/* ---------------- 预设 / 复位 ---------------- */
+const btnIV = document.getElementById('btnIV'), btnInt = document.getElementById('btnInt'),
+  btnMEG = document.getElementById('btnMEG'), btnFLL = document.getElementById('btnFLL'),
+  btnReset = document.getElementById('btnReset');
+const presetBtns = { iv: btnIV, int: btnInt, meg: btnMEG, fll: btnFLL };
+function resetModeState() {
+  ivT = intT = megT = fllT = 0;
+  headG.visible = false;
+  M.fbCoil.emissiveIntensity = 0.1;
+  fluxX = +elVflux.value; ib = +elVib.value;
+}
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === preset);
+  ivT = intT = megT = fllT = 0;
+  updateFormula();
+}
+function resetMachine() {
+  if (preset) setPreset(preset);
+  preset = null;
+  for (const k in presetBtns) presetBtns[k].classList.remove('on');
+  resetModeState();
+  fluxX = 0.35; elVflux.value = 0.35; updateVflux();
+  ib = 25; elVib.value = 25; updateVib();
+  updateFormula();
+}
+btnIV.addEventListener('click', () => setPreset('iv'));
+btnInt.addEventListener('click', () => setPreset('int'));
+btnMEG.addEventListener('click', () => setPreset('meg'));
+btnFLL.addEventListener('click', () => setPreset('fll'));
+btnReset.addEventListener('click', resetMachine);
+
+/* ---------------- 示波器:输出电压 V(蓝)· 临界电流 Ic(绿) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);  // 双通道环形缓冲
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, 0, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr, signed) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * (signed ? 0.34 : 0.42);
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('输出电压 V(蓝)· 临界电流 Ic(绿)· 实时', 'output voltage V (blue) - critical current Ic (green) - live'), 4 * dpr, 10 * dpr);
+  const mid = ch * 0.52;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(0, mid); scopeCtx.lineTo(cw, mid);
+  scopeCtx.stroke();
+  drawTrace(sndT, 'rgba(116,192,252,.95)', mid, ch, dpr, false);
+  drawTrace(sndA, 'rgba(116,220,132,.95)', mid, ch, dpr, false);
+}
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const elVflux = document.getElementById('vflux'), elVfluxVal = document.getElementById('vfluxVal');
+const elVib = document.getElementById('vib'), elVibVal = document.getElementById('vibVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglVec = document.getElementById('tglVec');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+function updateVflux() {
+  fluxX = +elVflux.value;
+  elVfluxVal.textContent = fluxX.toFixed(2) + ' Φ₀';
+  updateFormula();
+}
+function updateVib() {
+  ib = +elVib.value;
+  elVibVal.textContent = ib.toFixed(1) + ' μA';
+  updateFormula();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+elVflux.addEventListener('input', updateVflux);
+elVib.addEventListener('input', updateVib);
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglVec.addEventListener('change', () => { arrowsOn = tglVec.checked; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ---------------- stats 刷新 ---------------- */
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateStats() {
+  stA.innerHTML = ib.toFixed(1) + '<small> μA 偏置</small>';
+  stA.className = 'v ' + (vState ? 'ok' : 'warn');
+  stB.innerHTML = deg(TAU * fluxRing).toFixed(0) + '<small> °(δ₂−δ₁)</small>';
+  stB.className = 'v ok';
+  const mfr = ((fluxRing % 1) + 1) % 1;                    // 距最近平坦点(0/Φ₀/2)
+  stC.innerHTML = fluxRing.toFixed(3) + '<small> Φ₀ 环内</small>';
+  stC.className = 'v ' + (mfr < 0.06 || (mfr > 0.44 && mfr < 0.56) ? 'warn' : 'ok');
+  stD.innerHTML = icNow.toFixed(1) + '<small> μA(2Ic₀=20)</small>';
+  stD.className = 'v ' + (icNow > 5 ? 'ok' : icNow > 2 ? 'warn' : 'bad');
+  stE.innerHTML = vOut.toFixed(1) + '<small> μV</small>';
+  /* 电压态(V 大于 0)即 SQUID 正常工作;0 V 超流说明未偏置到工作点 */
+  stE.className = 'v ' + (vOut >= 0.05 ? 'ok' : 'warn');
+  if (preset === 'meg') { stF.innerHTML = megFt.toFixed(0) + '<small> fT 信号</small>'; stF.className = 'v ok'; }
+  else { stF.innerHTML = '≈2 <small>fT/√Hz 噪声</small>'; stF.className = 'v ok'; }
+}
+
+/* ---------------- 器件物理 + 预设时间轴 ---------------- */
+function deviceModel() {
+  /* 开环:对称双结、环电感可忽略 → Ic(Φ) = 2Ic₀·|cos(πΦ/Φ₀)| */
+  icOL = 2 * IC0 * Math.abs(Math.cos(Math.PI * fluxX));
+  if (preset === 'fll') {
+    fluxRing = 0.25;                                  // 锁定:环内磁通被反馈钉在 Φ₀/4
+    icNow = IC_OP;
+    vOut = V_OP + SLOPE_FLL * fluxX;                  // 输出与外磁通成正比(线性)
+  } else {
+    fluxRing = fluxX;
+    icNow = icOL;
+    vOut = Math.abs(ib) > icNow ? RN * Math.sqrt(ib * ib - icNow * icNow) : 0;   // RSJ 模型
+  }
+  vState = vOut > 0.05;
+  fAC = FJV * vOut / 1000;                            // GHz(483.6 GHz/mV)
+}
+function runModes(simDt) {
+  if (preset === 'iv') {                              // 单结 I-V:偏置 0→64→0 μA 三角扫
+    ivT += simDt; if (ivT > 8) ivT = 0;
+    ib = 32 - 32 * Math.cos(ivT / 4 * Math.PI);
+    fluxX = 0;
+  } else if (preset === 'int') {                      // 双结干涉:磁通 0→3→0 Φ₀ 扫
+    intT += simDt; if (intT > 8) intT = 0;
+    fluxX = 1.5 - 1.5 * Math.cos(intT / 4 * Math.PI);
+    ib = 25;
+  } else if (preset === 'meg') {                      // 脑磁:α 节律 55±45 fT 耦合进环
+    megT += simDt; if (megT > 8) megT = 0;
+    megFt = 55 + 45 * Math.sin(et * TAU * 0.45);      // 真实 α ~10 Hz,演示降频
+    fluxX = 0.25 + (megFt - 55) * 2.9e-3;             // 真实 4.83e-5 Φ₀/fT ×演示放大 60
+    ib = 21;                                          // 贴着 2Ic₀ 偏置,斜率最大
+  } else if (preset === 'fll') {                      // FLL:磁通 0→2→0 Φ₀ 慢扫
+    fllT += simDt; if (fllT > 8) fllT = 0;
+    fluxX = 1 - Math.cos(fllT / 4 * Math.PI);
+    ib = 25;
+  }
+  deviceModel();
+  /* 相位动力学:电压态 = 相位滑移(真实 ~10⁹-10¹⁰ Hz,演示降频 ~10⁹×);超流态弛豫到 asin(I/Ic) */
+  fDemo = vState ? 0.9 + Math.min(7, fAC * 0.09) : 0;
+  if (vState) deltaAvg += fDemo * TAU * simDt;
+  else deltaAvg += (Math.asin(clamp(ib / Math.max(icNow, 0.5), -1, 1)) - deltaAvg) * Math.min(1, simDt * 3);
+  /* 预设接管滑杆显示 */
+  if (preset) {
+    elVflux.value = fluxX; elVfluxVal.textContent = fluxX.toFixed(2) + ' Φ₀';
+    elVib.value = ib; elVibVal.textContent = ib.toFixed(1) + ' μA';
+  }
+  if (playing) pushSnd(vOut / (preset === 'fll' ? 560 : 150), (preset === 'fll' ? icOL : icNow) / 20);
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  /* 库珀对沿环运动:电压态随相位滑移加速(降频演示),超流态缓慢漂移 */
+  const wPairs = vState ? 0.45 + 0.18 * Math.sin(et * TAU * fDemo) : 0.05 + 0.3 * ib / 60;
+  for (const p of pairs) {
+    const a = p.a0 + et * wPairs;
+    p.g.position.set(Math.cos(a) * 5, 3 + 0.04 * Math.sin(et * 3 + p.a0 * 5), Math.sin(a) * 5);
+    p.g.rotation.y = a;
+  }
+  /* 结口发光:电压态下每次 2π 相位滑移闪一次 = 一对库珀对隧穿 */
+  const slipPulse = Math.pow(Math.max(0, Math.sin(et * TAU * fDemo)), 8);
+  /* 相位指针:δ₁/δ₂ 可视化 */
+  jR.needleG.rotation.y = deltaAvg / 2 + Math.PI * fluxRing;
+  jL.needleG.rotation.y = deltaAvg / 2 - Math.PI * fluxRing;
+  /* 磁通线:整条 + 分数条(环内磁通,FLL 时显示被钉住的 0.25) */
+  const nFull = Math.min(3, Math.floor(fluxRing + 1e-6));
+  const frac = clamp(fluxRing - nFull, 0, 1);
+  for (let k = 0; k < 4; k++) {
+    const show = k < nFull || (k === nFull && frac > 0.04);
+    fluxLines[k].visible = show;
+    if (show) fluxMats[k].opacity = k < nFull ? 0.85 : 0.2 + 0.6 * frac;
+  }
+  /* 线圈 / 皮层 / 结口发光:物理量直接驱动,每帧全量赋值 */
+  M.coil.emissiveIntensity = 0.12 + 0.45 * clamp01(Math.abs(fluxX) / 3);
+  M.fbCoil.emissiveIntensity = preset === 'fll' ? 0.35 + 0.45 * clamp01(Math.abs(fluxX) / 2) : 0.1;
+  M.cortex.emissiveIntensity = preset === 'meg' ? 0.25 + 0.5 * (0.5 + 0.5 * Math.sin(et * TAU * 0.45)) : 0.3;
+  M.glow.emissiveIntensity = vState ? 0.25 + 2.8 * slipPulse : 0.1 + 0.3 * Math.abs(Math.sin(deltaAvg));
+  /* 步骤高亮(呼吸脉冲):基础态写在这里,再被 boost 覆盖 */
+  const hlK = 0.45 + 0.25 * Math.sin(et * 5);
+  const boost = m => { m.emissiveIntensity = 0.55 + 0.35 * hlK; };
+  const hl = STEPS[scenario].hl;
+  M.ring.emissiveIntensity = hl === 'loop' ? 0.55 + 0.35 * hlK : 0.1;
+  M.pair.emissiveIntensity = hl === 'pair' ? 0.55 + 0.35 * hlK : 0.55;
+  for (let k = 0; k < 4; k++) {
+    fluxMats[k].emissiveIntensity = hl === 'flux' ? 0.55 + 0.35 * hlK : 0.6 + 0.2 * Math.sin(et * 2.4 + k);
+  }
+  if (hl === 'ac') boost(M.glow);
+  else if (hl === 'fll') boost(M.fbCoil);
+  else if (hl === 'app') boost(M.cortex);
+  /* 电流箭头:左右支路按 cos(πΦ/Φ₀) 分流 */
+  const fs = Math.cos(Math.PI * fluxRing);
+  const iR = ib * (1 + fs) / 2, iL = ib * (1 - fs) / 2;
+  arrR.visible = arrowsOn;
+  arrL.visible = arrowsOn;
+  arrR.scale.setScalar(clamp(0.2 + Math.abs(iR) / 30, 0.12, 1.5));
+  arrR.scale.y *= iR >= 0 ? 1 : -1;
+  arrL.scale.setScalar(clamp(0.2 + Math.abs(iL) / 30, 0.12, 1.5));
+  arrL.scale.y *= iL >= 0 ? 1 : -1;
+  /* 预设门控:头部模型与专属标签 */
+  headG.visible = preset === 'meg';
+  lblIV.o.visible = labelsOn && preset === 'iv';
+  lblInt.o.visible = labelsOn && preset === 'int';
+  lblMeg.o.visible = labelsOn && preset === 'meg';
+  lblFll.o.visible = labelsOn && preset === 'fll';
+  /* 相机目标 */
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  /* stats + formula 节流刷新 */
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglVec.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
