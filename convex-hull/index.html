@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>凸包 · 一根绳子绕出的最优边界</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#9d7fd4;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#6a4fa8;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="凸包与单调链扫描:一根绳子绕出的最优边界" data-en="Convex Hull &amp; Monotone Chain: a Rope Pulled Taut">凸包与单调链扫描:一根绳子绕出的最优边界</h1>
+  <div class="sub" data-zh="凸包是包含全部点的最小凸多边形——把钉子钉在平面上绷一根橡皮筋,绷直后的形状就是它。Andrew 单调链算法把「绕圈」变成「扫两遍」:先按 x 排序(O(n log n),也是全部复杂度的所在),再从左到右扫一遍建下链、从右到左建上链——每加入一个点,用叉积 (B−A)×(C−B) 检验栈顶的转向:右转(叉积 ≤0)就弹栈,直到左转才压入。上下两链首尾相接就是凸包,总复杂度 O(n log n),而且已证明这是下界——凸包不可能快过排序。共线点保不留、重复点怎么算,这些脏细节在叉积的 ≤ 与 &lt; 之间一字千金。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The convex hull is the smallest convex polygon containing every point - nail the dots to a board, stretch a rubber band around them, and the taut band is the hull. The Andrew monotone chain turns &quot;circumnavigate&quot; into &quot;sweep twice&quot;: sort by x (O(n log n) - the entire cost of the algorithm), sweep left to right to build the lower chain and right to left for the upper; adding each point, test the top of the stack with the cross product (B-A)x(C-B): a right turn (product &lt;= 0) pops, and only a left turn admits the newcomer. Join the two chains end to end - total O(n log n), and proven optimal, since a hull cannot be built faster than sorting. Whether collinear points stay or go is decided by &lt;= versus &lt; - one character, one world of difference. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">凸包是包含全部点的最小凸多边形——把钉子钉在平面上绷一根橡皮筋,绷直后的形状就是它。Andrew 单调链算法把「绕圈」变成「扫两遍」:先按 x 排序(O(n log n),也是全部复杂度的所在),再从左到右扫一遍建下链、从右到左建上链——每加入一个点,用叉积 (B−A)×(C−B) 检验栈顶的转向:右转(叉积 ≤0)就弹栈,直到左转才压入。上下两链首尾相接就是凸包,总复杂度 O(n log n),而且已证明这是下界——凸包不可能快过排序。共线点保不留、重复点怎么算,这些脏细节在叉积的 ≤ 与 &lt; 之间一字千金。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="点数 n" data-en="points n">点数 n</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="排序进度" data-en="sort progress">排序进度</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="栈深度" data-en="stack depth">栈深度</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="当前转向" data-en="current turn">当前转向</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="弹栈次数" data-en="pops">弹栈次数</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="凸包顶点" data-en="hull vertices">凸包顶点</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="已入栈的点" data-en="stacked points">已入栈的点</span>
+    <span class="chip g" data-zh="左转:保留" data-en="left turn: keep">左转:保留</span>
+    <span class="chip r" data-zh="右转:弹栈" data-en="right turn: pop">右转:弹栈</span>
+    <span class="chip e" data-zh="凸包边(绷直的绳)" data-en="hull edge (taut rope)">凸包边(绷直的绳)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-rope" data-zh="橡皮筋绷紧直觉" data-en="rubber-band intuition">橡皮筋绷紧直觉</button>
+    <button class="abtn" id="btn-scan" data-zh="单调链逐步扫描" data-en="step-by-step monotone chain">单调链逐步扫描</button>
+    <button class="abtn" id="btn-degen" data-zh="共线与重复点" data-en="collinear &amp; duplicate points">共线与重复点</button>
+    <button class="abtn" id="btn-big" data-zh="200 点一次成型" data-en="200 points, one pass">200 点一次成型</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="点数 n" data-en="points n">点数 n</label><input id="vN" type="range" min="10" max="200" step="5" value="40"><span class="val" id="vNVal"></span></div>
+  <div class="row"><label data-zh="动画速度" data-en="anim speed">动画速度</label><input id="vSpd" type="range" min="1" max="20" step="1" value="8"><span class="val" id="vSpdVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="栈深度实时" data-en="stack depth live">栈深度实时</span></label>
+        <label><input id="tglRope" type="checkbox"> <span data-zh="绳子视图" data-en="rope view">绳子视图</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../voronoi/" data-zh="Voronoi 图" data-en="Voronoi diagram">Voronoi 图</a>
+    <a href="../shortest-path/" data-zh="最短路径" data-en="shortest path">最短路径</a>
+    <a href="../sorting-race/" data-zh="排序竞速" data-en="sorting race">排序竞速</a>
+    <a href="../matrix-transform/" data-zh="矩阵与线性变换" data-en="matrices &amp; transforms">矩阵与线性变换</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(11, 8, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 2.5, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);   // 双通道环形缓冲
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= 凸包与单调链扫描 ================= */
+const TITLE_ZH = '凸包 · 单调链扫描';
+const TITLE_EN = 'Convex Hull · Monotone Chain';
+const PRESET_IDS = ['rope', 'scan', 'degen', 'big'];
+
+let nPts = 40;
+let animSpd = 8;
+let points = [];          // {x, y(平面坐标), m(网格), hi(高亮)}
+let events = [];          // 单调链事件流
+let evI = 0, evTimer = 0;
+let stack = [];           // 当前栈(平面坐标索引)
+let hull = [];            // 最终凸包
+let cmpCount = 0, popCount = 0;
+let sortedDone = false;
+let running = false;
+let turnNow = 0;          // 0 无 1 左 2 右
+let ropeOn = false, ropeT = 0;
+let tPres = 0;
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.4, depthWrite: false }),
+  board: mat(0x232c38, { roughness: 0.6, metalness: 0.2 }),
+  pt: mat(0x9fb0c3, { roughness: 0.35, metalness: 0.3, emissiveIntensity: 0.25 }),
+  ptStack: mat(0x6fc0ff, { roughness: 0.3, metalness: 0.2, emissiveIntensity: 0.7 }),
+  ptPop: mat(0xff6b6b, { roughness: 0.3, metalness: 0.2, emissiveIntensity: 0.8 }),
+  edge: new THREE.LineBasicMaterial({ color: 0xffd27a }),
+  hull: new THREE.LineBasicMaterial({ color: 0xffe9a8 }),
+  rope: new THREE.LineBasicMaterial({ color: 0x7bd88f, linewidth: 2 }),
+  scan: mat(0xbde9ff, { roughness: 0.3, metalness: 0.1, transparent: true, opacity: 0.35, emissiveIntensity: 0.5 }),
+  arcG: new THREE.MeshBasicMaterial({ color: 0x7bd88f, transparent: true, opacity: 0.85 }),
+  arcR: new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0.85 }),
+  nail: mat(0xffd27a, { roughness: 0.4, metalness: 0.4, emissiveIntensity: 0.4 }),
+};
+const HL = { scan: M.ptStack, rope: M.rope, degen: M.ptPop, big: M.ptStack };
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+}
+
+/* ---------------- 场景 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(56, 0.1, 38), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(38, 19, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+const board = new THREE.Mesh(new THREE.BoxGeometry(16, 0.3, 10), M.board);
+board.position.set(0, 2.2, 0);
+scene.add(board);
+/* 点云:InstancedMesh(上限 200) */
+const PT_MAX = 200;
+const ptMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.13, 10, 8), M.pt, PT_MAX);
+ptMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(ptMesh);
+const ptColors = new Float32Array(PT_MAX * 3);
+ptMesh.instanceColor = new THREE.InstancedBufferAttribute(ptColors, 3);
+const dummy = new THREE.Object3D();
+const cTmp = new THREE.Color();
+/* 边线:当前链 + 凸包 + 绳 */
+const chainGeo = new THREE.BufferGeometry();
+chainGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PT_MAX * 3 * 2), 3));
+const chainLine = new THREE.Line(chainGeo, M.edge);
+scene.add(chainLine);
+const hullGeo = new THREE.BufferGeometry();
+hullGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((PT_MAX + 1) * 3), 3));
+const hullLine = new THREE.Line(hullGeo, M.hull);
+scene.add(hullLine);
+/* 扫描面 */
+const scanPlane = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.6, 6.4), M.scan);
+scanPlane.position.set(0, 3.2, 0);
+scene.add(scanPlane);
+/* 叉积转向弧 */
+const arcG = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.07, 8, 20, Math.PI * 0.8), M.arcG);
+arcG.visible = false;
+scene.add(arcG);
+/* 绳(橡皮筋) */
+const ROPE_N = 72;
+const ropeGeo = new THREE.BufferGeometry();
+ropeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((ROPE_N + 1) * 3), 3));
+const ropeLine = new THREE.Line(ropeGeo, M.rope);
+ropeLine.visible = false;
+scene.add(ropeLine);
+let ropePts = [];
+/* 3D 舞台映射:平面坐标 → (x, 2.4, z) */
+const P2W = (p, out) => { out.set(p.x * 0.9, 2.42, p.y * 0.9); return out; };
+
+camera.position.set(4.5, 8.5, 11);
+controls.target.set(0, 2.4, 0);
+tgtVec.set(0, 2.4, 0);
+
+/* ---------------- 点云生成与算法事件 ---------------- */
+function cross3(a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); }
+function genPoints(n, degen) {
+  points = [];
+  for (let k = 0; k < n; k++) {
+    if (degen && k % 7 === 0 && points.length) {
+      points.push({ x: points[points.length - 1].x + 0.8, y: points[points.length - 1].y });
+    } else {
+      points.push({ x: (Math.random() - 0.5) * 15, y: (Math.random() - 0.5) * 9 });
+    }
+  }
+}
+function buildEvents() {
+  events = [];
+  cmpCount = 0; popCount = 0;
+  const idx = points.map((p, i) => i).sort((a, b) => points[a].x - points[b].x || points[a].y - points[b].y);
+  events.push({ t: 'sort', order: idx });
+  const half = (list) => {
+    const st = [];
+    for (const i of list) {
+      events.push({ t: 'visit', i });
+      while (st.length >= 2) {
+        const c = cross3(points[st[st.length - 2]], points[st[st.length - 1]], points[i]);
+        cmpCount++;
+        events.push({ t: 'cross', a: st[st.length - 2], b: st[st.length - 1], c: i, sign: c });
+        if (c <= 0) { events.push({ t: 'pop', i: st.pop() }); popCount++; }
+        else break;
+      }
+      st.push(i);
+      events.push({ t: 'push', i });
+    }
+    return st;
+  };
+  const lower = half(idx);
+  events.push({ t: 'clear' });
+  const upper = half([...idx].reverse());
+  hull = [...lower, ...upper.slice(1, -1)];
+  events.push({ t: 'done', hull });
+}
+
+function resetRun() {
+  evI = 0; evTimer = 0; stack = []; sortedDone = false; running = true; turnNow = 0;
+  genPoints(nPts, preset === 'degen');
+  buildEvents();
+  ropeT = 0;
+  initRope();
+}
+function initRope() {
+  ropePts = [];
+  for (let k = 0; k < ROPE_N; k++) {
+    const a = k / ROPE_N * TAU;
+    ropePts.push({ x: Math.cos(a) * 8.2, y: Math.sin(a) * 5.0 });
+  }
+}
+
+/* ---------------- 标签 ---------------- */
+addLabel(() => L(`钉子与绳子:把橡皮筋绕所有点松手,绷直后的形状就是凸包——内部点一次性失去全部自由度`,
+  `nails and a band: drop a rubber band around all the points and the taut loop is the hull - interior points lose every degree of freedom at once`),
+  () => 'st', new THREE.Vector3(0, 4.4, 0));
+addLabel(() => L(`单调链:按 x 排序(O(n log n),全部代价所在)→ 下链从左到右、上链从右到左——叉积 ≤0 就弹栈`,
+  `monotone chain: sort by x (O(n log n), the whole bill) -> lower chain left-to-right, upper right-to-left - cross product <= 0 pops the stack`),
+  () => 'b', new THREE.Vector3(0, 0.9, 0));
+addLabel(() => L(`叉积 (B−A)×(C−B):>0 左转保留(绿),≤0 右转弹栈(红)——共线点去留就在 = 与 > 的一字之间`,
+  `cross (B-A)x(C-B): >0 left turn, keep (green); <=0 right turn, pop (red) - collinear fate hangs on = versus >`),
+  () => turnNow === 1 ? 'g' : turnNow === 2 ? 'bad' : 'w', new THREE.Vector3(-6.4, 4.6, 0));
+addLabel(() => L(`复杂度 O(n log n),下界 Ω(n log n)——凸包不可能快过排序(从排序归约证明);礼物包装 O(nh) 在「全在包上」时退化 O(n²)`,
+  `O(n log n) meets the Omega(n log n) bound - a hull can never beat sorting (by reduction); gift wrapping O(nh) degrades to O(n^2) when all points sit on the hull`),
+  () => 'e', new THREE.Vector3(6.2, 4.4, 0));
+addLabel(() => L(`应用:碰撞检测的外扩壳、点云轮廓、地理围栏、凸优化可行域——一切「最紧的圈」都是它`,
+  `uses: collision hulls, point-cloud outlines, geofences, convex feasible regions - every "tightest loop" is this polygon`),
+  () => 'g', new THREE.Vector3(0, 3.9, -4.4));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'rope', tgt: [0, 3, 4.2],
+    b: '绳子的直觉:绷直即最优', be: 'The rope intuition: taut is optimal',
+    d: '凸包的定义自带画面:所有点钉在板上,一根橡皮筋绕外一圈松手——筋要收缩,点要顶住,平衡态就是包含全部点的最小凸多边形。为什么是「凸」的:绳子永远不会陷进两点之间的凹坑——凹进去意味着还能更短,力学上不稳定。这给了算法一个哲学:凸包是「自由度的 poverty」——包外的点全被绳子没收了选择权,只有包顶点还站着。',
+    de: 'The definition carries its own picture: pin all the points, loop a rubber band around them, let go - the band contracts, the points resist, and the equilibrium is the smallest convex polygon containing everything. Why convex: a band never sags into the dip between two nails - sagging would mean it could still shorten, and mechanics forbids it. This hands the algorithm a philosophy: the hull is destitution of freedom - every point outside the vertices forfeits its choices to the rope.' },
+  { hl: 'scan', tgt: [-3, 3, 3.2],
+    b: '排序是全部代价', be: 'Sorting is the entire bill',
+    d: '单调链把问题摊成两步:先把点按 x 排序——这一步 O(n log n),也是算法唯一的超线性代价;然后各用一次线性扫描建下链与上链。总共 O(n log n),而凸包问题的下界恰是 Ω(n log n):把点集映射到「全在凸包上」的构造,解凸包的顺序就还原了排序——所以不可能有 O(n) 的凸包。Graham 1972 年的原始解按极角排序,Andrew 的单调链换 x 排序,数值上更稳、实现更短,今天它就是教科书默认答案。',
+    de: 'Monotone chain splits the work in two: sort the points by x - the O(n log n), the only superlinear cost - then one linear sweep builds the lower chain and one the upper. Total O(n log n), and the problem s lower bound is exactly Omega(n log n): map any sorting instance onto points that all sit on their hull, and reading off the hull recovers the sorted order - so no O(n) hull can exist. Graham sorted by polar angle in 1972; Andrew s monotone chain swaps in x-sorting, numerically sturdier and shorter to write - it is the textbook default today.' },
+  { hl: 'scan', tgt: [0, 3, 2.6],
+    b: '叉积=转向判定', be: 'The cross product is the turn test',
+    d: '栈顶两点 A、B 与新点 C 做叉积 (B−A)×(C−B):叉积的 z 分量正是三个点的转向——正=左转(逆时针),负=右转,零=共线。凸包要求一路左转:所以右转就弹栈,把 B 淘汰,再验 A、C 与下一个候选。整个算法只靠这一个判据,数值上只涉及乘减,稳定到可以吃整数坐标;弹栈是均摊的——每个点至多进出栈各一次,扫描因此严格线性。',
+    de: 'Take the stack top A, B and the new point C and compute the cross product (B-A)x(C-B): its z-component is exactly the turn of the triple - positive is a left turn, negative right, zero collinear. A convex hull turns left all the way around: a right turn pops B, and A, C face the next candidate. One test runs the whole algorithm - two multiplications and a subtraction, stable enough for integer coordinates; popping is amortized - each point enters and leaves the stack at most once, so the sweep is strictly linear.' },
+  { hl: 'degen', tgt: [3, 3, 3.0],
+    b: '共线与重复:一字千金', be: 'Collinear and duplicate points: one character, one world',
+    d: '叉积为零(三点共线)时怎么办?弹栈条件写 ≤0,中间点被扔掉——凸包最小、没有冗余顶点;写成 <0,共线点全部保留——多边形有零角度的「假顶点」。哪种对取决于下游:碰撞检测要最简凸包,轮廓描述要保留拐点。重复点、单个点、全部共线的退化输入,也都在这两个字符的约定里自动处理——「鲁棒」不是加 if,是把边界情况交给代数。',
+    de: 'What if the cross product is zero - three collinear points? Pop on <=0 and the middle point is discarded - the minimal hull, no redundant vertices; pop on <0 and every collinear point survives - a polygon with zero-angle false corners. Which is right depends on the customer: collision detection wants the lean hull, outline description wants the inflections. Duplicates, a single point, all-collinear inputs - all fall out of the same two characters. Robustness is not extra ifs; it is handing the edge cases to algebra.' },
+  { hl: 'big', tgt: [0, 3.6, 4.6],
+    b: '两链合一与工程应用', be: 'Two chains join - and the engineering payoff',
+    d: '下链从最左扫到最右,上链反向再扫一遍,两链首尾相接(去掉重复端点)就是逆时针凸包。工程里凸包无处不在:物理引擎先给网格套凸包做粗碰撞,再交给精确形状;GIS 用它画点云轮廓与地理围栏;机器人运动规划的 C-障碍物是构型空间点的凸包近似;甚至编译器寄存器分配的区间着色也踩着它的影子。「先圈地,再精算」是几何计算的第一性套路。',
+    de: 'The lower chain sweeps left to right, the upper right to left, and joining them end to end (dropping the doubled endpoints) yields the counterclockwise hull. In engineering it is everywhere: physics engines wrap meshes in hulls for broad-phase collision before exact shapes take over; GIS draws point-cloud outlines and geofences with it; motion planning approximates configuration-space obstacles by hulls; even register allocation in compilers casts its shadow. Fence first, compute second - the first principle of computational geometry.' },
+  { hl: 'rope', tgt: [0, 3.2, 4.8],
+    b: '凸包之外:对偶的世界', be: 'Beyond the hull: the dual universe',
+    d: '凸包还藏着一个对偶彩蛋:平面点集的凸包,对应直线的「下包络」——把点 变成线 y=ax−b,凸包下链恰好是这些直线的逐点最小值。Voronoi 图、Delaunay 三角化、最近点对,都能在对偶空间里变成凸包或排序问题的亲戚;计算几何的大一半,就是在这对镜像之间挑好走的一边。下一课如果讲「凸包的 3D 版」,你已经知道:同样的叉积逻辑,换成四面体的体积判定。',
+    de: 'The hull hides a dual easter egg: a planar point set s hull maps to the lower envelope of lines - turn point (a,b) into line y = ax - b and the hull s lower chain is exactly the pointwise minimum of those lines. Voronoi diagrams, Delaunay triangulations, closest pairs all morph into cousins of hulls or sorting in the dual space; half of computational geometry is picking the friendlier side of this mirror. And if the next lesson is hulls in 3D, you already know the recipe: same cross-product logic, promoted to tetrahedron volume tests.' },
+];
+
+/* ---------------- 滑杆 ---------------- */
+const elN = document.getElementById('vN'), elNVal = document.getElementById('vNVal');
+const elSpd = document.getElementById('vSpd'), elSpdVal = document.getElementById('vSpdVal');
+const tglRope = document.getElementById('tglRope');
+function updateSliderLabels() {
+  elNVal.textContent = nPts.toFixed(0) + ' 点';
+  elSpdVal.textContent = '×' + animSpd.toFixed(0);
+}
+elN.addEventListener('input', () => { nPts = +elN.value; updateSliderLabels(); resetRun(); });
+resetRun();   // 页面加载即有一份点云与事件流(公式由初始化流程统一刷新)
+elSpd.addEventListener('input', () => { animSpd = +elSpd.value; updateSliderLabels(); });
+
+/* ---------------- 预设 ---------------- */
+function runModes(simDt) {
+  if (preset === 'rope') {
+    ropeOn = true; ropeT += simDt;
+    tPres += simDt;
+    if (tPres > 6) { tPres = 0; resetRun(); }
+    running = false;                 // 绳模式不跑算法
+  } else if (preset === 'scan') {
+    ropeOn = false;
+    running = true;
+    evTimer += simDt * animSpd * 6;
+  } else if (preset === 'degen') {
+    ropeOn = false; running = true;
+    if (evI >= events.length) { if (tPres > 2) { tPres = 0; resetRun(); } tPres += simDt; }
+    evTimer += simDt * animSpd * 6;
+  } else if (preset === 'big') {
+    ropeOn = false; running = true;
+    if (nPts !== 200) { nPts = 200; elN.value = 200; updateSliderLabels(); resetRun(); }
+    evTimer += simDt * animSpd * 12;
+  } else {
+    ropeOn = tglRope.checked;
+  }
+  /* 事件推进 */
+  while (running && evTimer > 1 && evI < events.length) {
+    evTimer -= 1;
+    stepEvent(events[evI++]);
+  }
+}
+
+function stepEvent(ev) {
+  if (ev.t === 'sort') { sortedDone = true; }
+  else if (ev.t === 'visit') { /* 扫描线跟随 visit 点 */ }
+  else if (ev.t === 'cross') { turnNow = ev.sign > 0 ? 1 : (ev.sign < 0 ? 2 : 2); }
+  else if (ev.t === 'pop') { stack.pop(); }
+  else if (ev.t === 'clear') { stack.length = 0; }
+  else if (ev.t === 'push') { stack.push(ev.i); turnNow = 0; }
+  else if (ev.t === 'done') { running = false; }
+}
+
+/* ---------------- 每帧可视 ---------------- */
+const V = new THREE.Vector3();
+function sceneFrame(et, simDt, dt) {
+  /* 点云渲染 */
+  const inStack = new Set(stack);
+  const hullSet = new Set(running ? [] : hull);
+  for (let k = 0; k < nPts; k++) {
+    P2W(points[k], dummy.position);
+    const isStack = inStack.has(k);
+    const isHull = hullSet.has(k);
+    dummy.position.y += isStack ? 0.18 : 0;
+    dummy.scale.setScalar(isHull ? 1.6 : isStack ? 1.25 : 1);
+    dummy.updateMatrix();
+    ptMesh.setMatrixAt(k, dummy.matrix);
+    if (isHull) cTmp.set(0xffe9a8);
+    else if (isStack) cTmp.set(0x6fc0ff);
+    else cTmp.set(0x9fb0c3);
+    ptMesh.setColorAt(k, cTmp);
+  }
+  dummy.position.set(0, -50, 0);
+  dummy.updateMatrix();
+  for (let k = nPts; k < PT_MAX; k++) ptMesh.setMatrixAt(k, dummy.matrix);
+  ptMesh.instanceMatrix.needsUpdate = true;
+  if (ptMesh.instanceColor) ptMesh.instanceColor.needsUpdate = true;
+  /* 链边线(当前栈) */
+  {
+    const arr = chainGeo.attributes.position.array;
+    let w = 0;
+    for (let k = 0; k + 1 < stack.length; k++) {
+      P2W(points[stack[k]], V); arr[w++] = V.x; arr[w++] = V.y; arr[w++] = V.z;
+      P2W(points[stack[k + 1]], V); arr[w++] = V.x; arr[w++] = V.y; arr[w++] = V.z;
+    }
+    for (let k = w / 3; k < PT_MAX * 2; k++) { arr[k * 3] = 0; arr[k * 3 + 1] = -50; arr[k * 3 + 2] = 0; }
+    chainGeo.attributes.position.needsUpdate = true;
+  }
+  /* 凸包(完成后) */
+  {
+    const arr = hullGeo.attributes.position.array;
+    const H = running && evI < events.length ? stack : hull;
+    let w = 0;
+    if (!running && hull.length) {
+      for (let k = 0; k <= hull.length; k++) {
+        P2W(points[hull[k % hull.length]], V);
+        arr[w++] = V.x; arr[w++] = V.y; arr[w++] = V.z;
+      }
+      hullLine.visible = true;
+    } else hullLine.visible = false;
+    hullGeo.attributes.position.needsUpdate = true;
+  }
+  /* 扫描线:跟随事件 */
+  if (running && evI > 0 && evI <= events.length) {
+    for (let b = evI - 1; b >= 0; b--) {
+      const ev = events[b];
+      if (ev.t === 'visit' || ev.t === 'push' || ev.t === 'pop' || ev.t === 'cross') {
+        const i = ev.t === 'cross' ? ev.c : ev.i;
+        if (points[i]) { P2W(points[i], V); scanPlane.position.x = V.x; scanPlane.position.z = V.z; }
+        break;
+      }
+    }
+  } else if (!running) scanPlane.position.x = 9;
+  /* 转向弧 */
+  {
+    const ev = events[Math.max(0, evI - 1)];
+    if (running && ev && ev.t === 'cross' && evTimer > 0.2) {
+      arcG.visible = true;
+      const A = points[ev.a], B = points[ev.b], C = points[ev.c];
+      P2W({ x: (A.x + B.x + C.x) / 3, y: (A.y + B.y + C.y) / 3 }, arcG.position);
+      arcG.material = ev.sign > 0 ? M.arcG : M.arcR;
+      arcG.rotation.z = ev.sign > 0 ? 0 : Math.PI * 0.2;
+      arcG.rotation.x = -Math.PI / 2;
+      M.arcG.opacity = Math.min(1, evTimer);
+      M.arcR.opacity = Math.min(1, evTimer);
+    } else arcG.visible = false;
+  }
+  /* 绳:弹簧收缩到凸包 */
+  ropeLine.visible = ropeOn || preset === 'rope';
+  if (ropeLine.visible) {
+    const prog = clamp01(ropeT / 2.2);
+    const wobble = (1 - prog) * 0.4;
+    const target = running ? null : hull;
+    for (let k = 0; k < ROPE_N; k++) {
+      const a = k / ROPE_N * TAU;
+      let tx, ty;
+      if (target && target.length > 2 && prog > 0.35) {
+        /* 目标:凸包多边形按角度采样 */
+        let best = 0, bd = 1e9;
+        for (let j = 0; j < target.length; j++) {
+          const p = points[target[j]];
+          const pa = Math.atan2(p.y, p.x);
+          let d = Math.abs(((pa - a) % TAU + TAU * 1.5) % TAU - Math.PI);
+          if (d < bd) { bd = d; best = j; }
+        }
+        tx = points[target[best]].x * 1.02; ty = points[target[best]].y * 1.02;
+      } else {
+        tx = Math.cos(a) * 8.2 * (1 - prog * 0.35);
+        ty = Math.sin(a) * 5.0 * (1 - prog * 0.35);
+      }
+      ropePts[k].x += (tx - ropePts[k].x) * Math.min(1, dt * 6) + Math.sin(et * 7 + k) * wobble * dt * 3;
+      ropePts[k].y += (ty - ropePts[k].y) * Math.min(1, dt * 6);
+    }
+    const arr = ropeGeo.attributes.position.array;
+    for (let k = 0; k <= ROPE_N; k++) {
+      P2W(ropePts[k % ROPE_N], V);
+      arr[k * 3] = V.x; arr[k * 3 + 1] = V.y + 0.05; arr[k * 3 + 2] = V.z;
+    }
+    ropeGeo.attributes.position.needsUpdate = true;
+  }
+}
+
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`单调链:排序 <b>O(n log n)</b> + 两遍线性扫描 · 叉积判据 <b>(B−A)×(C−B) ≤ 0 → 弹栈</b>`,
+      `monotone chain: sort <b>O(n log n)</b> + two linear sweeps - cross test <b>(B-A)x(C-B) <= 0 -> pop</b>`) +
+    '<br>' +
+    L(`进度 <b>${evI}/${events.length}</b> 事件 · 比较次数 <b>${cmpCount}</b> ≈ n log n = <b>${(nPts * Math.log2(Math.max(nPts, 2))).toFixed(0)}</b>`,
+      `progress <b>${evI}/${events.length}</b> events - comparisons <b>${cmpCount}</b> ~ n log n = <b>${(nPts * Math.log2(Math.max(nPts, 2))).toFixed(0)}</b>`) +
+    '<br>' +
+    L(`下界 <b>Ω(n log n)</b>(排序归约)· 礼物包装 <b>O(nh)</b> · h=凸包顶点数 = <b>${running && evI < events.length ? '?' : hull.length}</b>`,
+      `lower bound <b>Omega(n log n)</b> (sorting reduction) - gift wrapping <b>O(nh)</b> - h = hull size = <b>${running && evI < events.length ? '?' : hull.length}</b>`);
+}
+function updateStats() {
+  stA.innerHTML = nPts.toFixed(0);
+  stA.className = 'v ok';
+  stB.innerHTML = sortedDone ? L('完成', 'done') : Math.round(clamp01(evI / Math.max(1, events.length)) * 100) + '<small> %</small>';
+  stB.className = 'v ok';
+  stC.innerHTML = stack.length;
+  stC.className = 'v ok';
+  stD.innerHTML = L(turnNow === 1 ? '左转·保留' : turnNow === 2 ? '右转·弹栈' : '—',
+    turnNow === 1 ? 'left·keep' : turnNow === 2 ? 'right·pop' : '—');
+  stD.className = 'v ' + (turnNow === 1 ? 'ok' : turnNow === 2 ? 'bad' : '');
+  stE.innerHTML = popCount;
+  stE.className = 'v ok';
+  stF.innerHTML = running && evI < events.length ? '…' : hull.length;
+  stF.className = 'v ' + (!running && hull.length ? 'ok' : '');
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  resetRun();
+  updateFormula();
+}
+
+
+/* ---------------- stats / formula 刷新 ---------------- */
+const stEls = ['stA', 'stB', 'stC', 'stD', 'stE', 'stF'].map(id => document.getElementById(id));
+
+/* 预设按钮接线(页面脚本已给出 PRESET_IDS) */
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  sceneFrame(et, simDt, dt);
+  /* 步骤高亮(呼吸脉冲):页面在 HL 表里登记材质 */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.emissiveIntensity = 0.55 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) { if (typeof drawScope === 'function') drawScope(); }
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

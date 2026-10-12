@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>车载毫米波雷达 · 调频连续波测距测速</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4f8fbf;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1f6a8f;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="车载毫米波雷达与 FMCW:用拍频量距离" data-en="Automotive Radar &amp; FMCW: Ranging by Beat Frequency">车载毫米波雷达与 FMCW:用拍频量距离</h1>
+  <div class="sub" data-zh="77 GHz 毫米波雷达以 FMCW(调频连续波)工作:发射锯齿 chirp(带宽 ~1 GHz),回波延迟 τ=2d/c 与本地信号混频出拍频 f_b=S·τ——测频比测时容易十几个数量级,1 GHz 带宽给出 15 cm 距离分辨率。chirp 串之间目标还在动:回波相位以 4πv/(λ·f_s) 的步进旋转,二维 FFT(距离×多普勒)同时给出距离与相对速度;3 发 4 收 MIMO 用接收相位差量出方位角(~10°)。探测 200 m+,雨雾黑夜不致盲——摄像头看不清的地方,毫米波照常上班;AEB 自动紧急制动的最后一道保险常是它。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A 77 GHz automotive radar runs FMCW: it transmits sawtooth chirps (~1 GHz wide), and the echo delay tau = 2d/c mixed with the local signal yields a beat frequency f_b = S·tau - measuring frequency beats measuring time by a dozen orders of magnitude, and 1 GHz of bandwidth buys 15 cm of range resolution. Between chirps the target moves: echo phase rotates stepwise, and a 2D FFT (range x Doppler) returns range and relative velocity together; 3-TX 4-RX MIMO reads azimuth from the receive phase difference (~10 deg). Detection past 200 m, blind to neither rain nor night - where cameras fail, millimeter waves clock in; the last line of AEB braking is usually this sensor. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">77 GHz 毫米波雷达以 FMCW(调频连续波)工作:发射锯齿 chirp(带宽 ~1 GHz),回波延迟 τ=2d/c 与本地信号混频出拍频 f_b=S·τ——测频比测时容易十几个数量级,1 GHz 带宽给出 15 cm 距离分辨率。chirp 串之间目标还在动:回波相位以 4πv/(λ·f_s) 的步进旋转,二维 FFT(距离×多普勒)同时给出距离与相对速度;3 发 4 收 MIMO 用接收相位差量出方位角(~10°)。探测 200 m+,雨雾黑夜不致盲——摄像头看不清的地方,毫米波照常上班;AEB 自动紧急制动的最后一道保险常是它。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="最近目标距离" data-en="nearest range">最近目标距离</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="相对速度" data-en="relative speed">相对速度</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="拍频" data-en="beat frequency">拍频</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="方位角" data-en="azimuth">方位角</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="距离分辨率" data-en="range resolution">距离分辨率</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="检测置信" data-en="detection confidence">检测置信</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="chirp 波前(发射)" data-en="chirp wavefront (TX)">chirp 波前(发射)</span>
+    <span class="chip g" data-zh="回波(目标反射)" data-en="echoes (reflections)">回波(目标反射)</span>
+    <span class="chip o" data-zh="静止卡车" data-en="stationary truck">静止卡车</span>
+    <span class="chip r" data-zh="逼近轿车" data-en="approaching sedan">逼近轿车</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-ranging" data-zh="拍频测距" data-en="ranging by beat">拍频测距</button>
+    <button class="abtn" id="btn-doppler" data-zh="多普勒测速" data-en="Doppler speed">多普勒测速</button>
+    <button class="abtn" id="btn-mimo" data-zh="MIMO 测角" data-en="MIMO angle">MIMO 测角</button>
+    <button class="abtn" id="btn-weather" data-zh="雨幕对照" data-en="rain vs camera">雨幕对照</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="本车速度" data-en="ego speed">本车速度</label><input id="vEgo" type="range" min="0" max="120" step="5" value="60"><span class="val" id="vEgoVal"></span></div>
+  <div class="row"><label data-zh="目标距离" data-en="target range">目标距离</label><input id="vTrk" type="range" min="10" max="80" step="5" value="45"><span class="val" id="vTrkVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="chirp / 拍频" data-en="chirp / beat">chirp / 拍频</span></label>
+        <label><input id="tglRain" type="checkbox"> <span data-zh="雨幕" data-en="rain">雨幕</span></label>
+        <label><input id="tglMap" type="checkbox"> <span data-zh="距离-多普勒图" data-en="range-Doppler map">距离-多普勒图</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../lidar/" data-zh="激光雷达" data-en="LiDAR">激光雷达</a>
+    <a href="../radar-speed/" data-zh="雷达测速" data-en="radar speed gun">雷达测速</a>
+    <a href="../beamforming/" data-zh="麦克风阵列与波束成形" data-en="arrays &amp; beamforming">麦克风阵列与波束成形</a>
+    <a href="../wifi/" data-zh="Wi-Fi" data-en="Wi-Fi">Wi-Fi</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(11, 8, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 2.5, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);   // 双通道环形缓冲
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= 车载毫米波雷达 FMCW ================= */
+const TITLE_ZH = '车载毫米波雷达 · FMCW';
+const TITLE_EN = 'Automotive Radar · FMCW';
+const PRESET_IDS = ['ranging', 'doppler', 'mimo', 'weather'];
+
+const B_W = 1.0;              // 带宽 GHz
+const S_SLOPE = 25e12;        // 斜率 Hz/s(1 GHz / 40 μs)
+const LAM = 0.0039;           // 波长 m(77 GHz)
+let egoV = 60;                // km/h
+let trkD = 45;                // 卡车距离 m(滑杆)
+let sedanD = 28, sedanV = -8; // 逼近轿车:距离 m 与相对速度 m/s(负=接近)
+let chirpT = 0, chirpN = 0;
+let rain = false;
+let mapOn = true;
+let beatMHz = 0, azDeg = 0;
+let tPres = 0;
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.45, depthWrite: false }),
+  road: mat(0x2a323c, { roughness: 0.8, metalness: 0.05, emissiveIntensity: 0.05 }),
+  ego: mat(0x6f8caf, { roughness: 0.35, metalness: 0.6 }),
+  radar: mat(0x3a4550, { roughness: 0.4, metalness: 0.5 }),
+  patch: mat(0xffd27a, { roughness: 0.35, metalness: 0.3, emissiveIntensity: 0.7 }),
+  truck: mat(0xffb45f, { roughness: 0.5, metalness: 0.3, emissiveIntensity: 0.35 }),
+  sedan: mat(0xff6b6b, { roughness: 0.4, metalness: 0.4, emissiveIntensity: 0.45 }),
+  rail: mat(0x8f9aa6, { roughness: 0.5, metalness: 0.6 }),
+  tx: mat(0x6fc0ff, { roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.5, emissiveIntensity: 0.7 }),
+  rx: mat(0x7bd88f, { roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.5, emissiveIntensity: 0.7 }),
+  drop: mat(0xbde9ff, { roughness: 0.2, metalness: 0, transparent: true, opacity: 0.55, emissiveIntensity: 0.5 }),
+  mapcell: mat(0x7bd88f, { roughness: 0.3, metalness: 0.1, emissiveIntensity: 0.8 }),
+  mapPlane: mat(0x232c38, { roughness: 0.6, metalness: 0.2, transparent: true, opacity: 0.75 }),
+  camBlur: mat(0x9fb0c3, { roughness: 0.2, metalness: 0, transparent: true, opacity: 0.0, emissiveIntensity: 0.2 }),
+  phase: mat(0xc9885e, { roughness: 0.35, metalness: 0.4, emissiveIntensity: 0.6 }),
+};
+const HL = { ranging: M.tx, doppler: M.rx, mimo: M.phase, weather: M.drop };
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+}
+
+/* ---------------- 场景 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(56, 0.1, 38), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(38, 19, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+/* 道路(沿 +X 前进) */
+const road = new THREE.Mesh(new THREE.BoxGeometry(44, 0.06, 7), M.road);
+road.position.set(10, 0.05, 0);
+scene.add(road);
+/* 本车 + 雷达模块 */
+const egoG = new THREE.Group();
+scene.add(egoG);
+const egoBody = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.1, 1.6), M.ego);
+egoBody.position.set(0, 0.8, 0);
+egoG.add(egoBody);
+const radarBox = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.5, 0.9), M.radar);
+radarBox.position.set(1.7, 0.7, 0);
+egoG.add(radarBox);
+/* 3×4 天线贴片阵 */
+{
+  const g = new THREE.BoxGeometry(0.02, 0.07, 0.07);
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) {
+    const p = new THREE.Mesh(g, M.patch);
+    p.position.set(1.87, 0.5 + r * 0.16, -0.27 + c * 0.18);
+    egoG.add(p);
+  }
+}
+/* 目标:卡车(静止)/ 轿车(逼近)/ 护栏 */
+const truckG = new THREE.Group();
+scene.add(truckG);
+{
+  const box = new THREE.Mesh(new THREE.BoxGeometry(4.5, 2.6, 2.4), M.truck);
+  box.position.y = 1.6;
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.8, 2.2), M.truck);
+  cab.position.set(-2.9, 1.2, 0);
+  truckG.add(box, cab);
+}
+const sedanG = new THREE.Group();
+scene.add(sedanG);
+{
+  const body = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.8, 1.6), M.sedan);
+  body.position.y = 0.7;
+  const cab2 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.7, 1.4), M.sedan);
+  cab2.position.set(-0.1, 1.35, 0);
+  sedanG.add(body, cab2);
+}
+const rail = new THREE.Mesh(new THREE.BoxGeometry(30, 0.35, 0.2), M.rail);
+rail.position.set(18, 0.9, 5.2);
+scene.add(rail);
+/* chirp 波前(发射弧)与回波弧 */
+const arcs = [];
+{
+  const g = new THREE.TorusGeometry(1, 0.06, 6, 26, Math.PI * 0.9);
+  for (let k = 0; k < 8; k++) {
+    const isRx = k % 2 === 1;
+    const m = new THREE.Mesh(g, isRx ? M.rx : M.tx);
+    m.rotation.x = Math.PI / 2;
+    m.rotation.z = -Math.PI * 0.45;
+    scene.add(m);
+    arcs.push({ m, isRx, f: k / 8 });
+  }
+}
+/* 距离-多普勒图(浮起网格) */
+const mapG = new THREE.Group();
+mapG.position.set(6, 6.5, -5);
+scene.add(mapG);
+const mapPlane = new THREE.Mesh(new THREE.BoxGeometry(8, 0.1, 4.5), M.mapPlane);
+mapG.add(mapPlane);
+const mapCells = [];
+{
+  const g = new THREE.BoxGeometry(0.5, 0.3, 0.4);
+  for (let k = 0; k < 3; k++) {
+    const c = new THREE.Mesh(g, M.mapcell);
+    c.visible = false;
+    mapG.add(c);
+    mapCells.push(c);
+  }
+}
+const mapLbl = new THREE.Mesh(new THREE.BoxGeometry(8, 0.02, 0.12), M.patch);
+mapLbl.position.set(0, 0.08, 2.3);
+mapG.add(mapLbl);
+/* 雨滴池 */
+const RAIN_N = 60;
+const rains = [];
+{
+  const g = new THREE.SphereGeometry(0.05, 6, 5);
+  for (let k = 0; k < RAIN_N; k++) {
+    const m = new THREE.Mesh(g, M.drop);
+    scene.add(m);
+    rains.push({ m, x: Math.random() * 30, z: (Math.random() - 0.5) * 14, v: 6 + Math.random() * 4 });
+  }
+}
+/* 摄像头致盲雾(相机前方灰球) */
+const camBlur = new THREE.Mesh(new THREE.SphereGeometry(1.6, 20, 16), M.camBlur);
+camBlur.position.set(2.2, 1.6, 3.2);
+camBlur.visible = false;
+scene.add(camBlur);
+/* 小相机图标 */
+const camG = new THREE.Group();
+camG.position.set(2.2, 1.6, 3.2);
+scene.add(camG);
+{
+  const b = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 0.3), M.radar);
+  const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.1, 10), M.patch);
+  lens.rotation.z = Math.PI / 2;
+  lens.position.x = 0.3;
+  camG.add(b, lens);
+}
+/* MIMO 相位图标(3 个接收天线的相位圆) */
+const mimoG = new THREE.Group();
+mimoG.position.set(-2.5, 4.6, 0);
+mimoG.visible = false;
+scene.add(mimoG);
+{
+  for (let k = 0; k < 3; k++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.05, 8, 28), M.phase);
+    ring.position.set(k * 1.15, Math.sin(k * 2.1) * 0.25, 0);
+    mimoG.add(ring);
+  }
+}
+
+camera.position.set(-2, 6, 12);
+controls.target.set(6, 1.2, 0);
+tgtVec.set(6, 1.2, 0);
+
+/* ---------------- 信号模型 ----------------
+   拍频 f_b = S·2d/c;多普勒相位步进 Δφ = 4π·v_rel/(λ·f_chirp);
+   方位角来自 3 接收天线相位差 Δφ = 2π·d_ant·sinθ/λ。 */
+function signalModel() {
+  const d = trkD;
+  beatMHz = S_SLOPE * 2 * d / 3e8 / 1e6;
+  azDeg = Math.asin(clamp(sedanD > 1 ? 0.16 : 0.16, -1, 1)) * 180 / Math.PI;   // 轿车略偏车道
+  return beatMHz;
+}
+
+/* ---------------- 标签 ---------------- */
+addLabel(() => L(`本车 ${egoV.toFixed(0)} km/h · 雷达 77 GHz(λ≈3.9 mm),3 发 4 收贴片阵藏在车标后`,
+  `ego at ${egoV.toFixed(0)} km/h - 77 GHz radar (lambda ~3.9 mm), 3-TX 4-RX patch array hidden behind the badge`),
+  () => 'st', new THREE.Vector3(0, 3.0, 0));
+addLabel(() => L(`锯齿 chirp:B = 1 GHz / 40 μs → 斜率 25 MHz/μs;回波延迟 τ=2d/c 混频成拍频 f_b = S·τ——测频代替测时`,
+  `sawtooth chirp: B = 1 GHz over 40 us -> slope 25 MHz/us; echo delay tau = 2d/c mixes down to beat f_b = S·tau - frequency instead of time`),
+  () => 'b', new THREE.Vector3(8, 3.4, 0));
+addLabel(() => L(`卡车 ${trkD.toFixed(0)} m(相对静止,f_b ≈ ${beatMHz.toFixed(1)} MHz)· 轿车 ${sedanD.toFixed(0)} m、以 ${Math.abs(sedanV).toFixed(0)} m/s 逼近(多普勒峰在负侧)`,
+  `truck ${trkD.toFixed(0)} m away (station-relative, f_b ≈ ${beatMHz.toFixed(1)} MHz) - sedan ${sedanD.toFixed(0)} m closing at ${Math.abs(sedanV).toFixed(0)} m/s (Doppler peak on the negative side)`),
+  () => 'e', new THREE.Vector3(14, 3.6, -2));
+addLabel(() => L(`距离分辨率 ΔR = c/2B = ${ (3e8 / 2 / (B_W * 1e9)).toFixed(2) } m · 探测 200 m+ · MIMO 相位差给方位角(3 收,~10°)`,
+  `range resolution c/2B = ${(3e8 / 2 / (B_W * 1e9)).toFixed(2)} m - detection 200 m+ - MIMO phase difference reads azimuth (4 RX, ~10 deg)`),
+  () => 'w', new THREE.Vector3(6, 8.4, -5));
+addLabel(() => L(`雨幕对照:摄像头被水幕糊掉(左上灰球),毫米波对 3 mm 雨滴几乎透明——恶劣天气才是它的主场`,
+  `rain test: the camera drowns in the spray (gray ball), while 3 mm raindrops are near-transparent to 77 GHz - foul weather is home turf`),
+  () => 'g', new THREE.Vector3(2.2, 3.8, 3.2));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'ranging', tgt: [8, 3.2, 0],
+    b: '拍频测距:把时间换算成频率', be: 'Beat ranging: trading time for frequency',
+    d: '直接测回波延迟要分辨纳秒级(1 m ↔ 6.7 ns)——FMCW 绕开这道难题:发射频率线性上扫的 chirp,回波晚到 τ=2d/c,与本地当前频率差出一个恒定的拍频 f_b=S·τ。50 m 目标:τ=333 ns,S=25 MHz/μs → f_b=8.3 MHz——把「量时间」变成「量频率」,FFT 数格子就行,精度与采样率解耦。1 GHz 带宽给 15 cm 距离分辨率:相邻 15 cm 内的两个目标在距离轴上分开各占一格。',
+    de: 'Timing an echo directly means resolving nanoseconds (1 m <-> 6.7 ns) - FMCW sidesteps that: transmit a frequency ramp, the echo returns late by tau = 2d/c, and mixing it against the local ramp leaves a constant beat f_b = S·tau. A 50 m target: tau = 333 ns, S = 25 MHz/us -> 8.3 MHz - measuring time becomes counting FFT bins, precision decoupled from the sample clock. 1 GHz of bandwidth yields a range resolution of c/2B = 0.15 m: two targets 15 cm apart split into neighboring bins.' },
+  { hl: 'doppler', tgt: [14, 2.2, 0],
+    b: '多普勒测速:chirp 间的相位舞步', be: 'Doppler: the phase dance between chirps',
+    d: '单个 chirp 给距离;一串 chirp 给速度。目标在相邻 chirp 之间移动 v·T_chirp,回波相位因此每拍前进 Δφ=4πvT/λ——v=10 m/s、λ=3.9 mm 时每 chirp 转 ~11 rad。对同一距离格沿 chirp 维再做一次 FFT,速度轴出现目标谱峰:接近为负、远离为正,静止卡车停在零速线。距离-多普勒二维谱把「前车减速」与「护栏」区分开——AEB 判据的第一列数据就从这里读。',
+    de: 'One chirp gives range; a train of chirps gives speed. Between neighboring chirps the target advances v·T_chirp, so echo phase steps by delta-phi = 4·pi·v·T/lambda - at 10 m/s on a 3.9 mm wavelength that is ~11 rad per chirp. FFT along the chirp axis for each range bin and the velocity axis grows a peak: approaching negative, receding positive, the stationary truck parked on zero. The range-Doppler map separates "car braking ahead" from "guardrail" - the first column of every AEB decision.' },
+  { hl: 'mimo', tgt: [-2.5, 4.6, 2.6],
+    b: 'MIMO 测角:相位差当量角器', be: 'MIMO: phase difference as a protractor',
+    d: '距离与速度都是一维的,目标在车道里的横向位置要靠角度:同一回波到达 4 个间隔 d 的接收天线,相位依次差 Δφ=2π·d·sinθ/λ。3 发 4 收经 MIMO 正交编码等效成 12 虚拟阵元,方位分辨率 ~10°——足以区分车道与邻道。角度是毫米波雷达的短板(孔径小),所以 fusion 方案里它管距离速度、摄像头管车道线,互补而不互替。',
+    de: 'Range and velocity are one-dimensional; lateral position in the lane needs angle: the same echo reaches four receive antennas spaced d apart with successive phase steps delta-phi = 2pi·d·sin(theta)/lambda. 3 TX x 4 RX under MIMO orthogonal coding act as 12 virtual elements, ~10 deg azimuth resolution - enough to tell your lane from the neighbor. Angle is the millimeter-wave weak spot (tiny aperture), which is why fusion splits the work: radar owns range and speed, the camera owns lanes - complements, not substitutes.' },
+  { hl: 'weather', tgt: [2.2, 2.4, 3.4],
+    b: '雨雾黑夜:毫米波的主场', be: 'Rain, fog, night: millimeter-wave home turf',
+    d: '光学传感器的天敌是遮蔽:雨滴把摄像头视野糊成一片、雾把激光雷达的光子吃掉大半、黑夜直接没收可见光。77 GHz 波长 3.9 mm,比雨滴大一个量级,绕射过去几乎不散射——暴雨中 200 m 探测距离缩水不到 20%。代价也有:金属以外的目标(行人泡沫假人)反射弱、角分辨率低、对静止物识别迟钝——所以 L2+ 方案是毫米波+摄像头+激光雷达互为冗余,雷达负责「任何天气下的最后一脚刹车」。',
+    de: 'Optical sensors fear occlusion: rain smears the camera, fog eats LiDAR photons, night confiscates visible light outright. A 77 GHz wave at 3.9 mm is an order larger than raindrops and diffracts past with barely a scatter - in pouring rain the 200 m range shrinks under 20%. The bill: weak returns from non-metallic targets (foam dummies), coarse angle resolution, sluggish statics - so L2+ stacks radar, camera and LiDAR as mutual redundancy, with radar owning "the last brake in any weather".' },
+  { hl: 'ranging', tgt: [6, 7.5, -4.6],
+    b: '距离-多普勒图怎么读', be: 'How to read the range-Doppler map',
+    d: '二维 FFT 的输出是一张图:横轴距离(每格 15 cm)、纵轴相对速度(每格 ~0.3 m/s),亮度是回波能量。图上三个亮点对应场景三目标:卡车(45 m,0 m/s)、轿车(28 m,−8 m/s)、护栏(18 m,0 m/s 的长条)。CFAR 恒虚警检测在噪声里圈出亮点,跟踪器把跨帧的点连成轨迹——「前车正在减速」就是同一个距离格上的峰逐帧向低速方向移动。自动驾驶的感知,从这张 256×256 的小图开始。',
+    de: 'The 2D FFT returns a picture: range across (15 cm bins), relative velocity down (~0.3 m/s bins), brightness for echo energy. Three bright cells match the three targets: truck (45 m, 0 m/s), sedan (28 m, -8 m/s), guardrail (a streak at 18 m, 0 m/s). CFAR circles the cells out of the noise floor, a tracker stitches them across frames into trajectories - "car ahead is braking" is one peak drifting toward lower speed frame by frame. Autonomous perception begins with this 256x256 thumbnail.' },
+  { hl: 'mimo', tgt: [10, 1.8, 2.6],
+    b: '从雷达到融合:传感器各司其职', be: 'From radar to fusion: every sensor its post',
+    d: '现代 AEB 的判据链是:毫米波雷达给距离速度(全天候)、摄像头给类别与车道、激光雷达补高精度轮廓;融合层在贝叶斯框架里把三路观测加权成一条轨迹,雷达的虚警(井盖、护栏)被视觉证伪,摄像头的漏检被雷达兜底。77 GHz 之外,4D 成像雷达(更多虚拟阵元、俯仰角)正在补角度短板——感知的答案从来不是「最好的传感器」,而是「互相补台的传感器们」。',
+    de: 'A modern AEB chain: millimeter radar owns range and speed in all weather, the camera owns class and lanes, LiDAR adds precise outlines; the fusion layer weights three observation streams into one trajectory under Bayesian bookkeeping - radar false alarms (manholes, guardrails) refuted by vision, vision misses backstopped by radar. Beyond 77 GHz, 4D imaging radar (more virtual elements, elevation angle) is closing the angle gap. The answer in perception is never "the best sensor" - it is sensors that cover for each other.' },
+];
+
+/* ---------------- 滑杆 ---------------- */
+const elEgo = document.getElementById('vEgo'), elEgoVal = document.getElementById('vEgoVal');
+const elTrk = document.getElementById('vTrk'), elTrkVal = document.getElementById('vTrkVal');
+const tglRain = document.getElementById('tglRain');
+const tglMap = document.getElementById('tglMap');
+function updateSliderLabels() {
+  elEgoVal.textContent = egoV.toFixed(0) + ' km/h';
+  elTrkVal.textContent = trkD.toFixed(0) + ' m';
+}
+elEgo.addEventListener('input', () => { egoV = +elEgo.value; updateSliderLabels(); });
+elTrk.addEventListener('input', () => { trkD = +elTrk.value; updateSliderLabels(); });
+tglRain.addEventListener('change', () => { rain = tglRain.checked; });
+tglMap.addEventListener('change', () => { mapOn = tglMap.checked; mapG.visible = mapOn; });
+tglMap.dispatchEvent(new Event('change'));
+
+/* ---------------- 预设 ---------------- */
+function runModes(simDt) {
+  if (preset === 'ranging') {            // 距离扫掠
+    tPres += simDt;
+    trkD = 45 + 30 * Math.sin(tPres * TAU / 8);
+    elTrk.value = clamp(trkD, 10, 80);
+    updateSliderLabels();
+  } else if (preset === 'doppler') {     // 轿车逼近
+    tPres += simDt;
+    sedanD -= simDt * 4;
+    if (sedanD < 8) sedanD = 40;
+  } else if (preset === 'mimo') {
+    tPres += simDt;
+  } else if (preset === 'weather') {
+    tPres += simDt;
+    rain = true;
+    if (!tglRain.checked) { tglRain.checked = true; rain = true; }
+  }
+  signalModel();
+  if (playing) pushSnd(Math.sin(chirpT * TAU * 2), (sedanD - 24) / 20);
+}
+
+/* ---------------- 每帧可视 ---------------- */
+const V = new THREE.Vector3();
+function sceneFrame(et, simDt, dt) {
+  truckG.position.set(2 + trkD / 2, 0, -0.4);
+  sedanG.position.set(2 + sedanD / 2, 0, 1.6);
+  sedanG.position.x += Math.sin(et * 0.7) * 0.15;
+  /* chirp 波前:发射弧外扩,到目标变回波弧收缩 */
+  chirpT += simDt * 1.1;
+  arcs.forEach((a, k) => {
+    const f = (chirpT * 0.5 + a.f) % 1;
+    if (a.isRx) {
+      const s = 1 + (1 - f) * 16;
+      a.m.scale.setScalar(s);
+      a.m.material = M.rx;
+      a.m.material.opacity = f * 0.5;
+    } else {
+      const s = 1 + f * 16;
+      a.m.scale.setScalar(s);
+      a.m.material = M.tx;
+      a.m.material.opacity = (1 - f) * 0.55;
+    }
+    a.m.position.set(radarBox.getWorldPosition(V).x, 0.75, 0);
+  });
+  /* 天线贴片闪烁 */
+  M.patch.emissiveIntensity = 0.5 + 0.4 * Math.abs(Math.sin(chirpT * TAU));
+  /* 距离-多普勒图:三目标格 */
+  mapG.visible = mapOn;
+  if (mapOn) {
+    mapG.rotation.y = -0.5 + Math.sin(et * 0.1) * 0.03;
+    const conf = rain ? 0.75 : 1;
+    const cells = [
+      { r: trkD, v: 0, m: M.truck },
+      { r: sedanD, v: sedanV, m: M.sedan },
+      { r: 16, v: 0, m: M.rail },
+    ];
+    cells.forEach((c, k) => {
+      mapCells[k].visible = true;
+      mapCells[k].material = c.m;
+      mapCells[k].position.set(-4 + c.r / 80 * 8, 0.3 + conf * 0.2, (c.v / 30) * 2);
+      mapCells[k].scale.setScalar(0.8 + conf * 0.4 + 0.1 * Math.sin(et * 5 + k));
+    });
+  }
+  /* 雨 */
+  const rainOn = rain || preset === 'weather';
+  camBlur.visible = rainOn;
+  camBlur.material.opacity = rainOn ? 0.35 + 0.15 * Math.sin(et * 2) : 0;
+  rains.forEach((r, k) => {
+    if (rainOn) {
+      r.x -= simDt * egoV * 0.02;
+      if (r.x < -4) r.x = 26;
+      r.m.position.set(r.x, 1.5 + Math.sin(et * r.v + k) * 0.9, r.z);
+      r.m.scale.setScalar(0.7 + 0.5 * Math.sin(et * 2 + k));
+    } else r.m.position.y = -5;
+  });
+  /* MIMO 相位图标 */
+  mimoG.visible = preset === 'mimo';
+  if (mimoG.visible) {
+    mimoG.children.forEach((ring, k) => {
+      ring.rotation.x = et * 2 + k * 0.9;
+      ring.material.emissiveIntensity = 0.4 + 0.3 * Math.sin(et * 4 + k * 2);
+    });
+  }
+  /* 本车移动感(道路标线滚动) */
+  egoG.position.x = 0;
+  M.road.emissiveIntensity = 0.05 + 0.02 * Math.sin(et * 8);
+}
+
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`τ = 2d/c = ${(2 * trkD / 3e8 * 1e9).toFixed(0)} ns → 拍频 <b>f_b = S·τ ≈ ${beatMHz.toFixed(1)} MHz</b>(d = ${trkD.toFixed(0)} m)`,
+      `tau = 2d/c = ${(2 * trkD / 3e8 * 1e9).toFixed(0)} ns -> beat <b>f_b = S·tau ≈ ${beatMHz.toFixed(1)} MHz</b> (d = ${trkD.toFixed(0)} m)`) +
+    '<br>' +
+    L(`距离分辨率 <b>ΔR = c/2B = 0.15 m</b> · 相位步进 Δφ = 4πvT/λ · MIMO 方位 <b>~10°</b>`,
+      `range resolution <b>delta-R = c/2B = 0.15 m</b> - phase step delta-phi = 4·pi·v·T/lambda - MIMO azimuth <b>~10 deg</b>`) +
+    '<br>' +
+    L(`最近目标 <b>${Math.min(trkD, sedanD).toFixed(0)} m</b> · 相对速度 <b>${sedanV.toFixed(0)} m/s(轿车)</b> · 雨中探测损失 <b><20%</b>`,
+      `nearest <b>${Math.min(trkD, sedanD).toFixed(0)} m</b> - relative speed <b>${sedanV.toFixed(0)} m/s (sedan)</b> - rain loss <b><20%</b>`);
+}
+function updateStats() {
+  const near = Math.min(trkD, sedanD);
+  stA.innerHTML = near.toFixed(0) + '<small> m</small>';
+  stA.className = 'v ' + (near < 15 ? 'bad' : near < 30 ? 'warn' : 'ok');
+  stB.innerHTML = sedanV.toFixed(0) + '<small> m/s 接近</small>';
+  stB.className = 'v warn';
+  stC.innerHTML = beatMHz.toFixed(1) + '<small> MHz</small>';
+  stC.className = 'v ok';
+  stD.innerHTML = azDeg.toFixed(0) + '<small> °</small>';
+  stD.className = 'v ok';
+  stE.innerHTML = '0.15<small> m (c/2B)</small>';
+  stE.className = 'v ok';
+  stF.innerHTML = (rain ? 78 : 96) + '<small> %</small>';
+  stF.className = 'v ' + (rain ? 'warn' : 'ok');
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  egoV = 60; trkD = 45; sedanD = 28; tPres = 0;
+  rain = tglRain.checked = false;
+  elEgo.value = 60; elTrk.value = 45;
+  updateSliderLabels(); signalModel(); updateFormula();
+}
+
+
+/* ---------------- stats / formula 刷新 ---------------- */
+const stEls = ['stA', 'stB', 'stC', 'stD', 'stE', 'stF'].map(id => document.getElementById(id));
+
+/* 预设按钮接线(页面脚本已给出 PRESET_IDS) */
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  sceneFrame(et, simDt, dt);
+  /* 步骤高亮(呼吸脉冲):页面在 HL 表里登记材质 */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.emissiveIntensity = 0.55 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) { if (typeof drawScope === 'function') drawScope(); }
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
