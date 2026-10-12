@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delaunay 三角剖分 · 连点成网的最优解</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#3f8f6d;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#2f7a5c;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="Delaunay 三角剖分:连点成网的最优解" data-en="Delaunay Triangulation: The Best Way to Join the Dots">Delaunay 三角剖分:连点成网的最优解</h1>
+  <div class="sub" data-zh="把一堆散点连成三角形网格,连法多到天文数字,而坏的连法布满细长三角形:插值把邻域拉歪,有限元刚度矩阵病态,渲染表面撕裂。1934 年苏联数学家 Boris Delaunay 给出好网格的判据:每个三角形的外接圆内部不含任何其他点——空圆准则,它等价于在所有连法中最大化最小角,数值稳定性最好。怎么建?增量插入(Bowyer–Watson):新点落下,凡外接圆被它入侵的三角形当场塌陷,空腔边界与新点重连成星形,随机插入序下期望 O(n log n);四点共圆出现平局时,Lawson 翻转交换凸四边形对角线即可修复。它与 Voronoi 图互为对偶:相邻领地共边的两点连起来就是 Delaunay 边,三角形外心正是对偶顶点。按「增量插入全流程」看新点下落、空圆一闪、星形重连;按「边翻转修复」先故意把好对角线全换成坏的,红色细长三角形泛滥,再看翻转一次次把平均最小角顶回去;拖「点数」重建网格,把「点扰动」拉到 0 体会规则格点的共圆退化;「Voronoi 对偶」把对偶图抬到空中对照。地形 TIN、有限元前处理、自然邻域插值、地图渲染与三维重建,全是它的工地。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Join a scatter of points into a triangle mesh and the ways to do it explode astronomically - and bad joins are full of slivers: interpolation stretches across crooked neighborhoods, finite-element stiffness matrices turn ill-conditioned, rendered surfaces tear. In 1934 the Soviet mathematician Boris Delaunay stated the criterion of a good mesh: the circumcircle of every triangle must contain no other point - the empty-circle rule - equivalent to maximizing the minimum angle over all possible joins, hence the best numerical behavior. How is it built? Incremental insertion (Bowyer-Watson): a new point lands, every triangle whose circumcircle it invades collapses at once, and the cavity boundary is reconnected to the point as a star; with a random insertion order the expected cost is O(n log n). When four points turn out cocircular, a Lawson flip swaps the diagonal of the convex quad to repair the tie. The structure is dual to the Voronoi diagram: connect the two points whose territories share a boundary and you have drawn a Delaunay edge; each triangle circumcenter is a Voronoi vertex. Press incremental insertion to watch points drop, invaded circles flash and stars reconnect; press flip repair to first replace every good diagonal with a bad one - slivers flood in red - then watch Lawson flips push the mean minimum angle back up. Drag the point-count slider to rebuild, set jitter to zero to see the cocircular degeneracy of regular grids, and lift the Voronoi dual into the air to compare. Terrain TINs, FEM preprocessing, natural-neighbor interpolation, map rendering and 3D reconstruction all work on this construction. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">把一堆散点连成三角形网格,连法多到天文数字,而坏的连法布满细长三角形:插值把邻域拉歪,有限元刚度矩阵病态,渲染表面撕裂。1934 年苏联数学家 Boris Delaunay 给出好网格的判据:每个三角形的外接圆内部不含任何其他点——空圆准则,它等价于在所有连法中最大化最小角,数值稳定性最好。怎么建?增量插入(Bowyer–Watson):新点落下,凡外接圆被它入侵的三角形当场塌陷,空腔边界与新点重连成星形,随机插入序下期望 O(n log n);四点共圆出现平局时,Lawson 翻转交换凸四边形对角线即可修复。它与 Voronoi 图互为对偶:相邻领地共边的两点连起来就是 Delaunay 边,三角形外心正是对偶顶点。按「增量插入全流程」看新点下落、空圆一闪、星形重连;按「边翻转修复」先故意把好对角线全换成坏的,红色细长三角形泛滥,再看翻转一次次把平均最小角顶回去;拖「点数」重建网格,把「点扰动」拉到 0 体会规则格点的共圆退化;「Voronoi 对偶」把对偶图抬到空中对照。地形 TIN、有限元前处理、自然邻域插值、地图渲染与三维重建,全是它的工地。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="三角形数 T" data-en="triangles T">三角形数 T</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="平均最小角" data-en="mean min angle">平均最小角</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="细长三角形(<10°)" data-en="slivers (min angle under 10°)">细长三角形(<10°)</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="Lawson 翻转" data-en="Lawson flips">Lawson 翻转</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="插入进度" data-en="inserted">插入进度</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="最差最小角" data-en="worst min angle">最差最小角</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip g" data-zh="空外接圆:数值最优连法" data-en="empty circumcircle: optimal joins">空外接圆:数值最优连法</span>
+    <span class="chip r" data-zh="细长三角形:最小角 &lt;10°" data-en="sliver: min angle under 10 deg">细长三角形:最小角 &lt;10°</span>
+    <span class="chip o" data-zh="红圈 = 被入侵的外接圆" data-en="red rings = invaded circumcircles">红圈 = 被入侵的外接圆</span>
+    <span class="chip b" data-zh="蓝网 = Voronoi 对偶层" data-en="blue net = Voronoi dual">蓝网 = Voronoi 对偶层</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-insert" data-zh="增量插入全流程" data-en="incremental insertion">增量插入全流程</button>
+    <button class="abtn" id="btn-flip" data-zh="边翻转修复" data-en="flip repair">边翻转修复</button>
+    <button class="abtn" id="btn-cluster" data-zh="聚类点集" data-en="clustered points">聚类点集</button>
+    <button class="abtn" id="btn-voro" data-zh="Voronoi 对偶" data-en="Voronoi dual">Voronoi 对偶</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="点数" data-en="points">点数</label><input id="vPts" type="range" min="24" max="280" step="4" value="120"><span class="val" id="vPtsVal"></span></div>
+  <div class="row"><label data-zh="点扰动" data-en="jitter">点扰动</label><input id="vJit" type="range" min="0" max="100" step="5" value="60"><span class="val" id="vJitVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="质量直方图" data-en="quality histogram">质量直方图</span></label>
+        <label><input id="tglWire" type="checkbox" checked> <span data-zh="线框" data-en="wireframe">线框</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../voronoi/" data-zh="Voronoi 图" data-en="voronoi diagram">Voronoi 图</a>
+    <a href="../convex-hull/" data-zh="凸包" data-en="convex hull">凸包</a>
+    <a href="../numerical-integration/" data-zh="数值积分" data-en="numerical integration">数值积分</a>
+    <a href="../ray-tracing/" data-zh="光线追踪" data-en="ray tracing">光线追踪</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(11, 8, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 0.2, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  const same = preset === id;
+  preset = same ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  if (preset === 'insert') startInsertRun();
+  else if (preset === 'flip') startFlipRun();
+  else if (preset === 'cluster') { clustered = true; buildInstant(); }
+  else if (preset === 'voro') { voroOn = true; refreshVoronoi(); }
+  if (same) {
+    if (id === 'cluster') { clustered = false; buildInstant(); }
+    if (id === 'voro') { voroOn = false; voroLines.visible = false; }
+  }
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglWire = document.getElementById('tglWire');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= Delaunay 三角剖分 ================= */
+const TITLE_ZH = 'Delaunay 三角剖分 · 连点成网的最优解';
+const TITLE_EN = 'Delaunay Triangulation · The Best Way to Join the Dots';
+const PRESET_IDS = ['insert', 'flip', 'cluster', 'voro'];
+
+/* ---------------- 可调参数 / 全局状态 ---------------- */
+const AREA_X = 7, AREA_Z = 5;          // 点云布撒范围(场景单位)
+const MAXP = 300, MAXT = 620, MAXE = 960, CIRC_N = 36;
+let nPts = 120, jit = 60, clustered = false;
+let voroOn = false;
+let flipCount = 0;                     // 会话内累计翻转数
+let insTotal = 0, insertTotal = 0;     // 插入动画:目标点数 / 已插入
+let lastNewAng = [];                   // 最近一次插入新三角形的最小角(直方图红条)
+let cavityK = 0;                       // 最近一次空腔大小(入侵的外接圆数)
+/* 缓存的网格统计(refreshMesh 时更新) */
+let meshT = 0, meshMean = 0, meshWorst = 90, meshSliv = 0, hullEdges = 0, scopeDirty = true;
+
+/* 确定性随机(同一批参数可复现同一张网) */
+const BASE_SEED = 987654321;
+let seed = BASE_SEED;
+function rand() {
+  seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+  let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+}
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = rand() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } }
+
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.15,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.4, depthWrite: false }),
+  terr: new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true,
+    roughness: 0.82, metalness: 0.05, side: THREE.DoubleSide, emissive: 0x1a3a2c, emissiveIntensity: 0.12 }),
+  marker: mat(0xf2f7fb, { roughness: 0.3, metalness: 0.4, emissiveIntensity: 0.5 }),
+};
+const circMat = new THREE.LineBasicMaterial({ color: 0xff7752, transparent: true, opacity: 0.85 });
+circMat.userData.baseOp = 0.85;
+const flashMat = new THREE.LineBasicMaterial({ color: 0xffd45e, transparent: true, opacity: 0.95 });
+flashMat.userData.baseOp = 0.95;
+const wireMat = new THREE.LineBasicMaterial({ color: 0x9fb4c8, transparent: true, opacity: 0.45 });
+wireMat.userData.baseOp = 0.45;
+const voroMat = new THREE.LineBasicMaterial({ color: 0x6ec4ff, transparent: true, opacity: 0.8 });
+voroMat.userData.baseOp = 0.8;
+const pcMat = new THREE.PointsMaterial({ color: 0xd8e6f2, size: 0.14, sizeAttenuation: true });
+
+/* 步骤呼吸高亮:HL[键] → 材质(呼吸改 emissiveIntensity 或 opacity) */
+const HL = { terr: M.terr, circ: circMat, flash: flashMat, wire: wireMat, voro: voroMat };
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  wireMat.color.set(dark ? 0x9fb4c8 : 0x33414f);
+  pcMat.color.set(dark ? 0xd8e6f2 : 0x2c3a48);
+  circMat.color.set(dark ? 0xff7752 : 0xd24a2a);
+  voroMat.color.set(dark ? 0x6ec4ff : 0x1864ab);
+  M.terr.emissiveIntensity = dark ? 0.12 : 0.05;
+}
+
+/* ---------------- 场景:地形 + 网格 + 点云 + 对偶层 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(46, 0.12, 34), M.ground);
+ground.position.y = -1.78;
+scene.add(ground);
+const grid = new THREE.GridHelper(34, 17, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = -1.76;
+scene.add(grid);
+
+/* 地形网格面(非索引,逐三角形上色:颜色 = 三角形质量) */
+const terrGeo = new THREE.BufferGeometry();
+terrGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXT * 9), 3));
+terrGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(MAXT * 9), 3));
+const terrMesh = new THREE.Mesh(terrGeo, M.terr);
+terrMesh.frustumCulled = false;
+scene.add(terrMesh);
+
+/* 线框 */
+const wireGeo = new THREE.BufferGeometry();
+wireGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXE * 6), 3));
+const wireLines = new THREE.LineSegments(wireGeo, wireMat);
+wireLines.frustumCulled = false;
+scene.add(wireLines);
+
+/* 散点云 */
+const pcGeo = new THREE.BufferGeometry();
+pcGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXP * 3), 3));
+const pointsCloud = new THREE.Points(pcGeo, pcMat);
+pointsCloud.frustumCulled = false;
+scene.add(pointsCloud);
+
+/* Voronoi 对偶层(抬到半空) */
+const VORO_Y = 2.7;
+const voroGeo = new THREE.BufferGeometry();
+voroGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXT * 6), 3));
+const voroLines = new THREE.LineSegments(voroGeo, voroMat);
+voroLines.frustumCulled = false;
+voroLines.visible = false;
+scene.add(voroLines);
+
+/* 空外接圆池(LineLoop 单位圆,按半径缩放) */
+const circGeo = new THREE.BufferGeometry();
+{
+  const arr = new Float32Array(64 * 3);
+  for (let i = 0; i < 64; i++) {
+    const a = i / 64 * TAU;
+    arr[i * 3] = Math.cos(a); arr[i * 3 + 2] = Math.sin(a);
+  }
+  circGeo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+}
+const circPool = [];
+for (let i = 0; i < CIRC_N; i++) {
+  const c = new THREE.LineLoop(circGeo, circMat);
+  c.visible = false;
+  scene.add(c);
+  circPool.push(c);
+}
+/* 新点标记 + 星形重连闪光 */
+const marker = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), M.marker);
+marker.visible = false;
+scene.add(marker);
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXE * 6), 3));
+const starLines = new THREE.LineSegments(starGeo, flashMat);
+starLines.frustumCulled = false;
+starLines.visible = false;
+scene.add(starLines);
+
+camera.position.set(9.5, 6.5, 11.5);
+controls.target.set(0, 0.2, 0);
+tgtVec.set(0, 0.2, 0);
+
+/* ---------------- Delaunay 引擎 ---------------- */
+const P = [];            // 点:{x, z, e(高程)}
+let tris = [];           // 活三角形:{v:[a,b,c], cc:{x,z,r2}}
+
+/* 高程场:确定性三波叠加,让地形有起伏 */
+function elev(x, z) {
+  return 0.62 * Math.sin(0.52 * x + 1.3) * Math.cos(0.61 * z - 0.7)
+    + 0.34 * Math.sin(1.31 * x + 0.83 * z + 2.1)
+    + 0.16 * Math.cos(2.17 * x - 1.63 * z + 4.2);
+}
+function addPoint(x, z) { P.push({ x, z, e: elev(x, z) }); }
+
+function genPoints(n) {
+  P.length = 0;
+  seed = BASE_SEED;
+  if (clustered) {
+    const CS = [[-3.9, -2.7], [3.6, -2.3], [-3.2, 2.9], [3.8, 2.7]];
+    for (let i = 0; i < n; i++) {
+      const c = CS[i % 4];
+      const g = () => (rand() + rand() + rand() - 1.5) * 1.7;
+      addPoint(clamp(c[0] + g(), -AREA_X + 0.05, AREA_X - 0.05),
+        clamp(c[1] + g(), -AREA_Z + 0.05, AREA_Z - 0.05));
+    }
+  } else {
+    /* 抖动网格:jit=0 → 完美规则格点(共圆退化现场);jit=1 → 全随机 */
+    const cols = Math.max(4, Math.ceil(Math.sqrt(n * AREA_X / AREA_Z)));
+    const rows = Math.max(4, Math.ceil(n / cols));
+    let i = 0;
+    for (let r = 0; r < rows && i < n; r++) {
+      for (let c = 0; c < cols && i < n; c++, i++) {
+        const gx = -AREA_X + (c + 0.5) / cols * 2 * AREA_X;
+        const gz = -AREA_Z + (r + 0.5) / rows * 2 * AREA_Z;
+        const j = jit / 100;
+        addPoint(
+          clamp(gx + (rand() - 0.5) * j * 1.35 * (2 * AREA_X / cols), -AREA_X + 0.05, AREA_X - 0.05),
+          clamp(gz + (rand() - 0.5) * j * 1.35 * (2 * AREA_Z / rows), -AREA_Z + 0.05, AREA_Z - 0.05));
+      }
+    }
+  }
+  /* 点云几何 */
+  const pa = pcGeo.attributes.position.array;
+  for (let i = 0; i < P.length; i++) {
+    pa[i * 3] = P[i].x; pa[i * 3 + 1] = P[i].e + 0.05; pa[i * 3 + 2] = P[i].z;
+  }
+  pcGeo.attributes.position.needsUpdate = true;
+  pcGeo.setDrawRange(0, P.length);
+}
+
+/* 外接圆:三点定圆;共线返回 null */
+function circum(a, b, c) {
+  const A = P[a], B = P[b], C = P[c];
+  const ax = B.x - A.x, az = B.z - A.z, bx = C.x - A.x, bz = C.z - A.z;
+  const d = 2 * (ax * bz - az * bx);
+  if (Math.abs(d) < 1e-9) return null;
+  const a2 = ax * ax + az * az, b2 = bx * bx + bz * bz;
+  const cx = A.x + (bz * a2 - az * b2) / d;
+  const cz = A.z + (ax * b2 - bx * a2) / d;
+  return { x: cx, z: cz, r2: (A.x - cx) * (A.x - cx) + (A.z - cz) * (A.z - cz) };
+}
+/* 空圆测试:带平局容差(共圆不算入侵) */
+function inCirc(cc, x, z) {
+  const dx = x - cc.x, dz = z - cc.z;
+  return dx * dx + dz * dz < cc.r2 - 1e-7 * (cc.r2 + 1);
+}
+const ekey = (a, b) => a < b ? a * 4096 + b : b * 4096 + a;
+
+function buildEdgeMap(list) {
+  const m = new Map();
+  for (const t of list) {
+    for (let k = 0; k < 3; k++) {
+      const key = ekey(t.v[k], t.v[(k + 1) % 3]);
+      const e = m.get(key);
+      if (e) e.push(t); else m.set(key, [t]);
+    }
+  }
+  return m;
+}
+
+/* Bowyer–Watson 单点插入:空腔删除 + 星形重连;返回新建三角形 */
+function bwInsert(pi) {
+  const p = P[pi];
+  const bad = [];
+  for (const t of tris) if (inCirc(t.cc, p.x, p.z)) bad.push(t);
+  if (!bad.length) return [];
+  const cnt = new Map();
+  for (const t of bad) {
+    for (let k = 0; k < 3; k++) {
+      const key = ekey(t.v[k], t.v[(k + 1) % 3]);
+      cnt.set(key, (cnt.get(key) || 0) + 1);
+    }
+  }
+  const badSet = new Set(bad);
+  const fresh = [];
+  const keep = [];
+  for (const t of tris) (badSet.has(t) ? 0 : keep.push(t));
+  for (const t of bad) {
+    for (let k = 0; k < 3; k++) {
+      const a = t.v[k], b = t.v[(k + 1) % 3];
+      if (cnt.get(ekey(a, b)) !== 1) continue;
+      const cc = circum(pi, a, b);
+      const nt = { v: [pi, a, b], cc: cc || { x: 0, z: 0, r2: 1e18 } };  // 退化兜底:永不入侵
+      fresh.push(nt); keep.push(nt);
+    }
+  }
+  tris = keep;
+  return fresh;
+}
+
+/* 三角形最小角(度) */
+function angAt(ax, az, bx, bz, cx, cz) {
+  const v1x = bx - ax, v1z = bz - az, v2x = cx - ax, v2z = cz - az;
+  const d = v1x * v2x + v1z * v2z;
+  const m = Math.hypot(v1x, v1z) * Math.hypot(v2x, v2z);
+  return Math.acos(clamp(d / (m || 1e-12), -1, 1)) * 180 / Math.PI;
+}
+function triMinAngle(t) {
+  const [a, b, c] = t.v, A = P[a], B = P[b], C = P[c];
+  return Math.min(
+    angAt(A.x, A.z, B.x, B.z, C.x, C.z),
+    angAt(B.x, B.z, A.x, A.z, C.x, C.z),
+    angAt(C.x, C.z, A.x, A.z, B.x, B.z));
+}
+
+/* Lawson 翻转:t1/t2 共享边,交换对角线 */
+function sharedPair(t1, t2) {
+  for (let i = 0; i < 3; i++) {
+    const a = t1.v[i], b = t1.v[(i + 1) % 3];
+    for (let j = 0; j < 3; j++) {
+      const c = t2.v[j], d = t2.v[(j + 1) % 3];
+      if (a === c && b === d || a === d && b === c) return [a, b];
+    }
+  }
+  return null;
+}
+function flipEdge(t1, t2) {
+  const s = sharedPair(t1, t2);
+  if (!s) return false;
+  const [u, v] = s;
+  const a = t1.v.find(x => x !== u && x !== v);
+  const b = t2.v.find(x => x !== u && x !== v);
+  if (a === undefined || b === undefined) return false;
+  const c1 = circum(a, u, b), c2 = circum(a, b, v);
+  if (!c1 || !c2) return false;
+  const i1 = tris.indexOf(t1), i2 = tris.indexOf(t2);
+  if (i1 < 0 || i2 < 0) return false;
+  tris[i1] = { v: [a, u, b], cc: c1 };
+  tris[i2] = { v: [a, b, v], cc: c2 };
+  return true;
+}
+function edgeOpposite(t, key) {
+  for (let k = 0; k < 3; k++) {
+    if (ekey(t.v[k], t.v[(k + 1) % 3]) === key) return t.v[(k + 2) % 3];
+  }
+  return -1;
+}
+/* 一轮 legalize:翻转所有非法边(预算 maxFlips),返回翻转数 */
+function legalizePass(maxFlips) {
+  let flips = 0, guard = 0;
+  while (flips < maxFlips && guard++ < 300) {
+    const em = buildEdgeMap(tris);
+    let found = null;
+    for (const [key, ts] of em) {
+      if (ts.length !== 2) continue;
+      const op = edgeOpposite(ts[0], key);
+      const op2 = edgeOpposite(ts[1], key);
+      if (op < 0 || op2 < 0) continue;
+      const cc = ts[0].cc;
+      const dx = P[op2].x - cc.x, dz = P[op2].z - cc.z;
+      if (dx * dx + dz * dz < cc.r2 - 8e-7 * (cc.r2 + 1)) { found = [ts[0], ts[1]]; break; }
+    }
+    if (!found) break;
+    if (flipEdge(found[0], found[1])) flips++;
+    else break;
+  }
+  flipCount += flips;
+  return flips;
+}
+/* 故意破坏:把所有好对角线换成坏对角线(制造细长三角形灾难) */
+function degrade() {
+  const em = buildEdgeMap(tris);
+  const jobs = [];
+  for (const [key, ts] of em) {
+    if (ts.length !== 2) continue;
+    const [u, v] = [Math.floor(key / 4096), key % 4096];
+    const a = edgeOpposite(ts[0], key), b = edgeOpposite(ts[1], key);
+    if (a < 0 || b < 0) continue;
+    const A = P[a], B = P[b], U = P[u], V = P[v];
+    /* 凸四边形才可翻 */
+    const c1 = (V.x - U.x) * (A.z - U.z) - (V.z - U.z) * (A.x - U.x);
+    const c2 = (V.x - U.x) * (B.z - U.z) - (V.z - U.z) * (B.x - U.x);
+    if (c1 * c2 >= 0) continue;
+    const now = Math.min(triMinAngle(ts[0]), triMinAngle(ts[1]));
+    const alt1 = Math.min(angAt(A.x, A.z, U.x, U.z, B.x, B.z), angAt(A.x, A.z, B.x, B.z, V.x, V.z), angAt(B.x, B.z, V.x, V.z, U.x, U.z));
+    const alt2 = Math.min(angAt(B.x, B.z, U.x, U.z, A.x, A.z), angAt(B.x, B.z, A.x, A.z, V.x, V.z), angAt(A.x, A.z, V.x, V.z, U.x, U.z));
+    const alt = Math.min(alt1, alt2);
+    if (now - alt > 3) jobs.push([ts[0], ts[1]]);
+  }
+  const used = new Set();
+  let done = 0;
+  for (const [t1, t2] of jobs) {
+    if (used.has(t1) || used.has(t2)) continue;
+    if (flipEdge(t1, t2)) { used.add(t1); used.add(t2); done++; if (done >= 400) break; }
+  }
+  return done;
+}
+
+/* 一次性建网:Delaunay(随机序 BW) */
+function seedTriangle(count) {
+  let i0 = 0, i1 = 0, i2 = 0;
+  for (let i = 1; i < count; i++) {
+    if (P[i].x < P[i0].x) i0 = i;
+    if (P[i].x > P[i1].x) i1 = i;
+    if (P[i].z > P[i2].z) i2 = i;
+  }
+  if (i2 === i0 || i2 === i1) {
+    for (let i = 0; i < count; i++) if (i !== i0 && i !== i1) { i2 = i; break; }
+  }
+  const cc = circum(i0, i1, i2);
+  if (cc) return { v: [i0, i1, i2], cc };
+  for (let a = 0; a < count; a++) for (let b = a + 1; b < count; b++) for (let c = b + 1; c < count; c++) {
+    const t = circum(a, b, c);
+    if (t) return { v: [a, b, c], cc: t };
+  }
+  return null;
+}
+function buildInstant() {
+  genPoints(nPts);
+  tris = [];
+  const st = seedTriangle(P.length);
+  if (st) tris.push(st);
+  const order = [];
+  for (let i = 0; i < P.length; i++) if (!st || st.v.indexOf(i) < 0) order.push(i);
+  shuffle(order);
+  for (const pi of order) bwInsert(pi);
+  insertTotal = P.length; insTotal = P.length;
+  lastNewAng = []; cavityK = 0;
+  refreshMesh(); refreshVoronoi();
+}
+
+/* ---------------- 几何刷新:按三角形质量上色 ---------------- */
+const C_RED = [0.93, 0.30, 0.26], C_AMB = [0.98, 0.74, 0.28], C_GRN = [0.36, 0.80, 0.47];
+function qualityColor(mA, out) {
+  let a, b, u;
+  if (mA <= 20) { a = C_RED; b = C_AMB; u = clamp01(mA / 20); }
+  else { a = C_AMB; b = C_GRN; u = clamp01((mA - 20) / 25); }
+  out[0] = a[0] + (b[0] - a[0]) * u;
+  out[1] = a[1] + (b[1] - a[1]) * u;
+  out[2] = a[2] + (b[2] - a[2]) * u;
+}
+const colBuf = [0, 0, 0];
+function refreshMesh() {
+  const pa = terrGeo.attributes.position.array, ca = terrGeo.attributes.color.array;
+  const ea = wireGeo.attributes.position.array;
+  let f3 = 0, fe = 0;
+  let sum = 0, worst = 90, sliv = 0;
+  meshT = tris.length;
+  for (const t of tris) {
+    const [a, b, c] = t.v, A = P[a], B = P[b], C = P[c];
+    pa[f3] = A.x; pa[f3 + 1] = A.e; pa[f3 + 2] = A.z;
+    pa[f3 + 3] = B.x; pa[f3 + 4] = B.e; pa[f3 + 5] = B.z;
+    pa[f3 + 6] = C.x; pa[f3 + 7] = C.e; pa[f3 + 8] = C.z;
+    const mA = triMinAngle(t);
+    sum += mA; if (mA < worst) worst = mA; if (mA < 10) sliv++;
+    qualityColor(mA, colBuf);
+    for (let k = 0; k < 3; k++) {
+      ca[f3 + k * 3] = colBuf[0]; ca[f3 + k * 3 + 1] = colBuf[1]; ca[f3 + k * 3 + 2] = colBuf[2];
+    }
+    f3 += 9;
+    const pts = [[A, B], [B, C], [C, A]];
+    for (const [X, Y] of pts) {
+      ea[fe++] = X.x; ea[fe++] = X.e + 0.03; ea[fe++] = X.z;
+      ea[fe++] = Y.x; ea[fe++] = Y.e + 0.03; ea[fe++] = Y.z;
+    }
+  }
+  terrGeo.attributes.position.needsUpdate = true;
+  terrGeo.attributes.color.needsUpdate = true;
+  terrGeo.setDrawRange(0, tris.length * 3);
+  wireGeo.attributes.position.needsUpdate = true;
+  wireGeo.setDrawRange(0, fe / 3);
+  wireLines.visible = tglWire.checked;
+  meshMean = meshT ? sum / meshT : 0;
+  meshWorst = worst; meshSliv = sliv;
+  hullEdges = 0;
+  for (const ts of buildEdgeMap(tris).values()) if (ts.length === 1) hullEdges++;
+  scopeDirty = true;
+}
+function refreshVoronoi() {
+  if (!voroOn) { voroLines.visible = false; return; }
+  const va = voroGeo.attributes.position.array;
+  let k = 0;
+  for (const ts of buildEdgeMap(tris).values()) {
+    if (ts.length !== 2 || k + 6 > va.length) continue;
+    va[k++] = ts[0].cc.x; va[k++] = VORO_Y; va[k++] = ts[0].cc.z;
+    va[k++] = ts[1].cc.x; va[k++] = VORO_Y; va[k++] = ts[1].cc.z;
+  }
+  voroGeo.attributes.position.needsUpdate = true;
+  voroGeo.setDrawRange(0, k / 3);
+  voroLines.visible = true;
+}
+
+/* ---------------- 插入动画(招牌瞬间) ---------------- */
+let insQueue = [], insPi = -1, insCavity = [], insPhase = 'idle', insT = 0, insTimer = 0.4;
+function startInsertRun() {
+  genPoints(Math.min(nPts, 140));
+  tris = [];
+  const st = seedTriangle(P.length);
+  if (!st) { buildInstant(); return; }
+  tris.push(st);
+  const order = [];
+  for (let i = 0; i < P.length; i++) if (st.v.indexOf(i) < 0) order.push(i);
+  shuffle(order);
+  insQueue = order;
+  insTotal = P.length; insertTotal = st.v.length;
+  flipCount = 0; lastNewAng = []; cavityK = 0;
+  insPhase = 'idle'; insT = 0; insTimer = 0.5;
+  marker.visible = false; starLines.visible = false;
+  for (const c of circPool) c.visible = false;
+  refreshMesh(); refreshVoronoi();
+}
+function runInsert(simDt) {
+  if (!insQueue.length && insPhase === 'idle') {
+    if (preset === 'insert') { preset = null; document.getElementById('btn-insert').classList.remove('on'); }
+    return;
+  }
+  insTimer -= simDt;
+  if (insPhase === 'idle' && insTimer <= 0 && insQueue.length) {
+    insPi = insQueue.shift();
+    const p = P[insPi];
+    insCavity = tris.filter(t => inCirc(t.cc, p.x, p.z));
+    cavityK = insCavity.length;
+    insPhase = 'fall'; insT = 0;
+    marker.visible = true;
+    for (let i = 0; i < CIRC_N; i++) {
+      const c = circPool[i];
+      if (i < insCavity.length) {
+        c.userData.r = Math.sqrt(Math.max(insCavity[i].cc.r2, 1e-6));
+        c.position.set(insCavity[i].cc.x, 1.25, insCavity[i].cc.z);
+        c.visible = true; c.scale.setScalar(0.01);
+      } else c.visible = false;
+    }
+  } else if (insPhase === 'fall') {
+    insT += simDt;
+    const u = clamp01(insT / 0.55);
+    const p = P[insPi];
+    marker.position.set(p.x, 5.5 + (p.e + 0.14 - 5.5) * (u * u * (3 - 2 * u)), p.z);
+    const g = 0.15 + 0.85 * u;
+    for (const c of circPool) if (c.visible) c.scale.setScalar(c.userData.r * g);
+    if (u >= 1) {
+      const fresh = bwInsert(insPi);
+      insertTotal++;
+      lastNewAng = fresh.map(t => triMinAngle(t)).filter(v => v > 0.01);
+      /* 星形闪光:新三角形三条边 */
+      const sa = starGeo.attributes.position.array;
+      let k = 0;
+      for (const t of fresh) {
+        for (let e = 0; e < 3; e++) {
+          const X = P[t.v[e]], Y = P[t.v[(e + 1) % 3]];
+          sa[k++] = X.x; sa[k++] = X.e + 0.06; sa[k++] = X.z;
+          sa[k++] = Y.x; sa[k++] = Y.e + 0.06; sa[k++] = Y.z;
+        }
+      }
+      starGeo.attributes.position.needsUpdate = true;
+      starGeo.setDrawRange(0, k / 3);
+      starLines.visible = true;
+      flashMat.opacity = 0.95;
+      insPhase = 'cool'; insT = 0;
+      marker.visible = false;
+      refreshMesh(); refreshVoronoi();
+    }
+  } else if (insPhase === 'cool') {
+    insT += simDt;
+    const u = clamp01(insT / 0.4);
+    flashMat.opacity = 0.95 * (1 - u);
+    for (const c of circPool) if (c.visible) c.scale.setScalar(c.userData.r * Math.max(0.01, 1 - u));
+    if (u >= 1) {
+      insPhase = 'idle'; insTimer = 0.3;
+      starLines.visible = false;
+      for (const c of circPool) c.visible = false;
+    }
+  }
+}
+/* 翻转修复动画 */
+let flipTimer = 0;
+function startFlipRun() {
+  buildInstant();          // 先保证是干净 Delaunay
+  degrade();               // 再故意破坏
+  flipCount = 0;
+  refreshMesh(); refreshVoronoi();
+  flipTimer = 0;
+}
+function runFlip(simDt) {
+  flipTimer -= simDt;
+  if (flipTimer > 0) return;
+  flipTimer = 0.05;
+  if (legalizePass(3)) { refreshMesh(); refreshVoronoi(); }
+}
+
+/* ---------------- 滑杆 ---------------- */
+const elPts = document.getElementById('vPts'), elPtsVal = document.getElementById('vPtsVal');
+const elJit = document.getElementById('vJit'), elJitVal = document.getElementById('vJitVal');
+function updateSliderLabels() {
+  elPtsVal.textContent = L(nPts + ' 点', nPts + ' pts');
+  elJitVal.textContent = jit + ' %';
+}
+function cancelInsertRun() {
+  if (preset === 'insert') { preset = null; document.getElementById('btn-insert').classList.remove('on'); }
+  insPhase = 'idle'; insQueue = [];
+  marker.visible = false; starLines.visible = false;
+  for (const c of circPool) c.visible = false;
+}
+elPts.addEventListener('input', () => { nPts = +elPts.value; cancelInsertRun(); buildInstant(); updateSliderLabels(); });
+elJit.addEventListener('input', () => { jit = +elJit.value; cancelInsertRun(); buildInstant(); updateSliderLabels(); });
+tglWire.addEventListener('change', () => { wireLines.visible = tglWire.checked; });
+
+/* ---------------- 预设运行 ---------------- */
+function runModes(simDt) {
+  if (preset === 'insert') runInsert(simDt);
+  else if (preset === 'flip') runFlip(simDt);
+}
+
+/* ---------------- 每帧可视 ---------------- */
+function sceneFrame(et, simDt, dt) {
+  /* 线框可见性跟随开关(插入动画后也会被 refreshMesh 改写) */
+  wireLines.visible = tglWire.checked;
+  /* 步骤高亮呼吸:标准材质走 emissive,线材质走透明度 */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) {
+    const p = 0.5 + 0.5 * Math.sin(et * 4.6);
+    if (hlm.isMeshStandardMaterial) hlm.emissiveIntensity = 0.1 + 0.55 * p;
+    else if (hlm.userData.baseOp !== undefined) hlm.opacity = hlm.userData.baseOp * (0.5 + 0.5 * p);
+  }
+  marker.rotation.y = et * 2;
+}
+
+/* ---------------- 示波器:最小角分布直方图 ---------------- */
+const scopeBins = new Float32Array(18), scopeBinsR = new Float32Array(18);
+function drawScope() {
+  if (scopeDirty) {
+    scopeBins.fill(0); scopeBinsR.fill(0);
+    for (const t of tris) scopeBins[Math.min(17, triMinAngle(t) / 5 | 0)]++;
+    for (const mA of lastNewAng) scopeBinsR[Math.min(17, mA / 5 | 0)]++;
+    scopeDirty = false;
+  }
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L(`三角形最小角分布(绿:全网格 · 红:最近插入)——10° 线左侧即细长三角形`,
+    `min-angle histogram (green: mesh, red: last insert) - left of the 10 deg line = slivers`), 4 * dpr, 10 * dpr);
+  const x0 = 26 * dpr, x1 = cw - 5 * dpr, y0 = ch - 12 * dpr, yTop = 16 * dpr;
+  let mx = 1;
+  for (let i = 0; i < 18; i++) mx = Math.max(mx, scopeBins[i]);
+  const bw = (x1 - x0) / 18;
+  for (let i = 0; i < 18; i++) {
+    const h1 = scopeBins[i] / mx * (y0 - yTop);
+    const h2 = scopeBinsR[i] / mx * (y0 - yTop);
+    scopeCtx.fillStyle = 'rgba(123,216,143,.55)';
+    scopeCtx.fillRect(x0 + i * bw + 0.5 * dpr, y0 - h1, bw - 1 * dpr, h1);
+    if (h2 > 0) {
+      scopeCtx.fillStyle = 'rgba(255,107,107,.85)';
+      scopeCtx.fillRect(x0 + i * bw + 0.5 * dpr, y0 - h2, bw - 1 * dpr, h2);
+    }
+  }
+  /* 坐标轴 + 10° 阈值线 */
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.4)';
+  scopeCtx.lineWidth = Math.max(1, dpr);
+  scopeCtx.beginPath(); scopeCtx.moveTo(x0, y0); scopeCtx.lineTo(x1, y0); scopeCtx.stroke();
+  const xt = x0 + 10 / 90 * (x1 - x0);
+  scopeCtx.strokeStyle = 'rgba(255,77,77,.7)';
+  scopeCtx.setLineDash([3 * dpr, 3 * dpr]);
+  scopeCtx.beginPath(); scopeCtx.moveTo(xt, y0); scopeCtx.lineTo(xt, yTop); scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  scopeCtx.fillStyle = 'rgba(255,120,120,.9)';
+  scopeCtx.fillText('10°', xt - 6 * dpr, yTop + 2 * dpr);
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText('0', x0 - 4 * dpr, ch - 3 * dpr);
+  scopeCtx.fillText('90°', x1 - 12 * dpr, ch - 3 * dpr);
+}
+
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateFormula() {
+  const E = 3 * P.length - 3 - hullEdges;
+  formulaEl.innerHTML =
+    L(`欧拉公式:T = 2n − 2 − h = <b>${meshT}</b>(n ${P.length} · 凸包边 h ${hullEdges})· 边数 E = 3n − 3 − h = <b>${E}</b>`,
+      `Euler: T = 2n - 2 - h = <b>${meshT}</b> (n ${P.length} - hull edges h ${hullEdges}) - edges E = 3n - 3 - h = <b>${E}</b>`) +
+    '<br>' +
+    L(`空圆判据 ⇔ 最大化最小角 · 平均最小角 <b>${meshMean.toFixed(1)}°</b> · 最差 <b>${meshWorst.toFixed(1)}°</b> · 最近空腔 <b>${cavityK}</b> 个外接圆被入侵`,
+      `empty circles = max-min-angle - mean <b>${meshMean.toFixed(1)} deg</b> - worst <b>${meshWorst.toFixed(1)} deg</b> - last cavity <b>${cavityK}</b> circles invaded`) +
+    '<br>' +
+    L(`Bowyer–Watson 期望 <b>O(n log n)</b> · Lawson 翻转 <b>${flipCount}</b> 次 · 细长三角形(低于 10°)<b>${meshSliv}</b> 个`,
+      `Bowyer-Watson expected <b>O(n log n)</b> - Lawson flips <b>${flipCount}</b> - slivers (under 10 deg) <b>${meshSliv}</b>`);
+}
+function updateStats() {
+  stA.innerHTML = meshT + '<small> 个</small>';
+  stA.className = 'v ok';
+  stB.innerHTML = meshMean.toFixed(1) + '<small> °</small>';
+  stB.className = 'v ' + (meshMean >= 30 ? 'ok' : meshMean >= 20 ? 'warn' : 'bad');
+  stC.innerHTML = String(meshSliv);
+  stC.className = 'v ' + (meshSliv === 0 ? 'ok' : meshSliv < 10 ? 'warn' : 'bad');
+  stD.innerHTML = String(flipCount);
+  stD.className = 'v ' + (flipCount > 0 ? 'warn' : 'ok');
+  stE.innerHTML = preset === 'insert' ? `${insertTotal}<small> /${insTotal}</small>` : P.length + '<small> 点</small>';
+  stE.className = 'v ok';
+  stF.innerHTML = meshWorst.toFixed(1) + '<small> °</small>';
+  stF.className = 'v ' + (meshWorst >= 22 ? 'ok' : meshWorst >= 10 ? 'warn' : 'bad');
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  nPts = 120; jit = 60; clustered = false; voroOn = false;
+  elPts.value = 120; elJit.value = 60;
+  flipCount = 0; cavityK = 0; lastNewAng = [];
+  insPhase = 'idle'; insQueue = [];
+  marker.visible = false; starLines.visible = false;
+  for (const c of circPool) c.visible = false;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  preset = null;
+  buildInstant();
+  updateSliderLabels(); updateFormula();
+}
+
+/* ---------------- 标签 ---------------- */
+addLabel(() => L(`T = ${meshT} 三角形 · 平均最小角 ${meshMean.toFixed(1)}° · 细长 ${meshSliv} 个`,
+  `T = ${meshT} triangles - mean min angle ${meshMean.toFixed(1)} deg - ${meshSliv} slivers`),
+  () => meshSliv === 0 ? 'g' : meshSliv < 10 ? 'w' : 'bad', new THREE.Vector3(0, 2.15, 5.4));
+addLabel(() => L(`空外接圆:任一三角形的外接圆内不含其他点(B. Delaunay,1934),等价于最大化最小角`,
+  `empty circumcircles: no other point inside (B. Delaunay, 1934) = maximize the minimum angle`),
+  () => 'w', new THREE.Vector3(-6.2, 3.6, -4.4));
+addLabel(() => L(`最近一次插入:${cavityK} 个外接圆被入侵 → 空腔塌陷 → 与 ${cavityK + 2} 条边界边重连成星形`,
+  `last insertion: ${cavityK} circumcircles invaded -> cavity collapses -> star of ${cavityK + 2} boundary edges`),
+  () => 'e', new THREE.Vector3(5.6, 4.2, -3.2));
+addLabel(() => L(`对偶:Voronoi 相邻领地共边 ⇔ Delaunay 连边 · 三角形外心 = 对偶顶点`,
+  `duality: shared Voronoi border = Delaunay edge - circumcenter = dual vertex`),
+  () => 'b', new THREE.Vector3(0, 3.75, 0.5));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'terr', tgt: [0, 0.6, 6.5],
+    b: '连点:组合爆炸里的坏答案', be: 'Joining dots: a combinatorial minefield',
+    d: 'n 个散点能连出的三角网多得无法枚举,而随手一连就布满 3° 的细长三角:插值迹线跨过大裂缝,有限元刚度矩阵条件数爆炸,渲染表面在光影上撕裂。衡量网格质量最直接的标尺是三角形最小角——小角意味着某个方向上信息极度稀疏。Delaunay 剖分的定义优势只有一条,却足够致命:在所有可能的连法里,它让最小的那只角尽可能大。拖动「点数」滑杆,红色(最小角低于 10°)三角形的数量与位置会实时变化。',
+    de: 'The number of triangle meshes over n scattered points is astronomically large, and a careless join is full of 3-degree slivers: interpolation lines leap across cracks, FEM stiffness matrices blow up in condition number, rendered surfaces tear under lighting. The most direct yardstick of mesh quality is the triangle minimum angle - a tiny angle means information along one direction is desperately sparse. Delaunay has exactly one defining advantage, and it is fatal to rivals: among all possible joins it makes the smallest angle as large as possible. Drag the point-count slider and watch the red (min angle under 10 deg) triangles shift live.' },
+  { hl: 'circ', tgt: [-3.5, 1.8, 3.5],
+    b: '空圆准则:一条判据定优劣', be: 'The empty-circle rule',
+    d: '1934 年,Boris Delaunay 给出判据:网格中每个三角形的外接圆内部,不得包含任何其他散点——空圆准则。它有一个漂亮的等价:空圆 ⇔ 最大化最小角,证明只用初等几何。判定本身是 O(1):把候选点代入圆方程看符号即可。退化情形要当心:四点共圆(规则格点、矩形阵列)时两种连法都合法,必须人为打破平局。把「点扰动」滑杆拉到 0,看看完美网格在计算机里反而最危险。',
+    de: 'In 1934 Boris Delaunay stated the rule: the circumcircle of every triangle in the mesh must contain no other point - the empty-circle criterion. It comes with a beautiful equivalence: empty circles mean the minimum angle is maximized, provable with elementary geometry. Testing one point is O(1): substitute into the circle equation and check the sign. Beware degeneracy: four cocircular points (regular grids, rectangles) make both diagonals legal, so a tie-break is mandatory. Set the jitter slider to zero and see why a perfect grid is the most dangerous input a computer can receive.' },
+  { hl: 'flash', tgt: [2.5, 2.2, 3.0],
+    b: '增量插入:空腔与星形重连', be: 'Incremental insertion: cavity and star',
+    d: 'Bowyer–Watson 算法把建网变成流水线:新点落下,先找出所有外接圆被它入侵的三角形——空腔,随机插入序下通常只有几个;把空腔整体删除,再把空腔边界上的每条边与新点相连,重连成一颗星形。随机顺序下期望复杂度 O(n log n),120 个点瞬间完成。按「增量插入全流程」:白球下落 → 被入侵的外接圆亮红 → 塌陷重连,一秒一幕,每步空腔大小都写进统计与公式行。',
+    de: 'Bowyer-Watson turns meshing into an assembly line: a new point lands, you collect every triangle whose circumcircle it invades - the cavity, usually just a handful under random order; delete the cavity wholesale, then connect each boundary edge of the cavity to the new point, rebuilding a star. Expected cost O(n log n) in random order; 120 points finish in a blink. Press incremental insertion: a white ball drops, invaded circumcircles flash red, collapse and reconnect - one act per second, cavity sizes logged into the stats and formula lines.' },
+  { hl: 'wire', tgt: [-2.5, 2.5, 4.5],
+    b: 'Lawson 翻转:局部修复的威力', be: 'Lawson flips: the power of local repair',
+    d: '一条边两侧若构成凸四边形,两种对角线连法都合法,但至多一种满足空圆。交换对角线——Lawson 翻转——一次只动两个三角形;反复翻转非法边,数学上保证收敛到 Delaunay。按「边翻转修复」:页面先故意把所有好对角线换成坏的,红色细长三角形泛滥成灾;然后看翻转一场一场上演,「平均最小角」与「最差最小角」被一次次顶上去,细长计数跌回 0。',
+    de: 'When the two triangles beside an edge form a convex quad, both diagonals are legal joins - but at most one satisfies the empty circle. Swapping the diagonal, a Lawson flip, touches only two triangles; flipping illegal edges repeatedly is mathematically guaranteed to converge to the Delaunay mesh. Press flip repair: the page first swaps every good diagonal for a bad one and slivers flood the field in red; then watch flips play out one after another, pushing the mean and worst minimum angles back up until the sliver count returns to zero.' },
+  { hl: 'voro', tgt: [0, 3.4, 5.0],
+    b: 'Voronoi 对偶:一枚硬币两面', be: 'The Voronoi dual: two sides of one coin',
+    d: '给每个点划分「离我最近」的领地,得到 Voronoi 图;把共享一条边界的两个点连起来,连出的正是 Delaunay 三角剖分——两者互为对偶:一个三角形的外心恰是 Voronoi 的一个顶点,一条 Delaunay 边恰垂直平分一条 Voronoi 边。自然邻域插值、最邻近查询、生长模拟都建在这层对偶上。按「Voronoi 对偶」,蓝色对偶层抬到半空与地形对照:每条蓝线下方必有一条 Delaunay 边。',
+    de: 'Give every point the territory where it is the nearest neighbor and you get the Voronoi diagram; connect the two points on either side of each shared border and you have drawn the Delaunay triangulation - the two are duals: each triangle circumcenter is a Voronoi vertex, each Delaunay edge perpendicularly bisects a Voronoi edge. Natural-neighbor interpolation, nearest-neighbor queries and growth simulations all stand on this duality. Press Voronoi dual to lift the blue layer above the terrain: under every blue segment lies a Delaunay edge.' },
+  { hl: 'terr', tgt: [0, 1.5, 7.5],
+    b: '工程现场:从 TIN 到有限元', be: 'In the field: from TIN to FEM',
+    d: '这套 1934 年的判据如今是基础设施:GIS 把等高线转成地形 TIN;有限元前处理把几何切成质量网格——平均最小角低于 30° 时收敛性明显劣化;多视角立体重建把点云缝成三角面;地图渲染用它切矢量瓦片;自然邻域插值靠它定义「邻居」。scipy.spatial.Delaunay 一行代码背后,正是空圆判定加增量插入。把「点扰动」从 0 拉到 100,看规则格点的退化如何被随机性治愈——数值方法里,一点点噪声常常是良药。',
+    de: 'This 1934 criterion is now infrastructure: GIS converts contour lines into terrain TINs; FEM preprocessing cuts geometry into quality meshes - once the mean minimum angle drops below 30 deg, convergence visibly degrades; multi-view stereo stitches point clouds into triangle soups; map renderers tile vector data with it; natural-neighbor interpolation defines neighbors through it. Behind one line of scipy.spatial.Delaunay stands exactly this: empty-circle tests plus incremental insertion. Sweep jitter from 0 to 100 and watch randomness cure the grid degeneracy - in numerical methods, a pinch of noise is often good medicine.' },
+];
+
+/* ---------------- 预设按钮接线 / stats 元素 ---------------- */
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  sceneFrame(et, simDt, dt);
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+buildInstant();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
