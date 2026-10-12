@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Merkle 树 · 一个根概括一万条数据</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4fbf8f;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1f8a5f;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="Merkle 树:一个哈希根概括一万条数据" data-en="Merkle Tree: One Hash Root Summarizes Ten Thousand Records">Merkle 树:一个哈希根概括一万条数据</h1>
+  <div class="sub" data-zh="把一万笔交易缩成 32 字节还能随时验证,靠一棵自底向上的哈希树:N 个数据块各自哈希作叶子,相邻两个哈希拼接再哈希成父节点,层层向上直到只剩一个根哈希——根变了,树里任何一处都变了。三大性质:改一片叶子,雪崩效应让它到根路径上 log₂N 个节点全部变样,比对根即可发现;证明某条数据在树里,只需路径上的兄弟哈希——一万笔交易约 14 个、~0.5 KB,验证者自己重算一遍看根是否一致;两台机器各自算根,根不同则数据必不同,根相同则几乎必然相同。比特币轻节点因此只存 80 字节区块头而不下载区块体;Git 提交、BT 分片、IPFS 寻址、证书透明日志与 NoSQL 反熵对账,全是同一招:先比根,再沿分叉路径下探。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Compress ten thousand transactions into 32 bytes and still verify any of them on demand - that is a bottom-up hash tree: N data blocks are each hashed into leaves, adjacent pairs concatenate and hash into parents, level by level until one 32-byte root remains - change the root and something in the tree changed. Three properties: tamper one leaf and avalanche flips every one of the log2N nodes on its path to the root, so comparing roots exposes it; proving a record belongs costs only the sibling hashes along that path - about 14 hashes, ~0.5 KB for 10,000 transactions - and the verifier recomputes to check the root; two machines that compute equal roots hold almost certainly equal data. Bitcoin light nodes store just the 80-byte block header instead of block bodies; Git commits, BT pieces, IPFS addressing, Certificate Transparency logs and NoSQL anti-entropy all run the same play: compare roots first, then walk the fork. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">把一万笔交易缩成 32 字节还能随时验证,靠一棵自底向上的哈希树:N 个数据块各自哈希作叶子,相邻两个哈希拼接再哈希成父节点,层层向上直到只剩一个根哈希——根变了,树里任何一处都变了。三大性质:改一片叶子,雪崩效应让它到根路径上 log₂N 个节点全部变样,比对根即可发现;证明某条数据在树里,只需路径上的兄弟哈希——一万笔交易约 14 个、~0.5 KB,验证者自己重算一遍看根是否一致;两台机器各自算根,根不同则数据必不同,根相同则几乎必然相同。比特币轻节点因此只存 80 字节区块头而不下载区块体;Git 提交、BT 分片、IPFS 寻址、证书透明日志与 NoSQL 反熵对账,全是同一招:先比根,再沿分叉路径下探。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="叶子数 N" data-en="leaves N">叶子数 N</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="树高 log₂N" data-en="height log2N">树高 log₂N</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="证明哈希数" data-en="proof hashes">证明哈希数</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="证明大小" data-en="proof size">证明大小</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="根哈希前 8 位" data-en="root hash (first 8)">根哈希前 8 位</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="副本一致性" data-en="replica consistency">副本一致性</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="哈希节点(色相=哈希值)" data-en="hash nodes (hue = hash value)">哈希节点(色相=哈希值)</span>
+    <span class="chip g" data-zh="根哈希 · 全集指纹" data-en="root hash · set fingerprint">根哈希 · 全集指纹</span>
+    <span class="chip o" data-zh="证明路径与兄弟" data-en="proof path &amp; siblings">证明路径与兄弟</span>
+    <span class="chip r" data-zh="被篡改与红色级联" data-en="tampered + red cascade">被篡改与红色级联</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-intact" data-zh="完整树" data-en="intact tree">完整树</button>
+    <button class="abtn" id="btn-tamper" data-zh="篡改一片叶子" data-en="tamper one leaf">篡改一片叶子</button>
+    <button class="abtn" id="btn-proof" data-zh="包含证明" data-en="inclusion proof">包含证明</button>
+    <button class="abtn" id="btn-sync" data-zh="两副本对账" data-en="replica reconciliation">两副本对账</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="叶子数 N" data-en="leaves N">叶子数 N</label><input id="vN" type="range" min="4" max="32" step="1" value="16"><span class="val" id="vNVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="验证代价曲线" data-en="verification cost">验证代价曲线</span></label>
+        <label><input id="tglCut" type="checkbox" checked> <span data-zh="对账副本树" data-en="replica tree">对账副本树</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../cryptographic-hash/" data-zh="密码学哈希" data-en="cryptographic hash">密码学哈希</a>
+    <a href="../blockchain/" data-zh="区块链" data-en="blockchain">区块链</a>
+    <a href="../error-correction/" data-zh="纠错码" data-en="error correction">纠错码</a>
+    <a href="../consistent-hashing/" data-zh="一致性哈希" data-en="consistent hashing">一致性哈希</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(11, 8, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 2.5, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);   // 双通道环形缓冲
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= Merkle 树与数据完整性 ================= */
+const TITLE_ZH = 'Merkle 树 · 一个根概括一万条数据';
+const TITLE_EN = 'Merkle Tree · One Root Hash Summarizes Ten Thousand Records';
+const PRESET_IDS = ['intact', 'tamper', 'proof', 'sync'];
+
+let nRaw = 16;            // 滑杆原始值(4-32)
+let N = 16;               // 就近取 2 的幂
+let mode = 'intact';      // intact | tamper | proof | sync
+let proofT = 0;           // 证明折叠动画进度
+let lastKey = '';
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.3,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  bad: mat(0xe05548, { roughness: 0.4, emissiveIntensity: 0.4 }),
+  path: mat(0x4fbf8f, { roughness: 0.4, emissiveIntensity: 0.45 }),
+  sib: mat(0x5fb0e8, { roughness: 0.4, emissiveIntensity: 0.35 }),
+  syncA: mat(0xe8904f, { roughness: 0.4, emissiveIntensity: 0.4 }),
+  dim: mat(0x6a7480, { roughness: 0.7, emissiveIntensity: 0.03 }),
+  rootRing: mat(0xffd27a, { roughness: 0.5, emissiveIntensity: 0.35 }),
+  token: mat(0xffe2ae, { roughness: 0.3, emissiveIntensity: 0.9 }),
+  edge: new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8 }),
+  ground: mat(0x151a20, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.3, depthWrite: false }),
+};
+const HL = { intact: M.rootRing, tamper: M.bad, proof: M.path, sync: M.syncA };
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.ground.color.set(dark ? 0x151a20 : 0xdde3e9);
+  M.dim.color.set(dark ? 0x39424c : 0x9aa5b0);
+  M.edge.opacity = dark ? 0.8 : 0.9;
+}
+
+/* ---------------- 场景基底 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(74, 0.1, 46), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(46, 23, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* ---------------- 伪哈希(演示用确定性混叠, behaving like SHA-256 的雪崩观感) ---------------- */
+function hmix(a, b) {
+  let x = (Math.imul(a | 0, 0x9E3779B1) ^ Math.imul((b | 0) + 0x165667B1, 0x85EBCA77)) >>> 0;
+  x ^= x >>> 13;
+  x = Math.imul(x, 0xC2B2AE3D) >>> 0;
+  x ^= x >>> 16;
+  return x >>> 0;
+}
+const hex8 = (a, b) => hmix(a, b).toString(16).padStart(8, '0');
+const H = () => Math.round(Math.log2(N));
+const leafIdx = () => Math.floor(N * 0.3);
+const hashHue = hex => {
+  const c = new THREE.Color();
+  c.setHSL((parseInt(hex.slice(0, 2), 16) / 255 * 360 % 360) / 360, 0.5, 0.52);
+  return c;
+};
+
+/* ---------------- 树数据:奇数叶复制末个;bad 沿父链级联 ---------------- */
+function buildLevels(n, ti, tampered) {
+  const levels = [];
+  let cur = [];
+  for (let i = 0; i < n; i++) {
+    const bad = tampered && i === ti;
+    cur.push({ hex: hex8(1000 + i, bad ? 7919 : 0), bad });
+  }
+  levels.push(cur);
+  while (cur.length > 1) {
+    const up = [];
+    for (let i = 0; i < cur.length; i += 2) {
+      const a = cur[i], b = cur[i + 1] || cur[i];   // 奇数:复制最后一个
+      up.push({ hex: hex8(parseInt(a.hex, 16), parseInt(b.hex, 16)), bad: a.bad || b.bad });
+    }
+    levels.push(up);
+    cur = up;
+  }
+  return levels;   // levels[0]=叶子 … levels[H]=根
+}
+function layoutFor(levels) {
+  const pts = [];
+  levels.forEach((lv, l) => {
+    const m = lv.length, sp = Math.min(1.6, 26 / m);
+    const y = 1.3 + l * 2.3, z = 7.5 - l * 2.4;
+    lv.forEach((nd, i) => pts.push({ x: (i - (m - 1) / 2) * sp, y, z }));
+  });
+  return pts;
+}
+
+/* ---------------- 树网格(两棵:本机 A / 副本 B) ---------------- */
+const treeGroup = new THREE.Group(), treeBGroup = new THREE.Group();
+treeBGroup.position.set(0, 0, -15);
+scene.add(treeGroup);
+scene.add(treeBGroup);
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const leafGeo = new THREE.BoxGeometry(1, 0.6, 0.6);
+const ringGeo = new THREE.TorusGeometry(0.95, 0.05, 8, 36);
+const token = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), M.token);
+token.visible = false;
+scene.add(token);
+let treeData = null;
+
+const sharedMats = new Set(Object.values(M));
+function clearGroup(g) {
+  for (let k = g.children.length - 1; k >= 0; k--) {
+    const ch = g.children[k];
+    g.remove(ch);
+    if (ch.geometry && ![boxGeo, leafGeo, ringGeo].includes(ch.geometry)) ch.geometry.dispose();
+    if (ch.material && ch.material.dispose && !sharedMats.has(ch.material)) ch.material.dispose();
+  }
+}
+function hashNodeMaterial(hex) {
+  const c = hashHue(hex);
+  return new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.25,
+    emissive: c, emissiveIntensity: 0.12 });
+}
+function buildEdges(levels, off, P, pathIdx, h, m) {
+  const pos = [], col = [];
+  const cDim = new THREE.Color(0x5a6675), cPath = new THREE.Color(0x4fbf8f),
+    cSib = new THREE.Color(0x5fb0e8), cBad = new THREE.Color(0xe05548), cSync = new THREE.Color(0xe8904f);
+  for (let l = 0; l < h; l++) {
+    levels[l].forEach((nd, i) => {
+      const pi = i >> 1;
+      const a = P[off[l] + i], b = P[off[l + 1] + pi];
+      pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      let c = cDim;
+      if (m === 'tamper') c = levels[l + 1][pi].bad ? cBad : cDim;
+      else if (m === 'proof') c = pathIdx[l] === i ? cPath : ((pathIdx[l] ^ 1) === i ? cSib : cDim);
+      else if (m === 'sync') c = pathIdx[l] === i ? cSync : cDim;
+      col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+    });
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return new THREE.LineSegments(g, M.edge);
+}
+function rebuildTree() {
+  clearGroup(treeGroup);
+  clearGroup(treeBGroup);
+  const ti = leafIdx(), h = H();
+  const lvA = buildLevels(N, ti, mode === 'tamper' || mode === 'sync');
+  const lvB = buildLevels(N, ti, false);
+  const pathIdx = [];
+  { let i = ti; for (let l = 0; l < h; l++) { pathIdx.push(i); i >>= 1; } pathIdx.push(i); }
+  const off = []; let acc = 0;
+  lvA.forEach(lv => { off.push(acc); acc += lv.length; });
+  const P = layoutFor(lvA), PB = layoutFor(lvB);
+  treeData = { h, ti, pathIdx, lvA, lvB, off, P, PB, pathPts: [], nodes: [] };
+  /* 本机树 A */
+  lvA.forEach((lv, l) => lv.forEach((nd, i) => {
+    const onPath = pathIdx[l] === i;
+    let material;
+    if (mode === 'tamper') material = nd.bad ? M.bad : M.dim;
+    else if (mode === 'proof') material = onPath ? M.path : ((pathIdx[l] ^ 1) === i && l < h ? M.sib : M.dim);
+    else if (mode === 'sync') material = onPath ? M.syncA : M.dim;
+    else material = hashNodeMaterial(nd.hex);
+    const mesh = new THREE.Mesh(l === 0 ? leafGeo : boxGeo, material);
+    mesh.scale.setScalar(l === h ? 1.0 : (l === 0 ? 0.7 : 0.55));
+    const p = P[off[l] + i];
+    mesh.position.set(p.x, p.y, p.z);
+    treeGroup.add(mesh);
+    treeData.nodes.push(mesh);
+  }));
+  treeGroup.add(buildEdges(lvA, off, P, pathIdx, h, mode));
+  /* 根环(intact 步的呼吸高亮) */
+  const rootP = P[off[h]];
+  const ring = new THREE.Mesh(ringGeo, M.rootRing);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(rootP.x, rootP.y, rootP.z);
+  treeGroup.add(ring);
+  treeData.rootPos = rootP;
+  treeData.pathPts = pathIdx.map((idx, l) => new THREE.Vector3(P[off[l] + idx].x, P[off[l] + idx].y, P[off[l] + idx].z));
+  /* 副本树 B(干净):对账时只有分叉路径被比较,其余子树灰化 */
+  lvB.forEach((lv, l) => lv.forEach((nd, i) => {
+    const onPath = pathIdx[l] === i;
+    const material = mode === 'sync' ? (onPath ? M.syncA : M.dim) : hashNodeMaterial(nd.hex);
+    const mesh = new THREE.Mesh(l === 0 ? leafGeo : boxGeo, material);
+    mesh.scale.setScalar(l === h ? 1.0 : (l === 0 ? 0.7 : 0.55));
+    const p = PB[off[l] + i];
+    mesh.position.set(p.x, p.y, p.z);
+    treeBGroup.add(mesh);
+  }));
+  treeBGroup.add(buildEdges(lvB, off, PB, pathIdx, h, mode === 'sync' ? 'sync' : 'intact'));
+}
+
+camera.position.set(11, 9.5, 27);
+controls.target.set(0, 5.5, -1);
+tgtVec.set(0, 5.5, -1);
+
+/* ---------------- 标签 ---------------- */
+const rootHexA = () => treeData ? treeData.lvA[treeData.h][0].hex : '--------';
+const rootHexB = () => treeData ? treeData.lvB[treeData.h][0].hex : '--------';
+addLabel(() => L(`根 ${rootHexA()} = 全集指纹:改任何一片叶子,根必变;两副本根相同 ⇒ 数据几乎必然相同(生日界 2¹²⁸)`,
+  `root ${rootHexA()} = the whole-set fingerprint: change any leaf and the root changes; equal roots mean almost certainly equal data (birthday bound 2^128)`),
+  () => mode === 'tamper' ? 'bad' : (mode === 'sync' ? 'w' : 'g'),
+  new THREE.Vector3(0, 15, -5),
+  p => { if (treeData) p.set(treeData.rootPos.x, treeData.rootPos.y + 2.2, treeData.rootPos.z); });
+addLabel(() => L(`包含证明 = 到根路径上的 ${H()} 个兄弟哈希 ≈ ${H() * 32} B:验证者自算一遍比对根——1 万笔交易 ≈ 14 个、0.5 KB`,
+  `an inclusion proof = the ${H()} sibling hashes along the path, about ${H() * 32} B: the verifier recomputes and compares roots - 10,000 transactions take 14 hashes, 0.5 KB`),
+  () => 'b', new THREE.Vector3(11.5, 8.2, 1));
+addLabel(() => L(`比特币轻节点(SPV):只存 80 字节区块头(内含 32 B 根),不下载 ~2 MB 区块体;验证 N 笔也只要 O(N·log N)`,
+  `a Bitcoin light node (SPV) stores just the 80-byte block header (root inside) and never downloads the ~2 MB body; verifying N transactions still costs only O(N log N)`),
+  () => 'w', new THREE.Vector3(-13, 4.4, 9));
+addLabel(() => L(`工程细节:奇数叶子层复制最后一个成对;比特币对中间节点做双重 SHA-256 并加前缀,防第二原像攻击`,
+  `engineering details: duplicate the last leaf on odd rows; Bitcoin double-hashes intermediate nodes with a prefix to block second-preimage attacks`),
+  () => 'st', new THREE.Vector3(13, 3, 9));
+addLabel(() => {
+  if (mode === 'tamper') return L(`第 ${leafIdx()} 叶被篡改:数据变 → 哈希雪崩 → 到根 ${H()} 个节点全部变样,与干净副本的根一对就露馅`,
+    `leaf ${leafIdx()} tampered: data changes -> avalanche -> all ${H()} nodes up to the root change; one comparison with the clean copy s root exposes it`);
+  if (mode === 'sync') return L(`对账:先比根(不同)→ 只沿分叉路径下探、每次比对两个孩子;相同子树整支跳过——定位差异只要 log₂N 步`,
+    `reconciliation: roots differ -> descend only along the fork, comparing two children at a time; identical subtrees are skipped whole - localizing a difference takes log2N steps`);
+  return L(`叶子 = 数据块:一笔交易、一个文件分片、一次提交——各自哈希作指纹,相邻两个拼成父节点`,
+    `leaves are data blocks: a transaction, a file piece, a commit - each hashed into a fingerprint, adjacent pairs folded into parents`);
+}, () => mode === 'tamper' ? 'bad' : (mode === 'sync' ? 'w' : 'st'), new THREE.Vector3(-12, 5.6, 7.5));
+const lblReplica = addLabel(() => L(`副本(干净):对账只走根与分叉路径,其余子树灰化跳过`,
+  `the clean replica: reconciliation walks only the root and the fork; everything else is skipped gray`),
+  () => mode === 'sync' ? 'w' : 'st', new THREE.Vector3(0, 15, 0),
+  p => { if (treeData) p.set(treeData.rootPos.x, treeData.rootPos.y + 2.2, treeData.rootPos.z); },
+  treeBGroup);
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'intact', tgt: [-10, 3, 6],
+    b: '哈希:32 字节的指纹', be: 'Hashes: 32-byte fingerprints',
+    d: '哈希函数是台单向绞肉机:任意长的输入压成固定 32 字节摘要,改一个比特,雪崩效应让输出约一半的位翻转;从摘要反推输入、或构造另一段撞出同一摘要的输入,在 SHA-256 下的代价是生日界 2¹²⁸ 次运算——宇宙年龄也算不完。正因为摘要像指纹:由内容唯一决定、又短得能随手比较,「一亿字节数据有没有被改过」才能被压缩成「两个 32 字节串是否相等」。整棵 Merkle 树都站在这条性质上。',
+    de: 'A hash function is a one-way grinder: arbitrary input in, a fixed 32-byte digest out; flip one bit and avalanche turns over about half the output bits. Inverting the digest, or forging a second input with the same digest, costs on the order of 2^128 operations under SHA-256 - more than the age of the universe allows. Because the digest behaves like a fingerprint - uniquely determined by content, yet short enough to compare by hand - has this hundred-million-byte dataset changed collapses into are these two 32-byte strings equal. The whole Merkle tree stands on this one property.' },
+  { hl: 'tamper', tgt: [-6, 6, 2],
+    b: '根变了 = 有人动过', be: 'Root changed = data changed',
+    d: '把 N 个数据块各自哈希作叶子,相邻两个哈希拼接再哈希成父节点,层层向上直到只剩一个根。树形结构保证单点篡改级联可见:改任何一片叶子,雪崩让它到根路径上 log₂N 个节点全部变样,根必然不同——想维持原根,得在 2¹²⁸ 里撞出一个匹配,等价于伪造整套数据。于是「验证一亿字节」坍缩成「比对 32 字节」。工程细节:奇数那层复制最后一个叶子成对;比特币还给每个中间节点做双重 SHA-256 并加前缀,防第二原像攻击。',
+    de: 'Hash each of N data blocks into leaves, concatenate adjacent pairs and hash into parents, upward until a single root remains. The tree makes single-point tampering cascade: change any leaf and avalanche rewrites every one of the log2N nodes on its path to the root - the root necessarily changes, and holding the old root would mean finding a 2^128 collision, i.e. faking the entire dataset. Verifying a billion bytes collapses into comparing 32 bytes. Engineering notes: duplicate the last leaf on odd rows; Bitcoin double-hashes intermediate nodes with a prefix against second-preimage attacks.' },
+  { hl: 'proof', tgt: [4, 8, 0],
+    b: '包含证明:O(log N)', be: 'Inclusion proofs in O(log N)',
+    d: '证明「第 i 笔在树里」不需要其余 N-1 个数据块,只要它到根路径上的兄弟哈希:验证者把兄弟和自己手里的叶子逐层拼接重算,看是否得到同一个根。32 叶的树只要 5 个哈希;1 万笔交易的区块要 14 个,约 448 字节——相对 ~2 MB 的区块体是千分之二的流量。证明无法伪造:任何兄弟被动过手脚,算出的根就对不上真根,除非能撞碎 SHA-256。这就是把「信任某人没改账」压缩成「自己算一遍算术」的全部技巧。',
+    de: 'Proving record i is in the tree needs neither the other N-1 blocks nor trust: hand over the sibling hashes along its path, and the verifier concatenates and hashes upward from its own leaf to see whether the same root falls out. A 32-leaf tree takes 5 hashes; a 10,000-transaction block takes 14, about 448 bytes - two thousandths of a ~2 MB block body. A proof cannot be forged: tweak any sibling and the recomputed root misses the true one, unless you break SHA-256. That is the whole trick of compressing trust-me into check-the-arithmetic-yourself.' },
+  { hl: 'proof', tgt: [0, 6, 4],
+    b: '轻节点:不下载区块体', be: 'Light clients skip block bodies',
+    d: '全节点要存几百 GB 账本,手机装不下。SPV 轻节点的答案:只存 80 字节的区块头——版本、时间戳、难度、nonce 与 32 字节 Merkle 根;想确认自己的交易被挖进链里,向全节点要一条包含证明,14 个哈希就能验证,完全不必下载区块体。同一招遍布工程界:以太坊把整个世界状态放进 Merkle-Patricia 树,BT 种子按分片边下边验,IPFS 用内容哈希寻址,Certificate Transparency 把证书日志钉在公开根上。',
+    de: 'Full nodes carry hundreds of GB of ledger; phones cannot. The SPV light client answer: keep only the 80-byte block header - version, timestamp, difficulty target, nonce and the 32-byte Merkle root. To confirm your transaction was mined in, request one inclusion proof and check it with 14 hashes - never downloading block bodies. The same move runs everywhere: Ethereum seals world state into a Merkle-Patricia root, BitTorrent verifies pieces while downloading, IPFS addresses content by its hash, Certificate Transparency pins certificate logs to public roots.' },
+  { hl: 'sync', tgt: [0, 7, -6],
+    b: '对账:先比根再走分叉', be: 'Reconcile: root first, then fork',
+    d: '两台机器各存一份海量数据,想知道哪里不同,不必逐字节比较:各自算根,根相同则几乎必然相同,根不同就下探——只比较分叉节点的那对子节点,一致的一侧整支子树跳过,不一致的一侧继续。定位一处差异只需 log₂N 次比较,找 K 处约 K·log₂N。Redis、Cassandra、Dynamo 等存储的反熵协议正是这样在副本间对账:把 O(N) 的全量比对,压缩成 O(差异 × log N) 的定点排查——先比根,再走分叉。',
+    de: 'Two machines each hold a huge dataset and want to know where they differ - without comparing byte by byte. Each computes its root: equal roots mean almost certainly equal data; differing roots trigger a descent - compare only the two children at the fork, skip the matching side entire subtree, recurse into the mismatched one. Localizing one difference costs log2N comparisons; K differences about K log2N. Anti-entropy protocols in Redis, Cassandra and Dynamo reconcile replicas exactly this way: an O(N) full scan becomes O(differences x log N) spot checks.' },
+  { hl: 'intact', tgt: [0, 12, -4],
+    b: '族谱与边界:信谁的根', be: 'Family tree - and whose root to trust',
+    d: '边界要认清:Merkle 树证明完整性,不证明真实性——攻击者完全能递给你一棵内部自洽的假树,所以根哈希必须来自可信渠道:比特币把根锚进挖出的区块头,证书日志靠多方签名与公开监控,Git 靠你信任的那次 push。族谱也远不止一个形状:Git 提交与目录树靠内容哈希寻址,克隆时比根就知道缺哪些对象;BT 边下边验分片;NoSQL 反熵用它对副本;批量证明与累积证明还在把验证成本往下压。数据结构只回答「一致与否」,「该信谁的根」永远是共识问题。',
+    de: 'Know the boundary: a Merkle tree proves integrity, not authenticity - an attacker can hand you a perfectly self-consistent fake tree, so root hashes must come from a trusted channel: Bitcoin anchors the root in a mined header, CT logs rely on multi-party signing and public auditing, Git on the push you chose to trust. The family is bigger than one shape: Git commits and trees are content-addressed, clones compare roots to find missing objects; BT verifies pieces on arrival; NoSQL anti-entropy reconciles replicas; batch and accumulation proofs keep pushing verification cost down. The structure answers consistent-or-not - whose root to trust remains a consensus question.' },
+];
+
+/* ---------------- 滑杆 ---------------- */
+const elN = document.getElementById('vN'), elNVal = document.getElementById('vNVal');
+const tglCut = document.getElementById('tglCut');
+const snapPow2 = v => Math.pow(2, Math.round(Math.log2(v)));
+function updateSliderLabels() {
+  elNVal.textContent = 'N = ' + N + ' 块';
+}
+elN.addEventListener('input', () => { nRaw = +elN.value; N = clamp(snapPow2(nRaw), 4, 32); updateSliderLabels(); });
+tglCut.addEventListener('change', () => { /* 副本树可见性由 sceneFrame 读 */ });
+
+/* ---------------- 预设 ---------------- */
+function runModes(simDt) {
+  if (preset === 'intact') mode = 'intact';
+  else if (preset === 'tamper') mode = 'tamper';
+  else if (preset === 'proof') { mode = 'proof'; proofT += simDt * 1.4; }
+  else if (preset === 'sync') mode = 'sync';
+  else mode = 'intact';
+  const key = mode + ':' + N;
+  if (key !== lastKey) { lastKey = key; rebuildTree(); }
+}
+
+/* ---------------- 每帧可视 ---------------- */
+function sceneFrame(et, simDt, dt) {
+  M.bad.emissiveIntensity = 0.4;
+  M.path.emissiveIntensity = 0.45;
+  M.syncA.emissiveIntensity = 0.4;
+  M.rootRing.emissiveIntensity = 0.3 + 0.15 * Math.sin(et * 2.4);
+  /* 证明折叠动画:令牌沿路径爬升,兄弟逐个折叠进当前哈希 */
+  const showB = tglCut.checked || mode === 'sync';
+  treeBGroup.visible = showB;
+  lblReplica.o.visible = labelsOn && showB;
+  if (mode === 'proof' && treeData) {
+    token.visible = true;
+    const h = treeData.h, u = proofT % (h + 2), k = Math.min(h, Math.floor(u));
+    const a = treeData.pathPts[k], b = treeData.pathPts[Math.min(h, k + 1)];
+    token.position.lerpVectors(a, b, u >= h ? 0 : u - k);
+    token.scale.setScalar(1 + 0.25 * Math.sin(et * 8));
+  } else token.visible = false;
+}
+
+/* ---------------- 示波器:证明代价 vs 全量比对 ---------------- */
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L(`验证代价:全量比对 N×32 B(红)vs Merkle 证明 ⌈log₂N⌉×32 B(绿)· 当前 N=${N}`,
+    `verification cost: full scan N x 32 B (red) vs Merkle proof log2N x 32 B (green) - now N=${N}`), 4 * dpr, 10 * dpr);
+  const top = 16 * dpr, baseY = ch - 12 * dpr;
+  const xOf = lg => (lg - 2) / 12 * cw;                       // log2 N: 2 → 14
+  const yOf = lb => baseY - clamp01((lb - 1.5) / 4.3) * (baseY - top);   // log10 B
+  /* 坐标刻度 */
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.3)';
+  scopeCtx.lineWidth = Math.max(1, dpr);
+  scopeCtx.font = `${Math.round(8 * dpr)}px system-ui`;
+  [[4, '4'], [16, '16'], [64, '64'], [256, '256'], [1024, '1k'], [4096, '4k'], [16384, '16k']].forEach(([n, s]) => {
+    const x = xOf(Math.log2(n));
+    scopeCtx.beginPath(); scopeCtx.moveTo(x, baseY); scopeCtx.lineTo(x, top); scopeCtx.stroke();
+    scopeCtx.fillStyle = 'rgba(150,160,175,.7)';
+    scopeCtx.fillText(s, x - 4 * dpr, ch - 3 * dpr);
+  });
+  /* 全量比对(红)与证明(绿) */
+  [[n => n * 32, 'rgba(240,90,80,.95)'], [n => Math.ceil(Math.log2(n)) * 32, 'rgba(79,191,143,.95)']].forEach(([f, c]) => {
+    scopeCtx.strokeStyle = c;
+    scopeCtx.lineWidth = Math.max(1.4, 1.4 * dpr);
+    scopeCtx.beginPath();
+    for (let k = 0; k <= 60; k++) {
+      const n = Math.pow(2, 2 + k / 60 * 12);
+      const x = xOf(Math.log2(n)), y = yOf(Math.log10(f(n)));
+      k === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+    }
+    scopeCtx.stroke();
+  });
+  /* 当前 N 竖线 */
+  const xm = xOf(Math.log2(N));
+  scopeCtx.strokeStyle = 'rgba(255,255,255,.5)';
+  scopeCtx.beginPath(); scopeCtx.moveTo(xm, top); scopeCtx.lineTo(xm, baseY); scopeCtx.stroke();
+}
+
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateFormula() {
+  const h = H();
+  formulaEl.innerHTML =
+    L(`包含证明 <b>${h} 个哈希 = ${h * 32} B</b> · 1 万笔交易 ≈ <b>14 个 / ~0.5 KB</b>(全量比对要 320 KB)`,
+      `inclusion proof <b>${h} hashes = ${h * 32} B</b> - 10,000 transactions ≈ <b>14 hashes / ~0.5 KB</b> (full scan: 320 KB)`) +
+    '<br>' +
+    L(`区块头 <b>80 B</b>(根占 32 B)· 轻节点验证 N 笔:<b>O(N·log N)</b> · 根变 = 链上有人动过`,
+      `block header <b>80 B</b> (root takes 32) - light client verifies N tx in <b>O(N log N)</b> - root changed = chain touched`) +
+    '<br>' +
+    L(`根相同 ⇒ 数据相同:SHA-256 生日界 <b>2¹²⁸</b> · 奇数层复制末叶 · 中间节点双重 SHA-256`,
+      `equal roots => equal data: SHA-256 birthday bound <b>2^128</b> - duplicate last leaf on odd rows - double SHA-256 inside`);
+}
+function updateStats() {
+  const h = H();
+  stA.innerHTML = N + '<small> 块</small>';
+  stA.className = 'v ok';
+  stB.innerHTML = 'log₂N = ' + h;
+  stB.className = 'v ok';
+  stC.innerHTML = h + '<small> 个哈希</small>';
+  stC.className = 'v ok';
+  stD.innerHTML = h * 32 + '<small> B</small>';
+  stD.className = 'v ok';
+  stE.textContent = '0x' + rootHexA();
+  stE.className = 'v ' + (mode === 'tamper' ? 'bad' : 'ok');
+  let s, c;
+  if (mode === 'tamper') { s = L('✗ 根不匹配', '✗ root mismatch'); c = 'bad'; }
+  else if (mode === 'sync') { s = L('分叉已定位', 'fork located'); c = 'warn'; }
+  else if (mode === 'proof') { s = L('✓ 验证通过', '✓ proof holds'); c = 'ok'; }
+  else { s = L('✓ 一致', '✓ consistent'); c = 'ok'; }
+  stF.textContent = s;
+  stF.className = 'v ' + c;
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  nRaw = 16; N = 16; proofT = 0; mode = 'intact';
+  elN.value = 16;
+  updateSliderLabels(); updateFormula();
+}
+
+
+/* ---------------- stats / formula 刷新 ---------------- */
+const stEls = ['stA', 'stB', 'stC', 'stD', 'stE', 'stF'].map(id => document.getElementById(id));
+
+/* 预设按钮接线(页面脚本已给出 PRESET_IDS) */
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  sceneFrame(et, simDt, dt);
+  /* 步骤高亮(呼吸脉冲):页面在 HL 表里登记材质 */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.emissiveIntensity = 0.55 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) { if (typeof drawScope === 'function') drawScope(); }
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
