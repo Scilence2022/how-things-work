@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>抬头显示 · 把仪表投到十几米外的虚像里</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4fc76f;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1f8a45;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="抬头显示:把仪表投到十几米外的虚像里" data-en="Head-Up Display: Projecting the Gauges into a Virtual Image a Dozen Meters Out">抬头显示:把仪表投到十几米外的虚像里</h1>
+  <div class="sub" data-zh="HUD 的光路是把光「折叠」进挡风玻璃:成像源(TFT/LCOS)→ 曲面折叠镜(兼准直)→ 挡风玻璃一次反射,把车速画成悬浮在路面远方的虚像。关键参数是虚像距离 VID(2-15 m):人眼从看仪表盘(0.8 m)切换到看路(∞),每次要付 ~0.35 s 的调节+聚合税;虚像投远之后焦点不用再换,低头-抬头-对焦三件事并成一件,视线离开路面的时间从 1.2 s 砍到 0.3 s。代价在玻璃本身:夹层三明治内外表面各反射一次会产生重影,解法是把 PVB 胶片做成 0.4-1.0° 楔角,让副像偏出眼盒;而眼盒(~100×50 mm)是所有光学的硬预算——眼睛一出盒,显示就消失。AR-HUD 再进一步,把箭头贴在 15 m 外的真实车道上。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A HUD folds light into the windshield: image source (TFT/LCOS) -> a curved folding mirror (which also collimates) -> one reflection off the glass, painting your speed as a virtual image floating over the road. The key number is virtual image distance VID (2-15 m): switching focus from the cluster (0.8 m) to the road (infinity) costs ~0.35 s of accommodation and convergence each time; with the image thrown far, focus never changes, and eyes-off-road time drops from 1.2 s to 0.3 s. The cost sits in the glass itself: the sandwich reflects twice and ghosts; the fix is a 0.4-1.0 deg wedge in the PVB interlayer so the secondary image falls outside the eye box - and the eye box (~100x50 mm) is the hard budget of all the optics: drift out of it and the display vanishes. AR-HUD goes further and pins arrows onto the real lane 15 m out. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">HUD 的光路是把光「折叠」进挡风玻璃:成像源(TFT/LCOS)→ 曲面折叠镜(兼准直)→ 挡风玻璃一次反射,把车速画成悬浮在路面远方的虚像。关键参数是虚像距离 VID(2-15 m):人眼从看仪表盘(0.8 m)切换到看路(∞),每次要付 ~0.35 s 的调节+聚合税;虚像投远之后焦点不用再换,低头-抬头-对焦三件事并成一件,视线离开路面的时间从 1.2 s 砍到 0.3 s。代价在玻璃本身:夹层三明治内外表面各反射一次会产生重影,解法是把 PVB 胶片做成 0.4-1.0° 楔角,让副像偏出眼盒;而眼盒(~100×50 mm)是所有光学的硬预算——眼睛一出盒,显示就消失。AR-HUD 再进一步,把箭头贴在 15 m 外的真实车道上。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="虚像距离" data-en="virtual image dist">虚像距离</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="离路时间" data-en="eyes-off-road">离路时间</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="楔角" data-en="wedge angle">楔角</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="重影间距" data-en="ghost spacing">重影间距</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="眼盒" data-en="eye box">眼盒</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="AR 误差" data-en="AR error">AR 误差</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="折叠光路(逐段点亮)" data-en="folded light path (lit in sequence)">折叠光路(逐段点亮)</span>
+    <span class="chip g" data-zh="虚像面板与 AR 层" data-en="virtual image and AR layer">虚像面板与 AR 层</span>
+    <span class="chip r" data-zh="副像(重影)" data-en="secondary image (ghost)">副像(重影)</span>
+    <span class="chip e" data-zh="挡风玻璃三明治与楔角" data-en="windshield sandwich and wedge">挡风玻璃三明治与楔角</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-path" data-zh="光路剖视" data-en="light path">光路剖视</button>
+    <button class="abtn" id="btn-vid" data-zh="虚像距离" data-en="virtual image distance">虚像距离</button>
+    <button class="abtn" id="btn-wedge" data-zh="楔形防重影" data-en="wedge vs ghost">楔形防重影</button>
+    <button class="abtn" id="btn-ar" data-zh="AR 贴合" data-en="AR overlay">AR 贴合</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="虚像距离 VID" data-en="virtual image dist">虚像距离 VID</label><input id="vVid" type="range" min="2" max="15" step="0.5" value="7.5"><span class="val" id="vVidVal"></span></div>
+  <div class="row"><label data-zh="眼盒偏移" data-en="eye offset">眼盒偏移</label><input id="vEye" type="range" min="-50" max="50" step="5" value="0"><span class="val" id="vEyeVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="设计图 / 楔角-分离" data-en="chart / wedge vs separation">设计图 / 楔角-分离</span></label>
+        <label><input id="tglCut" type="checkbox"> <span data-zh="眼盒框" data-en="eye box frame">眼盒框</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+    <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../lens-imaging/" data-zh="透镜成像" data-en="lens imaging">透镜成像</a>
+    <a href="../dlp-projector/" data-zh="DLP 投影仪" data-en="DLP projector">DLP 投影仪</a>
+    <a href="../chromatic-aberration/" data-zh="色差与消色差" data-en="chromatic aberration">色差与消色差</a>
+    <a href="../glasses-myopia/" data-zh="近视眼镜" data-en="glasses for myopia">近视眼镜</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(11, 8, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 2.5, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);   // 双通道环形缓冲
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= 抬头显示与虚像光学 ================= */
+const TITLE_ZH = '抬头显示 · 虚像光学';
+const TITLE_EN = 'Head-Up Display · Virtual Image Optics';
+const PRESET_IDS = ['path', 'vid', 'wedge', 'ar'];
+
+let vidM = 7.5;        // 虚像距离 m
+let eyeOff = 0;        // 眼盒偏移 mm
+let wedgeDeg = 0.6;    // 挡风玻璃楔角 °(wedge 预设下扫描 0→0.9)
+let tPres = 0, pulseT = 0;
+const EYE_X = -0.45, EYE_Y = 1.95;
+const vidX = () => 3.5 + vidM * 1.25;
+const sepMrad = () => 2 * wedgeDeg * Math.PI / 180 * 1000;       // 双反射分离角(2β)
+const eyeFade = () => clamp01(1 - (Math.abs(eyeOff) - 10) / 30); // 出眼盒渐隐
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+function panelTexture(bg, fg) {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 144;
+  const g = c.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0, 0, 256, 144);
+  g.strokeStyle = fg; g.lineWidth = 6; g.strokeRect(6, 6, 244, 132);
+  g.fillStyle = fg; g.textAlign = 'center';
+  g.font = 'bold 78px system-ui, sans-serif';
+  g.fillText('88', 128, 88);
+  g.font = '26px system-ui, sans-serif';
+  g.fillText('km/h', 128, 126);
+  const tx = new THREE.CanvasTexture(c);
+  tx.colorSpace = THREE.SRGBColorSpace;
+  return tx;
+}
+const texMain = panelTexture('rgba(6,12,9,.55)', '#7bf29b');
+const texGhost = panelTexture('rgba(30,8,8,.38)', '#ff8a8a');
+
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.4, depthWrite: false }),
+  road: mat(0x23272e, { roughness: 0.9, metalness: 0.05 }),
+  line: new THREE.MeshBasicMaterial({ color: 0x778391 }),
+  dashM: mat(0x272d35, { roughness: 0.6, metalness: 0.2 }),
+  bodyM: mat(0x39424d, { roughness: 0.4, metalness: 0.5, transparent: true, opacity: 0.32, depthWrite: false }),
+  glass: mat(0xbfe0d8, { roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }),
+  pvb: mat(0x9fd8c8, { roughness: 0.3, metalness: 0, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }),
+  mirror: mat(0xd8e4ee, { roughness: 0.05, metalness: 1, side: THREE.DoubleSide }),
+  srcM: mat(0xd8ffe8, { roughness: 0.3, metalness: 0.1, emissiveIntensity: 1.1 }),
+  ray: mat(0x6fe08a, { roughness: 0.3, metalness: 0, transparent: true, opacity: 0.8, emissiveIntensity: 0.7 }),
+  pulse: new THREE.MeshBasicMaterial({ color: 0xd8ffe8 }),
+  ghost: new THREE.MeshBasicMaterial({ map: texGhost, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }),
+  panel: new THREE.MeshStandardMaterial({ map: texMain, emissiveMap: texMain, emissive: 0xffffff, emissiveIntensity: 0.45,
+    transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false, roughness: 0.5, metalness: 0 }),
+  arM: mat(0x4fc76f, { roughness: 0.3, metalness: 0.2, emissiveIntensity: 0.8 }),
+  eyeM: mat(0xd8e0e8, { roughness: 0.4, metalness: 0.1 }),
+  frame: new THREE.MeshBasicMaterial({ color: 0xffd27a, wireframe: true, transparent: true, opacity: 0.6 }),
+};
+const HL = { path: M.ray, vid: M.panel, wedge: M.pvb, ar: M.arM };
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.road.color.set(dark ? 0x23272e : 0xb9c2cc);
+  M.line.color.set(dark ? 0x778391 : 0x5b6875);
+  M.dashM.color.set(dark ? 0x272d35 : 0x8c99a6);
+  M.bodyM.color.set(dark ? 0x39424d : 0x7f8fa0);
+}
+
+/* ---------------- 场景:剖视驾驶舱 + 道路 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(70, 0.1, 40), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(40, 20, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+/* 路面与车道线 */
+const road = new THREE.Mesh(new THREE.BoxGeometry(52, 0.06, 7.5), M.road);
+road.position.set(19, 0.03, 0);
+scene.add(road);
+const edgeF = new THREE.Mesh(new THREE.BoxGeometry(52, 0.02, 0.12), M.line);
+edgeF.position.set(19, 0.08, 3.5);
+scene.add(edgeF);
+const edgeB = edgeF.clone();
+edgeB.position.z = -3.5;
+scene.add(edgeB);
+for (let i = 0; i < 13; i++) {
+  const dsh = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.02, 0.12), M.line);
+  dsh.position.set(5 + i * 3.4, 0.08, 0);
+  scene.add(dsh);
+}
+/* 车体暗示:地板、仪表台、座椅、方向盘、后壁、车顶蒙皮 */
+const floor = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.14, 2.1), M.dashM);
+floor.position.set(-0.6, 0.55, 0);
+scene.add(floor);
+const dash = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.42, 1.95), M.dashM);
+dash.position.set(1.15, 1.1, 0);
+scene.add(dash);
+const seatBase = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.28, 0.95), M.dashM);
+seatBase.position.set(-1.3, 0.95, 0);
+scene.add(seatBase);
+const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.05, 0.95), M.dashM);
+seatBack.position.set(-1.78, 1.5, 0);
+seatBack.rotation.z = 0.15;
+scene.add(seatBack);
+const wheelG = new THREE.Group();
+wheelG.position.set(-0.35, 1.6, 0);
+scene.add(wheelG);
+const rim = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.05, 10, 28), M.bodyM);
+wheelG.add(rim);
+for (let i = 0; i < 3; i++) {
+  const holder = new THREE.Group();
+  holder.rotation.z = i * TAU / 3;
+  const sp = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.38, 0.05), M.bodyM);
+  sp.position.y = 0.19;
+  holder.add(sp);
+  wheelG.add(holder);
+}
+const rearWall = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.6, 2.05), M.bodyM);
+rearWall.position.set(-2.9, 1.4, 0);
+scene.add(rearWall);
+const roof = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.08, 2.1), M.bodyM);
+roof.position.set(-1.3, 3.05, 0);
+scene.add(roof);
+
+/* 挡风玻璃三明治:外片 / PVB / 内片(wedge 预设时内片带楔角) */
+const glassG = new THREE.Group();
+glassG.position.set(0.9, 2.2, 0);
+glassG.rotation.z = 0.56;
+scene.add(glassG);
+const wsOut = new THREE.Mesh(new THREE.BoxGeometry(0.045, 2.05, 2.15), M.glass);
+wsOut.position.x = 0.05;
+glassG.add(wsOut);
+const innerG = new THREE.Group();
+glassG.add(innerG);
+const pvbIn = new THREE.Mesh(new THREE.BoxGeometry(0.016, 2.05, 2.15), M.pvb);
+pvbIn.position.x = -0.008;
+innerG.add(pvbIn);
+const wsIn = new THREE.Mesh(new THREE.BoxGeometry(0.045, 2.05, 2.15), M.glass);
+wsIn.position.x = -0.05;
+innerG.add(wsIn);
+/* A 柱 */
+const pilF = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.15, 0.16), M.bodyM);
+pilF.position.set(0.9, 2.2, 1.12);
+pilF.rotation.z = 0.56;
+scene.add(pilF);
+const pilB = pilF.clone();
+pilB.position.z = -1.12;
+scene.add(pilB);
+
+/* 成像源(TFT 小屏)+ 曲面折叠镜(兼准直) */
+const src = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.55), M.srcM);
+src.position.set(1.42, 1.42, 0);
+src.rotation.z = -0.45;
+scene.add(src);
+const mirror = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.62, 24, 1, true, Math.PI * 0.18, Math.PI * 0.64), M.mirror);
+mirror.position.set(1.06, 2.02, 0);
+mirror.rotation.x = Math.PI / 2;
+mirror.rotation.z = 0.35;
+scene.add(mirror);
+
+/* 光路:源 → 折叠镜 → 挡风玻璃 → 眼(发光细管 + 脉冲光珠) */
+const P1 = new THREE.Vector3(1.42, 1.52, 0), P2 = new THREE.Vector3(1.06, 2.34, 0),
+  P3 = new THREE.Vector3(0.62, 2.58, 0), P4 = new THREE.Vector3(EYE_X, EYE_Y, 0);
+const PPATH = [P1, P2, P3, P4];
+const rays = [];
+for (let i = 0; i < 3; i++) {
+  const a = PPATH[i], b = PPATH[i + 1];
+  const mid = a.clone().add(b).multiplyScalar(0.5);
+  const len = a.distanceTo(b);
+  const rm = M.ray.clone();
+  const r = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, len, 8), rm);
+  r.position.copy(mid);
+  r.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+  scene.add(r);
+  rays.push({ m: r, mat: rm });
+}
+HL.path = rays[0].mat;   // 网格用的是克隆材质,步骤高亮须指向真身
+const pulses = [];
+for (let i = 0; i < 2; i++) {
+  const psp = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), M.pulse);
+  scene.add(psp);
+  pulses.push({ m: psp, ph: i * 0.5 });
+}
+/* 驾驶员眼 + 眼盒框 */
+const eyeG = new THREE.Group();
+eyeG.position.set(EYE_X, EYE_Y, 0);
+scene.add(eyeG);
+const eyeBall = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), M.eyeM);
+eyeG.add(eyeBall);
+const eyeBox = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.26, 0.5), M.frame);
+eyeG.add(eyeBox);
+/* 虚像面板(主像,绿)与副像(重影,红) */
+const vidPanel = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.96), M.panel);
+scene.add(vidPanel);
+const ghostPanel = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.96), M.ghost);
+scene.add(ghostPanel);
+/* AR 车道贴合框 + 转向箭头(15 m 外) */
+const ARX = 3.5 + 15 * 1.25;
+const arG = new THREE.Group();
+arG.position.set(ARX, 0, 0);
+scene.add(arG);
+const postF = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.15, 0.09), M.arM);
+postF.position.set(0, 0.63, 1.85);
+arG.add(postF);
+const postB = postF.clone();
+postB.position.z = -1.85;
+arG.add(postB);
+const armF = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.55), M.arM);
+armF.position.set(0, 1.18, 1.58);
+arG.add(armF);
+const armB = armF.clone();
+armB.position.z = -1.58;
+arG.add(armB);
+const arStem = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.08), M.arM);
+arStem.position.set(0.2, 1.05, 0);
+arG.add(arStem);
+const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.62, 4), M.arM);
+arrow.rotation.z = Math.PI / 2;
+arrow.scale.z = 0.3;
+arrow.position.set(-0.2, 1.45, 0);
+arG.add(arrow);
+
+camera.position.set(9.5, 5.0, 10.5);
+controls.target.set(2.0, 2.0, 0);
+tgtVec.set(2.0, 2.0, 0);
+const v3a = new THREE.Vector3();
+
+/* ---------------- 标签 ---------------- */
+addLabel(() => L(`光路三折叠:成像源 → 曲面折叠镜(兼准直)→ 挡风玻璃一次反射进眼`,
+  `three folds: image source -> curved folding mirror (also collimating) -> one windshield bounce into the eye`),
+  () => 'st', new THREE.Vector3(1.2, 3.15, 0));
+addLabel(() => L(`虚像 ${vidM.toFixed(1)} m:焦点免切换,调焦税(~0.35 s/次)免了——离路时间 1.2 s → 0.3 s`,
+  `virtual image ${vidM.toFixed(1)} m away: focus never switches, the ~0.35 s refocus toll is gone - 1.2 s -> 0.3 s off-road`),
+  () => 'b', new THREE.Vector3(10, 3.4, 0), pos => { pos.set(vidX(), Math.min(3.4, 2.9 + vidM * 0.035), 0); });
+addLabel(() => L(`双反射重影:内外表面各反射一次;楔角 ${wedgeDeg.toFixed(2)}° 使副像偏开 ${sepMrad().toFixed(0)} mrad`,
+  `double reflection makes a ghost; the ${wedgeDeg.toFixed(2)} deg wedge pushes it ${sepMrad().toFixed(0)} mrad off the main image`),
+  () => wedgeDeg < 0.12 ? 'bad' : 'w', new THREE.Vector3(0.55, 3.45, 0));
+addLabel(() => L(`眼盒 ~100×50 mm 是硬预算:眼睛偏 ${eyeOff.toFixed(0)} mm${Math.abs(eyeOff) > 32 ? ',出盒→显示消失' : ''}`,
+  `the ~100x50 mm eye box is the hard budget: eye offset ${eyeOff.toFixed(0)} mm${Math.abs(eyeOff) > 32 ? ' - out of box, display dies' : ''}`),
+  () => Math.abs(eyeOff) > 32 ? 'bad' : 'g', new THREE.Vector3(EYE_X, 2.7, 0));
+addLabel(() => L(`AR-HUD:摄像头+转向角做透视校正,把箭头贴在 15 m 外真实车道,误差压到 <1° 视角`,
+  `AR-HUD: camera plus steering angle correct perspective, pinning arrows onto the real lane 15 m out, error under 1 deg`),
+  () => 'g', new THREE.Vector3(18, 3.3, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'vid', tgt: [1.6, 2.0, 3.2],
+    b: '低头 1.2 秒,盲开 17 米', be: '1.2 seconds down, 17 meters blind',
+    d: '50 km/h = 13.9 m/s。一次「低头看仪表-抬头找路」约 1.2 s,车已盲开 17 m——变道决策窗口就这么被咬掉一口。更深的一笔账在眼睛里:从 0.8 m 的仪表盘切换到 ∞ 的路面,睫状肌调节与双眼聚合各要时间,合计 ~0.35 s 的「调焦税」,每次扫视都付一遍。老司机低头次数少,税照付;HUD 的思路不是让你不看点,而是把点挪到不用改焦的地方。',
+    de: '50 km/h is 13.9 m/s; one glance down - cluster, road, back - costs about 1.2 s, or 17 m driven blind, a bite out of the lane-change window. The deeper ledger is in the eye: refocusing from a 0.8 m cluster to the far road takes ~0.35 s of accommodation and convergence, paid on every glance. Veteran drivers glance less but still pay the toll; the HUD idea is not fewer glances but moving the target to where focus never changes.' },
+  { hl: 'path', tgt: [1.0, 2.3, 2.6],
+    b: '光路三折叠:源→镜→玻璃', be: 'Three folds: source, mirror, glass',
+    d: '成像源是一块高亮 TFT/LCOS 小屏(或 DLP 芯片),亮度要做到白天可读的万 cd/m² 级。曲面折叠镜把一次像折向上,兼做准直镜:中间像点被推到「光学无穷远附近」,出射的每束光近乎平行——这正是「虚像在十几米外」的含义:不是画得远,而是光线以几乎为零的视差抵达人眼。挡风玻璃只负责最后一折:一次反射把光送进驾驶员眼盒,同时让外面的世界原样通过。',
+    de: 'The image source is a high-brightness TFT/LCOS panel (or a DLP chip) pushed to ~10000 cd/m2 so it survives daylight. A curved folding mirror bends the image upward and doubles as the collimator: the intermediate focus is pushed to near-optical infinity so arriving rays are nearly parallel - that is what a virtual image a dozen meters out means: not drawn far away, but light delivered with almost zero parallax. The windshield only makes the last fold, one bounce into the eye box while the world passes through untouched.' },
+  { hl: 'vid', tgt: [9.5, 2.6, 3.0],
+    b: '虚像距离:焦深即设计域', be: 'VID: focus depth as design space',
+    d: 'VID 取 2-15 m:太近(2 m)调节仍有负担,太远则虚像被雨雾衰减、风挡利用恶化;量产落点常在 7-10 m,AR 内容做到 15 m 以贴合车道。平行光入眼=自动聚焦到远点,于是「看仪表」与「看路」的切换成本消失;图标要按角尺寸设计——距离翻倍,面板物理尺寸也翻倍,视网膜上不变。这就是 HUD 与仪表屏的本质区别:前者是光学系统,后者只是屏幕。',
+    de: 'VID spans 2-15 m: too near (2 m) and accommodation still labors; too far and rain and haze eat the image while windshield area demand grows. Production systems settle at 7-10 m, with AR content at 15 m to hug the lane. Collimated light focuses at the far point automatically, so the cluster-to-road switching cost vanishes; icons must be designed in angular terms - double the distance means doubling the panel so the retinal image stays put. That is the essential difference: a HUD is an optical system; a cluster is only a screen.' },
+  { hl: 'wedge', tgt: [0.7, 2.6, 2.2],
+    b: '楔角:给重影发离场券', be: 'The wedge that evicts the ghost',
+    d: '挡风玻璃是两片玻璃夹 PVB 胶片的安全三明治,内外两个表面各反射一次——第一层给你像,第二层又给一个,错位一点点就是危及读数的重影。解法出人意料地便宜:把夹层做成 0.4-1.0° 的楔角,两个表面的反射像错开 2β(约 15-35 mrad),主像对准眼盒,副像被甩出视野或散焦成雾。楔角还有方向性:按车型与眼点位置定制,挡风玻璃因此成了「带光学公差的结构件」。',
+    de: 'A windshield is a sandwich of two glass sheets around a PVB interlayer, and both surfaces reflect - the first gives you the image, the second another one, slightly displaced: a ghost on safety-critical readouts. The fix is delightfully cheap: laminate with a 0.4-1.0 deg wedge so the two reflected images separate by 2 beta, some 15-35 mrad; the main image is aimed into the eye box while the secondary is thrown outside or defocused into haze. The wedge has direction and is tuned per model and eye-point - the windshield becomes a structural part with optical tolerances.' },
+  { hl: 'path', tgt: [-0.3, 2.2, 2.0],
+    b: '眼盒:所有光学的硬预算', be: 'The eye box: the hard budget',
+    d: '眼盒是驾驶员眼睛能看见完整显示的空间区域,典型 ~100×50 mm(横向×纵向)。准直系统的焦深、镜像的放大率、楔角分离量,全部以「是否覆盖眼盒」为判据;眼睛偏出边界,亮度骤降、边缘色散、直至消失——这不是故障,是有限光学口径的几何必然。方向盘高低、座椅滑轨、驾驶员身高都吃这份预算;所以 HUD 调校的最后一步,永远是请不同身材的人坐进来实测。',
+    de: 'The eye box is the volume in which the eye sees the full display, typically ~100x50 mm. Collimation depth, magnification and wedge separation are all judged by one criterion: does it cover the box. Drift out and brightness collapses, edges smear, the display dies - not a fault, the geometry of finite aperture. Steering wheel position, seat travel and driver height all draw on this budget, so the last step of every HUD tuning is seating people of different sizes in front of it.' },
+  { hl: 'ar', tgt: [12, 2.2, 4.0],
+    b: 'AR-HUD:把箭头焊在车道上', be: 'AR-HUD: welding arrows to the lane',
+    d: 'AR-HUD 在 VID≥10 m 的基础上加三件东西:前视摄像头识别车道线、方向盘转角+轮速做自车运动推算、大光圈广角光路扩大眼盒。三者融合后,导航箭头以 <1° 的视角误差「贴」在 15 m 外的真实车道上——路面颠簸时箭头要稳稳钉住,靠毫秒级时间同步与透视校正。阈值效应明显:误差一旦超过 ~1°,增强感立刻破功,变成「漂浮的贴图」。这是显示与感知的合流点。',
+    de: 'AR-HUD adds three things on top of a 10 m-plus VID: a forward camera reading the lane lines, steering angle and wheel speed for ego-motion, and a wide-eyebox optical path. Fused, the navigation arrow pins to the real lane 15 m out with under 1 deg of angular error - over bumps it must stay nailed, which takes millisecond synchronization and perspective correction. The threshold is sharp: past ~1 deg the augmented feel collapses into a floating sticker. This is where display meets perception.' },
+];
+
+/* ---------------- 滑杆 ---------------- */
+const elVid = document.getElementById('vVid'), elVidVal = document.getElementById('vVidVal');
+const elEye = document.getElementById('vEye'), elEyeVal = document.getElementById('vEyeVal');
+const tglCut = document.getElementById('tglCut');
+function clearPreset() { if (preset) setPreset(preset); wedgeDeg = 0.6; }
+function updateSliderLabels() {
+  elVidVal.textContent = vidM.toFixed(1) + ' m';
+  elEyeVal.textContent = (eyeOff >= 0 ? '+' : '') + eyeOff.toFixed(0) + ' mm';
+}
+elVid.addEventListener('input', () => { vidM = +elVid.value; clearPreset(); updateSliderLabels(); });
+elEye.addEventListener('input', () => { eyeOff = +elEye.value; clearPreset(); updateSliderLabels(); });
+tglCut.addEventListener('change', () => { /* 眼盒框可见性由 sceneFrame 读 */ });
+
+/* ---------------- 预设 ---------------- */
+function runModes(simDt) {
+  if (preset === 'path') { vidM = 7.5; eyeOff = 0; wedgeDeg = 0.6; }
+  else if (preset === 'vid') { tPres += simDt; vidM = 8.5 + 6.5 * Math.sin(tPres * TAU / 9); wedgeDeg = 0.6; }
+  else if (preset === 'wedge') { tPres += simDt; wedgeDeg = 0.45 * (1 - Math.cos(tPres * TAU / 7)); vidM = 7.5; eyeOff = 0; }
+  else if (preset === 'ar') { vidM = 15; wedgeDeg = 0.6; }
+  elVid.value = vidM; elEye.value = eyeOff;
+  updateSliderLabels();
+}
+
+/* ---------------- 每帧可视 ---------------- */
+function sceneFrame(et, simDt, dt) {
+  pulseT += simDt;
+  const fade = eyeFade();
+  /* 眼与眼盒 */
+  eyeG.position.y = EYE_Y + eyeOff * 0.005;
+  eyeBox.visible = tglCut.checked;
+  M.frame.opacity = 0.3 + 0.5 * (1 - fade);
+  /* 虚像面板:距离→位置与尺寸(角尺寸近似不变),出眼盒渐隐 */
+  const x = vidX(), sc = 0.45 + vidM / 7.5 * 0.75;
+  vidPanel.position.set(x, 2.3 + vidM * 0.05, 0);
+  vidPanel.scale.setScalar(sc);
+  vidPanel.rotation.y = -Math.PI / 2 + 0.5;
+  M.panel.opacity = 0.95 * fade;
+  M.panel.emissiveIntensity = 0.35 + 0.2 * Math.sin(et * 2.4);
+  const sep = sepMrad() / 1000 * (x - EYE_X);
+  ghostPanel.position.set(x, vidPanel.position.y + sep, 0);
+  ghostPanel.scale.setScalar(sc);
+  ghostPanel.rotation.y = vidPanel.rotation.y;
+  M.ghost.opacity = (preset === 'wedge' ? 0.78 : 0.32) * fade;
+  /* 光路:逐段呼吸 + 脉冲光珠 */
+  rays.forEach((r, i) => { r.mat.opacity = (0.42 + 0.3 * Math.sin(et * 3.2 - i * 1.2)) * (0.35 + 0.65 * fade); });
+  for (const ps of pulses) {
+    const u = (pulseT * 0.35 + ps.ph) % 1;
+    const seg = Math.min(2, Math.floor(u * 3));
+    ps.m.position.lerpVectors(PPATH[seg], PPATH[seg + 1], u * 3 - seg);
+    ps.m.visible = fade > 0.05;
+  }
+  /* 楔角可视化:内片微转(×8 夸张) */
+  innerG.rotation.z = wedgeDeg * 0.14;
+  /* AR 层 */
+  const arOn = preset === 'ar';
+  M.arM.emissiveIntensity = (arOn ? 0.75 + 0.35 * Math.sin(et * 3) : 0.18) * (0.25 + 0.75 * fade);
+  arrow.position.z = arOn ? 0.55 * Math.sin(pulseT * 0.7) : 0;
+  wheelG.rotation.y = arOn ? 0.25 * Math.sin(pulseT * 0.7) : 0;
+  /* 成像源工作脉冲 */
+  M.srcM.emissiveIntensity = 0.9 + 0.35 * Math.sin(et * 5);
+  /* 预设聚焦 */
+  if (preset === 'path') tgtVec.lerp(v3a.set(0.9, 2.25, 0), 0.05);
+  else if (preset === 'vid') tgtVec.lerp(v3a.set(x * 0.55, 2.4, 0), 0.05);
+  else if (preset === 'wedge') tgtVec.lerp(v3a.set(0.75, 2.5, 0), 0.05);
+  else if (preset === 'ar') tgtVec.lerp(v3a.set(14, 1.8, 0), 0.05);
+}
+
+/* ---------------- 示波器:楔角-分离设计图 ---------------- */
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L(`双反射分离角 vs 楔角(绿)· 红带=与主像重叠区(重影)· 圆点=当前 ${wedgeDeg.toFixed(2)}°`,
+    `ghost separation vs wedge (green) - red band = overlaps main image - dot: now ${wedgeDeg.toFixed(2)} deg`), 4 * dpr, 10 * dpr);
+  const x0 = 30 * dpr, y0 = ch - 12 * dpr, w = cw - x0 - 8 * dpr, h = ch - 24 * dpr;
+  const X = wdeg => x0 + wdeg * w;
+  const Y = mr => y0 - mr / 45 * h;
+  /* 与主像重叠区:主像半角高 ~1.5° ≈ 26 mrad */
+  scopeCtx.fillStyle = 'rgba(255,107,107,.16)';
+  scopeCtx.fillRect(x0, Y(26), w, y0 - Y(26));
+  scopeCtx.strokeStyle = 'rgba(255,107,107,.7)';
+  scopeCtx.lineWidth = Math.max(1, dpr);
+  scopeCtx.setLineDash([4 * dpr, 4 * dpr]);
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(x0, Y(26));
+  scopeCtx.lineTo(cw - 8 * dpr, Y(26));
+  scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  /* 分离角 = 2β 直线 */
+  scopeCtx.strokeStyle = 'rgba(123,216,143,.95)';
+  scopeCtx.lineWidth = Math.max(1.4, 1.4 * dpr);
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(X(0), Y(0));
+  scopeCtx.lineTo(X(1), Y(2 * Math.PI / 180 * 1000));
+  scopeCtx.stroke();
+  /* 当前工作点 */
+  scopeCtx.fillStyle = 'rgba(255,210,122,.95)';
+  scopeCtx.beginPath();
+  scopeCtx.arc(X(wedgeDeg), Y(sepMrad()), 3 * dpr, 0, TAU);
+  scopeCtx.fill();
+  /* 轴标 */
+  scopeCtx.fillStyle = 'rgba(150,160,175,.7)';
+  scopeCtx.fillText('0°', x0 - 10 * dpr, y0);
+  scopeCtx.fillText('1°', cw - 18 * dpr, y0);
+  scopeCtx.fillText('26', x0 - 22 * dpr, Y(26) + 3 * dpr);
+}
+
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`VID <b>${vidM.toFixed(1)} m</b>(设计域 2-15 m)· 调节+聚合税 <b>~0.35 s/次</b> · 焦点 <b>免切换</b>`,
+      `VID <b>${vidM.toFixed(1)} m</b> (design range 2-15 m) - refocus toll <b>~0.35 s</b> - focus <b>never switches</b>`) +
+    '<br>' +
+    L(`楔角 <b>${wedgeDeg.toFixed(2)}°</b> → 双反射分离 <b>${sepMrad().toFixed(0)} mrad</b> · 主像进眼盒,副像偏出`,
+      `wedge <b>${wedgeDeg.toFixed(2)} deg</b> -> ghost pushed <b>${sepMrad().toFixed(0)} mrad</b> - main image in box, ghost out`) +
+    '<br>' +
+    L(`离路时间 <b>1.2 s → 0.3 s</b> · 50 km/h 低头 1.2 s = 盲开 <b>17 m</b> · 眼盒 <b>100×50 mm</b>`,
+      `eyes-off-road <b>1.2 s -> 0.3 s</b> - at 50 km/h, 1.2 s = <b>17 m</b> blind - eye box <b>100x50 mm</b>`);
+}
+function updateStats() {
+  stA.innerHTML = vidM.toFixed(1) + '<small> m</small>';
+  stA.className = 'v ' + (vidM >= 4 ? 'ok' : 'warn');
+  stB.innerHTML = L('0.3<small> s</small>(原 1.2)', '0.3<small> s</small> (was 1.2)');
+  stB.className = 'v ok';
+  stC.innerHTML = wedgeDeg.toFixed(2) + '<small> °</small>';
+  stC.className = 'v ' + (wedgeDeg < 0.12 ? 'bad' : wedgeDeg < 0.35 ? 'warn' : 'ok');
+  const sep = sepMrad();
+  stD.innerHTML = sep.toFixed(0) + '<small> mrad</small>';
+  stD.className = 'v ' + (sep < 5 ? 'bad' : sep < 12 ? 'warn' : 'ok');
+  const fade = eyeFade();
+  stE.innerHTML = fade > 0.6 ? '100×50<small> mm</small>' : fade > 0.15 ? L('边缘', 'edge') : L('出盒!', 'OUT!');
+  stE.className = 'v ' + (fade > 0.6 ? 'ok' : fade > 0.15 ? 'warn' : 'bad');
+  const err = 2 + 0.05 * Math.abs(eyeOff) + (preset === 'ar' ? 1.2 : 0);
+  stF.innerHTML = err.toFixed(1) + '<small> mrad</small>';
+  stF.className = 'v ' + (err < 4 ? 'ok' : err < 8 ? 'warn' : 'bad');
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  vidM = 7.5; eyeOff = 0; wedgeDeg = 0.6; tPres = 0;
+  if (preset) setPreset(preset);
+  elVid.value = 7.5; elEye.value = 0;
+  updateSliderLabels(); updateFormula();
+}
+
+/* ---------------- stats / formula 刷新 ---------------- */
+const stEls = ['stA', 'stB', 'stC', 'stD', 'stE', 'stF'].map(id => document.getElementById(id));
+
+/* 预设按钮接线(页面脚本已给出 PRESET_IDS) */
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  sceneFrame(et, simDt, dt);
+  /* 步骤高亮(呼吸脉冲):页面在 HL 表里登记材质 */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.emissiveIntensity = 0.55 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) { if (typeof drawScope === 'function') drawScope(); }
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
