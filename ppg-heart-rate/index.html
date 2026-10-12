@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>光电容积描记 · 手表读出你的脉搏</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4f8f6a;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#33704e;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="光电容积描记:手表读出你的脉搏" data-en="PPG: Your Smartwatch Reads Your Pulse in Green Light">光电容积描记:手表读出你的脉搏</h1>
+  <div class="sub" data-zh="手表背面那颗闪烁的绿灯,是一项叫光电容积描记(PPG)的老技术:血液对绿光(525 nm,血红蛋白吸收峰附近)的吸收远高于皮肤与骨骼,心脏收缩时动脉毛细血管充血量只微增 1-3%,反射光就随之变暗——LED 打绿光进皮肤,光电二极管收反射,滤掉直流后剩下约 1% 的交流分量,那就是你的脉搏波:波峰间隔换算心率,波形形态还能估血压趋势。它是一场干扰的战争:运动伪影靠加速度计信号做自适应对消;佩戴过松漏光、过紧反而压扁微循环丢信号;纹身挡光、低温血管收缩、深肤色黑色素吸收强,手表会自动加大 LED 电流硬凿信号。血氧版本换了打法:红光(660 nm)+红外(940 nm)双波长,利用氧合/去氧血红蛋白在红光段吸收的巨大差异,比值之比 R 代入 SpO₂ = 110 − 25R。医疗级对照:手表级心率误差 ±2-5 bpm,单导联 ECG 房颤筛查已获 FDA 认可。拖「心率」滑杆看血管充红-放红的节拍同步加快;按「运动伪影」看波形被搅乱再被算法救回;按「佩戴过松漏光」与「血氧双波长」各看一眼。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The blinking green light on the back of your watch is an old technology called photoplethysmography, PPG. Blood absorbs green light (525 nm, near the hemoglobin absorption peak) far more than skin or bone; when the heart contracts, arterial capillaries fill by only 1-3% in volume, and the reflected light dims accordingly. The LED shines green into the skin, a photodiode collects the reflection, and after the DC component is filtered out, an AC component of roughly 1% remains - that is your pulse wave: peak intervals give heart rate, and the waveform shape even tracks blood-pressure trends. It is a war against interference: motion artifacts are cancelled adaptively using accelerometer signals; a strap too loose leaks light, a strap too tight squeezes the microcirculation shut and loses the signal; tattoos block light, cold vasoconstriction weakens it, and strong melanin absorption in dark skin makes the watch push LED current harder. The SpO2 version changes tactics: red (660 nm) plus infrared (940 nm) dual wavelengths exploit the huge absorption difference between oxygenated and deoxygenated hemoglobin in the red band, and the ratio-of-ratios R feeds SpO2 = 110 - 25R. Against medical references: watch-grade heart rate is within about 2-5 bpm, and single-lead ECG atrial-fibrillation screening is FDA-cleared. Drag the heart-rate slider to watch the vessels flush and drain faster; press motion artifact to see the waveform scrambled and rescued by the algorithm; try loose-fit light leak and dual-wavelength SpO2. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">手表背面那颗闪烁的绿灯,是一项叫光电容积描记(PPG)的老技术:血液对绿光(525 nm,血红蛋白吸收峰附近)的吸收远高于皮肤与骨骼,心脏收缩时动脉毛细血管充血量只微增 1-3%,反射光就随之变暗——LED 打绿光进皮肤,光电二极管收反射,滤掉直流后剩下约 1% 的交流分量,那就是你的脉搏波:波峰间隔换算心率,波形形态还能估血压趋势。它是一场干扰的战争:运动伪影靠加速度计信号做自适应对消;佩戴过松漏光、过紧反而压扁微循环丢信号;纹身挡光、低温血管收缩、深肤色黑色素吸收强,手表会自动加大 LED 电流硬凿信号。血氧版本换了打法:红光(660 nm)+红外(940 nm)双波长,利用氧合/去氧血红蛋白在红光段吸收的巨大差异,比值之比 R 代入 SpO₂ = 110 − 25R。医疗级对照:手表级心率误差 ±2-5 bpm,单导联 ECG 房颤筛查已获 FDA 认可。拖「心率」滑杆看血管充红-放红的节拍同步加快;按「运动伪影」看波形被搅乱再被算法救回;按「佩戴过松漏光」与「血氧双波长」各看一眼。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="心率" data-en="heart rate">心率</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="AC/DC 分量" data-en="AC/DC ratio">AC/DC 分量</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="SpO₂ 血氧" data-en="SpO2">SpO₂ 血氧</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="信噪比" data-en="SNR">信噪比</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="LED 电流" data-en="LED current">LED 电流</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="佩戴判定" data-en="fit verdict">佩戴判定</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip g" data-zh="绿光 525 nm:血液吸光,反射变暗" data-en="green 525 nm: blood absorbs, reflection dims">绿光 525 nm:血液吸光,反射变暗</span>
+    <span class="chip r" data-zh="血管充红:收缩期充血 1-3%" data-en="vessel flush: 1-3% more blood in systole">血管充红:收缩期充血 1-3%</span>
+    <span class="chip b" data-zh="脉搏波:滤掉直流后的 ~1% 交流" data-en="pulse wave: ~1% AC left after DC removal">脉搏波:滤掉直流后的 ~1% 交流</span>
+    <span class="chip o" data-zh="血氧模式:红光 660 + 红外 940 nm" data-en="SpO2 mode: red 660 + IR 940 nm">血氧模式:红光 660 + 红外 940 nm</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-rest" data-zh="静息测量 72 bpm" data-en="resting 72 bpm">静息测量 72 bpm</button>
+    <button class="abtn" id="btn-motion" data-zh="运动伪影 150 bpm" data-en="motion artifact 150 bpm">运动伪影 150 bpm</button>
+    <button class="abtn" id="btn-spo2" data-zh="血氧双波长" data-en="dual-wavelength SpO2">血氧双波长</button>
+    <button class="abtn" id="btn-loose" data-zh="佩戴过松漏光" data-en="loose fit, light leak">佩戴过松漏光</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="心率(bpm)" data-en="heart rate (bpm)">心率(bpm)</label><input id="vHR" type="range" min="45" max="190" step="1" value="72"><span class="val" id="vHRVal"></span></div>
+  <div class="row"><label data-zh="佩戴压力" data-en="strap pressure">佩戴压力</label><input id="vPress" type="range" min="0" max="10" step="0.5" value="5"><span class="val" id="vPressVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="脉搏波示波" data-en="pulse-wave scope">脉搏波示波</span></label>
+        <label><input id="tglCut" type="checkbox" checked> <span data-zh="皮肤剖视" data-en="skin x-ray">皮肤剖视</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../pulse-oximeter/" data-zh="脉搏血氧仪" data-en="pulse oximeter">脉搏血氧仪</a>
+    <a href="../ecg/" data-zh="心电图" data-en="ECG">心电图</a>
+    <a href="../mems-accelerometer/" data-zh="MEMS 加速度计" data-en="MEMS accelerometer">MEMS 加速度计</a>
+    <a href="../blood-pressure/" data-zh="血压" data-en="blood pressure">血压</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(11, 8, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 0.2, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(300), sndA = new Float32Array(300);   // 双通道环形缓冲
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.42;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= 光电容积描记 PPG ================= */
+const TITLE_ZH = '光电容积描记 · 手表读出你的脉搏';
+const TITLE_EN = 'PPG · Reading Your Pulse in Green Light';
+const PRESET_IDS = ['rest', 'motion', 'spo2', 'loose'];
+
+/* 状态 */
+let HR = 72;              // 心率 bpm
+let press = 5;            // 佩戴压力 0-10
+let spo2Mode = false;     // 双波长血氧模式
+let artifact = false;     // 运动伪影
+let phase = 0;            // 心动相位 [0,1)
+let heartT = 0;           // 相位推进用累计时间
+let qSig = 1;             // 信号质量(佩戴) [0.1,1]
+let acdc = 1.5;           // AC/DC %
+let ledMA = 6;            // LED 电流 mA
+let snrDb = 22;           // 信噪比 dB
+let spo2 = 98;            // 血氧 %
+let rawSig = 1, acSig = 0;   // 原始反射光 / 滤波后交流
+const NOISE = 0.0004;     // 光电二极管噪声(相对 DC)
+
+/* 脉搏波:主波(收缩峰)+ 重搏波(降中峡) */
+function pulseShape(ph) {
+  const p1 = Math.exp(-Math.pow((ph - 0.18) / 0.075, 2));
+  const p2 = 0.38 * Math.exp(-Math.pow((ph - 0.46) / 0.09, 2));
+  return p1 + p2;
+}
+function fitQuality(p) {
+  if (p < 1.5) return 0.22;         // 过松:漏光
+  if (p < 3.5) return 0.55;         // 偏松
+  if (p <= 7) return 1.0;           // 合适
+  if (p <= 8.5) return 0.45;        // 偏紧
+  return 0.14;                      // 过紧:压扁微循环
+}
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.4, depthWrite: false }),
+  skin: mat(0xd9a184, { roughness: 0.7, metalness: 0, transparent: true, opacity: 0.62, emissive: 0x000000 }),
+  fat: mat(0xe8d28a, { roughness: 0.8, metalness: 0, transparent: true, opacity: 0.55, emissive: 0x000000 }),
+  bone: mat(0xe9e4d4, { roughness: 0.6, metalness: 0.05 }),
+  artery: new THREE.MeshStandardMaterial({ color: 0xb03030, roughness: 0.5, metalness: 0, emissive: 0x881515, emissiveIntensity: 0.25 }),
+  vein: new THREE.MeshStandardMaterial({ color: 0x35509b, roughness: 0.55, metalness: 0, emissive: 0x181f66, emissiveIntensity: 0.2 }),
+  watch: mat(0x3c434c, { roughness: 0.35, metalness: 0.75 }),
+  strap: mat(0x2e343b, { roughness: 0.8, metalness: 0.1 }),
+  window: mat(0x1c2a24, { roughness: 0.15, metalness: 0.4, emissive: 0x0a1f14, emissiveIntensity: 0.4 }),
+  ledG: mat(0x40ff70, { emissive: 0x2bff5e, emissiveIntensity: 2.2, roughness: 0.3, metalness: 0 }),
+  ledR: mat(0xff4040, { emissive: 0xff2020, emissiveIntensity: 1.8, roughness: 0.3, metalness: 0 }),
+  ledIR: mat(0x604040, { emissive: 0x903030, emissiveIntensity: 1.2, roughness: 0.3, metalness: 0 }),
+  coneG: new THREE.MeshBasicMaterial({ color: 0x3aff6e, transparent: true, opacity: 0.10, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+  coneR: new THREE.MeshBasicMaterial({ color: 0xff5040, transparent: true, opacity: 0.10, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+  coneN: new THREE.MeshBasicMaterial({ color: 0xb08090, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+  scatter: new THREE.PointsMaterial({ vertexColors: true, size: 0.05, transparent: true, opacity: 0.85, depthWrite: false }),
+  capi: new THREE.PointsMaterial({ vertexColors: true, size: 0.07, transparent: true, opacity: 0.9, depthWrite: false }),
+  leak: new THREE.MeshBasicMaterial({ color: 0x9fffb0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+};
+const HL = { led: M.ledG, artery: M.artery, pd: M.window, spo2: M.ledR, fit: M.skin, war: M.scatter };
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.skin.color.set(dark ? 0xd9a184 : 0xe8b298);
+  M.fat.color.set(dark ? 0xe8d28a : 0xf0dfa0);
+  M.watch.color.set(dark ? 0x3c434c : 0x4c545e);
+}
+
+/* ---------------- 场景:手腕剖面 + 手表底面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(34, 0.12, 26), M.ground);
+ground.position.y = -2.66;
+scene.add(ground);
+const grid = new THREE.GridHelper(24, 12, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = -2.59;
+scene.add(grid);
+
+/* 组织层:皮肤(顶面 y=0)/ 脂肪 / 骨 */
+const skin = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.7, 5.2), M.skin);
+skin.position.y = -0.35;
+scene.add(skin);
+const fat = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.55, 5.2), M.fat);
+fat.position.y = -0.975;
+scene.add(fat);
+const bone = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 5.0, 24), M.bone);
+bone.rotation.x = Math.PI / 2;
+bone.position.y = -1.95;
+scene.add(bone);
+
+/* 桡动脉(跳动)+ 静脉(不跳) */
+const artery = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 5.0, 20), M.artery);
+artery.rotation.x = Math.PI / 2;
+artery.position.set(0.95, -0.88, 0);
+scene.add(artery);
+const vein = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5.0, 16), M.vein);
+vein.rotation.x = Math.PI / 2;
+vein.position.set(-1.35, -0.78, 0);
+scene.add(vein);
+
+/* 微血管网(皮肤层内点云,充红时变亮) */
+const CAPI_N = 110;
+const capiGeo = new THREE.BufferGeometry();
+const capiPos = new Float32Array(CAPI_N * 3);
+const capiCol = new Float32Array(CAPI_N * 3);
+for (let i = 0; i < CAPI_N; i++) {
+  capiPos[i * 3] = (Math.random() - 0.5) * 5.4;
+  capiPos[i * 3 + 1] = -0.08 - Math.random() * 0.26;
+  capiPos[i * 3 + 2] = (Math.random() - 0.5) * 4.2;
+}
+capiGeo.setAttribute('position', new THREE.BufferAttribute(capiPos, 3));
+capiGeo.setAttribute('color', new THREE.BufferAttribute(capiCol, 3));
+scene.add(new THREE.Points(capiGeo, M.capi));
+
+/* 手表:表壳 + 表带 + 传感器窗 + LED/PD */
+const watchGroup = new THREE.Group();
+scene.add(watchGroup);
+const housing = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.5, 3.3), M.watch);
+housing.position.y = 0.25;
+watchGroup.add(housing);
+for (const sx of [-1, 1]) {
+  const strap = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.16, 1.5), M.strap);
+  strap.position.set(sx * 2.35, 0.16, 0);
+  strap.rotation.y = sx * 0.18;
+  watchGroup.add(strap);
+}
+const sensorWin = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 0.06, 28), M.window);
+sensorWin.position.y = 0.028;
+watchGroup.add(sensorWin);
+/* 绿光 LED / PD / 红+红外 LED(血氧模式点亮) */
+const ledG = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.09, 0.2), M.ledG);
+ledG.position.set(0.55, 0.055, 0.25);
+watchGroup.add(ledG);
+const ledR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.09, 0.2), M.ledR);
+ledR.position.set(0.12, 0.055, -0.32);
+ledR.visible = false;
+watchGroup.add(ledR);
+const ledIR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.09, 0.2), M.ledIR);
+ledIR.position.set(-0.5, 0.055, 0.05);
+ledIR.visible = false;
+watchGroup.add(ledIR);
+const pd = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.42), mat(0x14181d, { roughness: 0.2, metalness: 0.6, emissive: 0x0a2a12, emissiveIntensity: 0.5 }));
+pd.position.set(-0.1, 0.055, 0.42);
+watchGroup.add(pd);
+/* 光锥(绿/红/红外) */
+function makeCone(matl, x, z) {
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.62, 0.95, 20, 1, true), matl);
+  cone.rotation.x = Math.PI;                 // 尖朝上,底朝下打进皮肤
+  cone.position.set(x, -0.42, z);
+  watchGroup.add(cone);
+  return cone;
+}
+const coneG = makeCone(M.coneG, 0.55, 0.25);
+const coneR = makeCone(M.coneR, 0.12, -0.32);
+const coneN = makeCone(M.coneN, -0.5, 0.05);
+coneR.visible = false; coneN.visible = false;
+/* 过松漏光环(表底与皮肤之间的逸光) */
+const leakRing = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.16, 8, 36), M.leak);
+leakRing.rotation.x = Math.PI / 2;
+leakRing.position.y = 0.02;
+watchGroup.add(leakRing);
+
+/* 皮肤内散射光子(绿点游走,血管充血时变暗) */
+const SCAT_N = 150;
+const scatGeo = new THREE.BufferGeometry();
+const scatPos = new Float32Array(SCAT_N * 3);
+const scatCol = new Float32Array(SCAT_N * 3);
+const scatSeed = new Float32Array(SCAT_N);
+for (let i = 0; i < SCAT_N; i++) {
+  scatPos[i * 3] = (Math.random() - 0.5) * 3.6;
+  scatPos[i * 3 + 1] = -0.06 - Math.random() * 0.5;
+  scatPos[i * 3 + 2] = (Math.random() - 0.5) * 3.0;
+  scatSeed[i] = Math.random() * TAU;
+}
+scatGeo.setAttribute('position', new THREE.BufferAttribute(scatPos, 3));
+scatGeo.setAttribute('color', new THREE.BufferAttribute(scatCol, 3));
+scene.add(new THREE.Points(scatGeo, M.scatter));
+
+/* 相机初始 */
+camera.position.set(4.6, 3.4, 7.4);
+controls.target.set(0, -0.2, 0);
+tgtVec.set(0, -0.2, 0);
+
+/* ---------------- 标签 ---------------- */
+addLabel(() => L(`心率 ${HR.toFixed(0)} bpm · AC/DC ${acdc.toFixed(2)}% · LED ${ledMA.toFixed(0)} mA · SNR ${snrDb.toFixed(0)} dB${spo2Mode ? ' · 双波长血氧测量中' : ''}`,
+  `HR ${HR.toFixed(0)} bpm · AC/DC ${acdc.toFixed(2)}% · LED ${ledMA.toFixed(0)} mA · SNR ${snrDb.toFixed(0)} dB${spo2Mode ? ' - dual-wavelength SpO2' : ''}`),
+  () => qSig > 0.8 ? 'g' : qSig > 0.4 ? 'w' : 'bad', new THREE.Vector3(0, 1.15, 0));
+addLabel(() => L(`绿光 525 nm:血红蛋白吸收峰附近——血越多,反射越暗;深肤色/纹身挡光时手表自动加大 LED 电流`,
+  `green 525 nm sits near the hemoglobin absorption peak - more blood, dimmer return; with dark skin or tattoos the watch pushes LED current harder`),
+  () => 'g', new THREE.Vector3(1.75, 0.62, 0.6));
+addLabel(() => L(`桡动脉:收缩期充血 ΔV/V ≈ 1-3%,管径搏动被放大显示;静脉不随心动周期跳动`,
+  `radial artery: systolic filling adds 1-3% volume; the pulsation is exaggerated for display - veins do not beat with the cycle`),
+  () => 'r', new THREE.Vector3(0.95, -1.5, 2.6));
+addLabel(() => L(`光电二极管收反射光:滤掉直流,剩下的 ~1% 交流就是脉搏波;运动时靠加速度计信号做自适应对消`,
+  `the photodiode collects the reflection; DC removed, the ~1% AC left is the pulse wave - motion artifacts are cancelled adaptively with the accelerometer`),
+  () => 'b', new THREE.Vector3(-1.9, 0.5, 1.2));
+addLabel(() => L(`血氧原理:氧合/去氧血红蛋白在 660 nm 吸收差异巨大、在 940 nm 反转——R = (AC红/DC红)/(AC红外/DC红外),SpO₂ = 110 − 25R`,
+  `SpO2: oxy/deoxy hemoglobin differ hugely at 660 nm and flip at 940 nm - R = (ACred/DCred)/(ACir/DCir), SpO2 = 110 - 25R`),
+  () => spo2Mode ? 'o' : 'st', new THREE.Vector3(-0.4, -2.1, -1.2));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'led', tgt: [0.8, 0.4, 3.2],
+    b: '一颗绿灯,如何「看见」心跳', be: 'How a green LED sees your heartbeat',
+    d: '手表底部每秒闪烁的绿光(525 nm)特意选在血红蛋白的吸收峰附近:血液对它的吸收远高于皮肤、脂肪与骨骼。绿灯把光打进皮肤,光在组织里散射一小段路程,一部分被血「吃」掉,剩下的被光电二极管收回。心脏收缩时,动脉与毛细血管的充血量只增加 1-3%,但这足以让反射光同步变暗——每一次心搏,都在反射光里留下一个暗点。这就是光电容积描记(PPG):不用电极、不用压迫,用光量出「血的容量曲线」。',
+    de: 'The green light (525 nm) blinking under your watch is chosen to sit near hemoglobin s absorption peak: blood absorbs it far more strongly than skin, fat or bone. The LED drives light into the skin, photons scatter a short path through tissue, some are eaten by blood, and a photodiode collects the rest. When the heart contracts, arterial and capillary filling rises by only 1-3% in volume - enough to dim the reflected light in sync with every beat. That is photoplethysmography: no electrodes, no cuff, just light measuring the volume curve of your own blood.' },
+  { hl: 'artery', tgt: [0.9, -0.6, 3.0],
+    b: '一张脉搏波,两个峰', be: 'One pulse wave, two peaks',
+    d: '滤掉直流后,那 ~1% 的交流分量就是脉搏波:主波是心室收缩射血的冲击,约 0.1 个周期后跟一个较小的重搏波——那是主动脉瓣关闭、血流回弹形成的回声。峰间隔的倒数就是心率:60 秒除以相邻两峰的间隔;而波形本身还有富余信息——重搏波位置、上升支斜率与血压趋势相关,这是无袖带血压估计的研究基础。拖动「心率」滑杆从 45 拉到 190,看血管充红-放红的节拍与示波曲线同步加快:静息 72 bpm 时一格多秒一次,运动 180 bpm 时几乎连成波浪。',
+    de: 'After the DC is filtered out, the ~1% AC leftover is the pulse wave: the main peak is the ventricular ejection shock, followed about 0.1 of a cycle later by a smaller dicrotic wave - the echo of the aortic valve closing and blood rebounding. The reciprocal of the peak interval is heart rate: 60 seconds divided by the gap between peaks. The shape itself carries bonus information - dicrotic notch position and upslope correlate with blood pressure trend, the basis of cuffless BP estimation. Drag heart rate from 45 to 190 and watch the vessels flush and drain in step with the trace: one beat per second-odd at 72 bpm, nearly a continuous swell at 180.' },
+  { hl: 'war', tgt: [-0.6, 0.3, 3.4],
+    b: '干扰战争:跑步机上的信号', be: 'The interference war: running on a treadmill',
+    d: '跑步时整只手表在晃,反射光里混进大量低频晃动伪影,振幅轻松超过脉搏波本身——原始曲线一团乱麻。手表的解法是「借力打力」:腕内 MEMS 加速度计同步记录手腕运动,自适应滤波器把与加速度相关的分量从光信号中对消掉,只留下与心跳同节律的残余。按「运动伪影」:绿色原始信号被搅乱,橙色滤波后的脉搏波依然干净地跳出 150 bpm 的节拍——这就是加速度计对消前后的差别。代价是算法偶尔把步频误认心率,剧烈摆臂时仍需几秒收敛。',
+    de: 'While running, the whole watch shakes, and low-frequency sway artifacts flood the reflected light with amplitudes that easily dwarf the pulse wave - the raw trace is a mess. The watch answers by borrowing the enemy s weapon: an in-watch MEMS accelerometer records wrist motion in sync, and an adaptive filter cancels the motion-correlated component from the optical signal, leaving only what beats with the heart. Press motion artifact: the green raw signal scrambles while the orange filtered pulse keeps a clean 150 bpm rhythm - that is the before-and-after of accelerometer cancellation. The cost: algorithms occasionally mistake cadence for heart rate, and hard arm swings still take seconds to converge.' },
+  { hl: 'fit', tgt: [0, 0.4, 2.6],
+    b: '佩戴是一门手艺', be: 'Wearing it is a skill',
+    d: '同一个表,松紧决定生死。过松:表底与皮肤之间漏进环境光,信号被稀释,AC/DC 掉到 0.3% 以下;过紧:表带像止血带一样压扁微循环,血进不来,信号同样消失——「戴太紧反而测不到」是真的。手表的对策是自动增益:信号弱就加大 LED 电流(6 mA 拉到 20 mA 以上),再不行就提示调整佩戴。其他天敌:纹身的墨层挡光、低温让末梢血管收缩、深肤色的黑色素吸收更强——这些场景下腕上 PPG 都要更费力。拖「佩戴压力」滑杆,从 0 拉到 10,看漏光环亮起又熄灭、信号质量过山车。',
+    de: 'The same watch lives or dies by how you wear it. Too loose: ambient light leaks between the sensor and skin, diluting the signal until AC/DC drops below 0.3%. Too tight: the strap acts like a tourniquet, squeezing the microcirculation shut - no blood arriving means no signal, so yes, wearing it too tight really does break the reading. The countermeasure is auto-gain: weak signal, and the watch raises LED current from 6 mA past 20 mA before finally asking you to reposition. Other enemies: tattoo ink blocking light, cold narrowing the peripheral vessels, stronger melanin absorption in dark skin - all make wrist PPG work harder. Drag strap pressure from 0 to 10 and watch the leak ring flare, then die, as signal quality rides the rollercoaster.' },
+  { hl: 'spo2', tgt: [-0.5, 0.2, 3.0],
+    b: '血氧:双波长的把戏', be: 'SpO2: the two-wavelength trick',
+    d: '心率只要「看见」血,血氧却要「分辨」血——靠的是氧合血红蛋白与去氧血红蛋白吸收谱的巨大差异:在 660 nm 红光段,两者吸收相差近一个量级;到 940 nm 红外段,关系反转。手表轮流打红光与红外,分别量出各自 AC/DC,做比值之比 R = (AC红/DC红)/(AC红外/DC红外),再代入经验式 SpO₂ = 110 − 25R:R=0.48 → 98%,R=0.8 → 90%。按「血氧双波长」看红色与红外光锥轮流点亮——这是医院指夹式血氧仪 1970 年代原理的手表化,测量时手表会要求你保持静止。',
+    de: 'Heart rate only needs to see blood; SpO2 must tell kinds of blood apart. That relies on the huge difference between the absorption spectra of oxyhemoglobin and deoxygenated hemoglobin: at 660 nm red they differ by nearly an order of magnitude, and by 940 nm infrared the relation flips. The watch alternates red and infrared pulses, measures each AC/DC, forms the ratio-of-ratios R = (ACred/DCred)/(ACir/DCir), and feeds the empirical SpO2 = 110 - 25R: R of 0.48 means 98%, R of 0.8 means 90%. Press dual-wavelength SpO2 to watch the red and infrared cones take turns - a 1970s hospital fingertip oximeter shrunk into a watch, and yes, it asks you to hold still.' },
+  { hl: 'pd', tgt: [0.3, 0.1, 2.4],
+    b: '从玩具到医疗:差多远', be: 'From gadget to medical device',
+    d: '诚实的账本:手表级 PPG 心率与医疗级对照,误差约 ±2-5 bpm,静息时通常更好,运动尾段收敛慢;它测的是容积脉搏,没有心电的电信号,所以房颤筛查要走另一条路——用加速度计与 PPG 的不规则节律提示,再由单导联 ECG 确认,后者已获 FDA 认可。血糖、血压的直接测量仍在研究区:波形形态与血压趋势相关,但个体标定是硬门槛。使用建议:测血氧与静息心率时把手腕放平、保持不动;跑步信它的趋势,别信它每一次跳动的绝对值。',
+    de: 'The honest ledger: watch-grade PPG heart rate runs about 2-5 bpm of error against medical references - better at rest, slower to converge after hard exercise. It measures a volume pulse and carries no electrical signal, so atrial-fibrillation screening takes a detour: irregular-rhythm alerts from PPG plus accelerometer, confirmed by a single-lead ECG that is FDA-cleared. Direct cuffless blood pressure and glucose remain research territory: waveform shape correlates with BP trend, but individual calibration is the hard gate. Practical advice: rest your wrist flat and still for SpO2 and resting rate; trust the trend when running, not the absolute value of every beat.' },
+];
+
+/* ---------------- 滑杆 ---------------- */
+const elHR = document.getElementById('vHR'), elHRVal = document.getElementById('vHRVal');
+const elPress = document.getElementById('vPress'), elPressVal = document.getElementById('vPressVal');
+const tglCut = document.getElementById('tglCut');
+function updateSliderLabels() {
+  elHRVal.textContent = HR.toFixed(0) + ' bpm';
+  elPressVal.textContent = press.toFixed(1) + ' /10';
+}
+elHR.addEventListener('input', () => { HR = +elHR.value; updateSliderLabels(); });
+elPress.addEventListener('input', () => { press = +elPress.value; updateSliderLabels(); });
+tglCut.addEventListener('change', () => { /* 皮肤透明度由 sceneFrame 读 */ });
+
+/* ---------------- 预设 ---------------- */
+function easeHR(target, simDt) {
+  HR += (target - HR) * Math.min(1, simDt * 1.2);
+  elHR.value = HR.toFixed(0);
+}
+function runModes(simDt) {
+  spo2Mode = preset === 'spo2';
+  artifact = preset === 'motion';
+  if (preset === 'rest') {
+    easeHR(72, simDt);
+    press += (5 - press) * Math.min(1, simDt * 2); elPress.value = press.toFixed(1);
+  } else if (preset === 'motion') {
+    easeHR(150, simDt);
+  } else if (preset === 'spo2') {
+    easeHR(72, simDt);
+  } else if (preset === 'loose') {
+    easeHR(72, simDt);
+    press += (1 - press) * Math.min(1, simDt * 2); elPress.value = press.toFixed(1);
+  }
+  /* 信号质量与派生量 */
+  const qT = fitQuality(press);
+  qSig += (qT - qSig) * Math.min(1, simDt * 3);
+  acdc = 1.5 * qSig + 0.1;
+  ledMA = Math.min(25, 6 / Math.max(qSig, 0.22));
+  const artResidual = artifact ? 0.0012 : 0;                // 对消后残余(自适应滤波)
+  const sig = 0.015 * qSig * 0.55;
+  snrDb = 20 * Math.log10(Math.max(sig, 1e-5) / (NOISE + artResidual));
+  spo2 = 97.6 + 0.4 * Math.sin(heartT * 0.05);
+  updateSliderLabels();
+}
+
+/* ---------------- 每帧可视 ---------------- */
+function sceneFrame(et, simDt, dt) {
+  /* 心动相位推进 */
+  if (simDt > 0) {
+    heartT += simDt;
+    phase = (phase + simDt * HR / 60) % 1;
+  }
+  const pw = pulseShape(phase);
+  const pwS = pw * qSig;
+  /* 动脉搏动(放大 5 倍显示)与毛细血管充红 */
+  const rr = 1 + 0.028 * pwS;
+  artery.scale.set(rr, 1, rr);
+  M.artery.emissiveIntensity = 0.18 + 0.5 * pwS;
+  for (let i = 0; i < CAPI_N; i++) {
+    const k = 0.35 + 0.65 * pwS;
+    capiCol[i * 3] = 0.75 * k + 0.1;
+    capiCol[i * 3 + 1] = 0.16 * k;
+    capiCol[i * 3 + 2] = 0.16 * k;
+  }
+  capiGeo.attributes.color.needsUpdate = true;
+  /* 信号合成:原始反射光与滤波后交流 */
+  const art = artifact ? 0.02 * (Math.sin(heartT * TAU * 1.7) + 0.4 * Math.sin(heartT * TAU * 4.3)) : 0;
+  const nz = NOISE * 2 * (Math.random() - 0.5);
+  rawSig = 1 - 0.015 * pwS + art + nz;
+  acSig = 0.015 * pwS + (artifact ? art * 0.08 : 0) + nz;
+  /* 手表晃动(运动伪影)与过松抬升 */
+  const wob = artifact ? 0.035 : 0;
+  watchGroup.position.set(Math.sin(heartT * TAU * 1.7) * wob, Math.max(0, (3.5 - press)) * 0.045 + Math.sin(heartT * TAU * 4.3) * wob * 0.5, 0);
+  /* LED 与光锥 */
+  M.ledG.emissiveIntensity = 1.2 + 1.4 * (ledMA / 25) * (0.7 + 0.3 * Math.sin(et * 8));
+  M.coneG.opacity = (0.07 + 0.05 * (ledMA / 25)) * (spo2Mode ? 0.35 : 1);
+  ledR.visible = spo2Mode;
+  ledIR.visible = spo2Mode;
+  coneR.visible = spo2Mode;
+  coneN.visible = spo2Mode;
+  if (spo2Mode) {
+    const strobe = Math.sin(et * 6) > 0;
+    M.coneR.opacity = strobe ? 0.13 : 0.03;
+    M.coneN.opacity = strobe ? 0.03 : 0.11;
+    M.ledR.emissiveIntensity = strobe ? 2.4 : 0.4;
+    M.ledIR.emissiveIntensity = strobe ? 0.4 : 2.0;
+  }
+  /* 过松漏光 */
+  M.leak.opacity = press < 3.5 ? clamp01((3.5 - press) / 3.5) * 0.4 : 0;
+  /* 皮肤剖视 */
+  M.skin.opacity = tglCut.checked ? 0.45 : 0.85;
+  M.fat.opacity = tglCut.checked ? 0.4 : 0.8;
+  /* 散射光子:充血时反射变暗 */
+  const dim = 1 - 0.5 * pwS;
+  for (let i = 0; i < SCAT_N; i++) {
+    const jx = Math.sin(et * 1.3 + scatSeed[i]) * 0.06;
+    const jz = Math.cos(et * 1.1 + scatSeed[i] * 1.7) * 0.06;
+    scatPos[i * 3] += jx * dt * 6;
+    scatPos[i * 3 + 2] += jz * dt * 6;
+    if (Math.abs(scatPos[i * 3]) > 1.9) scatPos[i * 3] *= 0.98;
+    if (Math.abs(scatPos[i * 3 + 2]) > 1.6) scatPos[i * 3 + 2] *= 0.98;
+    scatCol[i * 3] = 0.35 * dim;
+    scatCol[i * 3 + 1] = 1.0 * dim;
+    scatCol[i * 3 + 2] = 0.45 * dim;
+  }
+  scatGeo.attributes.position.needsUpdate = true;
+  scatGeo.attributes.color.needsUpdate = true;
+  /* PD 指示灯随信号微亮 */
+  pd.material.emissiveIntensity = 0.3 + 3.5 * acSig * 12;
+}
+
+/* ---------------- 示波器:原始 vs 滤波 ---------------- */
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L(`原始反射光(绿,含直流与晃动)/ 滤波后脉搏波(橙,×30)—— ${artifact ? '加速度计对消中' : '静息采集'}`,
+    `raw reflection (green, DC + sway) / filtered pulse wave (orange, x30) - ${artifact ? 'accelerometer cancelling' : 'resting capture'}`), 4 * dpr, 10 * dpr);
+  const mid = ch * 0.5;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = Math.max(1, dpr);
+  scopeCtx.beginPath(); scopeCtx.moveTo(0, mid); scopeCtx.lineTo(cw, mid); scopeCtx.stroke();
+  drawTrace(sndT, 'rgba(123,216,143,.95)', mid, 1, dpr);
+  drawTrace(sndA, 'rgba(255,176,102,.95)', mid, 1, dpr);
+}
+
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateFormula() {
+  const R = (110 - spo2) / 25;
+  formulaEl.innerHTML =
+    L(`充血 ΔV/V ≈ <b>1-3%</b> → 反射光交流 AC/DC = <b>${acdc.toFixed(2)}%</b> · 绿光 <b>525 nm</b>(血红蛋白吸收峰附近)`,
+      `filling dV/V ~ <b>1-3%</b> -> reflected AC/DC = <b>${acdc.toFixed(2)}%</b> - green <b>525 nm</b> (near the hemoglobin peak)`) +
+    '<br>' +
+    L(`心率 = 60/峰间隔 = <b>${HR.toFixed(0)} bpm</b> · 手表级误差 <b>±2-5 bpm</b> · 单导联 ECG 房颤筛查 FDA 已认可`,
+      `HR = 60 / peak interval = <b>${HR.toFixed(0)} bpm</b> - watch-grade error <b>±2-5 bpm</b> - single-lead ECG AFib screening FDA-cleared`) +
+    '<br>' +
+    L(`SpO₂ = 110 − 25·R,R = (AC红/DC红)/(AC红外/DC红外) = <b>${R.toFixed(2)}</b> → <b>${spo2.toFixed(1)}%</b>${spo2Mode ? '(双波长测量中)' : ''}`,
+      `SpO2 = 110 - 25R, R = (ACred/DCred)/(ACir/DCir) = <b>${R.toFixed(2)}</b> -> <b>${spo2.toFixed(1)}%</b>${spo2Mode ? ' (dual-wavelength)' : ''}`);
+}
+function updateStats() {
+  stA.innerHTML = HR.toFixed(0) + '<small> bpm</small>';
+  stA.className = 'v ' + (HR >= 50 && HR <= 100 ? 'ok' : HR <= 150 ? 'warn' : 'bad');
+  stB.innerHTML = acdc.toFixed(2) + '<small> %</small>';
+  stB.className = 'v ' + (acdc >= 1 ? 'ok' : acdc >= 0.5 ? 'warn' : 'bad');
+  stC.innerHTML = spo2.toFixed(1) + '<small> %</small>';
+  stC.className = 'v ' + (spo2 >= 95 ? 'ok' : spo2 >= 90 ? 'warn' : 'bad');
+  stD.innerHTML = snrDb.toFixed(0) + '<small> dB</small>';
+  stD.className = 'v ' + (snrDb >= 20 ? 'ok' : snrDb >= 10 ? 'warn' : 'bad');
+  stE.innerHTML = ledMA.toFixed(0) + '<small> mA</small>';
+  stE.className = 'v ' + (ledMA <= 10 ? 'ok' : ledMA <= 18 ? 'warn' : 'bad');
+  const fit = press < 3.5 ? L('过松:漏光', 'loose: leaking') : press <= 7 ? L('合适', 'good fit') : press <= 8.5 ? L('偏紧', 'tight') : L('过紧:压扁微循环!', 'too tight: squeezed shut!');
+  stF.textContent = fit;
+  stF.className = 'v ' + (press >= 3.5 && press <= 7 ? 'ok' : press <= 8.5 ? 'warn' : 'bad');
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  HR = 72; press = 5; spo2Mode = false; artifact = false;
+  phase = 0; heartT = 0; qSig = 1;
+  elHR.value = '72'; elPress.value = '5';
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  preset = null;
+  updateSliderLabels(); updateFormula();
+}
+
+
+/* ---------------- stats / formula 刷新 ---------------- */
+const stEls = ['stA', 'stB', 'stC', 'stD', 'stE', 'stF'].map(id => document.getElementById(id));
+
+/* 预设按钮接线 */
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  sceneFrame(et, simDt, dt);
+  /* 步骤高亮(呼吸脉冲) */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm && hlm.emissive) hlm.emissiveIntensity = 0.55 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  /* 示波采样:原始反射光(去直流 ×30)与滤波脉搏波(×30) */
+  pushSnd((rawSig - 1) * 30, acSig * 30);
+  if (tglCurve.checked) { if (typeof drawScope === 'function') drawScope(); }
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
