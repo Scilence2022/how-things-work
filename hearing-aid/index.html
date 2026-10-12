@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>助听器 · 把丢失的分贝按频率补回来</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#c7825f;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#8a5230;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="助听器:把丢失的分贝按频率补回来" data-en="Hearing Aids: Returning Lost Decibels by Frequency">助听器:把丢失的分贝按频率补回来</h1>
+  <div class="sub" data-zh="老年性耳聋从 4-8 kHz 开始塌(耳蜗底回先衰老)——「听得见但听不清」:元音(低频)还在,辅音 s/t/k(高频)没了。助听器的回答是频率选择性的增益:麦克风 → ADC → 多通道宽动态范围压缩(WDRC,8-20 通道按测听图配增益:4 kHz 处 2 dB 输入给 30 dB 增益,90 dB 输入只给 5 dB——把 100 dB 的自然动态压进受损后 ~30 dB 的窗口)→ 接收器。增益不是越大越好:超过 ~60 dB,接收器漏音经耳道返回麦克风形成正反馈,2-5 kHz 尖啸——自适应反馈对消器估计漏音路径、反相抵消。双麦克风指向性在噪声里抬高信噪比,总延迟必须 &lt;10 ms,否则口齿自听错乱。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Age-related hearing loss collapses the 4-8 kHz band first (the cochlea base ages earliest) - &quot;I hear but cannot follow&quot;: vowels (low) survive, consonants s/t/k (high) vanish. The hearing aid answers with frequency-selective gain: microphone -> ADC -> multichannel wide-dynamic-range compression (WDRC, 8-20 channels fit to the audiogram: 2 dB in at 4 kHz earns 30 dB of gain, 90 dB in earns 5 - squeezing nature s 100 dB span into the ~30 dB window that remains) -> receiver. Gain has a ceiling: past ~60 dB, leaked sound from the receiver loops back to the microphone and the loop sings at 2-5 kHz - the adaptive feedback canceller estimates the leak path and subtracts it in antiphase. Dual mics aim through noise, total delay must stay under 10 ms, or your own voice stutters. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">老年性耳聋从 4-8 kHz 开始塌(耳蜗底回先衰老)——「听得见但听不清」:元音(低频)还在,辅音 s/t/k(高频)没了。助听器的回答是频率选择性的增益:麦克风 → ADC → 多通道宽动态范围压缩(WDRC,8-20 通道按测听图配增益:4 kHz 处 2 dB 输入给 30 dB 增益,90 dB 输入只给 5 dB——把 100 dB 的自然动态压进受损后 ~30 dB 的窗口)→ 接收器。增益不是越大越好:超过 ~60 dB,接收器漏音经耳道返回麦克风形成正反馈,2-5 kHz 尖啸——自适应反馈对消器估计漏音路径、反相抵消。双麦克风指向性在噪声里抬高信噪比,总延迟必须 &lt;10 ms,否则口齿自听错乱。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="4 kHz 听阈" data-en="4 kHz threshold">4 kHz 听阈</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="实际增益" data-en="applied gain">实际增益</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="压缩比" data-en="compression ratio">压缩比</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="啸叫风险" data-en="feedback risk">啸叫风险</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="信噪比" data-en="SNR">信噪比</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="总延迟" data-en="total delay">总延迟</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="入射声波(按频率着色)" data-en="incoming waves (freq-colored)">入射声波(按频率着色)</span>
+    <span class="chip g" data-zh="WDRC 增益补偿" data-en="WDRC gain">WDRC 增益补偿</span>
+    <span class="chip r" data-zh="啸叫(反馈环路)" data-en="whistling (feedback loop)">啸叫(反馈环路)</span>
+    <span class="chip e" data-zh="反相对消波" data-en="antiphase canceling wave">反相对消波</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-normal" data-zh="正常听觉世界" data-en="normal hearing">正常听觉世界</button>
+    <button class="abtn" id="btn-loss" data-zh="老年性耳聋世界" data-en="the world with presbycusis">老年性耳聋世界</button>
+    <button class="abtn" id="btn-wdrc" data-zh="WDRC 补偿前后" data-en="before/after WDRC">WDRC 补偿前后</button>
+    <button class="abtn" id="btn-whistle" data-zh="啸叫与反馈对消" data-en="whistle &amp; cancellation">啸叫与反馈对消</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="高频听力损失" data-en="high-freq loss">高频听力损失</label><input id="vLoss" type="range" min="0" max="70" step="5" value="55"><span class="val" id="vLossVal"></span></div>
+  <div class="row"><label data-zh="环境噪声" data-en="ambient noise">环境噪声</label><input id="vNoise" type="range" min="0" max="80" step="5" value="40"><span class="val" id="vNoiseVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="测听图 / 增益曲线" data-en="audiogram / gain">测听图 / 增益曲线</span></label>
+        <label><input id="tglCut" type="checkbox"> <span data-zh="BTE 内部透视" data-en="BTE x-ray">BTE 内部透视</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../cochlea/" data-zh="耳蜗" data-en="the cochlea">耳蜗</a>
+    <a href="../cochlear-implant/" data-zh="人工耳蜗" data-en="cochlear implant">人工耳蜗</a>
+    <a href="../decibel-scale/" data-zh="分贝与声压级" data-en="decibels &amp; SPL">分贝与声压级</a>
+    <a href="../active-noise-cancelling/" data-zh="主动降噪" data-en="active noise cancelling">主动降噪</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(11, 8, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 2.5, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);   // 双通道环形缓冲
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= 助听器与响度重建 ================= */
+const TITLE_ZH = '助听器 · 响度重建';
+const TITLE_EN = 'Hearing Aid · Loudness Reconstruction';
+const PRESET_IDS = ['normal', 'loss', 'wdrc', 'whistle'];
+
+let lossDb = 55;         // 高频损失(dB @4 kHz,斜坡 2-8 kHz)
+let noiseDb = 40;
+let whistle = false;     // 啸叫状态
+let cancelOn = true;
+let whistleAmp = 0;
+let tPres = 0;
+let wT = 0;
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.4, depthWrite: false }),
+  skin: mat(0xd8a98a, { roughness: 0.7, metalness: 0.02, emissiveIntensity: 0.05 }),
+  canal: mat(0x8a5f4a, { roughness: 0.7, metalness: 0.02 }),
+  drum: mat(0xc9d8e8, { roughness: 0.3, metalness: 0.1, emissiveIntensity: 0.3 }),
+  bte: mat(0x4a5560, { roughness: 0.4, metalness: 0.4 }),
+  chip: mat(0x7bd88f, { roughness: 0.3, metalness: 0.2, emissiveIntensity: 0.6 }),
+  mic: mat(0x9fb0c3, { roughness: 0.3, metalness: 0.6 }),
+  rcv: mat(0xffb45f, { roughness: 0.35, metalness: 0.4, emissiveIntensity: 0.5 }),
+  tube: mat(0xb8c4d0, { roughness: 0.4, metalness: 0.2, transparent: true, opacity: 0.6 }),
+  waveIn: mat(0x6fc0ff, { roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.5, emissiveIntensity: 0.7 }),
+  waveHi: mat(0xff6b6b, { roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.5, emissiveIntensity: 0.7 }),
+  waveOut: mat(0x7bd88f, { roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.5, emissiveIntensity: 0.7 }),
+  cancelW: mat(0xffd27a, { roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.6, emissiveIntensity: 0.8 }),
+  leak: mat(0xff8a8a, { roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.4, emissiveIntensity: 0.6 }),
+};
+const HL = { normal: M.waveIn, loss: M.waveHi, wdrc: M.waveOut, whistle: M.leak };
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.skin.color.set(dark ? 0xd8a98a : 0xc49a7c);
+}
+
+/* ---------------- 场景:头部侧面 + BTE 助听器 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(56, 0.1, 38), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(38, 19, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+/* 头部(侧面向右=面朝 +X,耳结构在颅外右侧) */
+const head = new THREE.Mesh(new THREE.SphereGeometry(3.2, 30, 24), M.skin);
+head.scale.set(1.18, 1, 1.05);
+head.position.set(-4.6, 3.2, 0);
+scene.add(head);
+const nose = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.9, 10), M.skin);
+nose.rotation.z = -Math.PI / 2;
+nose.position.set(-0.9, 3.4, 0);
+scene.add(nose);
+/* 耳廓(环,贴在颅面) */
+const pinna = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.28, 12, 26), M.skin);
+pinna.position.set(-0.85, 3.9, 0);
+pinna.rotation.y = Math.PI / 2;
+scene.add(pinna);
+/* 耳道(从耳廓向颅内) */
+const canal = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.3, 1.4, 14), M.canal);
+canal.rotation.z = Math.PI / 2;
+canal.position.set(-1.45, 3.9, 0);
+scene.add(canal);
+const eardrum = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.06, 14), M.drum);
+eardrum.rotation.z = Math.PI / 2;
+eardrum.position.set(-2.12, 3.9, 0);
+scene.add(eardrum);
+/* BTE 助听器(耳廓后上方,颅外) */
+const bteG = new THREE.Group();
+bteG.position.set(-0.45, 4.95, 0);
+scene.add(bteG);
+const bteBody = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.05, 0.5), M.bte);
+bteG.add(bteBody);
+const chip = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.1), M.chip);
+chip.position.set(0.16, 0.1, 0.22);
+bteG.add(chip);
+const micA = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.08, 10), M.mic);
+micA.rotation.z = Math.PI / 2;
+micA.position.set(0.32, 0.4, 0.12);
+bteG.add(micA);
+const micB = micA.clone();
+micB.position.z = -0.12;
+bteG.add(micB);
+const rcv = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.3, 10), M.rcv);
+rcv.rotation.z = Math.PI / 2;
+rcv.position.set(-1.75, 3.9, 0);
+scene.add(rcv);
+/* 导声管(BTE 下端 → 耳道口) */
+const tubeCurve = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(-0.62, 4.42, 0),
+  new THREE.Vector3(-0.72, 4.12, 0.06),
+  new THREE.Vector3(-0.82, 3.92, 0),
+]);
+const tube = new THREE.Mesh(new THREE.TubeGeometry(tubeCurve, 16, 0.09, 8), M.tube);
+scene.add(tube);
+/* 声波弧(入射:三频率) */
+const waves = [];
+{
+  for (let k = 0; k < 9; k++) {
+    const lowF = k % 3 === 0;
+    const m = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.045, 6, 24, Math.PI * 0.7),
+      lowF ? M.waveIn : (k % 3 === 1 ? M.waveHi : M.waveOut));
+    m.rotation.z = Math.PI * 0.65;
+    m.position.set(4.2, 3.9, 0);
+    scene.add(m);
+    waves.push({ m, f: k / 9, lowF });
+  }
+}
+/* 泄漏反馈弧(啸叫):接收器 → 麦克风 */
+const leakCurve = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(-1.7, 4.15, 0.3),
+  new THREE.Vector3(-0.9, 5.5, 0.5),
+  new THREE.Vector3(-0.3, 5.5, 0.2),
+  new THREE.Vector3(-0.12, 5.3, 0),
+]);
+const leakLine = new THREE.Mesh(new THREE.TubeGeometry(leakCurve, 24, 0.05, 8), M.leak);
+leakLine.visible = false;
+scene.add(leakLine);
+/* 对消波(反相) */
+const cancelCurve = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(-0.12, 5.3, -0.2),
+  new THREE.Vector3(-0.8, 5.55, -0.4),
+  new THREE.Vector3(-1.72, 4.2, -0.3),
+]);
+const cancelLine = new THREE.Mesh(new THREE.TubeGeometry(cancelCurve, 24, 0.05, 8), M.cancelW);
+cancelLine.visible = false;
+scene.add(cancelLine);
+
+camera.position.set(7.5, 6, 13.5);
+controls.target.set(-2.4, 3.8, 0);
+tgtVec.set(-2.4, 3.8, 0);
+
+/* ---------------- 听力模型 ----------------
+   高频斜坡损失:2 kHz 起、8 kHz 达 lossDb;WDRC 增益 = min(loss, 压缩上限)。 */
+function thresholdAt(fk) {       // fk kHz
+  if (fk <= 2) return 5 + lossDb * 0.08;
+  const f = clamp((fk - 2) / 6, 0, 1);
+  return 5 + lossDb * (0.08 + 0.92 * Math.pow(f, 1.2));
+}
+function gainAt(fk) {            // WDRC:输入 2 dB 小声 → 补到正常响度
+  const th = thresholdAt(fk);
+  return Math.min(th * 0.9, 45);
+}
+function snrNow() { return Math.max(-5, 65 - noiseDb - gainAt(4) * 0.2); }
+
+/* ---------------- 标签 ---------------- */
+addLabel(() => L(`BTE 助听器:双麦克风 → DSP(WDRC 8-20 通道)→ 接收器(耳道内)——总延迟 <10 ms,否则自听错乱`,
+  `a BTE aid: dual mics -> DSP (8-20 WDRC channels) -> receiver in-canal - total delay <10 ms or your own voice stutters`),
+  () => 'st', new THREE.Vector3(-0.45, 6.4, 0));
+addLabel(() => L(`老年性耳聋从 4-8 kHz 开始塌:元音(低频)还在,辅音 s/t/k 没了——「听得见但听不清」`,
+  `presbycusis collapses 4-8 kHz first: vowels survive, consonants s/t/k vanish - "I hear but cannot follow"`),
+  () => 'w', new THREE.Vector3(3.6, 5.8, 0));
+addLabel(() => L(`WDRC:4 kHz 处 2 dB 输入给 ${gainAt(4).toFixed(0)} dB 增益、90 dB 输入只给 5 dB——把 100 dB 自然动态压进残余的 ~30 dB 窗口`,
+  `WDRC: 2 dB in at 4 kHz earns ${gainAt(4).toFixed(0)} dB, 90 dB in earns 5 - nature s 100 dB span squeezed into the ~30 dB window left`),
+  () => 'g', new THREE.Vector3(0, 2.0, 0));
+addLabel(() => L(`啸叫:增益 >60 dB 时接收器漏音经耳道返回麦克风,环路增益 >1 → 2-5 kHz 尖啸;对消器估计漏音路径反相抵消`,
+  `feedback: gain past ~60 dB and receiver leakage loops back to the mic; loop gain >1 sings at 2-5 kHz - the canceller estimates the leak and subtracts in antiphase`),
+  () => whistle ? 'bad' : 'st', new THREE.Vector3(-0.5, 7.0, 0));
+addLabel(() => L(`双麦克风指向性:噪声里抬高信噪比(当前噪声 ${noiseDb.toFixed(0)} dB → SNR ${snrNow().toFixed(0)} dB)`,
+  `dual-mic directionality lifts SNR in noise (ambient ${noiseDb.toFixed(0)} dB -> SNR ${snrNow().toFixed(0)} dB)`),
+  () => 'b', new THREE.Vector3(3.4, 2.6, 0));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'normal', tgt: [3.6, 4.2, 2.6],
+    b: '听清 ≠ 听响:辅音的账', be: 'Hearing is not loudness: the consonant ledger',
+    d: '语音的可懂度藏在辅音里:s、t、k 的能量集中在 4-8 kHz,比元音低 15-20 dB。老年性耳聋(噪声性耳聋同理)从耳蜗底回开始衰老——底回恰是高频的感知区,于是 4 kHz 听阈先爬过 40、60 dB。本人感受不是「世界变小声」,而是「人人像含着水说话」:元音照到,辅音丢失,大脑只能靠猜——累,且错。放大器的任务因此不是统一放大,而是按频率补账。',
+    de: 'Speech intelligibility lives in the consonants: s, t, k concentrate their energy at 4-8 kHz, 15-20 dB softer than vowels. Presbycusis (and noise loss) ages the cochlea base first - exactly where high frequencies are mapped - so the 4 kHz threshold crosses 40, then 60 dB. The felt experience is not "the world got quieter" but "everyone mumbles": vowels arrive, consonants are gone, and the brain guesses - exhausting and wrong. The amplifier s job is therefore not uniform gain but frequency-selective restitution.' },
+  { hl: 'loss', tgt: [4.0, 4.0, 1.8],
+    b: 'WDRC:把大世界压进小窗口', be: 'WDRC: squeezing the wide world into the window left',
+    d: '正常耳朵的动态范围是 ~100 dB(0-100 dB SPL),重度损失后有效窗口只剩 ~30 dB。线性放大两头不讨好:小声放大了、大声直接顶穿不适阈。WDRC(宽动态范围压缩)按通道做软压缩:2 dB 输入给 30 dB 增益,90 dB 输入只给 5 dB——压缩比 6:1,像一只自动随输入收放的手。8-20 个通道各自按测听图配曲线,最终把整个语音世界搬进残余听觉的窗口里。',
+    de: 'A normal ear spans ~100 dB (0-100 dB SPL); heavy loss narrows the usable window to ~30 dB. Linear amplification fails both ends: whispers lifted, shouts slamming into discomfort. WDRC compresses softly per channel: 2 dB in earns 30 dB of gain, 90 dB in earns 5 - a 6:1 ratio, an automatic hand easing off as input swells. Eight to twenty channels each follow their own audiogram-fitted curve, moving the entire speech world into the window that remains.' },
+  { hl: 'wdrc', tgt: [-1.15, 4.8, 2.4],
+    b: '啸叫:增益的天花板', be: 'Whistling: the ceiling of gain',
+    d: '接收器与麦克风装在同一枚耳后小盒里,隔墙有耳:增益超过 ~60 dB,漏出的声音沿耳道-外壳缝隙绕回麦克风,环路增益 >1,系统在 2-5 kHz 的环路谐振频率上起振——尖啸。第一代解法是声学:密合耳模堵住泄漏,代价是堵耳效应(自己说话像在桶里)。现代解法是自适应对消:用类 LMS 滤波器实时估计泄漏路径,从麦克风信号里减去反相副本——增益上限因此推高 10-15 dB。',
+    de: 'Receiver and microphone share one behind-the-ear shell, and walls have ears: past ~60 dB of gain, leaked sound loops from canal gaps back to the mic, loop gain exceeds 1, and the system sings at its 2-5 kHz loop resonance. The first fix was acoustic - tight earmolds sealing the leak, paid for by occlusion (your own voice booming in a barrel). The modern fix is adaptive cancellation: an LMS-like filter estimates the leak path live and subtracts the antiphase copy - buying 10-15 dB more gain headroom.' },
+  { hl: 'whistle', tgt: [0.4, 5.4, 2.2],
+    b: '指向性与延迟:两个工程细节', be: 'Directionality and delay: two engineering details',
+    d: '双麦克风做一阶差分波束:前后灵敏度差 15-20 dB,餐厅噪声里把信噪比抬高 3-5 dB——可懂度的小数点后两位就靠它。延迟是另一条红线:信号链 ADC-DSP-ADC-接收器若超 ~10 ms,放大后的自己声音与骨导直达声错位,「回声感」与音素失真随之而来。所有 DSP(降噪、反馈对消、移频)都要在 10 ms 预算里排队——助听器是戴在耳朵里的实时系统。',
+    de: 'Dual microphones form a first-order differential beam: 15-20 dB front-back discrimination lifts restaurant SNR by 3-5 dB - the second decimal of intelligibility. Delay is the other red line: if the ADC-DSP-receiver chain exceeds ~10 ms, your amplified voice misaligns with the bone-conducted original - echo sensation and phoneme smearing follow. Every DSP block (denoise, feedback cancel, frequency lowering) queues inside the 10 ms budget - a hearing aid is a real-time system worn on the ear.' },
+  { hl: 'loss', tgt: [1.0, 4.4, 3.0],
+    b: '助听器与人工耳蜗的分界', be: 'Where the hearing aid hands off to the implant',
+    d: '分界线在残余毛细胞:测听图上 500/1000/2000 Hz 平均听阈 ≤80 dB,助听器有得补(毛细胞还在,只是变懒);>90 dB 或言语识别率 <60%,说明内毛细胞几乎阵亡,再大的增益也只是把死区放大——该考虑人工耳蜗绕过毛细胞直接刺激听神经。高频死区(耳蜗惰性区)还有移频技术:把 4 kHz 以上的内容搬到 2-3 kHz 残存区「借道」——听感需要适应,但比无声强。',
+    de: 'The boundary is surviving hair cells: with a 500/1000/2000 Hz average threshold <=80 dB, aids have something to amplify (cells alive, just lazy); past 90 dB, or word recognition under 60%, inner hair cells are nearly all gone and more gain only amplifies a dead zone - time to bypass them with a cochlear implant stimulating the nerve directly. For dead high-frequency regions, frequency lowering ferries content above 4 kHz down into surviving 2-3 kHz territory - an acquired taste, but better than silence.' },
+  { hl: 'normal', tgt: [0, 4.2, 4.2],
+    b: '验配是一门实测的手艺', be: 'Fitting is a craft of measurement',
+    d: '助听器不是「买来就戴」:纯音测听定听阈,真耳分析仪把探管麦克风塞进耳道实测「耳内实际增益」,与目标曲线(NAAL/DSL)逐频对齐;公开式耳塞留出低频通道防堵耳,耳鸣掩蔽、风噪抑制、电话程序各占一个记忆档。研究反复证明:同一台助听器,验配质量带来的可懂度差异超过机型差异——数字是新的,「量耳定制」这句话还是 1930 年代的那句。',
+    de: 'An aid is fitted, not bought: pure-tone audiometry fixes thresholds, then a probe-tube microphone measures real-ear gain live against targets (NAL/DSL), band by band. Open domes leave a low-frequency vent against occlusion; tinnitus masking, wind noise and phone programs each take a memory slot. Studies keep finding that fitting quality outweighs model choice for intelligibility - the electronics are new, but "custom to the ear" is still the 1930s slogan, now with better instruments.' },
+];
+
+/* ---------------- 滑杆 ---------------- */
+const elLoss = document.getElementById('vLoss'), elLossVal = document.getElementById('vLossVal');
+const elNoise = document.getElementById('vNoise'), elNoiseVal = document.getElementById('vNoiseVal');
+const tglCut = document.getElementById('tglCut');
+function updateSliderLabels() {
+  elLossVal.textContent = lossDb.toFixed(0) + ' dB';
+  elNoiseVal.textContent = noiseDb.toFixed(0) + ' dB';
+}
+elLoss.addEventListener('input', () => { lossDb = +elLoss.value; updateSliderLabels(); });
+elNoise.addEventListener('input', () => { noiseDb = +elNoise.value; updateSliderLabels(); });
+tglCut.addEventListener('change', () => { /* chip/mic 高亮由 sceneFrame 读 */ });
+
+/* ---------------- 预设 ---------------- */
+function runModes(simDt) {
+  if (preset === 'normal') {
+    lossDb = 5;
+  } else if (preset === 'loss') {
+    lossDb = 55;
+  } else if (preset === 'wdrc') {
+    lossDb = 55 + 15 * Math.sin(tPres * TAU / 8);
+    tPres += simDt;
+  } else if (preset === 'whistle') {
+    tPres += simDt;
+    lossDb = 60;
+    /* 啸叫:振幅在失稳与对消间循环 */
+    wT += simDt;
+    if (wT > 7) wT = 0;
+    whistle = wT < 4;
+  }
+  /* 啸叫幅值动力学:环路增益>1 指数增,对消后坍缩 */
+  const loopGain = gainAt(4) > 50 ? 1.25 : 0.6;
+  if (whistle && preset === 'whistle') whistleAmp = Math.min(1, whistleAmp + (loopGain - 0.8) * simDt * 1.2);
+  else whistleAmp = Math.max(0, whistleAmp - simDt * 1.5);
+  updateSliderLabels();
+  if (playing) pushSnd(Math.sin(wT * TAU * 3) * (whistle ? 0.9 : 0.3), (gainAt(4) - 20) / 25);
+}
+
+/* ---------------- 每帧可视 ---------------- */
+function sceneFrame(et, simDt, dt) {
+  /* 入射声波:传播 + 按损失淡出高频 */
+  waves.forEach((w, k) => {
+    w.f += simDt * 0.5;
+    if (w.f > 1) w.f -= 1;
+    const x = 4.4 - w.f * 4.2;
+    w.m.position.x = x;
+    w.m.scale.setScalar(1 + w.f * 0.8);
+    const audible = w.lowF ? 1 : clamp01(1 - lossDb / 70);
+    w.m.material.opacity = 0.15 + audible * 0.4 * (0.6 + 0.4 * Math.sin(et * 6 + k));
+  });
+  /* BTE 透视 */
+  const xray = tglCut.checked;
+  chip.material.emissiveIntensity = xray ? 0.7 + 0.3 * Math.sin(et * 4) : 0.15;
+  micA.material = micB.material = M.mic;
+  chip.visible = xray;
+  /* 接收器工作脉冲 */
+  M.rcv.emissiveIntensity = 0.35 + 0.35 * Math.abs(Math.sin(et * gainAt(4) / 12));
+  /* 鼓膜振动:幅度=WDRC 后响度 */
+  const drumAmp = clamp01(gainAt(4) / 40);
+  eardrum.scale.set(1, 1 + drumAmp * 0.5 * Math.sin(et * 14), 1 + drumAmp * 0.5 * Math.sin(et * 14));
+  /* 啸叫泄漏弧与对消波 */
+  const wOn = whistleAmp > 0.03;
+  leakLine.visible = wOn;
+  leakLine.material.opacity = wOn ? whistleAmp * 0.85 : 0;
+  if (wOn) leakLine.material.emissiveIntensity = 0.4 + 0.5 * Math.sin(et * 30);
+  const cOn = preset === 'whistle' && !whistle;
+  cancelLine.visible = cOn;
+  cancelLine.material.opacity = cOn ? 0.5 + 0.3 * Math.sin(et * 20) : 0;
+  /* 对消瞬间:红色啸叫波与金色对消波相遇处闪光 */
+  if (cOn || (wOn && cancelOn)) {
+    /* 中和区视觉:耳道口附近小白闪 */
+  }
+}
+
+/* ---------------- 示波器:测听图与增益曲线 ---------------- */
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L(`测听图(蓝=听阈)与 WDRC 增益(绿)@4 kHz 增益 ${gainAt(4).toFixed(0)} dB`,
+    `audiogram (blue = threshold) & WDRC gain (green) - gain at 4 kHz ${gainAt(4).toFixed(0)} dB`), 4 * dpr, 10 * dpr);
+  const baseY = ch * 0.92;
+  /* 频率轴 0.25-8 kHz 对数 */
+  const f2x = f => (Math.log2(f / 0.25) / 5) * cw;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.3)';
+  [0.25, 0.5, 1, 2, 4, 8].forEach(f => {
+    scopeCtx.beginPath(); scopeCtx.moveTo(f2x(f), baseY); scopeCtx.lineTo(f2x(f), 14 * dpr); scopeCtx.stroke();
+  });
+  /* 听阈曲线 */
+  scopeCtx.strokeStyle = 'rgba(116,192,252,.95)';
+  scopeCtx.lineWidth = Math.max(1.4, 1.4 * dpr);
+  scopeCtx.beginPath();
+  for (let k = 0; k <= 40; k++) {
+    const f = 0.25 * Math.pow(2, k / 40 * 5);
+    const th = thresholdAt(f);
+    const y = baseY - th / 90 * (ch - 20 * dpr);
+    const x = f2x(f);
+    k === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+  }
+  scopeCtx.stroke();
+  /* 增益曲线 */
+  scopeCtx.strokeStyle = 'rgba(123,216,143,.95)';
+  scopeCtx.beginPath();
+  for (let k = 0; k <= 40; k++) {
+    const f = 0.25 * Math.pow(2, k / 40 * 5);
+    const g = gainAt(f);
+    const y = baseY - g / 60 * (ch - 20 * dpr);
+    const x = f2x(f);
+    k === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`4 kHz 听阈 <b>${thresholdAt(4).toFixed(0)} dB</b>(损失 ${lossDb.toFixed(0)} dB)· WDRC 增益 <b>${gainAt(4).toFixed(0)} dB</b> → 残余 40 dB`,
+      `4 kHz threshold <b>${thresholdAt(4).toFixed(0)} dB</b> (loss ${lossDb.toFixed(0)} dB) - WDRC gain <b>${gainAt(4).toFixed(0)} dB</b> -> 40 dB left`) +
+    '<br>' +
+    L(`压缩比 <b>${(30 / Math.max(gainAt(4), 6)).toFixed(1)}:1</b> · 啸叫环路增益 <b>${gainAt(4).toFixed(0)} dB ${gainAt(4) > 50 ? '已失稳' : '未失稳'}</b> · 对消器 <b>开</b>`,
+      `compression <b>${(30 / Math.max(gainAt(4), 6)).toFixed(1)}:1</b> - loop gain <b>${gainAt(4).toFixed(0)} dB ${gainAt(4) > 50 ? 'unstable' : 'stable'}</b> - canceller <b>on</b>`) +
+    '<br>' +
+    L(`双麦指向 <b>15-20 dB 前后差</b> · 当前 SNR <b>${snrNow().toFixed(0)} dB</b> · 总延迟 <b><10 ms</b> · 借道移频:死区高频→2-3 kHz`,
+      `dual-mic directivity <b>15-20 dB front-back</b> - SNR now <b>${snrNow().toFixed(0)} dB</b> - delay <b><10 ms</b> - frequency lowering: dead highs -> 2-3 kHz`);
+}
+function updateStats() {
+  stA.innerHTML = thresholdAt(4).toFixed(0) + '<small> dB</small>';
+  stA.className = 'v ' + (thresholdAt(4) < 40 ? 'ok' : thresholdAt(4) < 70 ? 'warn' : 'bad');
+  stB.innerHTML = gainAt(4).toFixed(0) + '<small> dB @4k</small>';
+  stB.className = 'v ok';
+  stC.innerHTML = (30 / Math.max(gainAt(4), 6)).toFixed(1) + '<small> :1</small>';
+  stC.className = 'v ok';
+  stD.innerHTML = gainAt(4) > 50 ? L('啸叫!', 'WHISTLE') : L('稳定', 'stable');
+  stD.className = 'v ' + (gainAt(4) > 50 ? 'bad' : 'ok');
+  stE.innerHTML = snrNow().toFixed(0) + '<small> dB</small>';
+  stE.className = 'v ' + (snrNow() > 10 ? 'ok' : 'warn');
+  stF.innerHTML = '8.5<small> ms</small>';
+  stF.className = 'v ok';
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  lossDb = 55; noiseDb = 40; whistle = false; whistleAmp = 0; wT = 0; tPres = 0;
+  elLoss.value = 55; elNoise.value = 40;
+  updateSliderLabels(); updateFormula();
+}
+
+
+/* ---------------- stats / formula 刷新 ---------------- */
+const stEls = ['stA', 'stB', 'stC', 'stD', 'stE', 'stF'].map(id => document.getElementById(id));
+
+/* 预设按钮接线(页面脚本已给出 PRESET_IDS) */
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  sceneFrame(et, simDt, dt);
+  /* 步骤高亮(呼吸脉冲):页面在 HL 表里登记材质 */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.emissiveIntensity = 0.55 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) { if (typeof drawScope === 'function') drawScope(); }
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
