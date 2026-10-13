@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>火箭垂直回收 · 让第一级自己站着回家</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#3d7ea6;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#2a6183;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="火箭垂直回收:让第一级自己站着回家" data-en="Vertical Rocket Recovery">火箭垂直回收:让第一级自己站着回家</h1>
+  <div class="sub" data-zh="第一级占火箭成本约 60-70%,用完即弃等于每次烧掉一架客机;但复用有代价:得留约 3-6% 的推进剂专门飞回家,载荷损失约 30-40%。猎鹰 9 式的回家流程环环相扣:级间分离后,冷气氮气推进器先把 40 多米的箭体在空中翻转 180°、尾部朝前;接着引擎空中再点火——要回着陆场就点 Boostback burn 把弹道推回去,要省燃料就顺弹道飞几百公里落到海上驳船;钛合金 3D 打印的栅格舵随即展开,在超声速气流里仍能产生操纵力,把质心压在推力矢量附近;然后是再入点火:3 台发动机逆喷减速,底部热盾扛住热流峰值;最后是着陆点火——推重比大于 1 的火箭在数学上无法悬停,只能执行「hoverslam/自杀式点火」:中心发动机深度节流到 40-57% 额定推力,让反推减速曲线恰好使触地瞬间速度归零,关机时序以毫秒计,最后 2-6 m/s 交给着陆腿吸收,导航圆精度 10 m 级。驳船回收省下 boostback 燃料,但要加拖船与海况窗口;Merlin 发动机单机已复用 20+ 次,翻新远低于新造——经济账跑通了。演示里拖「保留推进剂」看 Δv 账本:太少坠海、太多载荷亏;切「海上驳船」对比两种弹道;拖「栅格舵偏转」看落点偏差;点「失败重演」看姿态超限倾倒爆炸;示波器画高度-速度曲线。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The first stage is 60-70% of a rocket\u2019s cost - throwing it away burns an airliner every flight; reuse has a price though: some 3-6% of the propellant must be reserved to fly home, costing 30-40% of the payload. The Falcon-9-style homecoming is a chain of linked steps: after stage separation, cold-gas nitrogen thrusters flip the 40-meter stack 180 degrees, engines forward; then the engines relight in mid-air - a boostback burn bends the trajectory back to the landing zone, or the stage saves that fuel and rides its arc a few hundred kilometers downrange onto a drone ship; the titanium 3D-printed grid fins deploy and keep generating control authority in supersonic flow, holding the center of mass near the thrust vector; next comes the entry burn - three engines retro-propulse while the base heat shield takes the peak heating; finally the landing burn: a rocket with thrust-to-weight above one cannot hover in principle, so it flies a hoverslam - the single center engine deep-throttled to 40-57% of rated thrust on a suicide curve whose deceleration brings velocity to exactly zero at touchdown, with cutoff timing set in milliseconds and the last 2-6 m/s absorbed by the landing legs, all inside a 10-meter navigation circle. Barge landings save the boostback propellant but add tugs and sea-state windows; a single Merlin has flown 20+ missions and refurbishing costs far less than building new - the economics close. In the demo, drag the reserved-propellant slider to read the Δv ledger: too little splashes into the sea, too much eats the payload; switch barge to compare trajectories; drag grid-fin deflection to see landing dispersion; press failure replay to watch an attitude-excursion topple and fireball; the scope traces altitude and speed. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">第一级占火箭成本约 60-70%,用完即弃等于每次烧掉一架客机;但复用有代价:得留约 3-6% 的推进剂专门飞回家,载荷损失约 30-40%。猎鹰 9 式的回家流程环环相扣:级间分离后,冷气氮气推进器先把 40 多米的箭体在空中翻转 180°、尾部朝前;接着引擎空中再点火——要回着陆场就点 Boostback burn 把弹道推回去,要省燃料就顺弹道飞几百公里落到海上驳船;钛合金 3D 打印的栅格舵随即展开,在超声速气流里仍能产生操纵力,把质心压在推力矢量附近;然后是再入点火:3 台发动机逆喷减速,底部热盾扛住热流峰值;最后是着陆点火——推重比大于 1 的火箭在数学上无法悬停,只能执行「hoverslam/自杀式点火」:中心发动机深度节流到 40-57% 额定推力,让反推减速曲线恰好使触地瞬间速度归零,关机时序以毫秒计,最后 2-6 m/s 交给着陆腿吸收,导航圆精度 10 m 级。驳船回收省下 boostback 燃料,但要加拖船与海况窗口;Merlin 发动机单机已复用 20+ 次,翻新远低于新造——经济账跑通了。演示里拖「保留推进剂」看 Δv 账本:太少坠海、太多载荷亏;切「海上驳船」对比两种弹道;拖「栅格舵偏转」看落点偏差;点「失败重演」看姿态超限倾倒爆炸;示波器画高度-速度曲线。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="高度" data-en="altitude">高度</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="速度" data-en="speed">速度</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="过载" data-en="g-load">过载</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="剩余 Δv" data-en="Δv left">剩余 Δv</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="推进剂余量" data-en="prop left">推进剂余量</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="阶段" data-en="phase">阶段</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip g" data-zh="一级占成本 60-70%,回收的正是它" data-en="stage 1 = 60-70% of cost: that is what we recover">一级占成本 60-70%,回收的正是它</span>
+    <span class="chip b" data-zh="保留 3-6% 推进剂:载荷亏 30-40%" data-en="reserve 3-6% propellant: payload -30-40%">保留 3-6% 推进剂:载荷亏 30-40%</span>
+    <span class="chip r" data-zh="hoverslam:推重比&gt;1,不能悬停" data-en="hoverslam: TWR&gt;1, hovering impossible">hoverslam:推重比&gt;1,不能悬停</span>
+    <span class="chip o" data-zh="Merlin 单机复用 20+ 次:经济账跑通" data-en="one Merlin flown 20+ times: the economics close">Merlin 单机复用 20+ 次:经济账跑通</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnBarge" data-zh="海上驳船" data-en="drone ship">海上驳船</button>
+    <button class="abtn" id="btnReplay" data-zh="重放" data-en="replay">重放</button>
+    <button class="abtn" id="btnFail" data-zh="失败重演" data-en="failure replay">失败重演</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="保留推进剂" data-en="reserve">保留推进剂</label><input id="vProp" type="range" min="2" max="10" step="0.5" value="6"><span class="val" id="vPropVal"></span></div>
+  <div class="row"><label data-zh="再入角" data-en="entry angle">再入角</label><input id="vAngle" type="range" min="25" max="60" step="1" value="40"><span class="val" id="vAngleVal"></span></div>
+  <div class="row"><label data-zh="栅格舵偏转" data-en="fin deflection">栅格舵偏转</label><input id="vFin" type="range" min="0" max="30" step="1" value="15"><span class="val" id="vFinVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="高度/速度示波" data-en="alt/speed scope">高度/速度示波</span></label>
+        <label><input id="tglCut" type="checkbox" checked> <span data-zh="壳体透视" data-en="shell x-ray">壳体透视</span></label>
+        <label><input id="tglPath" type="checkbox" checked> <span data-zh="弹道轨迹" data-en="path trace">弹道轨迹</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../rocket-equation/" data-zh="火箭方程" data-en="rocket equation">火箭方程</a>
+    <a href="../rocket-staging/" data-zh="火箭级间分离" data-en="rocket staging">火箭级间分离</a>
+    <a href="../atmospheric-reentry/" data-zh="再入大气" data-en="atmospheric reentry">再入大气</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 800);
+camera.position.set(9, 8.5, 14);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 6.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 160;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 12, 6);
+scene.add(keyLight);
+const fillL = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fillL.position.set(-7, 6, -6);
+scene.add(fillL);
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 6.5, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(300), sndA = new Float32Array(300);   // 双通道环形缓冲
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglCut = document.getElementById('tglCut');
+const tglPath = document.getElementById('tglPath');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= 火箭垂直回收 ================= */
+const TITLE_ZH = '火箭垂直回收 · 让第一级自己站着回家';
+const TITLE_EN = 'Vertical Rocket Recovery';
+/* ---------------- 常量 ---------------- */
+const SCALE_Y = 0.12;      // 1 单位 = 8.33 km(垂直,压缩显示)
+const SCALE_X = 0.03;      // 1 单位 = 33.3 km(射向)
+const STAGE_H = 13.4;      // 一子级视觉高度
+const DRY_T = 26, PROP_T = 410, VE_MS = 2800;   // 一子级干重/推进剂吨数、有效排气速度
+const NEED = { barge: 1150, rtls: 1800 };        // Δv 需求:驳船(150+650+350)/ 回收场(800+650+350)
+/* ---------------- 任务状态 ---------------- */
+let mode = 'barge';                 // barge | rtls
+let snapProp = 6, snapAngle = 40, snapFin = 15;
+let phase = 'sep', tPh = 0;
+let alt = 66, vel = 2280, xKm = 85, gLoad = 0;
+let dvAvail = 0, dvLeft = 0, deficit = 0, doomed = false, doomV = 0, topple = false;
+let failArmed = false;
+let verdict = '';   // 任务结束后的持久判定:着陆成功 / 坠毁解体
+let finsDep = 0, legsDep = 0, rot = 0, wobAmp = 0.02, heat = 0;
+let payloadPen = 0;
+function dvOf(p) { return VE_MS * Math.log((DRY_T + PROP_T * p / 100) / DRY_T); }
+function calcPenalty(p) { return p <= 3 ? 30 * p / 3 : p <= 6 ? 30 + (p - 3) * (10 / 3) : Math.min(55, 40 + (p - 6) * 4); }
+/* ---------------- 材质 ---------------- */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+function glowTexture(inner, mid) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, inner); gr.addColorStop(0.35, mid); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+function mesh(geo, mtl, x, y, z, parent) {
+  const m = new THREE.Mesh(geo, mtl);
+  m.position.set(x, y, z);
+  (parent || scene).add(m);
+  return m;
+}
+const M = {
+  ground: mat(0x1b2129, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.35, depthWrite: false }),
+  body: mat(0xd8dde2, { roughness: 0.42, metalness: 0.35, transparent: true }),
+  soot: mat(0x4a4f56, { roughness: 0.7, metalness: 0.3 }),
+  interstage: mat(0x272b31, { roughness: 0.5, metalness: 0.5 }),
+  engine: mat(0x4a5158, { roughness: 0.4, metalness: 0.85 }),
+  fin: mat(0x9aa6b2, { roughness: 0.3, metalness: 0.9 }),
+  leg: mat(0x394046, { roughness: 0.55, metalness: 0.6 }),
+  pipe: mat(0x7d8894, { roughness: 0.35, metalness: 0.85 }),
+  pad: mat(0x333a42, { roughness: 0.9, metalness: 0.1 }),
+  padRing: mat(0xd9a33c, { roughness: 0.5, metalness: 0.4, emissiveIntensity: 0.25 }),
+  barge: mat(0x2c3a46, { roughness: 0.7, metalness: 0.4 }),
+  deckRing: mat(0xd9a33c, { roughness: 0.5, metalness: 0.4, emissiveIntensity: 0.3 }),
+  plume: new THREE.MeshBasicMaterial({ color: 0xffb066, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }),
+  plumeIn: new THREE.MeshBasicMaterial({ color: 0xfff3d0, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+  heatGlow: new THREE.SpriteMaterial({ map: glowTexture('rgba(255,150,70,.9)', 'rgba(255,90,40,.35)'), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+  puff: new THREE.SpriteMaterial({ map: glowTexture('rgba(240,246,255,.95)', 'rgba(200,214,230,.4)'), transparent: true, opacity: 0.8, depthWrite: false }),
+  boom: new THREE.SpriteMaterial({ map: glowTexture('rgba(255,240,200,1)', 'rgba(255,120,50,.5)'), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+  debris: new THREE.PointsMaterial({ color: 0xffa25f, size: 0.22, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }),
+};
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xdfe6ee);
+  M.ground.color.set(dark ? 0x1b2129 : 0x9fb0be);
+  M.grid.color.set(dark ? 0x2c3540 : 0x7f93a6);
+  M.body.color.set(dark ? 0xd8dde2 : 0xc4ccd4);
+}
+/* ---------------- 场景:地面 / 海 / 驳船 / 着陆场 ---------------- */
+mesh(new THREE.BoxGeometry(320, 0.2, 320), M.ground, 0, -0.1, 0);
+const grid = new THREE.GridHelper(200, 40, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+/* 陆上着陆场(RTLS) */
+const padG = new THREE.Group();
+scene.add(padG);
+mesh(new THREE.CylinderGeometry(3.2, 3.6, 0.16, 32), M.pad, 0, 0.08, 0, padG);
+const padRing = mesh(new THREE.TorusGeometry(2.1, 0.07, 8, 48), M.padRing, 0, 0.18, 0, padG);
+padRing.rotation.x = Math.PI / 2;
+/* 海上驳船(停在下 range 300 km 处) */
+const bargeG = new THREE.Group();
+bargeG.position.x = -300 * SCALE_X;
+scene.add(bargeG);
+mesh(new THREE.BoxGeometry(6.6, 0.8, 4.4), M.barge, 0, 0.24, 0, bargeG);
+const deckRing = mesh(new THREE.TorusGeometry(1.55, 0.06, 8, 48), M.deckRing, 0, 0.68, 0, bargeG);
+deckRing.rotation.x = Math.PI / 2;
+for (const dx of [-1.1, 1.1]) mesh(new THREE.BoxGeometry(2.2, 0.05, 0.4), M.deckRing, dx, 0.68, 0, bargeG);
+/* ---------------- 一子级箭体 ---------------- */
+const stageG = new THREE.Group();
+scene.add(stageG);
+mesh(new THREE.CylinderGeometry(0.75, 0.75, 11.6, 24), M.body, 0, 6.5, 0, stageG);
+mesh(new THREE.CylinderGeometry(0.755, 0.755, 2.2, 24), M.soot, 0, 1.9, 0, stageG);
+mesh(new THREE.CylinderGeometry(0.75, 0.75, 1.1, 24), M.interstage, 0, 12.85, 0, stageG);
+/* 壳内透视:贮箱管路与桁条 */
+const loxPipe = mesh(new THREE.CylinderGeometry(0.09, 0.09, 10.8, 10), M.pipe, 0, 6.7, 0, stageG);
+const rp1Pipe = mesh(new THREE.CylinderGeometry(0.06, 0.06, 10.8, 10), M.pipe, 0.3, 6.7, 0, stageG);
+const rods = [];
+for (let i = 0; i < 4; i++) {
+  const a = i * Math.PI / 2 + Math.PI / 4;
+  rods.push(mesh(new THREE.CylinderGeometry(0.045, 0.045, 10.8, 8), M.pipe, Math.cos(a) * 0.6, 6.7, Math.sin(a) * 0.6, stageG));
+}
+/* octaweb:9 台 Merlin */
+const nozzles = [], plumes = [];
+for (let i = 0; i < 9; i++) {
+  const a = (i - 1) * TAU / 8;
+  const px = i === 0 ? 0 : Math.cos(a) * 0.44, pz = i === 0 ? 0 : Math.sin(a) * 0.44;
+  nozzles.push(mesh(new THREE.CylinderGeometry(0.1, 0.2, 0.72, 14, 1, true), M.engine, px, 0.42, pz, stageG));
+  const pg = new THREE.Group();
+  pg.position.set(px, 0.06, pz);
+  mesh(new THREE.ConeGeometry(0.3, 2.6, 14, 1, true), M.plume, 0, -1.3, 0, pg);
+  mesh(new THREE.ConeGeometry(0.13, 1.5, 10, 1, true), M.plumeIn, 0, -0.75, 0, pg);
+  pg.visible = false;
+  stageG.add(pg);
+  plumes.push(pg);
+}
+/* 栅格舵 ×4:钛合金 3D 打印 */
+const finPivots = [];
+for (let i = 0; i < 4; i++) {
+  const a = i * Math.PI / 2;
+  const pivot = new THREE.Group();
+  pivot.position.set(Math.cos(a) * 0.78, 11.9, Math.sin(a) * 0.78);
+  pivot.rotation.y = -a;
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.62, 0.07), M.fin);
+  frame.position.x = 0.39;
+  pivot.add(frame);
+  for (let s = 0; s < 3; s++) {
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.16), M.fin);
+    slat.position.set(0.39, -0.2 + s * 0.2, 0);
+    pivot.add(slat);
+  }
+  pivot.rotation.z = 1.35;      // 折叠贴箭体
+  stageG.add(pivot);
+  finPivots.push(pivot);
+}
+/* 着陆腿 ×4 */
+const legPivots = [];
+for (let i = 0; i < 4; i++) {
+  const a = i * Math.PI / 2 + Math.PI / 4;
+  const pivot = new THREE.Group();
+  pivot.position.set(Math.cos(a) * 0.6, 5.0, Math.sin(a) * 0.6);
+  pivot.rotation.y = -a;
+  const strut = new THREE.Mesh(new THREE.BoxGeometry(0.17, 5.0, 0.28), M.leg);
+  strut.position.y = -2.5;
+  pivot.add(strut);
+  const foot = mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.12, 12), M.leg, 0, -5.0, 0, pivot);
+  pivot.rotation.z = -0.06;     // 折叠贴箭体
+  stageG.add(pivot);
+  legPivots.push(pivot);
+}
+/* 冷气推进器块 + 热盾辉光 */
+mesh(new THREE.BoxGeometry(0.3, 0.5, 0.3), M.engine, 0, 12.5, 0, stageG);
+const heatSpr = new THREE.Sprite(M.heatGlow);
+heatSpr.scale.set(4.5, 4.5, 1);
+heatSpr.position.y = 0.6;
+stageG.add(heatSpr);
+/* 弹道轨迹线 */
+const PATH_N = 500, pathPos = new Float32Array(PATH_N * 3), pathGeo = new THREE.BufferGeometry();
+pathGeo.setAttribute('position', new THREE.BufferAttribute(pathPos, 3));
+pathGeo.setDrawRange(0, 0);
+const pathLine = new THREE.Line(pathGeo, new THREE.LineBasicMaterial({ color: 0x7fd8ff, transparent: true, opacity: 0.55 }));
+scene.add(pathLine);
+let pathCnt = 0;
+/* 爆炸粒子 */
+const BOOM_N = 150, boomPos = new Float32Array(BOOM_N * 3), boomVel = [], boomGeo = new THREE.BufferGeometry();
+boomGeo.setAttribute('position', new THREE.BufferAttribute(boomPos, 3));
+const boomPts = new THREE.Points(boomGeo, M.debris);
+boomPts.visible = false;
+scene.add(boomPts);
+const boomSpr = new THREE.Sprite(M.boom);
+boomSpr.scale.set(0.1, 0.1, 1);
+boomSpr.visible = false;
+scene.add(boomSpr);
+/* 冷气/蒸汽白泡池(每泡独立材质,便于各自淡出) */
+const puffs = [];
+for (let i = 0; i < 14; i++) {
+  const sp = new THREE.Sprite(M.puff.clone());
+  sp.visible = false;
+  scene.add(sp);
+  puffs.push({ sp, vel: new THREE.Vector3(), life: 0, max: 1 });
+}
+function spawnPuff(pos, vel, size, life) {
+  const p = puffs.find(q => q.life <= 0);
+  if (!p) return;
+  p.sp.position.copy(pos); p.vel.copy(vel);
+  p.life = life; p.max = life;
+  p.sp.scale.set(size, size, 1);
+  p.sp.visible = true;
+}
+
+camera.position.set(9, 8.5, 14);
+controls.target.set(0, 6.5, 0);
+tgtVec.set(0, 6.5, 0);
+/* ---------------- 标签 ---------------- */
+addLabel(() => L(`级间分离点:二子级从这里接力 — 一子级占整箭成本 60-70%,回收的正是它`,
+  `interstage: the second stage takes over here - stage 1 is 60-70% of vehicle cost, and it is what we recover`),
+  () => 'e', new THREE.Vector3(0, 13.6, 0.9), null, stageG);
+addLabel(() => L(`栅格舵 ×4:钛合金 3D 打印,超声速气流中仍有操纵力 — 把质心压向推力矢量(当前偏转 ${snapFin}°)`,
+  `grid fins x4: 3D-printed titanium, control authority at supersonic - holds CoM near the thrust vector (now ${snapFin}°)`),
+  () => 'b', new THREE.Vector3(1.4, 12.2, 0), null, stageG);
+addLabel(() => L(`octaweb:9 台 Merlin 海平面发动机 — 中心 1 台深度节流 40-57% 完成着陆点火`,
+  `octaweb: nine sea-level Merlins - the center one deep-throttles to 40-57% for the landing burn`),
+  () => 'w', new THREE.Vector3(0, 1.6, 1.1), null, stageG);
+addLabel(() => L(`着陆腿 ×4:吸收最后 2-6 m/s 触地速度 — 落点须进 10 m 级导航圆`,
+  `landing legs x4: absorb the final 2-6 m/s - touchdown must sit inside the ~10 m navigation circle`),
+  () => 'g', new THREE.Vector3(1.2, 3.4, 0.9), null, stageG);
+const ledgerWrap = addLabel(() => {
+  if (phase === 'boom') return L('爆炸解体(RUD):剩余推进剂或姿态超出裕度', 'RUD: propellant or attitude margins exceeded');
+  if (phase === 'idle') return L('待机:按「重放」再飞一次', 'idle: press replay to fly again');
+  return L(`${phaseName()} · Δv 剩 ${Math.round(dvLeft)} m/s · 亏 ${Math.round(deficit)} m/s · 节流 ${curThrottle().toFixed(0)}%`,
+    `${phaseName()} · Δv left ${Math.round(dvLeft)} m/s · short ${Math.round(deficit)} m/s · throttle ${curThrottle().toFixed(0)}%`);
+}, () => phase === 'boom' || deficit > 0 ? 'bad' : 'b', new THREE.Vector3(0, 15.2, 0), null, stageG);
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'eco', tgt: [0, 6.5, 5],
+    b: '为什么值得回收', be: 'Why recover it at all',
+    d: '第一级占整箭成本约 60-70%,用完即弃等于每飞一次烧掉一架客机。复用的代价是返回预算:要保留约 3-6% 的推进剂专门飞回家,换来 30-40% 的载荷损失——但这仍比再造一台便宜得多。Merlin 发动机单机已复用 20+ 次,翻新成本远低于新造。拖动「保留推进剂」滑块,看 Δv 账本在「够回家」与「载荷亏」之间走钢丝。',
+    de: 'The first stage is 60-70% of the vehicle cost - discarding it burns an airliner per flight. Reuse costs a return budget: about 3-6% of the propellant must be reserved to fly home, trading 30-40% of the payload - still far cheaper than building new. A single Merlin has flown 20+ missions and refurbishing costs much less than a fresh stage. Drag the reserve slider and watch the Δv ledger walk the line between making it home and eating the payload.' },
+  { hl: 'flip', tgt: [0, 8, 4.5],
+    b: '翻转与调姿', be: 'Flip and attitude control',
+    d: '级间分离后,第一级不靠主发动机调姿:冷气氮气推进器在箭体顶部喷出纯姿控脉冲,把 40 多米长的筒体在空中翻转约 180°、尾部朝前——为的是让发动机与底部热盾迎向气流和反推方向。此时箭体仍在爬升,白色泡就是冷气喷流。',
+    de: 'After separation the stage does not use its main engines for attitude: cold-gas nitrogen thrusters at the top fire pure control pulses, flipping the 40-meter barrel about 180 degrees engines-forward - so the engines and base heat shield face the airflow and the retrograde direction. The stage is still climbing through all of this; the white puffs are the cold-gas jets.' },
+  { hl: 'boost', tgt: [0, 7.5, 4.5],
+    b: 'Boostback 与下 range', be: 'Boostback or downrange',
+    d: '回着陆场(RTLS)要点 Boostback burn:3 台发动机逆着速度方向把弹道推回发射场,烧掉约 800 m/s 的 Δv;省钱方案是干脆顺弹道继续飞几百公里,落到海上驳船——boostback 只留 150 m/s 修正。驳船省燃料,但要加拖船、港口与海况窗口,而且着陆判定更严。用「海上驳船」按钮切换两种弹道,对比 Δv 账本。',
+    de: 'Flying home to the pad (RTLS) takes a boostback burn: three engines push against the velocity vector to bend the arc back, spending roughly 800 m/s. The frugal option is to keep riding the arc a few hundred kilometers downrange onto a drone ship, keeping only ~150 m/s of correction. The barge saves propellant but adds tugs, a port and sea-state windows, and its landing criteria are stricter. Toggle the barge button to compare the two trajectories and their ledgers.' },
+  { hl: 'fins', tgt: [0, 11.5, 3.5],
+    b: '栅格舵:超声速的翅膀', be: 'Grid fins: wings at supersonic',
+    d: '滑行段,4 片钛合金 3D 打印栅格舵展开:镂空格子结构在超声速气流里阻力可控、仍能产生操纵力,把箭体质心「压」在推力矢量附近,大幅减少着陆前需要的燃料修正。栅格舵偏转角直接决定落点散布——偏转不足,10 m 级的导航圆就守不住。拖动「栅格舵偏转」滑块试一试。',
+    de: 'During the coast, four 3D-printed titanium grid fins deploy: the lattice keeps drag manageable while still making control authority in supersonic flow, holding the center of mass near the thrust vector and slashing the fuel needed for final corrections. Fin deflection sets the landing dispersion - with too little, the ~10 m navigation circle is lost. Try the deflection slider.' },
+  { hl: 'entry', tgt: [0, 7, 4.5],
+    b: '再入与热', be: 'Entry and the heat',
+    d: '再入点火:3 台发动机逆喷,把速度从二十多倍音速压下来,底部热盾与烧蚀层扛住热流峰值——橙色辉光就是热流。再入角决定一切:拉得太陡,热流与过载飙升;太缓,射程拉长、落点漂移。示波器里绿线是高度、蓝线是速度,再入段是两条线的悬崖。',
+    de: 'The entry burn: three engines retro-propulse, dragging the speed down from over twenty times the speed of sound while the base heat shield and ablative take the peak heat flux - the orange glow. Entry angle decides everything: too steep and heating and g-loads spike; too shallow and the range stretches, scattering the landing point. On the scope the green line is altitude, the blue is speed - entry is the cliff on both.' },
+  { hl: 'land', tgt: [0, 4, 4],
+    b: 'hoverslam:不能悬停的着陆', be: 'Hoverslam: a landing that cannot hover',
+    d: '推重比大于 1 的火箭在数学上无法悬停:油门再小,推力也超过重力,一松就会加速上飘、一收就会加速下坠。所以猎鹰 9 执行「hoverslam/自杀式点火」:中心发动机深度节流到 40-57% 额定推力,让反推减速曲线 a=v²/(2h) 恰好使触地瞬间速度归零,关机时序以毫秒计,最后 2-6 m/s 交给着陆腿吸收。',
+    de: 'A rocket with thrust-to-weight above one cannot hover in principle: even at minimum throttle the thrust exceeds gravity, so easing off means accelerating up and cutting means accelerating down. So Falcon 9 flies a hoverslam, a suicide burn: the center engine deep-throttled to 40-57% of rated thrust on the curve a = v²/(2h), timed so velocity reaches exactly zero at touchdown, cutoff scheduled in milliseconds, with the last 2-6 m/s left for the legs to absorb.' },
+  { hl: 'eco2', tgt: [0, 7, 5.5],
+    b: '复用的经济账', be: 'The economics of reuse',
+    d: '一子级落地后经检测、清洗、更换少量部件即可再次飞行:单台 Merlin 的复用纪录 20+ 次,翻新成本远低于新造整级。驳船任务还要算上拖船与海况窗口的运营费;失败重演按钮会展示姿态超限倾倒爆炸——回收是系统工程,每一毫秒的关机时序都在为这本经济账服务。',
+    de: 'After touchdown the stage is inspected, cleaned and minor parts swapped, then flies again: one Merlin has logged 20+ missions and refurbishing costs far less than a new stage. Barge missions must also pay for tugs and sea-state windows; the failure replay shows an attitude-excursion topple and fireball - recovery is systems engineering, and every millisecond of that cutoff timing serves the spreadsheet.' },
+];
+const HL = { eco: M.body, flip: M.interstage, boost: M.engine, fins: M.fin, entry: M.engine, land: M.leg, eco2: M.body };
+/* ---------------- 滑杆 / 按钮 ---------------- */
+const elProp = document.getElementById('vProp'), elPropVal = document.getElementById('vPropVal');
+const elAngle = document.getElementById('vAngle'), elAngleVal = document.getElementById('vAngleVal');
+const elFin = document.getElementById('vFin'), elFinVal = document.getElementById('vFinVal');
+const btnBarge = document.getElementById('btnBarge'), btnReplay = document.getElementById('btnReplay'),
+  btnFail = document.getElementById('btnFail');
+function refreshActionButtons() {
+  btnBarge.classList.toggle('on', mode === 'barge');
+}
+function updateSliderLabels() {
+  elPropVal.textContent = (+elProp.value).toFixed(1) + ' %';
+  elAngleVal.textContent = elAngle.value + '°';
+  elFinVal.textContent = elFin.value + '°';
+  refreshActionButtons();
+}
+elProp.addEventListener('input', updateSliderLabels);
+elAngle.addEventListener('input', updateSliderLabels);
+elFin.addEventListener('input', updateSliderLabels);
+btnBarge.addEventListener('click', () => { mode = mode === 'barge' ? 'rtls' : 'barge'; refreshActionButtons(); startMission(); });
+btnReplay.addEventListener('click', () => startMission());
+btnFail.addEventListener('click', () => { failArmed = true; startMission(); });
+/* ---------------- 任务阶段机 ---------------- */
+const PH = {
+  sep: 2.5, flip: 3.5, boost: 6, coast: 6.5, entry: 5, aero: 9, land: 6,
+  down: 3, tumble: 2.6, boom: 3.5,
+};
+function phaseName() {
+  const Z = { idle: '待机', sep: '级间分离', flip: '冷气翻转', boost: 'Boostback 回推', coast: '滑行·栅格舵展开',
+    entry: '再入点火', aero: '大气减速', land: '着陆点火 hoverslam', down: '触地·腿缓冲', tumble: '姿态超限·倾倒', boom: '爆炸解体(RUD)' };
+  const E = { idle: 'idle', sep: 'stage separation', flip: 'cold-gas flip', boost: 'boostback burn', coast: 'coast · fins out',
+    entry: 'entry burn', aero: 'aero descent', land: 'landing burn', down: 'touchdown', tumble: 'attitude excursion', boom: 'RUD' };
+  return L(Z[phase], E[phase]);
+}
+function curThrottle() {
+  if (phase === 'boost') return 57;
+  if (phase === 'entry') return 55;
+  if (phase === 'land') return 57 - 17 * clamp01(tPh / PH.land);
+  return 0;
+}
+function setPlumes(n, on) {
+  const s = curThrottle() / 57;
+  for (let i = 0; i < 9; i++) {
+    const fire = on && (n >= 9 || i === 0 || (n >= 3 && i <= 4 && i % 2 === 1));
+    plumes[i].visible = fire;
+    if (fire) plumes[i].scale.set(1, 0.7 + 0.5 * s + 0.08 * Math.sin(performance.now() * 0.04 + i), 1);
+  }
+}
+function enterPhase(next) {
+  phase = next; tPh = 0;
+  if (next === 'boost' || next === 'entry' || next === 'land' || next === 'coast') {
+    const need = next === 'boost' ? (mode === 'rtls' ? 800 : 150)
+      : next === 'coast' ? (mode === 'barge' ? 150 : 0)
+      : next === 'entry' ? 650 : 350;
+    if (need > 0) {
+      if (dvLeft >= need) dvLeft -= need;
+      else { deficit += need - dvLeft; dvLeft = 0; }
+    }
+  }
+  if (next === 'land' && deficit > 0) { doomed = true; doomV = clamp(40 + deficit * 0.18, 40, 130); }
+}
+function startMission() {
+  snapProp = +elProp.value; snapAngle = +elAngle.value; snapFin = +elFin.value;
+  payloadPen = calcPenalty(snapProp);
+  phase = 'sep'; tPh = 0;
+  alt = 66; vel = 2280; xKm = 85; gLoad = 0; heat = 0;
+  dvAvail = dvOf(snapProp); dvLeft = dvAvail; deficit = 0;
+  doomed = false; doomV = 0; verdict = '';
+  topple = Math.abs(snapFin - 15) * 1.8 + (mode === 'barge' ? 5.5 : 1.0) > 10;
+  finsDep = 0; legsDep = 0; rot = 0; wobAmp = 0.02;
+  stageG.visible = true;
+  stageG.rotation.set(0, 0, 0);
+  boomPts.visible = false; boomSpr.visible = false;
+  pathCnt = 0; pathGeo.setDrawRange(0, 0);
+  for (const p of puffs) { p.life = 0; p.sp.visible = false; }
+  for (const pg of plumes) pg.visible = false;
+  updateFormula();
+}
+function explode() {
+  const bx = stageG.position.x, by = Math.max(0.8, stageG.position.y - STAGE_H / 2 + 1);
+  for (let i = 0; i < BOOM_N; i++) {
+    boomPos[i * 3] = bx; boomPos[i * 3 + 1] = by; boomPos[i * 3 + 2] = 0;
+    const a = Math.random() * TAU, sp = 3 + Math.random() * 8;
+    boomVel[i] = new THREE.Vector3(Math.cos(a) * sp, Math.random() * 1.4 + Math.random() * 5, Math.sin(a) * sp);
+  }
+  boomGeo.attributes.position.needsUpdate = true;
+  boomPts.visible = true;
+  M.debris.opacity = 0.95;
+  boomSpr.position.set(bx, by + 1, 0);
+  boomSpr.scale.set(0.1, 0.1, 1);
+  boomSpr.visible = true;
+  M.boom.opacity = 1;
+  for (let i = 0; i < 6; i++) {
+    spawnPuff(new THREE.Vector3(bx + (Math.random() - 0.5) * 2, by + Math.random() * 2, 0),
+      new THREE.Vector3((Math.random() - 0.5) * 3, 1 + Math.random() * 2, 0), 2.5 + Math.random() * 2, 2.5);
+  }
+  stageG.visible = false;
+  for (const pg of plumes) pg.visible = false;
+  verdict = L('爆炸解体(RUD)', 'RUD');
+  enterPhase('boom');
+}
+function touchdown() {
+  if (doomed || topple || failArmed) {
+    if (doomed) spawnPuff(new THREE.Vector3(stageG.position.x, 0.6, 0),
+      new THREE.Vector3(0, 2, 0), 4, 2.2);
+    explode();
+    return;
+  }
+  spawnPuff(new THREE.Vector3(stageG.position.x, 0.4, 0), new THREE.Vector3(0, 1.2, 0), 3.4, 1.8);
+  spawnPuff(new THREE.Vector3(stageG.position.x + 1, 0.4, 0.6), new THREE.Vector3(1.5, 0.8, 0.5), 2.4, 1.5);
+  spawnPuff(new THREE.Vector3(stageG.position.x - 1, 0.4, -0.6), new THREE.Vector3(-1.5, 0.8, -0.5), 2.4, 1.5);
+  verdict = L('着陆成功', 'landed');
+  enterPhase('down');
+}
+const tmpV = new THREE.Vector3();
+function runModes(simDt) {
+  const d = simDt;
+  if (phase === 'idle') { setPlumes(0, false); return; }
+  tPh += d;
+  const u = clamp01(tPh / PH[phase]);
+  const barge = mode === 'barge';
+  switch (phase) {
+    case 'sep':
+      alt = 66 + 4 * u; vel = 2280 - 80 * u; xKm = 85 + 8 * u;
+      rot = 0.3 * u; gLoad = 0.2; heat = 0;
+      if (u >= 1) enterPhase('flip');
+      break;
+    case 'flip': {
+      alt = 70 + 3.5 * u; vel = 2200 - 80 * u; xKm = 93 + 7 * u;
+      rot = Math.PI * (u * u * (3 - 2 * u));   // smoothstep 翻转
+      gLoad = 0;
+      if (Math.random() < d * 14) {
+        const side = Math.random() < 0.5 ? 1 : -1;
+        stageG.getWorldPosition(tmpV);
+        spawnPuff(new THREE.Vector3(tmpV.x + side * 0.8, tmpV.y + 5.5, 0),
+          new THREE.Vector3(side * (1.5 + Math.random()), 0.5, (Math.random() - 0.5)), 0.9, 0.8);
+      }
+      if (u >= 1) enterPhase(mode === 'rtls' ? 'boost' : 'coast');
+      break;
+    }
+    case 'boost':
+      alt = 73.5 + 1.5 * Math.sin(u * Math.PI); vel = 2120 - 570 * u; xKm = 100 - 30 * u;
+      rot = Math.PI; gLoad = 1.4; heat = 0;
+      setPlumes(3, true);
+      if (u >= 1) enterPhase('coast');
+      break;
+    case 'coast': {
+      const b = mode === 'barge';
+      alt = (b ? 73.5 : 73) + (b ? -17.5 : -13) * u;
+      vel = (b ? 2120 : 1550) + (b ? -770 : -400) * u;
+      xKm = (b ? 100 : 70) + (b ? 190 : -48) * u;
+      rot = Math.PI * (1 - clamp01((u - 0.5) / 0.4));   // 后半段再翻转回引擎朝下
+      gLoad = 0.1;
+      if (u > 0.35) finsDep = clamp01((tPh - PH.coast * 0.35) / 1.2);
+      setPlumes(0, false);
+      if (u >= 1) enterPhase('entry');
+      break;
+    }
+    case 'entry': {
+      alt = 60 - 24 * u; vel = 1350 - 730 * u; xKm = (barge ? 290 : 22) + (barge ? 18 : -14) * u;
+      rot = 0; gLoad = 2.2 + 1.8 * u;
+      heat = Math.pow(u, 1.5) * (0.8 + (snapAngle - 40) * 0.012);
+      setPlumes(3, true);
+      if (u >= 1) enterPhase('aero');
+      break;
+    }
+    case 'aero': {
+      alt = 3.4 + 32.6 * Math.pow(1 - u, 1.6);
+      vel = 290 + 330 * Math.pow(1 - u, 1.4);
+      xKm = (barge ? 308 : 8) - 6.5 * u;
+      gLoad = (1.5 + 3.3 * Math.pow(Math.sin(u * Math.PI), 1.2)) * (1 + (snapAngle - 40) * 0.01);
+      heat = Math.max(0, 0.55 - u * 1.4) * (0.8 + (snapAngle - 40) * 0.012);
+      finsDep = 1;
+      wobAmp = 0.02 + (1 - snapFin / 30) * 0.09;
+      setPlumes(0, false);
+      if (failArmed && u >= 0.5) { failArmed = false; enterPhase('tumble'); }
+      else if (u >= 1) enterPhase('land');
+      break;
+    }
+    case 'land': {
+      alt = 3.4 * Math.pow(1 - u, 1.8);
+      vel = doomed ? doomV + (290 - doomV) * Math.pow(1 - u, 1.2)
+        : 2.5 + 287.5 * Math.pow(1 - u, 1.2);
+      xKm = (barge ? 301.5 : 1.5) * (1 - u);
+      gLoad = 1.2 + 0.9 * Math.sin(u * Math.PI);
+      legsDep = clamp01((tPh - PH.land * 0.7) / 1.0);
+      wobAmp = 0.015;
+      setPlumes(1, true);
+      if (u >= 1) touchdown();
+      break;
+    }
+    case 'tumble': {
+      alt = Math.max(0.3, Math.max(alt, 6) * Math.pow(1 - u, 1.6));
+      vel = 320 + 120 * u; gLoad = 2.5;
+      rot = u * 1.1; wobAmp = 0.2; finsDep = 1;
+      setPlumes(0, false);
+      if (u >= 1) explode();
+      break;
+    }
+    case 'down':
+      alt = 0; vel = 0; gLoad = 0; heat = 0;
+      setPlumes(0, false);
+      if (u >= 1) enterPhase('idle');
+      break;
+    case 'boom':
+      gLoad = 0; heat = 0;
+      if (u >= 1) enterPhase('idle');
+      break;
+  }
+  /* 姿态抖动 */
+  const wobble = wobAmp * Math.sin(et * 9) + wobAmp * 0.6 * Math.sin(et * 23);
+  stageG.rotation.z = rot + wobble;
+  stageG.position.set(-xKm * SCALE_X, alt * SCALE_Y + STAGE_H / 2, 0);
+  /* 栅格舵 / 着陆腿展开 */
+  for (const fp of finPivots) fp.rotation.z = 1.35 - 1.29 * finsDep;
+  for (const lp of legPivots) lp.rotation.z = -0.06 - 0.30 * legsDep;
+  /* 热辉光 */
+  M.heatGlow.opacity = heat * 0.9;
+  /* 弹道轨迹 */
+  if (playing && d > 0 && (tPh % 0.1) < d && pathCnt < PATH_N) {
+    pathPos[pathCnt * 3] = stageG.position.x;
+    pathPos[pathCnt * 3 + 1] = stageG.position.y;
+    pathPos[pathCnt * 3 + 2] = 0;
+    pathCnt++;
+    pathGeo.setDrawRange(0, pathCnt);
+    pathGeo.attributes.position.needsUpdate = true;
+  }
+  if (playing) pushSnd(clamp01(alt / 70), clamp01(vel / 2300));
+}
+/* ---------------- 每帧可视 ---------------- */
+function sceneFrame(et, dt) {
+  /* 驳船随浪微晃(RTLS 模式沉入背景) */
+  const barge = mode === 'barge';
+  bargeG.visible = barge;
+  padG.visible = !barge;
+  bargeG.position.y = Math.sin(et * 1.1) * 0.045;
+  bargeG.rotation.z = Math.sin(et * 0.8) * 0.012;
+  /* 白泡更新 */
+  for (const p of puffs) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    if (p.life <= 0) { p.sp.visible = false; continue; }
+    p.sp.position.addScaledVector(p.vel, dt);
+    p.sp.material.opacity = 0.8 * (p.life / p.max);
+  }
+  /* 爆炸粒子与火球 */
+  if (boomPts.visible) {
+    const arr = boomGeo.attributes.position.array;
+    for (let i = 0; i < BOOM_N; i++) {
+      const v = boomVel[i];
+      boomPos[i * 3] += v.x * dt;
+      boomPos[i * 3 + 1] += v.y * dt;
+      boomPos[i * 3 + 2] += v.z * dt;
+      v.y -= 6 * dt;
+    }
+    boomGeo.attributes.position.needsUpdate = true;
+    M.debris.opacity = Math.max(0, 0.95 * (1 - tPh / (PH.boom * 0.9)));
+    const fs = 1 + tPh * 14;
+    boomSpr.scale.set(fs, fs, 1);
+    M.boom.opacity = Math.max(0, 1 - tPh / 1.6);
+    if (tPh > PH.boom * 0.9) boomPts.visible = false;
+  }
+  /* 外壳透视 */
+  M.body.opacity = tglCut.checked ? 0.3 : 1;
+  M.body.depthWrite = !tglCut.checked;
+  loxPipe.visible = rp1Pipe.visible = tglCut.checked;
+  for (const rod of rods) rod.visible = tglCut.checked;
+  pathLine.visible = tglPath.checked && pathCnt > 1;
+  /* 相机跟随飞行中的箭体,任务结束后缓回步骤目标 */
+  const inFlight = !['idle', 'down', 'boom'].includes(phase);
+  if (inFlight) {
+    camV.set(stageG.position.x, stageG.position.y + 1.2, stageG.position.z);
+    tgtVec.lerp(camV, 0.06);
+  } else {
+    camV.fromArray(STEPS[scenario].tgt);
+    tgtVec.lerp(camV, 0.02);
+  }
+}
+/* ---------------- 示波器:高度 + 速度 ---------------- */
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L(`高度(绿,0-70 km)/ 速度(蓝,0-2300 m/s)· ${phaseName()} · 触地判定 6 m/s`,
+    `altitude (green, 0-70 km) / speed (blue, 0-2300 m/s) - ${phaseName()} - touchdown limit 6 m/s`), 4 * dpr, 10 * dpr);
+  const mid = ch * 0.88, hh = ch * 0.74;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = Math.max(1, dpr);
+  scopeCtx.beginPath(); scopeCtx.moveTo(0, mid); scopeCtx.lineTo(cw, mid);
+  scopeCtx.stroke();
+  scopeCtx.strokeStyle = 'rgba(255,107,107,.6)';
+  scopeCtx.setLineDash([4 * dpr, 4 * dpr]);
+  const ty = mid - clamp01(6 / 2300) * hh * 1.1 * 0.4;
+  scopeCtx.beginPath(); scopeCtx.moveTo(0, ty); scopeCtx.lineTo(cw, ty);
+  scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  drawTrace(sndT, 'rgba(120,235,160,.95)', mid, hh * 1.1, dpr);
+  drawTrace(sndA, 'rgba(120,168,255,.9)', mid, hh * 1.1, dpr);
+}
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateFormula() {
+  const need = NEED[mode];
+  const ok = dvAvail >= need;
+  const aDemo = phase === 'land' ? vel * vel / (2 * Math.max(alt * 1000, 1)) : 290 * 290 / (2 * 3400);
+  formulaEl.innerHTML =
+    L(`Δv 账本:可用 = 2800·ln((26+410×<b>${snapProp.toFixed(1)}%</b>)/26) = <b>${Math.round(dvAvail)} m/s</b>,` +
+      `需求 = <b>${need} m/s</b>(boostback ${mode === 'rtls' ? 800 : 150} + 再入 650 + 着陆 350)→ ${ok ? '<b>达标</b>' : `<b style="color:#ff7b7b">亏 ${Math.round(need - dvAvail)} m/s,预计坠毁</b>`} · 载荷代价 ≈ <b>−${payloadPen.toFixed(0)}%</b>`,
+      `Δv ledger: available = 2800·ln((26+410×<b>${snapProp.toFixed(1)}%</b>)/26) = <b>${Math.round(dvAvail)} m/s</b> vs` +
+      ` required = <b>${need} m/s</b> (boostback ${mode === 'rtls' ? 800 : 150} + entry 650 + landing 350) -> ${ok ? '<b>closes</b>' : `<b style="color:#ff7b7b">short ${Math.round(need - dvAvail)} m/s, crash expected</b>`} - payload cost ≈ <b>−${payloadPen.toFixed(0)}%</b>`) +
+    '<br>' +
+    L(`hoverslam:a = v²/(2h) = ${phase === 'land' ? `<b>${aDemo.toFixed(1)} m/s²</b>(v=${vel.toFixed(0)} m/s @ h=${(alt * 1000).toFixed(0)} m)` : `<b>${aDemo.toFixed(1)} m/s²</b>(典型点火 v≈290 m/s @ h≈3.4 km)`} · 中心发动机深度节流 <b>40-57%</b>,关机时序以毫秒计`,
+      `hoverslam: a = v²/(2h) = ${phase === 'land' ? `<b>${aDemo.toFixed(1)} m/s²</b> (v=${vel.toFixed(0)} m/s @ h=${(alt * 1000).toFixed(0)} m)` : `<b>${aDemo.toFixed(1)} m/s²</b> (typical ignition v≈290 m/s @ h≈3.4 km)`} - center engine deep-throttled to <b>40-57%</b>, cutoff in milliseconds`) +
+    '<br>' +
+    L(`触地:着陆腿吸收最后 <b>2-6 m/s</b> · 导航圆 <b>10 m</b> 级 · 落点偏差估计 <b>±${(Math.abs(snapFin - 15) * 1.8 + (mode === 'barge' ? 5.5 : 1.0)).toFixed(1)} m</b> · Merlin 单机复用 <b>20+</b> 次,翻新 ≪ 新造`,
+      `touchdown: legs absorb the last <b>2-6 m/s</b> · navigation circle ~<b>10 m</b> · estimated dispersion <b>±${(Math.abs(snapFin - 15) * 1.8 + (mode === 'barge' ? 5.5 : 1.0)).toFixed(1)} m</b> · one Merlin reused <b>20+</b> times, refurbish ≪ rebuild`);
+}
+function updateStats() {
+  stA.innerHTML = alt < 1 ? (alt * 1000).toFixed(0) + '<small> m</small>' : alt.toFixed(1) + '<small> km</small>';
+  stA.className = 'v ' + (alt < 0.05 && phase !== 'idle' && phase !== 'down' && phase !== 'boom' ? 'warn' : 'ok');
+  stB.innerHTML = vel.toFixed(0) + '<small> m/s</small>';
+  stB.className = 'v ' + (phase === 'land' ? (vel <= 6 ? 'ok' : 'warn') : 'ok');
+  stC.innerHTML = gLoad.toFixed(1) + '<small> g</small>';
+  stC.className = 'v ' + (gLoad > 4 ? 'warn' : 'ok');
+  stD.innerHTML = Math.round(dvLeft) + '<small> m/s</small>';
+  stD.className = 'v ' + (deficit > 0 ? 'bad' : dvLeft < 350 && !['idle', 'down'].includes(phase) ? 'warn' : 'ok');
+  const propLeft = dvAvail > 0 ? dvLeft / dvAvail * snapProp : 0;
+  stE.innerHTML = propLeft.toFixed(1) + '<small> %</small>';
+  stE.className = 'v ' + (propLeft < 1 && !['idle', 'down'].includes(phase) ? 'bad' : 'warn');
+  stF.innerHTML = phase === 'idle' ? (verdict || L('待机', 'idle')) : phaseName();
+  stF.className = 'v ' + (phase === 'boom' || phase === 'tumble' || verdict.includes('RUD') ? 'bad' : phase === 'land' ? 'warn' : phase === 'down' || verdict ? 'ok' : '');
+}
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  mode = 'barge'; failArmed = false;
+  elProp.value = '6'; elAngle.value = '40'; elFin.value = '15';
+  updateSliderLabels();
+  startMission();
+}
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  sceneFrame(et, dt);
+  /* 步骤高亮(呼吸脉冲) */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm && hlm.emissive) hlm.emissiveIntensity = 0.55 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) { if (typeof drawScope === 'function') drawScope(); }
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+refreshLabels();   // 标签此时已注册,补一次初始可见性(?labels=0)
+const m0 = qs.get('mode');
+if (m0 === 'rtls') mode = 'rtls';
+refreshActionButtons();
+startMission();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
