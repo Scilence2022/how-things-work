@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATM 与钞票通道 · 一张纸的安检流水线</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#3d7ea6;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#2a6183;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="ATM 与钞票通道:一张纸的安检流水线" data-en="The ATM: A Security Line for Banknotes">ATM 与钞票通道:一张纸的安检流水线</h1>
+  <div class="sub" data-zh="把钱塞进取款机的一瞬间,一张纸就开始闯五关:摩擦辊(大额机型配真空吸附)把叠在一起的钞票逐张分离,一次只放一张上皮带;皮带以约 1 m/s 夹送前进;磁头扫过磁性墨水印出的图案;红外透光传感器量厚度与水印——双张意味着厚度翻倍(阈值约 1.5 倍单张),当场拦截原路退回;沿边双传感器用计时差判歪斜,CIS 接触图像传感器留档清点。全部通过才准入钞箱,任何一关不过都退回持卡人——「先验后收」。取款走 escrow 托架:钞票先被拉到暂存位请你点收,15-30 秒不取,机器自动收回注销,防止遗落与纠纷;存款同理。循环存款机更进一步:验讫的存款直接转入付钞箱再次付出,补钞频率大降。数字:入钞速度典型 4-8 张/秒,escrow 超时 15-30 秒,单箱容量 2000-3000 张。演示里跟着一张钞票穿过五道传感器,每道依次点亮判定;塞进双张看通道当场卡停退钞;按「超时收回」看取款无人领取、倒计时结束钞票被吸回注销。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="The moment you push cash into the machine, every note starts a five-gate security line: friction rollers (vacuum pickups on larger units) separate stacked notes so exactly one at a time enters the belt; the belt pinches them forward at about 1 m/s; a magnetic head reads the pattern printed in magnetic ink; an infrared transmission sensor measures thickness and watermark - a double note means double thickness (threshold around 1.5x a single), jamming the channel and returning the note on the spot; twin edge sensors judge skew by timing differences while a CIS contact imager archives the count. Only notes passing every gate enter the cassette - any failure sends the note back to the cardholder: verify first, accept later. Withdrawals use an escrow holder: notes are pulled to a staging position for you to take; if nobody collects within 15-30 seconds the machine swallows them back and cancels the transaction, preventing losses and disputes. Deposits work the same way. Cash-recycling machines go further: verified deposits pass straight into the payout cassette to be paid out again, cutting refill trips dramatically. The numbers: deposit speeds of 4-8 notes per second, escrow timeouts of 15-30 s, 2000-3000 notes per cassette. In the demo, follow one note through five sensors that light up in turn; insert a double to watch the channel jam and spit it back; press timeout retract to see unclaimed withdrawal notes get sucked back and cancelled. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">把钱塞进取款机的一瞬间,一张纸就开始闯五关:摩擦辊(大额机型配真空吸附)把叠在一起的钞票逐张分离,一次只放一张上皮带;皮带以约 1 m/s 夹送前进;磁头扫过磁性墨水印出的图案;红外透光传感器量厚度与水印——双张意味着厚度翻倍(阈值约 1.5 倍单张),当场拦截原路退回;沿边双传感器用计时差判歪斜,CIS 接触图像传感器留档清点。全部通过才准入钞箱,任何一关不过都退回持卡人——「先验后收」。取款走 escrow 托架:钞票先被拉到暂存位请你点收,15-30 秒不取,机器自动收回注销,防止遗落与纠纷;存款同理。循环存款机更进一步:验讫的存款直接转入付钞箱再次付出,补钞频率大降。数字:入钞速度典型 4-8 张/秒,escrow 超时 15-30 秒,单箱容量 2000-3000 张。演示里跟着一张钞票穿过五道传感器,每道依次点亮判定;塞进双张看通道当场卡停退钞;按「超时收回」看取款无人领取、倒计时结束钞票被吸回注销。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="已验张数" data-en="verified">已验张数</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="拦截数" data-en="rejected">拦截数</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="escrow 状态" data-en="escrow">escrow 状态</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="钞箱余量" data-en="cassette">钞箱余量</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="通道速度" data-en="belt speed">通道速度</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="通道状态" data-en="channel state">通道状态</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip g" data-zh="摩擦辊分离:一次只放一张" data-en="friction separator: one note at a time">摩擦辊分离:一次只放一张</span>
+    <span class="chip b" data-zh="皮带 ~1 m/s 夹送 + 五道传感器" data-en="belt at ~1 m/s + five sensors">皮带 ~1 m/s 夹送 + 五道传感器</span>
+    <span class="chip r" data-zh="双张 = 厚度翻倍,当场拦截" data-en="double note = 2x thickness, jammed at once">双张 = 厚度翻倍,当场拦截</span>
+    <span class="chip o" data-zh="escrow 暂存:先验后收,超时收回" data-en="escrow: verify first, timeout swallows it back">escrow 暂存:先验后收,超时收回</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-xray" data-zh="五关透视" data-en="five-gate x-ray">五关透视</button>
+    <button class="abtn" id="btn-dbl" data-zh="双张拦截" data-en="insert a double">双张拦截</button>
+    <button class="abtn" id="btn-esc" data-zh="超时收回" data-en="timeout retract">超时收回</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="存入张数" data-en="notes to deposit">存入张数</label><input id="vCnt" type="range" min="1" max="8" step="1" value="4"><span class="val" id="vCntVal"></span></div>
+  <div class="row"><label data-zh="escrow 倒计时" data-en="escrow timeout">escrow 倒计时</label><input id="vEsc" type="range" min="5" max="30" step="1" value="20"><span class="val" id="vEscVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="传感器信号示波" data-en="sensor scope">传感器信号示波</span></label>
+        <label><input id="tglCut" type="checkbox" checked> <span data-zh="外壳透视" data-en="shell x-ray">外壳透视</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../cross-belt-sorter/" data-zh="交叉带分拣机" data-en="cross-belt sorter">交叉带分拣机</a>
+    <a href="../belt-drive/" data-zh="带传动" data-en="belt drive">带传动</a>
+    <a href="../fingerprint-sensor/" data-zh="指纹传感器" data-en="fingerprint sensor">指纹传感器</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(11, 8, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fillL = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fillL.position.set(-7, 5, -6);
+scene.add(fillL);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 1.4, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(300), sndA = new Float32Array(300);   // 双通道环形缓冲
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= ATM 钞票通道 ================= */
+const TITLE_ZH = 'ATM 与钞票通道 · 一张纸的安检流水线';
+const TITLE_EN = 'The ATM · A Security Line for Banknotes';
+
+/* 状态 */
+let noteCnt = 4;          // 本轮存入张数
+let escT = 20;            // escrow 超时 s
+let st = 'idle';          // idle feed run jam reject escrow collect withdraw retract
+let tSt = 0;
+let fedIdx = 0;           // 本轮已处理张数
+let noteX = -9, isDouble = false, dblArmed = false;
+let escLeft = 0, withdrawShot = false;
+let verified = 0, rejected = 0, cassette = 2200;
+let irSig = 0.06, magSig = 0, beltV = 0;   // 显示用 1 m/s ≙ 3.2 u/s
+let xray = false;
+const V_U = 3.2;          // 皮带速度(单位/s)
+const X_ESCROW = 4.6, X_CAS = 7.0, X_FEED_END = -6.3;
+const BELT_Y = 1.12;
+
+function stateName() {
+  return L({
+    idle: '待机', feed: '分离入通道', run: '五关验钞中', jam: '双张!当场拦截',
+    reject: '原路退钞', escrow: 'escrow 暂存点收', collect: '验讫入钞箱',
+    withdraw: '取款出钞至 escrow', retract: '超时收回注销',
+  }[st], {
+    idle: 'idle', feed: 'separating', run: 'verifying', jam: 'DOUBLE! jammed',
+    reject: 'returning', escrow: 'escrow staging', collect: 'accepted to cassette',
+    withdraw: 'paying to escrow', retract: 'timeout - retracted',
+  }[st]);
+}
+function escrowText() {
+  if (st === 'escrow') return L(`倒计时 ${Math.max(0, escLeft).toFixed(1)} s`, `${Math.max(0, escLeft).toFixed(1)} s left`);
+  if (st === 'collect') return L('已入箱', 'accepted');
+  if (st === 'retract') return L('已收回注销', 'retracted & cancelled');
+  if (st === 'withdraw') return L('出钞中', 'paying out');
+  return L('空闲', 'idle');
+}
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.4, depthWrite: false }),
+  body: mat(0x39424d, { roughness: 0.5, metalness: 0.4 }),
+  shell: mat(0x8b97a6, { roughness: 0.35, metalness: 0.6, transparent: true, opacity: 0.16, depthWrite: false }),
+  belt: mat(0x23282f, { roughness: 0.85, metalness: 0.1 }),
+  roller: mat(0xb8c4d0, { roughness: 0.35, metalness: 0.8 }),
+  note: mat(0x5f9e8f, { roughness: 0.7, metalness: 0.05, emissive: 0x1d4038, emissiveIntensity: 0.2 }),
+  noteD: mat(0x4c8a7c, { roughness: 0.7, metalness: 0.05, emissive: 0x16332c, emissiveIntensity: 0.2 }),
+  lampG: mat(0x7bd88f, { roughness: 0.3, metalness: 0, emissive: 0x2f9e5f, emissiveIntensity: 0.25 }),
+  lampR: mat(0xff6b6b, { roughness: 0.3, metalness: 0, emissive: 0xc22a2a, emissiveIntensity: 0.25 }),
+  irBeam: new THREE.MeshBasicMaterial({ color: 0xff5a4a, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }),
+  edgeBeam: new THREE.MeshBasicMaterial({ color: 0x6fc0ff, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false }),
+  escrow: mat(0x8a6d3a, { roughness: 0.5, metalness: 0.4 }),
+  cash: mat(0x4c8a7c, { roughness: 0.7, metalness: 0.05, emissive: 0x16332c, emissiveIntensity: 0.2 }),
+};
+const HL = { sep: M.roller, mag: M.body, ir: M.irBeam, edge: M.edgeBeam, esc: M.escrow, cyc: M.body };
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.body.color.set(dark ? 0x39424d : 0x9aa6b4);
+}
+
+/* ---------------- 场景:入钞通道全景 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(46, 0.12, 26), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(32, 16, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* 机架底座 + 半透明外壳 */
+const base = new THREE.Mesh(new THREE.BoxGeometry(18.5, 0.5, 2.6), M.body);
+base.position.set(-0.3, 0.3, 0);
+scene.add(base);
+const shellTop = new THREE.Mesh(new THREE.BoxGeometry(17.6, 0.06, 2.0), M.shell);
+shellTop.position.set(-0.5, 2.15, 0);
+scene.add(shellTop);
+for (const zs of [1.05, -1.05]) {
+  const side = new THREE.Mesh(new THREE.BoxGeometry(17.6, 1.9, 0.05), M.shell);
+  side.position.set(-0.5, 1.2, zs);
+  scene.add(side);
+}
+/* 皮带 + 托辊 */
+const belt = new THREE.Mesh(new THREE.BoxGeometry(15.6, 0.06, 1.0), M.belt);
+belt.position.set(-0.9, BELT_Y, 0);
+scene.add(belt);
+const rollers = [];
+const rollGeo = new THREE.CylinderGeometry(0.15, 0.15, 1.15, 14);
+for (let i = 0; i < 9; i++) {
+  const r = new THREE.Mesh(rollGeo, M.roller);
+  r.rotation.x = Math.PI / 2;
+  r.position.set(-7.6 + i * 1.85, BELT_Y - 0.13, 0);
+  scene.add(r);
+  rollers.push(r);
+}
+/* 入钞口:纸钞叠 + 摩擦辊对(第一关:分离) */
+const hopper = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.0, 1.7), M.body);
+hopper.position.set(-8.3, 1.05, 0);
+scene.add(hopper);
+const hopperStack = new THREE.Group();
+scene.add(hopperStack);
+for (let i = 0; i < 5; i++) {
+  const n = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.03, 0.72), M.cash);
+  n.position.set(-8.3, 0.55 + i * 0.045, 0);
+  n.rotation.y = (Math.random() - 0.5) * 0.06;
+  hopperStack.add(n);
+}
+const sepRollerA = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 1.3, 14), M.roller);
+sepRollerA.rotation.x = Math.PI / 2;
+sepRollerA.position.set(-7.5, BELT_Y + 0.34, 0);
+scene.add(sepRollerA);
+const sepRollerB = sepRollerA.clone();
+sepRollerB.position.y = BELT_Y + 0.01;
+scene.add(sepRollerB);
+/* 第二关:磁头(磁性墨水) */
+const magYoke = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.5, 0.3), M.body);
+magYoke.position.set(-4.9, BELT_Y + 0.55, 0);
+scene.add(magYoke);
+const magHead = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.12, 0.5), M.roller);
+magHead.position.set(-4.9, BELT_Y + 0.14, 0);
+scene.add(magHead);
+/* 第三关:红外透光(厚度/双张) */
+const irTop = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.26, 0.34), M.body);
+irTop.position.set(-2.5, BELT_Y + 0.62, 0);
+scene.add(irTop);
+const irBot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.26, 0.34), M.body);
+irBot.position.set(-2.5, BELT_Y - 0.32, 0);
+scene.add(irBot);
+const irBeam = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.85, 0.16), M.irBeam);
+irBeam.position.set(-2.5, BELT_Y + 0.16, 0);
+scene.add(irBeam);
+/* 第四关:沿边双传感器(歪斜) */
+const edgeLamp = [];
+for (const zs of [0.62, -0.62]) {
+  const e = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.22), M.body);
+  e.position.set(0.2, BELT_Y + 0.4, zs);
+  scene.add(e);
+  edgeLamp.push(e);
+  const eb = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, Math.abs(zs) * 2 - 0.6), M.edgeBeam);
+  eb.position.set(0.2, BELT_Y + 0.18, 0);
+  scene.add(eb);
+}
+/* 第五关:CIS 接触图像 */
+const cisBar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 1.1), M.body);
+cisBar.position.set(2.9, BELT_Y + 0.66, 0);
+scene.add(cisBar);
+const cisLens = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.1, 12), M.roller);
+cisLens.rotation.z = Math.PI / 2;
+cisLens.position.set(2.9, BELT_Y + 0.53, 0);
+scene.add(cisLens);
+/* 传感器指示灯:每个站点一盏 */
+function lampAt(x, z) {
+  const lm = new THREE.MeshStandardMaterial({ color: 0x7bd88f, roughness: 0.3, metalness: 0,
+    emissive: 0x2f9e5f, emissiveIntensity: 0.25 });
+  const lp = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), lm);
+  lp.position.set(x, BELT_Y + 1.05, z);
+  scene.add(lp);
+  return lm;
+}
+const STATIONS = [
+  { id: 'sep', x: -7.5, lamp: lampAt(-7.5, 0.95) },
+  { id: 'mag', x: -4.9, lamp: lampAt(-4.9, 0.95) },
+  { id: 'ir', x: -2.5, lamp: lampAt(-2.5, 0.95) },
+  { id: 'edge', x: 0.2, lamp: lampAt(0.2, 0.95) },
+  { id: 'cis', x: 2.9, lamp: lampAt(2.9, 0.95) },
+];
+for (const s of STATIONS) s.flash = 0, s.verdict = 0;
+/* escrow 托架 */
+const escTray = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.1, 1.3), M.escrow);
+escTray.position.set(X_ESCROW, BELT_Y - 0.32, 0);
+scene.add(escTray);
+for (const zs of [0.65, -0.65]) {
+  const w = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.3, 0.06), M.escrow);
+  w.position.set(X_ESCROW, BELT_Y - 0.14, zs);
+  scene.add(w);
+}
+const escLampM = new THREE.MeshStandardMaterial({ color: 0xffb45f, roughness: 0.3, metalness: 0,
+  emissive: 0xff8c1e, emissiveIntensity: 0.3 });
+const escLamp = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), escLampM);
+escLamp.position.set(X_ESCROW, BELT_Y + 1.05, 0);
+scene.add(escLamp);
+/* 钞箱(循环存款机的付钞/收钞箱) */
+const casBox = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.5, 1.7), M.body);
+casBox.position.set(X_CAS + 0.9, 0.85, 0);
+scene.add(casBox);
+const casStack = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 1.3), M.cash);
+casStack.position.set(X_CAS + 0.9, 0.35, 0);
+scene.add(casStack);
+/* 运动中的钞票(双张时第二张贴上) */
+const noteG = new THREE.Group();
+scene.add(noteG);
+const noteBase = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.03, 0.8), M.note);
+noteG.add(noteBase);
+const noteFrame = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.034, 0.66), M.noteD);
+noteG.add(noteFrame);
+const noteOval = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.04, 14), M.cash);
+noteOval.position.set(-0.35, 0, 0);
+noteG.add(noteOval);
+const noteDbl = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.03, 0.8), M.noteD);
+noteDbl.position.y = 0.05;
+noteDbl.position.z = 0.05;
+noteDbl.visible = false;
+noteG.add(noteDbl);
+noteG.position.set(noteX, BELT_Y + 0.09, 0);
+noteG.visible = false;
+/* 钞票位置同步 */
+function placeNote() {
+  noteG.position.x = noteX;
+  const inEscrow = st === 'escrow';
+  noteG.position.y = inEscrow ? BELT_Y - 0.2 : BELT_Y + 0.09;
+}
+
+camera.position.set(4.5, 6.5, 13.5);
+controls.target.set(-0.5, 1.4, 0);
+tgtVec.set(-0.5, 1.4, 0);
+
+/* ---------------- 标签 ---------------- */
+addLabel(() => L(`第一关 分离:摩擦辊(大额机型配真空吸附)把叠钞逐张拨出——一次只准一张上皮带`,
+  `gate 1 separation: friction rollers (vacuum pickups on larger units) fan the stack out - exactly one note enters the belt at a time`),
+  () => 'g', new THREE.Vector3(-8.3, 2.6, 1.2));
+addLabel(() => L(`第二关 磁头:钞票墨水含磁性氧化物,图案本身就是一条可读的磁信号——假钞第一道鬼门关`,
+  `gate 2 magnetic head: note ink carries magnetic oxide, so the printed pattern is itself a readable magnetic signature - the first wall for counterfeits`),
+  () => 'b', new THREE.Vector3(-4.9, 2.5, 0.9));
+addLabel(() => L(`第三关 红外透光测厚度:双张 = 厚度翻倍,阈值约 1.5 倍单张——${st === 'jam' ? '当场拦截!' : '正常通行'}`,
+  `gate 3 infrared thickness: a double reads twice the thickness, threshold about 1.5x a single - ${st === 'jam' ? 'jammed on the spot!' : 'passing normally'}`),
+  () => st === 'jam' ? 'bad' : 'r', new THREE.Vector3(-2.5, 2.5, 0.9));
+addLabel(() => L(`第四关 沿边双传感器:两边见钞的时间差就是歪斜角 · 第五关 CIS 接触图像:整幅留档、清点与冠字识别`,
+  `gate 4 twin edge sensors: the arrival-time difference between the two sides is the skew angle - gate 5 CIS contact image: full archival scan, counting and serial reading`),
+  () => 'e', new THREE.Vector3(1.6, 2.6, 1.0));
+addLabel(() => L(`escrow 托架:钞票先拉到暂存位请你点收——${st === 'escrow' ? `倒计时 ${Math.max(0, escLeft).toFixed(1)} s,不取自动收回注销` : '15-30 秒不取即收回,先验后收'}`,
+  `escrow holder: notes are staged for you to take - ${st === 'escrow' ? `${Math.max(0, escLeft).toFixed(1)} s countdown, then auto-retract and cancel` : 'unclaimed after 15-30 s, the machine swallows them back: verify first, accept later'}`),
+  () => st === 'retract' ? 'bad' : 'w', new THREE.Vector3(X_ESCROW, 2.7, 0.8));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'sep', tgt: [-7.8, 1.6, 3.2],
+    b: '分离与夹送:一次只放一张', be: 'Separation and transport: one note at a time',
+    d: '一沓钞票塞进入钞口,第一道工序是「拆开」:摩擦辊以橡胶面咬住最上面一张、下方皮带以反向速度拖住其余,两张纸的命运在几毫米的辊隙里分岔;大额存款机用真空吸附把单张「吸」出来。之后是夹送:上下两条皮带以约 1 m/s 的恒速夹着钞票前进——恒速是后面所有测量的前提,磁读数、厚度、计时都以它为标尺。',
+    de: 'A wad of cash enters, and the first job is to take it apart: a friction roller grips the top note with a rubber face while the belt below holds the rest back at a different speed - two notes destiny diverges in a gap of millimeters; larger deposit units use vacuum pickups to lift a single sheet out. Then transport: upper and lower belts pinch the note forward at a constant 1 m/s - the constant speed is the ruler for everything downstream: magnetic readings, thickness, timing.' },
+  { hl: 'mag', tgt: [-4.9, 1.8, 3.0],
+    b: '磁性墨水:会说话的图案', be: 'Magnetic ink: a pattern that speaks',
+    d: '真钞的部分油墨掺有磁性氧化物(氧化铁微粉),人眼只看到深色花纹,磁头看到的却是一条随位置变化的磁场曲线——图案本身就是防伪特征。磁头扫过时把这条曲线与模板比对:位置、峰值序列不对,立刻判假。这是五关里的「内容关」,与后面的物理测量互为备份。',
+    de: 'Parts of a genuine note print in ink loaded with magnetic oxide (fine iron oxide powder): the eye sees dark patterns, but a magnetic head sees a field curve that changes along the note - the printed pattern is itself an anti-counterfeit feature. As the head sweeps past, the curve is matched against templates: wrong positions or peak sequences, and the note fails at once. This is the content gate of the five, backing up the purely physical measurements that follow.' },
+  { hl: 'ir', tgt: [-2.5, 1.8, 3.0],
+    b: '厚度与双张:一张纸的身高检查', be: 'Thickness and doubles: a height check for paper',
+    d: '红外对射管横穿通道:一张钞票挡下的光量对应它的厚度与透光纹理(水印因此现形)。两张叠在一起的钞票厚度翻倍——判定阈值设在约 1.5 倍单张厚度,不到翻倍就报警,留出余量。双张是存款最常见的事故:通道立即卡停,钞票原路退出,宁可让你重放,也不替你数错钱。看示波器:单张一个台阶,双张直接撞线。',
+    de: 'An infrared pair shoots across the channel: the light a note blocks maps to its thickness and transmission texture (the watermark shows up here). Two notes stacked read twice the thickness - the trip level sits at about 1.5x a single note, alarm well before doubling. Doubles are the most common deposit accident: the channel jams instantly and the note retreats the way it came - better you re-insert it than the machine miscounts your money. Watch the scope: one step for a single, a slam into the line for a double.' },
+  { hl: 'edge', tgt: [1.4, 1.9, 3.2],
+    b: '歪斜与图像:几何与留档', be: 'Skew and imaging: geometry and the archive',
+    d: '沿边两只传感器分居通道两侧:斜着进来的钞票先碰到一边,两边见钞的时间差就是歪斜角——超过几度就判定可能卡钞或两张错位。最后的 CIS 接触图像传感器贴着钞票扫一整幅:清点、读冠字号码、留档——每一张通过的钱都有影像存证,纠纷时调得出来。',
+    de: 'Two sensors sit at opposite edges of the channel: a skewed note touches one side first, and the arrival-time difference between the two sides is the skew angle - a few degrees is already suspect, hinting at a jam or overlapping notes. Finally a CIS contact imager sweeps the full face: counting, serial-number reading, archival - every note that passes leaves an image on file, ready for any dispute.' },
+  { hl: 'esc', tgt: [X_ESCROW, 2.0, 3.0],
+    b: 'escrow 暂存:先验后收的保险栓', be: 'Escrow: verify first, accept later',
+    d: '全部五关通过,钞票也不直接进钞箱,而是先被拉到 escrow 托架——一个暂存位:取款时请你点收,存款时向你确认张数。15-30 秒无人理会,机器自动把钞票收回注销:防止你取了钱没拿走被人捡走,也防止「我说存了 10 张、机器说 9 张」的扯皮——一切以暂存位上的实物为准。取款不取被吸回、存款确认后才入箱,都是同一个思想:在争议可能发生之前,把决定权留在你手里。',
+    de: 'Even after all five gates, notes do not drop into the cassette directly - they are first pulled to the escrow holder, a staging position: for withdrawals you take them, for deposits you confirm the count. If 15-30 seconds pass with nobody acting, the machine swallows the notes back and cancels: so a forgotten withdrawal cannot be pocketed by the next customer, and "I deposited ten" versus "the machine counted nine" never happens - the physical stack at the escrow is the only truth. Retract on timeout, accept only after confirmation: the decision stays in your hands before any dispute can start.' },
+  { hl: 'cyc', tgt: [X_CAS, 1.6, 3.4],
+    b: '循环存款:钞票的日结加班', be: 'Cash recycling: the notes work the night shift',
+    d: '传统机器存款进保险箱、付钞从另一只箱出,押运车必须频繁来搬钱。循环存款机(cash recycling)把验讫的存款直接转入付钞箱:白天别人存进来的钱,晚上就能付给取款的人——钞票在机器里「上班」。补钞与清机频率大降,单箱 2000-3000 张的容量配合循环,一台机器能顶过去两台。你今天存进去的那张,可能今晚就从别的取款口出来了。',
+    de: 'Older machines take deposits into one safe and pay from another cassette, so armored trucks must shuttle cash back and forth. A cash-recycling machine routes verified deposits straight into the payout cassette: what one customer deposits by day is paid to another by night - the notes work shifts inside the machine. Refill and collection visits drop dramatically, and one 2000-3000-note cassette with recycling does the work of two machines. The note you deposited today may well leave through another slot tonight.' },
+];
+
+/* ---------------- 滑杆 / 按钮 ---------------- */
+const elCnt = document.getElementById('vCnt'), elCntVal = document.getElementById('vCntVal');
+const elEsc = document.getElementById('vEsc'), elEscVal = document.getElementById('vEscVal');
+const btnXray = document.getElementById('btn-xray'), btnDbl = document.getElementById('btn-dbl'), btnEsc = document.getElementById('btn-esc');
+const tglCut = document.getElementById('tglCut');
+function refreshActionButtons() {
+  btnXray.classList.toggle('on', xray);
+  btnDbl.classList.toggle('on', dblArmed);
+}
+function updateSliderLabels() {
+  elCntVal.textContent = noteCnt.toFixed(0) + ' ' + L('张', 'notes');
+  elEscVal.textContent = escT.toFixed(0) + ' s';
+  refreshActionButtons();
+}
+elCnt.addEventListener('input', () => {
+  noteCnt = +elCnt.value;
+  if (st === 'idle') fedIdx = 0;
+  updateSliderLabels();
+});
+elEsc.addEventListener('input', () => { escT = +elEsc.value; updateSliderLabels(); });
+btnXray.addEventListener('click', () => { xray = !xray; refreshActionButtons(); updateFormula(); });
+btnDbl.addEventListener('click', () => {
+  dblArmed = !dblArmed;
+  refreshActionButtons(); updateFormula();
+});
+btnEsc.addEventListener('click', () => {
+  if (st !== 'idle') return;
+  st = 'withdraw'; tSt = 0; noteX = X_CAS; isDouble = false;
+  noteDbl.visible = false; noteG.visible = true;
+  placeNote();
+  updateFormula();
+});
+
+/* ---------------- 状态机 ---------------- */
+function startNext() {
+  if (fedIdx >= noteCnt) { fedIdx = 0; }
+  isDouble = dblArmed;
+  if (dblArmed) { dblArmed = false; refreshActionButtons(); }
+  noteDbl.visible = isDouble;
+  noteX = -8.9; noteG.visible = true;
+  st = 'feed'; tSt = 0;
+  resetStations();
+  placeNote();
+}
+function finishNote(ok) {
+  noteG.visible = false;
+  if (ok) { verified++; cassette = Math.min(3000, cassette + 1); }
+  else rejected++;
+  fedIdx++;
+  st = 'idle'; tSt = 0;
+}
+function runModes(simDt) {
+  const d = simDt;
+  tSt += d;
+  let moving = false;
+  if (st === 'idle') {
+    beltV = 0;
+    if (tSt > 1.1) startNext();
+  } else if (st === 'feed') {
+    moving = true;
+    noteX += 3.5 * d;
+    passStation('sep');
+    if (noteX >= X_FEED_END) { st = 'run'; tSt = 0; }
+  } else if (st === 'run') {
+    moving = true;
+    noteX += V_U * d;
+    for (const s of STATIONS) {
+      if (s.id !== 'sep') passStation(s.id);
+    }
+    if (noteX >= X_ESCROW) {
+      noteX = X_ESCROW; st = 'escrow'; tSt = 0; escLeft = escT;
+    }
+  } else if (st === 'jam') {
+    beltV = 0;
+    if (tSt > 1.0) { st = 'reject'; tSt = 0; }
+  } else if (st === 'reject') {
+    moving = true;
+    noteX -= 4.6 * d;
+    if (noteX <= -7.4) finishNote(false);
+  } else if (st === 'escrow') {
+    beltV = 0;
+    escLeft -= d;
+    if (escLeft <= 0) {
+      if (withdrawShot) { withdrawShot = false; st = 'retract'; tSt = 0; }
+      else st = 'collect';
+      tSt = 0;
+    }
+  } else if (st === 'collect') {
+    moving = true;
+    noteX += 3.0 * d;
+    if (noteX >= X_CAS) finishNote(true);
+  } else if (st === 'withdraw') {
+    moving = true;
+    noteX -= 4.2 * d;
+    if (noteX <= X_ESCROW) { noteX = X_ESCROW; st = 'escrow'; tSt = 0; escLeft = escT; }
+  } else if (st === 'retract') {
+    moving = true;
+    noteX += 4.6 * d;
+    if (noteX >= X_CAS) { noteG.visible = false; st = 'idle'; tSt = 0; }
+  }
+  beltV = moving ? V_U : (st === 'feed' ? 3.5 : 0);
+  placeNote();
+  /* 传感器信号 */
+  const under = (sx, w) => noteG.visible && Math.abs(noteX - sx) < w;
+  irSig = under(-2.5, 0.9) ? (isDouble ? 0.84 : 0.42) : 0.06 + 0.01 * Math.sin(et * 7);
+  magSig = under(-4.9, 0.9) ? 0.45 * Math.sin(noteX * 26) : 0;
+  if (playing) pushSnd(irSig, magSig);
+  /* 指示灯衰减 */
+  for (const s of STATIONS) if (s.flash > 0) s.flash -= d;
+  /* 托辊转动 */
+  if (moving || st === 'feed') {
+    const w = (beltV || V_U) / 0.15 * d;
+    for (const r of rollers) r.rotation.y -= w;
+    sepRollerA.rotation.y -= w * 1.4;
+    sepRollerB.rotation.y += w * 0.8;
+  }
+}
+function passStation(id) {
+  const s = STATIONS.find(q => q.id === id);
+  if (!s.passed && noteX >= s.x) {
+    s.passed = true; s.flash = 0.6;
+    if (id === 'ir' && isDouble) { st = 'jam'; tSt = 0; s.verdict = 2; }
+    else s.verdict = 1;
+  }
+  if (id === 'sep' && !noteG.visible) s.passed = false;
+}
+function resetStations() { for (const s of STATIONS) { s.passed = false; s.flash = 0; s.verdict = 0; } }
+
+/* ---------------- 每帧可视 ---------------- */
+function sceneFrame(et, simDt, dt) {
+  noteG.rotation.y = Math.sin(et * 0.5) * 0.015;
+  /* 红外光束:扫到钞票时增亮 */
+  const hot = noteG.visible && Math.abs(noteX + 2.5) < 0.9;
+  M.irBeam.opacity = hot ? 0.55 + 0.2 * Math.sin(et * 12) : 0.12;
+  M.irBeam.color.set(isDouble && hot ? 0xff2a2a : 0xff5a4a);
+  /* 边缘光束 */
+  M.edgeBeam.opacity = noteG.visible && Math.abs(noteX - 0.2) < 0.9 ? 0.5 : 0.15;
+  /* 指示灯 */
+  for (const s of STATIONS) {
+    const f = Math.max(0, s.flash);
+    s.lamp.emissiveIntensity = 0.22 + 2.2 * f;
+    s.lamp.emissive.set(s.verdict === 2 ? 0xff3030 : 0x2f9e5f);
+    s.lamp.color.set(s.verdict === 2 ? 0xff8a8a : 0x7bd88f);
+  }
+  /* escrow 灯:倒计时呼吸,临期急闪 */
+  if (st === 'escrow') {
+    const urgent = escLeft < 5;
+    escLampM.emissiveIntensity = urgent ? (Math.sin(et * 14) > 0 ? 2.4 : 0.3) : 1.2 + 0.6 * Math.sin(et * 5);
+  } else escLampM.emissiveIntensity = 0.3;
+  escLampM.emissive.set(st === 'retract' ? 0xc22a2a : 0xff8c1e);
+  /* 外壳透视 */
+  M.shell.opacity = tglCut.checked ? (xray ? 0.05 : 0.12) : 0.3;
+  /* 五关透视:传感器机件高亮 */
+  const xg = xray ? 0.5 + 0.3 * Math.sin(et * 4) : 0.1;
+  M.body.emissiveIntensity = 0.08;
+  magHead.material = M.roller;
+  /* 钞箱堆叠 */
+  casStack.scale.y = 1 + (cassette - 2200) * 0.012;
+  casStack.position.y = 0.35 + (cassette - 2200) * 0.003;
+  /* 双张标记 */
+  noteDbl.visible = isDouble && noteG.visible;
+}
+
+/* ---------------- 示波器:红外厚度 + 磁信号 ---------------- */
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L(`红外厚度信号(红,虚线=双张阈值 1.5×)/ 磁头信号(蓝)· ${stateName()}`,
+    `IR thickness signal (red, dashed = double threshold 1.5x) / magnetic head (blue) - ${stateName()}`), 4 * dpr, 10 * dpr);
+  const mid = ch * 0.88, hh = ch * 0.74;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = Math.max(1, dpr);
+  scopeCtx.beginPath(); scopeCtx.moveTo(0, mid); scopeCtx.lineTo(cw, mid); scopeCtx.stroke();
+  scopeCtx.strokeStyle = 'rgba(255,107,107,.6)';
+  scopeCtx.setLineDash([4 * dpr, 4 * dpr]);
+  scopeCtx.beginPath();
+  const ty = mid - 0.63 * hh * 1.1 * 0.4;
+  scopeCtx.moveTo(0, ty); scopeCtx.lineTo(cw, ty);
+  scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  drawTrace(sndT, 'rgba(255,120,110,.95)', mid, hh * 1.1, dpr);
+  drawTrace(sndA, 'rgba(120,168,255,.9)', mid, hh * 0.85, dpr);
+}
+
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`分离 → 皮带 <b>~1 m/s</b> 夹送 → 磁性墨水 → 红外厚度(双张阈值 <b>~1.5×</b> 单张)→ 边缘计时 + CIS 留档:五关全过才入箱`,
+      `separate -> belt <b>~1 m/s</b> -> magnetic ink -> IR thickness (double threshold <b>~1.5x</b> a single) -> edge timing + CIS archive: all five gates pass before the cassette`) +
+    '<br>' +
+    L(`入钞速度典型 <b>4-8 张/秒</b> · escrow 超时 <b>15-30 s</b>(当前设定 <b>${escT.toFixed(0)} s</b>)· 单箱容量 <b>2000-3000</b> 张`,
+      `deposit speed typically <b>4-8 notes/s</b> - escrow timeout <b>15-30 s</b> (set to <b>${escT.toFixed(0)} s</b>) - cassette capacity <b>2000-3000</b> notes`) +
+    '<br>' +
+    L(`${st === 'jam' ? '<b>双张拦截:通道卡停,原路退钞</b>' : st === 'retract' ? '<b>超时收回:钞票吸回注销</b>' : '先验后收:任何一关不过都退回持卡人'} · 循环存款:验讫存款直接转入付钞箱,补钞频率大降`,
+      (st === 'jam' ? '<b>double jammed: channel stopped, note returned</b>' : st === 'retract' ? '<b>timeout: notes sucked back and cancelled</b>' : 'verify first, accept later: any failed gate returns the note') +
+      ' - cash recycling: verified deposits pass straight into the payout cassette, slashing refill trips');
+}
+function updateStats() {
+  stA.innerHTML = verified.toFixed(0) + '<small> ' + L('张', '') + '</small>';
+  stA.className = 'v ok';
+  stB.innerHTML = rejected.toFixed(0) + '<small> ' + L('张', '') + '</small>';
+  stB.className = 'v ' + (rejected > 0 ? 'warn' : 'ok');
+  stC.innerHTML = escrowText();
+  stC.className = 'v ' + (st === 'retract' ? 'bad' : st === 'escrow' ? 'warn' : 'ok');
+  stD.innerHTML = cassette.toFixed(0) + '<small> ' + L('张', '') + '</small>';
+  stD.className = 'v ok';
+  const v = beltV / V_U;
+  stE.innerHTML = v.toFixed(1) + '<small> m/s</small>';
+  stE.className = 'v ' + (v > 0.9 ? 'ok' : 'warn');
+  stF.innerHTML = stateName();
+  stF.className = 'v ' + (st === 'jam' || st === 'retract' ? 'bad' : st === 'idle' ? 'warn' : 'ok');
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  noteCnt = 4; escT = 20;
+  st = 'idle'; tSt = 0; fedIdx = 0;
+  noteX = -9; isDouble = false; dblArmed = false;
+  noteG.visible = false; noteDbl.visible = false;
+  escLeft = 0; withdrawShot = false;
+  verified = 0; rejected = 0; cassette = 2200;
+  elCnt.value = '4'; elEsc.value = '20';
+  resetStations();
+  updateSliderLabels(); updateFormula();
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  sceneFrame(et, simDt, dt);
+  /* 步骤高亮(呼吸脉冲) */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm && hlm.emissive) hlm.emissiveIntensity = 0.55 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) { if (typeof drawScope === 'function') drawScope(); }
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+resetStations();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

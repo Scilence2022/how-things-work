@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>电池管理与均衡 · 木桶的电子保姆</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#4f8f6a;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#33704e;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="电池管理与均衡:木桶的电子保姆" data-en="Battery Management &amp; Balancing: Taming the Weakest Cell">电池管理与均衡:木桶的电子保姆</h1>
+  <div class="sub" data-zh="电动汽车的 400 V 电池组是 96 颗锂电芯的串联:同一条电流依次穿过每一颗芯,任何一颗过充(>4.25 V 负极析锂)或过放(<2.5 V 铜集流体溶解)都足以让整组报废甚至起火——所以电池管理系统(BMS)要做四件事:监测每芯电压/温度/电流、保护性截停充放电、均衡、SOC 估计。均衡的根源在串联本身:回路电流处处相同,容量不齐的电芯必然「有人先满、有人没饱」——充电时电压最高的芯先顶到上限,全组被迫截停,可用容量等于最弱那颗芯(木桶效应)。被动均衡用 30-100 Ω 电阻把高压芯的涓流(常见约 100 mA)放掉,便宜但发热浪费;主动均衡用电容/电感把电荷搬给低压芯,效率高成本高;均衡电流远小于工作电流,只能照顾静态不均,出厂按容量/内阻/自放电分档配组才是大头——温差 5 °C 就能让老化差约 2 倍,所以模组底部要做液冷。SOC 靠安时积分+开路电压修正+卡尔曼滤波。演示里 12 节电芯列队充电:拖「芯不均匀度」看最高芯亮红触发截停、可用容量当场缩水;开「均衡」看涓流把它拉回、全组一起满格;切「主动」看电荷搬家;按「SOC 估计演示」看漂移与修正。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="An EV 400 V pack is 96 lithium cells in series: one single current threads through every cell in turn, so a single overcharge (above 4.25 V, lithium plating on the anode) or over-discharge (below 2.5 V, the copper collector dissolving) can wreck the pack or set it on fire. The battery management system therefore does four jobs: monitor every cell voltage, temperature and current; protectively cut charge or discharge; balance; and estimate state of charge. Balancing is rooted in the series string itself: with identical current everywhere, cells of unequal capacity must fill at different speeds - the highest-voltage cell hits the ceiling first and forces the whole pack to stop, so usable capacity equals the weakest cell, the wooden-barrel effect. Passive balancing bleeds high cells through 30-100 ohm resistors at a trickle of roughly 100 mA - cheap, but the energy is burned as heat; active balancing shuttles charge to low cells through capacitors or inductors - efficient but costly. Balancing current is far smaller than the working current, so it only trims static mismatch; factory matching by capacity, internal resistance and self-discharge does the heavy lifting - a 5 C temperature spread alone roughly doubles the aging difference, hence liquid cooling beneath the modules. SOC comes from coulomb counting plus open-circuit-voltage correction plus a Kalman filter. In the demo 12 cells charge in a row: drag the mismatch slider to watch the tallest cell flash red and force a cutoff while usable capacity shrinks on the spot; switch balancing on and watch the trickle pull it back until the whole row fills together; toggle active mode to see charge being carried between cells; press the SOC demo to watch drift and correction. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">电动汽车的 400 V 电池组是 96 颗锂电芯的串联:同一条电流依次穿过每一颗芯,任何一颗过充(>4.25 V 负极析锂)或过放(<2.5 V 铜集流体溶解)都足以让整组报废甚至起火——所以电池管理系统(BMS)要做四件事:监测每芯电压/温度/电流、保护性截停充放电、均衡、SOC 估计。均衡的根源在串联本身:回路电流处处相同,容量不齐的电芯必然「有人先满、有人没饱」——充电时电压最高的芯先顶到上限,全组被迫截停,可用容量等于最弱那颗芯(木桶效应)。被动均衡用 30-100 Ω 电阻把高压芯的涓流(常见约 100 mA)放掉,便宜但发热浪费;主动均衡用电容/电感把电荷搬给低压芯,效率高成本高;均衡电流远小于工作电流,只能照顾静态不均,出厂按容量/内阻/自放电分档配组才是大头——温差 5 °C 就能让老化差约 2 倍,所以模组底部要做液冷。SOC 靠安时积分+开路电压修正+卡尔曼滤波。演示里 12 节电芯列队充电:拖「芯不均匀度」看最高芯亮红触发截停、可用容量当场缩水;开「均衡」看涓流把它拉回、全组一起满格;切「主动」看电荷搬家;按「SOC 估计演示」看漂移与修正。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="最高芯电压" data-en="highest cell">最高芯电压</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="最低芯电压" data-en="lowest cell">最低芯电压</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="组 SOC" data-en="pack SOC">组 SOC</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="均衡电流" data-en="balancing I">均衡电流</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="可用容量损失" data-en="usable loss">可用容量损失</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="BMS 状态" data-en="BMS state">BMS 状态</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip r" data-zh="过充 >4.25 V:负极析锂" data-en="overcharge &gt;4.25 V: lithium plating">过充 >4.25 V:负极析锂</span>
+    <span class="chip b" data-zh="过放 &lt;2.5 V:铜集流体溶解" data-en="over-discharge &lt;2.5 V: copper dissolves">过放 <2.5 V:铜集流体溶解</span>
+    <span class="chip g" data-zh="均衡:涓流拉平芯与芯" data-en="balancing: trickle evens the cells">均衡:涓流拉平芯与芯</span>
+    <span class="chip o" data-zh="SOC:安时积分 + OCV + 卡尔曼" data-en="SOC: coulomb count + OCV + Kalman">SOC:安时积分 + OCV + 卡尔曼</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-bal" data-zh="均衡:关" data-en="balancing: OFF">均衡:关</button>
+    <button class="abtn" id="btn-mode" data-zh="被动均衡" data-en="passive balancing">被动均衡</button>
+    <button class="abtn" id="btn-soc" data-zh="SOC 估计演示" data-en="SOC estimation demo">SOC 估计演示</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="芯不均匀度" data-en="cell mismatch">芯不均匀度</label><input id="vMix" type="range" min="0" max="35" step="1" value="18"><span class="val" id="vMixVal"></span></div>
+  <div class="row"><label data-zh="均衡电流" data-en="balancing I">均衡电流</label><input id="vBal" type="range" min="0" max="300" step="10" value="100"><span class="val" id="vBalVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="芯电压条形图" data-en="cell-voltage bars">芯电压条形图</span></label>
+        <label><input id="tglFlow" type="checkbox" checked> <span data-zh="电流 / 电荷粒子" data-en="charge particles">电流 / 电荷粒子</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../li-ion-battery/" data-zh="锂离子电池" data-en="li-ion battery">锂离子电池</a>
+    <a href="../electric-vehicle/" data-zh="电动汽车" data-en="electric vehicle">电动汽车</a>
+    <a href="../usb-fast-charging/" data-zh="USB 快充" data-en="USB fast charging">USB 快充</a>
+    <a href="../sodium-ion-battery/" data-zh="钠离子电池" data-en="sodium-ion battery">钠离子电池</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(11, 8, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fillL = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fillL.position.set(-7, 5, -6);
+scene.add(fillL);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 2.3, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= 电池管理与均衡 BMS ================= */
+const TITLE_ZH = '电池管理与均衡 · 木桶的电子保姆';
+const TITLE_EN = 'BMS & Balancing · Taming the Weakest Cell';
+
+/* 状态 */
+const N = 12;                    // 演示 12 芯(真实 pack 96 串)
+const RATE = 0.13;               // 归一化充电速率(约 8 s 充满,1× 速度)
+let mixU = 0.18;                 // 芯不均匀度
+let ibal = 100;                  // 均衡电流 mA
+let balancing = false;
+let activeMode = false;          // false 被动 / true 主动
+let socDemo = false;
+let mode = 'charge';             // charge → hold → dis → rest
+let tState = 0;
+let socEst = 4;                  // SOC 估计 %
+let ocvFlash = 0;                // OCV 修正闪光
+let maxI = 0, minI = 0, maxV = 3.4, minV = 3.4, avgSoc = 0.04;
+const rndSeed = [0.65, 0.16, 0.93, 0.36, 0.54, 0.05, 0.77, 0.44, 1.0, 0.24, 0.70, 0.39];
+const caps = new Float32Array(N), socs = new Float32Array(N), volts = new Float32Array(N);
+const balRate = () => 0.16 * ibal / 100;   // 演示时间尺度下的均衡速率(SOC/s)
+function rebuildCaps() { for (let i = 0; i < N; i++) caps[i] = 1 - mixU * rndSeed[i]; }
+function computeVolts() {
+  maxV = -9; minV = 9; avgSoc = 0;
+  for (let i = 0; i < N; i++) {
+    volts[i] = 3.38 + 0.82 * socs[i];
+    if (volts[i] > maxV) { maxV = volts[i]; maxI = i; }
+    if (volts[i] < minV) { minV = volts[i]; minI = i; }
+    avgSoc += socs[i] / N;
+  }
+}
+function restartCycle() {
+  socs.fill(0.04); mode = 'charge'; tState = 0; socEst = 4; ocvFlash = 0;
+  computeVolts();
+}
+rebuildCaps(); restartCycle();
+const stateName = () => L(
+  { charge: '充电中', hold: '截停保护!', dis: '放电中', rest: '静置·OCV 修正' }[mode],
+  { charge: 'charging', hold: 'cut off!', dis: 'discharging', rest: 'rest · OCV fix' }[mode]);
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.4, depthWrite: false }),
+  bus: mat(0xd8a25a, { roughness: 0.3, metalness: 0.9, emissiveIntensity: 0.1 }),
+  shell: mat(0x9fb0c3, { roughness: 0.35, metalness: 0.8, transparent: true, opacity: 0.24, depthWrite: false }),
+  pcb: mat(0x1f6e43, { roughness: 0.5, metalness: 0.2, emissiveIntensity: 0.15 }),
+  pcbDark: mat(0x14202c, { roughness: 0.6, metalness: 0.3 }),
+  wireSense: new THREE.LineBasicMaterial({ color: 0x88919c, transparent: true, opacity: 0.45 }),
+  cool: mat(0x2f6ea8, { roughness: 0.4, metalness: 0.3, emissive: 0x14406e, emissiveIntensity: 0.45 }),
+  cable: mat(0xd05a3a, { roughness: 0.6, metalness: 0.2 }),
+  leg: mat(0x39424d, { roughness: 0.6, metalness: 0.4 }),
+  balLamp: mat(0xffb45f, { roughness: 0.3, metalness: 0, emissive: 0xff8c1e, emissiveIntensity: 0.25 }),
+  chipFlow: new THREE.MeshBasicMaterial({ color: 0x59e3ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+  flowC: new THREE.MeshBasicMaterial({ color: 0xffc46b }),
+  flowD: new THREE.MeshBasicMaterial({ color: 0x6fa8ff }),
+};
+const HL = { pack: M.bus, bms: M.pcb, bal: M.balLamp, cool: M.cool, soc: M.pcb };
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.shell.color.set(dark ? 0x9fb0c3 : 0x7d8b9c);
+}
+
+/* ---------------- 场景:12 芯串联模组 + BMS ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(44, 0.12, 30), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(30, 15, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+const cellX = i => (i - (N - 1) / 2) * 1.18;
+const Y0 = 0.5, CH = 3.0;
+/* 母排(串联回路的「同一条路」) */
+const busB = new THREE.Mesh(new THREE.BoxGeometry(N * 1.18 + 0.6, 0.16, 0.7), M.bus);
+busB.position.set(0, Y0 - 0.08, 0);
+scene.add(busB);
+const busT = new THREE.Mesh(new THREE.BoxGeometry(N * 1.18 + 0.6, 0.1, 0.5), M.bus);
+busT.position.set(0, Y0 + CH + 0.34, 0);
+scene.add(busT);
+/* 电芯:外壳 + 电量内芯 + 极柱 */
+const shellGeo = new THREE.CylinderGeometry(0.42, 0.42, CH, 20);
+const fillGeo = new THREE.CylinderGeometry(0.3, 0.3, 1, 16);
+const capGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.24, 12);
+const fillMats = [], chipMats = [], chips = [], fills = [];
+for (let i = 0; i < N; i++) {
+  const x = cellX(i);
+  const shell = new THREE.Mesh(shellGeo, M.shell);
+  shell.position.set(x, Y0 + CH / 2, 0);
+  scene.add(shell);
+  const fm = new THREE.MeshStandardMaterial({ color: 0x3fa06a, roughness: 0.4, metalness: 0.1,
+    emissive: 0x2f9e5f, emissiveIntensity: 0.3 });
+  const fmMesh = new THREE.Mesh(fillGeo, fm);
+  fmMesh.position.set(x, Y0 + 0.2, 0);
+  scene.add(fmMesh);
+  fills.push(fmMesh); fillMats.push(fm);
+  const cap = new THREE.Mesh(capGeo, M.bus);
+  cap.position.set(x, Y0 + CH + 0.1, 0);
+  scene.add(cap);
+  const cm = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.4, metalness: 0.5,
+    emissive: 0xff8c1e, emissiveIntensity: 0 });
+  const chip = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.3), cm);
+  chip.position.set(x + 0.62, Y0 + CH + 0.05, 0.15);
+  scene.add(chip);
+  chips.push(chip); chipMats.push(cm);
+}
+/* BMS 板:采样线 ×12 + 主控 + 指示灯 */
+const pcb = new THREE.Mesh(new THREE.BoxGeometry(N * 1.18 + 0.3, 0.14, 2.0), M.pcb);
+pcb.position.set(0, 5.1, -1.9);
+pcb.rotation.x = -0.12;
+scene.add(pcb);
+const legGeo = new THREE.BoxGeometry(0.12, 4.7, 0.12);
+for (const lx of [-5.5, 5.5]) {
+  const leg = new THREE.Mesh(legGeo, M.leg);
+  leg.position.set(lx, 2.4, -1.9);
+  scene.add(leg);
+}
+const sensePos = new Float32Array(N * 6);
+for (let i = 0; i < N; i++) {
+  sensePos[i * 6] = cellX(i); sensePos[i * 6 + 1] = 5.05; sensePos[i * 6 + 2] = -1.72;
+  sensePos[i * 6 + 3] = cellX(i); sensePos[i * 6 + 4] = Y0 + CH + 0.28; sensePos[i * 6 + 5] = 0;
+}
+const senseGeo = new THREE.BufferGeometry();
+senseGeo.setAttribute('position', new THREE.BufferAttribute(sensePos, 3));
+scene.add(new THREE.LineSegments(senseGeo, M.wireSense));
+const ledMats = [];
+for (let i = 0; i < 5; i++) {
+  const lm = new THREE.MeshStandardMaterial({ color: 0x7bd88f, roughness: 0.3, metalness: 0,
+    emissive: 0x2f9e5f, emissiveIntensity: 1.2 });
+  const led = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.12), lm);
+  led.position.set(-1.2 + i * 0.6, 5.2, -1.15);
+  led.rotation.x = -0.12;
+  scene.add(led);
+  ledMats.push(lm);
+}
+const balLamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.2), M.balLamp);
+balLamp.position.set(2.2, 5.2, -1.15);
+scene.add(balLamp);
+/* 充电电缆:从左侧充电桩引入串联回路 */
+const cableCurve = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(-11.5, 1.5, 3.4), new THREE.Vector3(-9.2, 0.9, 2.4),
+  new THREE.Vector3(-7.6, 0.55, 1.0), new THREE.Vector3(-6.9, 0.45, 0)]);
+scene.add(new THREE.Mesh(new THREE.TubeGeometry(cableCurve, 40, 0.07, 8), M.cable));
+const charger = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.6, 0.7), M.pcbDark);
+charger.position.set(-11.8, 0.8, 3.6);
+scene.add(charger);
+/* 底部液冷板(温差 5 °C → 老化差 ~2 倍的对策) */
+const coolPlate = new THREE.Mesh(new THREE.BoxGeometry(N * 1.18 + 1.0, 0.16, 1.4), M.cool);
+coolPlate.position.set(0, 0.14, 0);
+scene.add(coolPlate);
+/* 充电/放电电流粒子(沿电缆→母排) */
+const flowGeo = new THREE.SphereGeometry(0.07, 8, 8);
+const flowC = new THREE.InstancedMesh(flowGeo, M.flowC, 16);
+const flowD = new THREE.InstancedMesh(flowGeo, M.flowD, 16);
+scene.add(flowC, flowD);
+const dummy = new THREE.Object3D();
+for (let i = 0; i < 16; i++) { dummy.scale.setScalar(0); dummy.updateMatrix(); flowC.setMatrixAt(i, dummy.matrix); flowD.setMatrixAt(i, dummy.matrix); }
+/* 主动均衡电荷包(高压芯 → 低压芯的抛物线搬运) */
+const PK_N = 24;
+const packets = new THREE.InstancedMesh(new THREE.SphereGeometry(0.1, 10, 10), M.chipFlow, PK_N);
+scene.add(packets);
+const pkList = [];
+let pkTimer = 0;
+for (let i = 0; i < PK_N; i++) { dummy.scale.setScalar(0); dummy.updateMatrix(); packets.setMatrixAt(i, dummy.matrix); }
+
+camera.position.set(9, 5.6, 13.5);
+controls.target.set(0, 2.3, 0);
+tgtVec.set(0, 2.3, 0);
+
+/* ---------------- 标签 ---------------- */
+addLabel(() => L(`96 颗 3.6-3.7 V 电芯串联 = 400 V(演示画出 12 颗):同一条电流依次穿过每一颗——容量由最弱一芯决定`,
+  `96 cells of 3.6-3.7 V in series make 400 V (12 drawn here): one current threads every cell - capacity is set by the weakest`),
+  () => 'st', new THREE.Vector3(0, 4.55, 1.4));
+addLabel(() => L(`BMS 监测每芯电压/温度/电流:>4.25 V 过充析锂、<2.5 V 过放铜溶解——任一越界立即截停充放电`,
+  `the BMS samples every cell voltage, temperature and current: above 4.25 V lithium plates, below 2.5 V copper dissolves - any breach cuts charge or discharge at once`),
+  () => 'b', new THREE.Vector3(0, 5.9, -1.9));
+addLabel(() => L(`最高芯 ${maxV.toFixed(2)} V${mode === 'hold' ? ' · 充电截停!' : maxV >= 4.16 ? ' · 接近上限' : ''}`,
+  `highest cell ${maxV.toFixed(2)} V${mode === 'hold' ? ' - charge cut off!' : maxV >= 4.16 ? ' - near the ceiling' : ''}`),
+  () => mode === 'hold' ? 'bad' : maxV >= 4.16 ? 'w' : 'g',
+  new THREE.Vector3(0, 4.3, 0),
+  p => p.set(cellX(maxI), 4.3, 0));
+addLabel(() => L(balancing
+    ? (activeMode ? '主动均衡:电容/电感把高压芯的电荷搬给低压芯,效率高、只付搬运损耗'
+                  : `被动均衡:${(4.2 / 50).toFixed(2)} A@50Ω 量级——30-100 Ω 电阻放掉涓流,当前 ${ibal.toFixed(0)} mA,发热浪费但便宜`)
+    : '均衡关闭:最高芯顶满即全组截停,可用容量 = 最弱芯(木桶效应)',
+  balancing
+    ? (activeMode ? 'active balancing: capacitors/inductors carry charge from high cells to low ones - efficient, paying only handling loss'
+                  : `passive balancing: 30-100 ohm resistors bleed a trickle, now ${ibal.toFixed(0)} mA - heat wasted, but cheap`)
+    : 'balancing off: the tallest cell caps the pack and usable capacity equals the weakest cell (the barrel effect)'),
+  () => balancing ? (activeMode ? 'b' : 'o') : 'w', new THREE.Vector3(-3.6, 2.7, 1.9));
+addLabel(() => L(`底部液冷板:温差 5 °C → 老化差 ~2 倍,先把芯与芯的温度拉平 · SOC = 安时积分 + 开路电压修正 + 卡尔曼滤波`,
+  `cold plate below: a 5 C spread doubles aging differences - flatten temperature first - SOC = coulomb counting + OCV correction + Kalman filter`),
+  () => socDemo ? 'g' : 'st', new THREE.Vector3(0, 0.5, 2.9));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'pack', tgt: [0, 2.2, 0],
+    b: '串联与木桶:电流只有一条路', be: 'Series and the barrel: one road for current',
+    d: '400 V 母线由 96 颗 3.6-3.7 V 锂电芯串联叠出(演示画出 12 颗)。串联意味着同一条电流依次穿过每一颗芯——充电时每颗芯得到的电荷完全相同,于是容量不齐的电芯注定不同步:容量小的芯 SOC 上升更快,先顶到满,全组被它掐停;可用容量等于最弱那颗芯的容量,这就是木桶效应。拖动「芯不均匀度」滑杆,看队列里最深的那根木板如何成为全组的上限。',
+    de: 'A 400 V bus is stacked from 96 lithium cells of 3.6-3.7 V each (12 are drawn here). Series means one single current threads through every cell in turn - each cell receives exactly the same charge - so cells of unequal capacity fall out of step: the small ones climb fastest, hit full first and choke the whole pack. Usable capacity equals the capacity of the weakest cell, the wooden-barrel effect. Drag the mismatch slider and watch the shortest stave cap the pack.' },
+  { hl: 'bms', tgt: [0, 4.4, -1.6],
+    b: '监测与保护:每一颗都要盯', be: 'Monitor and protect: watch every cell',
+    d: 'BMS 通过采样线监测每芯电压、每片温度与总电流,并执行两条保护线:任一芯超过 4.25 V 立即截停充电——过充会在负极析出金属锂,刺穿隔膜、埋下短路起火的种子;任一芯低于 2.5 V 立即截停放电——过放让铜集流体溶解,回充时变成枝晶。看队列里最高的那根先变黄再变红,充电被当场掐断:保护牺牲的是这一次的续航,保住的是整组的安全。',
+    de: 'Through sense lines the BMS samples every cell voltage, every temperature probe and the total current, enforcing two hard limits: any cell above 4.25 V cuts charging immediately - overcharge plates metallic lithium onto the anode, piercing the separator and planting short-circuit fires; any cell below 2.5 V cuts discharge - over-discharge dissolves the copper collector, which returns as dendrites. Watch the tallest bar go amber then red as charging is cut on the spot: protection sacrifices this trip to save the pack.' },
+  { hl: 'bal', tgt: [1.5, 3.3, 2.2],
+    b: '被动均衡:把高的放掉一点', be: 'Passive balancing: bleed the tall ones',
+    d: '均衡的思路朴素:谁电压高,就给谁并一个小电阻把涓流放掉。典型均衡电阻 30-100 Ω,4.2 V 下对应 40-140 mA、常见约 100 mA。满充阶段高压芯一边充一边漏,等低压芯慢慢追上,全组因此能一起充满,而不是被最高的那颗提前截停。代价是能量变成热白白烧掉——便宜、可靠,几乎每块 BMS 都有。注意滑杆的门槛:均衡电流若追不上充电注入,截停照样提前发生。',
+    de: 'The idea is blunt: whichever cell reads high gets a small resistor in parallel to bleed the surplus away. Typical balancing resistors are 30-100 ohm, drawing 40-140 mA at 4.2 V - about 100 mA in practice. Near full charge the high cells leak while the low ones catch up, so the pack tops up together instead of being cut early by one tall cell. The cost is energy burned as heat - cheap, robust, in nearly every BMS. Mind the slider threshold: if the bleed cannot keep up with the charging inflow, the early cutoff happens anyway.' },
+  { hl: 'bal', tgt: [-0.5, 3.6, 2.4],
+    b: '主动均衡:把电荷搬家,不是烧掉', be: 'Active balancing: move charge, do not burn it',
+    d: '被动均衡把多余的扔掉,主动均衡把多余的搬走:用电容或电感做「水桶」,从高压芯舀一勺、倒给低压芯,只付搬运损耗。看青色电荷包从高压芯飞向最渴的那颗。但主动方案成本高、电路复杂,常见于大容量储能与大功率 pack。再记一个量级:均衡电流只有几十到几百 mA,而工作电流是几十到几百 A——均衡照顾的是静置与循环积累的静态不均,大电流工况下的动态不均它管不过来。',
+    de: 'Passive balancing throws the surplus away; active balancing carries it elsewhere: a capacitor or inductor acts as a bucket, scooping charge from high cells and pouring it into low ones, paying only the handling loss. Watch cyan packets fly from tall cells to the thirstiest one. Active circuits cost more and run complex, so they live in large storage and high-power packs. And keep the orders of magnitude straight: balancing currents are tens to hundreds of mA while working currents are tens to hundreds of A - balancing trims static mismatch, not the imbalance of hard use.' },
+  { hl: 'cool', tgt: [0, 0.6, 2.6],
+    b: '配组与温差:均衡只是补丁', be: 'Matching and temperature: balancing is only a patch',
+    d: '均衡是亡羊补牢,出厂配组才是第一道防线:电芯按容量、内阻、自放电率分档,同组只用同一档。温度是隐形的不均匀源:温差 5 °C 就能让老化速度差约 2 倍——几年之后同一组里悄悄分出「快老」与「慢老」两派,不均越滚越大。模组底部/侧面的液冷板因此存在:它压住的不只是峰值温度,更是芯与芯之间的贫富差距。看电池排底部的蓝色液冷板。',
+    de: 'Balancing is a patch; factory matching is the first line of defense: cells are graded by capacity, internal resistance and self-discharge, and one pack takes one grade only. Temperature is the invisible source of imbalance: a 5 C spread alone roughly doubles the aging-speed difference - within years the same pack quietly splits into fast-aging and slow-aging factions, and mismatch snowballs. Hence the liquid cooling plate at the module bottom or side: it suppresses not just peak heat but the gap between rich and poor cells.' },
+  { hl: 'soc', tgt: [0, 4.6, -1.8],
+    b: 'SOC 估计:三分测量,七分估计', be: 'SOC: one part measurement, two parts estimation',
+    d: '仪表上的百分比不是测出来的,是估出来的:主方法是安时积分——把电流对时间积分累计电量,但传感器偏置会让它慢慢漂移;好在锂电芯的开路电压与 SOC 有稳定对应,静置时用 OCV 查表把估计拉回真值附近;卡尔曼滤波再把电流、电压、温度与电池模型融合,给出带不确定度的最优估计。按「SOC 估计演示」:估计值随充放慢慢漂移,每次到达满/空的静置点就被开路电压修正拉回。',
+    de: 'The percentage on the dash is estimated, not measured. The primary method is coulomb counting - integrating current over time - which drifts with sensor bias. Luckily a lithium cell open-circuit voltage maps stably to SOC, so at every rest an OCV lookup pulls the estimate back near truth; a Kalman filter then fuses current, voltage, temperature and a cell model into an optimal estimate with uncertainty. Press the SOC demo: the estimate drifts through charge and discharge, and every full or empty rest snaps it back via open-circuit correction.' },
+];
+
+/* ---------------- 滑杆 / 按钮 ---------------- */
+const elMix = document.getElementById('vMix'), elMixVal = document.getElementById('vMixVal');
+const elBal = document.getElementById('vBal'), elBalVal = document.getElementById('vBalVal');
+const btnBal = document.getElementById('btn-bal'), btnMode = document.getElementById('btn-mode'), btnSoc = document.getElementById('btn-soc');
+const tglFlow = document.getElementById('tglFlow');
+function refreshActionButtons() {
+  btnBal.classList.toggle('on', balancing);
+  btnMode.classList.toggle('on', activeMode);
+  btnSoc.classList.toggle('on', socDemo);
+  btnBal.textContent = L(balancing ? '均衡:开' : '均衡:关', balancing ? 'balancing: ON' : 'balancing: OFF');
+  btnMode.textContent = L(activeMode ? '主动均衡' : '被动均衡', activeMode ? 'active balancing' : 'passive balancing');
+}
+function updateSliderLabels() {
+  elMixVal.textContent = (mixU * 100).toFixed(0) + ' %';
+  elBalVal.textContent = ibal.toFixed(0) + ' mA';
+  refreshActionButtons();
+}
+elMix.addEventListener('input', () => { mixU = +elMix.value / 100; rebuildCaps(); restartCycle(); updateSliderLabels(); });
+elBal.addEventListener('input', () => { ibal = +elBal.value; updateSliderLabels(); });
+btnBal.addEventListener('click', () => { balancing = !balancing; refreshActionButtons(); updateFormula(); });
+btnMode.addEventListener('click', () => {
+  activeMode = !activeMode;
+  if (!balancing) balancing = true;
+  refreshActionButtons(); updateFormula();
+});
+btnSoc.addEventListener('click', () => {
+  socDemo = !socDemo;
+  if (socDemo) socEst = avgSoc * 100;
+  refreshActionButtons(); updateFormula();
+});
+
+/* ---------------- 状态机与读数 ---------------- */
+function effBalancing() {
+  return balancing && (activeMode || balRate() >= RATE / 0.95);
+}
+function runModes(simDt) {
+  const d = simDt;
+  tState += d;
+  const br = balRate();
+  if (mode === 'charge') {
+    let j = 0;
+    for (let i = 1; i < N; i++) if (socs[i] < socs[j]) j = i;
+    for (let i = 0; i < N; i++) {
+      if (balancing && socs[i] >= 0.999) {
+        if (activeMode && i !== j) {
+          const mv = Math.min(br * d, socs[i] - 1);
+          if (mv > 0 && socs[j] < 1) { socs[i] -= mv; socs[j] = Math.min(1, socs[j] + mv * 0.92); }
+        } else if (!activeMode) {
+          const net = RATE / caps[i] - br;      // 被动:涓流须追上注入才能按住满芯
+          if (net <= 0) socs[i] = Math.max(1, socs[i]);
+          else socs[i] = Math.min(1.062, socs[i] + net * d);
+        }
+      } else {
+        socs[i] = Math.min(socs[i] + RATE * d / caps[i], balancing && !activeMode ? 1.062 : 1.062);
+      }
+    }
+    computeVolts();
+    if (maxV >= 4.25 || (balancing && (() => { let mn = 9; for (let i = 0; i < N; i++) mn = Math.min(mn, socs[i]); return mn; })() >= 0.99)) {
+      mode = 'hold'; tState = 0;
+      if (socDemo) { ocvFlash = 1.4; socEst += (avgSoc * 100 - socEst) * 0.85; }
+    }
+  } else if (mode === 'hold') {
+    if (tState > 1.6) { mode = 'dis'; tState = 0; }
+  } else if (mode === 'dis') {
+    for (let i = 0; i < N; i++) socs[i] = Math.max(0, socs[i] - RATE * 0.8 * d / caps[i]);
+    computeVolts();
+    if (minV <= 3.45) {
+      mode = 'rest'; tState = 0;
+      if (socDemo) { ocvFlash = 1.4; socEst += (avgSoc * 100 - socEst) * 0.85; }
+    }
+  } else if (mode === 'rest') {
+    if (tState > 1.3) { mode = 'charge'; tState = 0; }
+  }
+  if (socDemo) {
+    socEst += d * (mode === 'charge' ? 1.15 : mode === 'dis' ? -0.85 : 0);
+    socEst = clamp(socEst, -2, 103);
+  }
+  if (ocvFlash > 0) ocvFlash -= d;
+}
+
+/* ---------------- 每帧可视 ---------------- */
+const cLow = new THREE.Color(), cTmp = new THREE.Color();
+function sceneFrame(et, simDt, dt) {
+  computeVolts();
+  /* 电芯:液位 = SOC,颜色 = 电压状态 */
+  for (let i = 0; i < N; i++) {
+    const s = socs[i], v = volts[i];
+    const f = fills[i], fm = fillMats[i];
+    f.scale.y = Math.max(0.02, s);
+    f.position.y = Y0 + 0.05 + Math.max(0.02, s) * 0.5;
+    if (v >= 4.25) {
+      fm.color.set(0xff5252); fm.emissive.set(0xc62828);
+      fm.emissiveIntensity = 0.55 + 0.35 * (0.5 + 0.5 * Math.sin(et * 9));
+    } else if (v >= 4.16) {
+      fm.color.set(0xffb45f); fm.emissive.set(0xb26a1e); fm.emissiveIntensity = 0.5;
+    } else {
+      fm.color.setHSL(0.37, 0.52, 0.26 + 0.22 * clamp01(s));
+      fm.emissive.setHSL(0.37, 0.6, 0.2 + 0.18 * clamp01(s));
+      fm.emissiveIntensity = 0.28 + 0.25 * clamp01(s);
+    }
+    /* 均衡芯片:满芯且均衡开启时点亮 */
+    const bleeding = balancing && s >= 0.985 && (mode === 'charge' || mode === 'hold');
+    chipMats[i].emissiveIntensity = bleeding ? (activeMode ? 1.6 : 1.1 + 0.5 * Math.sin(et * 7 + i)) : 0;
+    chips[i].material.emissive.set(activeMode ? 0x1899c0 : 0xff8c1e);
+  }
+  /* 充电/放电粒子沿电缆与母排流动 */
+  const flowing = tglFlow.checked && (mode === 'charge' || mode === 'dis');
+  M.bus.emissiveIntensity = 0.1 + (mode === 'charge' ? 0.28 : mode === 'dis' ? 0.12 : 0);
+  for (let k = 0; k < 16; k++) {
+    if (!flowing) { dummy.scale.setScalar(0); }
+    else {
+      const ph = (et * 0.45 + k / 16) % 1;
+      let p;
+      if (mode === 'charge') p = cableCurve.getPointAt(ph);
+      else p = cableCurve.getPointAt(1 - ph);
+      dummy.position.copy(p);
+      dummy.scale.setScalar(0.9 + 0.4 * Math.sin(et * 10 + k));
+    }
+    dummy.updateMatrix();
+    flowC.setMatrixAt(k, dummy.matrix);
+  }
+  flowC.visible = flowing && mode === 'charge';
+  flowD.visible = flowing && mode === 'dis';
+  flowC.instanceMatrix.needsUpdate = true;
+  flowD.instanceMatrix.needsUpdate = true;
+  /* 主动均衡电荷包 */
+  pkTimer -= simDt;
+  const wantPacket = tglFlow.checked && balancing && activeMode && mode === 'charge' && socs[maxI] >= 0.99 && maxI !== minI;
+  if (wantPacket && pkTimer <= 0 && pkList.length < PK_N) {
+    pkList.push({ t: 0, a: cellX(maxI), b: cellX(minI) });
+    pkTimer = 0.35;
+  }
+  for (let k = 0; k < PK_N; k++) {
+    const pk = pkList[k];
+    if (!pk) { dummy.scale.setScalar(0); }
+    else {
+      pk.t += simDt * 1.3;
+      if (pk.t >= 1) { pkList.splice(k, 1); k--; dummy.scale.setScalar(0); }
+      else {
+        dummy.position.set(pk.a + (pk.b - pk.a) * pk.t, Y0 + CH + 0.3 + Math.sin(Math.PI * pk.t) * 1.1, 0.25);
+        dummy.scale.setScalar(1);
+      }
+    }
+    dummy.updateMatrix();
+    packets.setMatrixAt(k, dummy.matrix);
+  }
+  packets.instanceMatrix.needsUpdate = true;
+  /* BMS 指示灯:采样轮询 + OCV 修正闪光 */
+  for (let i = 0; i < 5; i++) {
+    ledMats[i].emissiveIntensity = 0.6 + 0.6 * (0.5 + 0.5 * Math.sin(et * 4 + i * 1.3));
+  }
+  if (ocvFlash > 0) {
+    const f = clamp01(ocvFlash / 1.4);
+    for (let i = 0; i < 5; i++) ledMats[i].emissiveIntensity = 1.2 + 2.6 * f;
+  }
+  M.balLamp.emissiveIntensity = balancing ? 1.3 : 0.2;
+}
+
+/* ---------------- 示波器:每芯电压条形图 ---------------- */
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L(`每芯电压条形图(2.5-4.5 V)· 红虚线 = 截停 4.25 V · ${stateName()}`,
+    `per-cell voltage bars (2.5-4.5 V) - red dashed: cutoff 4.25 V - ${stateName()}`), 4 * dpr, 10 * dpr);
+  const y0 = ch * 0.92, hh = ch * 0.72;
+  const vy = v => y0 - (v - 2.5) / 2.0 * hh;
+  scopeCtx.setLineDash([4 * dpr, 4 * dpr]);
+  scopeCtx.lineWidth = Math.max(1, dpr);
+  scopeCtx.strokeStyle = 'rgba(255,107,107,.8)';
+  scopeCtx.beginPath(); scopeCtx.moveTo(0, vy(4.25)); scopeCtx.lineTo(cw, vy(4.25)); scopeCtx.stroke();
+  scopeCtx.strokeStyle = 'rgba(255,180,84,.45)';
+  scopeCtx.beginPath(); scopeCtx.moveTo(0, vy(4.2)); scopeCtx.lineTo(cw, vy(4.2)); scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  const bw = cw / N;
+  for (let i = 0; i < N; i++) {
+    const v = volts[i];
+    const y = vy(Math.min(v, 4.5));
+    scopeCtx.fillStyle = v >= 4.25 ? 'rgba(255,107,107,.95)' : v >= 4.16 ? 'rgba(255,180,84,.95)'
+      : v <= 3.45 ? 'rgba(120,150,255,.9)' : 'rgba(123,216,143,.9)';
+    scopeCtx.fillRect(i * bw + bw * 0.18, y, bw * 0.64, y0 - y);
+  }
+}
+
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateFormula() {
+  const eff = effBalancing();
+  const usable = eff ? (activeMode ? 0.97 : 0.98) : (1 - mixU);
+  const drift = socEst - avgSoc * 100;
+  formulaEl.innerHTML =
+    L(`串联回路电流相同 → <b>SOC_i = Q / C_i</b> · 木桶:可用容量 = <b>${(usable * 100).toFixed(0)}%</b>(损失 <b>${((1 - usable) * 100).toFixed(0)}%</b>)`,
+      `series current is shared → <b>SOC_i = Q / C_i</b> - barrel: usable capacity = <b>${(usable * 100).toFixed(0)}%</b> (loss <b>${((1 - usable) * 100).toFixed(0)}%</b>)`) +
+    '<br>' +
+    L(`保护窗口:充电截停 <b>4.25 V</b>(析锂)/ 放电截停 <b>2.5 V</b>(铜溶解)· 单芯标称 <b>3.6-3.7 V</b> · 96 串 = 400 V`,
+      `protection window: charge cutoff <b>4.25 V</b> (plating) / discharge cutoff <b>2.5 V</b> (copper) - cell nominal <b>3.6-3.7 V</b> - 96S = 400 V`) +
+    '<br>' +
+    L(`${balancing ? (activeMode ? '主动均衡:电荷搬运,~92% 到账' : `被动均衡:I = V/R,<b>${ibal.toFixed(0)} mA</b>(30-100 Ω @ 4.2 V)`) : '均衡:关'} · 温差 <b>5 °C → 老化差 ~2×</b>` +
+      (socDemo ? ` · SOC 估计 <b>${socEst.toFixed(1)}%</b>,漂移 <b>${drift >= 0 ? '+' : ''}${drift.toFixed(1)}%</b>${ocvFlash > 0 ? ' → <b>OCV 修正中</b>' : ''}` : ' · SOC = ∫I dt + OCV 修正 + 卡尔曼'),
+      balancing
+        ? (activeMode ? `active balancing: charge carried, ~92% arrives - temp spread <b>5 C -> ~2x aging</b>` + (socDemo ? ` - SOC est <b>${socEst.toFixed(1)}%</b>, drift <b>${drift >= 0 ? '+' : ''}${drift.toFixed(1)}%</b>${ocvFlash > 0 ? ' -> <b>OCV correcting</b>' : ''}` : ' - SOC = integral + OCV + Kalman')
+                      : `passive balancing: I = V/R, <b>${ibal.toFixed(0)} mA</b> (30-100 ohm @ 4.2 V) - temp spread <b>5 C -> ~2x aging</b>` + (socDemo ? ` - SOC est <b>${socEst.toFixed(1)}%</b>, drift <b>${drift >= 0 ? '+' : ''}${drift.toFixed(1)}%</b>${ocvFlash > 0 ? ' -> <b>OCV correcting</b>' : ''}` : ' - SOC = integral + OCV + Kalman'))
+        : `balancing off - temp spread <b>5 C -> ~2x aging</b>` + (socDemo ? ` - SOC est <b>${socEst.toFixed(1)}%</b>, drift <b>${drift >= 0 ? '+' : ''}${drift.toFixed(1)}%</b>${ocvFlash > 0 ? ' -> <b>OCV correcting</b>' : ''}` : ' - SOC = integral + OCV + Kalman'));
+}
+function updateStats() {
+  stA.innerHTML = maxV.toFixed(2) + '<small> V</small>';
+  stA.className = 'v ' + (maxV >= 4.25 ? 'bad' : maxV >= 4.16 ? 'warn' : 'ok');
+  stB.innerHTML = minV.toFixed(2) + '<small> V</small>';
+  stB.className = 'v ' + (minV <= 3.45 ? 'warn' : 'ok');
+  stC.innerHTML = (avgSoc * 100).toFixed(0) + '<small> %</small>';
+  stC.className = 'v ' + (avgSoc > 0.98 ? 'ok' : 'warn');
+  const iShow = balancing && socs[maxI] >= 0.985 && (mode === 'charge' || mode === 'hold') ? ibal : 0;
+  stD.innerHTML = iShow.toFixed(0) + '<small> mA</small>';
+  stD.className = 'v ' + (iShow > 0 ? 'ok' : 'warn');
+  const eff = effBalancing();
+  const loss = (eff ? (activeMode ? 3 : 2) : mixU * 100);
+  stE.innerHTML = '−' + loss.toFixed(0) + '<small> %</small>';
+  stE.className = 'v ' + (loss <= 3 ? 'ok' : loss <= 10 ? 'warn' : 'bad');
+  stF.innerHTML = stateName();
+  stF.className = 'v ' + (mode === 'hold' ? 'bad' : mode === 'rest' ? 'warn' : 'ok');
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  mixU = 0.18; ibal = 100;
+  balancing = false; activeMode = false; socDemo = false;
+  elMix.value = '18'; elBal.value = '100';
+  rebuildCaps(); restartCycle();
+  updateSliderLabels(); updateFormula();
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  sceneFrame(et, simDt, dt);
+  /* 步骤高亮(呼吸脉冲) */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm && hlm.emissive) hlm.emissiveIntensity = 0.55 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) { if (typeof drawScope === 'function') drawScope(); }
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
