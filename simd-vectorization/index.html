@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIMD · 一条指令干八份活</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#3d7a99;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#186a8c;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="SIMD:一条指令干八份活" data-en="SIMD: One Instruction, Eight Jobs">SIMD:一条指令干八份活</h1>
+  <div class="sub" data-zh="CPU 的 SIMD 单元把寄存器加宽到 128/256/512 bit,当成 4、8、16 个并排的 lane 用:一条 vaddps 指令同一拍就算完 8 对 float 的和;配合 FMA(乘加融合,一条指令做 a×b+c)与双发端口,AVX2 每核每拍 16 个 float FMA,3 GHz 下约 96 GFLOPS/核——峰值算术吞吐按 lane 数倍增:AVX2 整数吞吐 ×8、AVX-512 ×16。但账面峰值要真正兑现有四个前提:数据对齐到 32/64 字节、访问连续让硬件预取器吃得饱、元素之间独立没有链式依赖、分支要少——发散的分支会直接破坏向量化;数组长度不是 lane 整数倍时,余数元素用掩码(predication)收尾,被掩的 lane 清零,不浪费一拍。编译器自动向量化(-O3 就能把 AXPY 循环翻成 SIMD 指令)与手写 intrinsics 的差距常在 2-5 倍,而 GPU 不过是把同一思想推到上千 lane 的极端。图像处理、卷积、softmax 与激活函数、音视频编解码、数据库扫描,全是 SIMD 的工地。场景里同一数组只喂一条产线:标量模式一拍走一个立方体,SIMD 模式一拍点亮全部 lane;按「标量对照」把宽通路缩回单车道感受 8 倍落差,按「FMA 双发」看节奏与吞吐翻倍,按「尾部掩码收尾」看余数元素如何被清零收场。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="A CPU's SIMD unit widens its registers to 128, 256 or 512 bits and treats them as 4, 8 or 16 side-by-side lanes: a single vaddps instruction finishes eight pairs of float additions in the same cycle. Combined with FMA (fused multiply-add, one instruction computing a*b+c) and dual-issue ports, AVX2 retires sixteen float FMAs per core per cycle - about 96 GFLOPS per core at 3 GHz. Peak arithmetic throughput simply scales with the lane count: x8 on AVX2 integers, x16 on AVX-512. But the paper number is paid out only under four conditions: the data must be aligned to 32/64 bytes, access must be contiguous so the hardware prefetcher keeps pace, elements must be independent with no chained dependencies, and branches must be rare - divergent branches kill vectorization outright. When the array length is not a multiple of the lane count, the leftover elements are finished under a mask (predication): masked lanes are zeroed and no cycle is wasted. Compiler autovectorization (-O3 alone can turn an AXPY loop into SIMD instructions) typically lands 2-5x short of hand-written intrinsics, and a GPU is just the same idea pushed to thousands of lanes. Image processing, convolution, softmax and activation functions, audio-video codecs and database scans all run on this machinery. In the scene one array feeds one production line: scalar mode advances one cube per beat, SIMD mode lights every lane at once. Press the scalar toggle to narrow the datapath back to a single lane and feel the 8x gap, press dual-issue FMA to double the cadence and the throughput, and press tail masking to watch the remainder elements get zeroed away. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">CPU 的 SIMD 单元把寄存器加宽到 128/256/512 bit,当成 4、8、16 个并排的 lane 用:一条 vaddps 指令同一拍就算完 8 对 float 的和;配合 FMA(乘加融合,一条指令做 a×b+c)与双发端口,AVX2 每核每拍 16 个 float FMA,3 GHz 下约 96 GFLOPS/核——峰值算术吞吐按 lane 数倍增:AVX2 整数吞吐 ×8、AVX-512 ×16。但账面峰值要真正兑现有四个前提:数据对齐到 32/64 字节、访问连续让硬件预取器吃得饱、元素之间独立没有链式依赖、分支要少——发散的分支会直接破坏向量化;数组长度不是 lane 整数倍时,余数元素用掩码(predication)收尾,被掩的 lane 清零,不浪费一拍。编译器自动向量化(-O3 就能把 AXPY 循环翻成 SIMD 指令)与手写 intrinsics 的差距常在 2-5 倍,而 GPU 不过是把同一思想推到上千 lane 的极端。图像处理、卷积、softmax 与激活函数、音视频编解码、数据库扫描,全是 SIMD 的工地。场景里同一数组只喂一条产线:标量模式一拍走一个立方体,SIMD 模式一拍点亮全部 lane;按「标量对照」把宽通路缩回单车道感受 8 倍落差,按「FMA 双发」看节奏与吞吐翻倍,按「尾部掩码收尾」看余数元素如何被清零收场。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="数据通路" data-en="datapath">数据通路</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="已处理元素" data-en="elements done">已处理元素</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="拍数(SIMD vs 标量)" data-en="beats (SIMD vs scalar)">拍数(SIMD vs 标量)</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="加速比" data-en="speedup">加速比</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="吞吐 @3 GHz" data-en="throughput @3 GHz">吞吐 @3 GHz</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="尾部掩码 lane" data-en="masked tail lanes">尾部掩码 lane</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip g" data-zh="绿 = 已写入结果的元素" data-en="green = elements with results written">绿 = 已写入结果的元素</span>
+    <span class="chip b" data-zh="蓝台 = SIMD lane 工位" data-en="blue decks = SIMD lanes">蓝台 = SIMD lane 工位</span>
+    <span class="chip o" data-zh="金方 = 飞行/计算中的数据" data-en="gold cubes = data in flight / compute">金方 = 飞行/计算中的数据</span>
+    <span class="chip r" data-zh="红帽 = 掩码 lane(清零)" data-en="red caps = masked lanes (zeroed)">红帽 = 掩码 lane(清零)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-scalar" data-zh="标量对照" data-en="scalar compare">标量对照</button>
+    <button class="abtn" id="btn-fma" data-zh="FMA 双发" data-en="dual-issue FMA">FMA 双发</button>
+    <button class="abtn" id="btn-mask" data-zh="尾部掩码收尾" data-en="tail mask finale">尾部掩码收尾</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="数组规模" data-en="array size">数组规模</label><input id="vN" type="range" min="16" max="128" step="8" value="64"><span class="val" id="vNVal"></span></div>
+  <div class="row"><label data-zh="lane 宽度" data-en="lane width">lane 宽度</label><input id="vBits" type="range" min="128" max="512" step="128" value="256"><span class="val" id="vBitsVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="拍产量直方图" data-en="per-beat histogram">拍产量直方图</span></label>
+        <label><input id="tglGpu" type="checkbox" checked> <span data-zh="GPU 晶圆" data-en="GPU die">GPU 晶圆</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../cpu-pipeline/" data-zh="CPU 流水线" data-en="CPU pipeline">CPU 流水线</a>
+    <a href="../gpu-rasterizer/" data-zh="GPU 光栅化" data-en="GPU rasterizer">GPU 光栅化</a>
+    <a href="../branch-prediction/" data-zh="分支预测" data-en="branch prediction">分支预测</a>
+    <a href="../out-of-order-execution/" data-zh="乱序执行" data-en="out-of-order execution">乱序执行</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 400);
+camera.position.set(7, 9.5, 16.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(1, 0.4, -0.5);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 80;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 12, 7);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-8, 6, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(1, 0.4, -0.5);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  const same = preset === id;
+  preset = same ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  if (id === 'scalar') {
+    mode = same ? 'simd' : 'scalar';
+    if (!same) preset = 'scalar'; else preset = null;
+    document.getElementById('btn-scalar').classList.toggle('on', mode === 'scalar');
+    applyMode(); resetRun();
+  } else if (id === 'fma') {
+    fmaOn = same ? false : true;
+    if (!same) preset = 'fma'; else preset = null;
+    document.getElementById('btn-fma').classList.toggle('on', fmaOn);
+    resetRun();
+  } else if (id === 'mask') {
+    if (!same) { prevN = nArr; nArr = 78; preset = 'mask'; } else { nArr = prevN; preset = null; }
+    elN.value = nArr;
+    rebuildAll(); resetRun();
+  }
+  updateSliderLabels(); updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglGpu = document.getElementById('tglGpu');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+  syncLabelVis();
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+tglGpu.addEventListener('change', () => { gpuG.visible = tglGpu.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= SIMD:一条指令干八份活 ================= */
+const TITLE_ZH = 'SIMD · 一条指令干八份活';
+const TITLE_EN = 'SIMD · One Instruction, Eight Jobs';
+const PRESET_IDS = ['scalar', 'fma', 'mask'];
+const CLK_GHZ = 3;                       // 主频 3 GHz
+const BITS2LANE = { 128: 4, 256: 8, 512: 16 };
+const MAXN = 128, MAXW = 16, BAYROWS = 8;
+const SP = 0.62;                         // 立方体间距
+let nArr = 64, bits = 256, prevN = 64;
+let mode = 'simd';                       // 'simd' | 'scalar'
+let fmaOn = false;
+let processed = 0, pulses = 0, cyclesNow = 0;
+let run = null;                          // 当前 pulse 状态机
+let doneT = -1;                          // 完成后的等待计时
+
+const laneW = () => BITS2LANE[bits];
+const elemsPerPulse = () => mode === 'scalar' ? 1 : laneW();
+const cyclesPerPulse = () => (mode === 'simd' && fmaOn) ? 0.5 : 1;   // 双发:一拍两条指令
+const totalPulses = () => Math.ceil(nArr / elemsPerPulse());
+const totalCycles = () => Math.ceil(totalPulses() * cyclesPerPulse());
+const scalarCycles = () => nArr + 7;     // 8 级流水线填满后每拍 1 个
+const gflops = () => mode === 'simd'
+  ? laneW() * (fmaOn ? 2 : 1) / cyclesPerPulse() * CLK_GHZ
+  : 1 * CLK_GHZ;
+
+/* 布局:i 号元素 → 仓库/料盘坐标(按 W 个一组分寄存器,8 排一堆) */
+function bayX0(W, rows) {
+  const bays = Math.max(1, Math.ceil(rows / BAYROWS));
+  return -(bays - 1) * (W * SP + 1.5) / 2;
+}
+function slotPos(i, W, rows, z0, dir) {
+  const row = Math.floor(i / W), col = i % W;
+  const bay = Math.floor(row / BAYROWS), rr = row % BAYROWS;
+  return { x: bayX0(W, rows) + bay * (W * SP + 1.5) + (col - (W - 1) / 2) * SP, z: z0 + dir * rr * 0.8 };
+}
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.3,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x141820, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x242c38, transparent: true, opacity: 0.32, depthWrite: false }),
+  cube: mat(0xffffff, { roughness: 0.45, metalness: 0.25 }),
+  ped: mat(0x3f6f9b, { roughness: 0.4, metalness: 0.4, emissiveIntensity: 0.25 }),
+  pedDim: mat(0x2a3340, { roughness: 0.7, metalness: 0.2, emissive: 0x000000 }),
+  base: mat(0x1b2430, { roughness: 0.8, metalness: 0.2, emissive: 0x000000 }),
+  bar: new THREE.MeshStandardMaterial({ color: 0x6ec4ff, transparent: true, opacity: 0.28,
+    roughness: 0.3, metalness: 0.1, emissive: 0x6ec4ff, emissiveIntensity: 0.3, depthWrite: false }),
+  mask: new THREE.MeshStandardMaterial({ color: 0xff5d5d, transparent: true, opacity: 0.45,
+    roughness: 0.5, metalness: 0, emissive: 0xff5d5d, emissiveIntensity: 0.4, depthWrite: false }),
+  dec: mat(0xe0a44a, { roughness: 0.4, metalness: 0.4, emissiveIntensity: 0.4 }),
+  scalarCone: new THREE.MeshBasicMaterial({ color: 0xffd75d, transparent: true, opacity: 0.16,
+    side: THREE.DoubleSide, depthWrite: false }),
+  gpu: mat(0x35505e, { roughness: 0.5, metalness: 0.5, emissiveIntensity: 0.2 }),
+  gpuTile: new THREE.MeshStandardMaterial({ color: 0x59c2b0, roughness: 0.4, metalness: 0.3,
+    emissive: 0x59c2b0, emissiveIntensity: 0.35 }),
+  ring: new THREE.MeshBasicMaterial({ color: 0xffd75d, transparent: true, opacity: 0.85,
+    side: THREE.DoubleSide, depthWrite: false }),
+};
+const HL = { scalar: M.scalarCone, wall: M.cube, lanes: M.ped, fma: M.dec, tail: M.mask, gpu: M.gpu };
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xe2e6ea);
+  M.ground.color.set(dark ? 0x141820 : 0xd2d8de);
+  M.grid.color.set(dark ? 0x242c38 : 0xa9b6c2);
+  M.pedDim.color.set(dark ? 0x2a3340 : 0xb9c2cc);
+  M.base.color.set(dark ? 0x1b2430 : 0xc4cdd8);
+}
+
+/* ---------------- 场景 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(58, 0.12, 46), M.ground);
+ground.position.set(0, -0.06, -3);
+scene.add(ground);
+const grid = new THREE.GridHelper(46, 23, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.set(0, 0.01, -3);
+scene.add(grid);
+
+/* 仓库(输入数组,InstancedMesh + 逐实例颜色) */
+const _m4 = new THREE.Matrix4(), _v3 = new THREE.Vector3(), _c3 = new THREE.Color();
+function setInst(mesh, i, x, y, z, s) {
+  _m4.makeScale(s, s, s);
+  _m4.setPosition(x, y, z);
+  mesh.setMatrixAt(i, _m4);
+}
+const C_PEND = 0x5a6675, C_GHOST = 0x1c232c, C_HOT = 0xe8c06a, C_DONE = 0x46c06e;
+const inMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.36, 0.36, 0.36), M.cube, MAXN);
+inMesh.frustumCulled = false;
+scene.add(inMesh);
+const trayMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.36, 0.36, 0.36), M.cube.clone(), MAXN);
+trayMesh.frustumCulled = false;
+scene.add(trayMesh);
+
+/* lane 工位(16 个,超出 W 的隐藏) */
+const lanes = [];
+for (let j = 0; j < MAXW; j++) {
+  const p = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.26, 0.5), M.ped);
+  p.position.set((j - (MAXW - 1) / 2) * SP, 0.13, 0);
+  scene.add(p);
+  lanes.push(p);
+}
+const laneBase = new THREE.Mesh(new THREE.BoxGeometry(MAXW * SP + 0.8, 0.1, 1.5), M.base);
+laneBase.position.set(0, 0.05, 0);
+scene.add(laneBase);
+/* 寄存器横梁(压下来 = 一条指令执行) */
+const barMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 0.16, 0.72), M.bar);
+barMesh.position.set(0, 1.7, 0);
+scene.add(barMesh);
+/* 尾部掩码红帽 */
+const maskCaps = [];
+for (let j = 0; j < MAXW; j++) {
+  const c = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.09, 0.56), M.mask);
+  c.position.set((j - (MAXW - 1) / 2) * SP, 0.92, 0);
+  c.visible = false;
+  scene.add(c);
+  maskCaps.push(c);
+}
+/* 标量模式:单车道聚光灯锥 */
+const scalarCone = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.68, 1.7, 20, 1, true), M.scalarCone);
+scalarCone.position.set(-(MAXW - 1) / 2 * SP, 1.05, 0);
+scalarCone.visible = false;
+scene.add(scalarCone);
+/* 指令译码塔 + 指令环 */
+const decoderG = new THREE.Group();
+const decTower = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.15, 0.5), M.dec);
+decTower.position.y = 0.58;
+decoderG.add(decTower);
+scene.add(decoderG);
+const rings = [];
+for (let i = 0; i < 3; i++) {
+  const r = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.035, 8, 32), M.ring.clone());
+  r.rotation.x = -Math.PI / 2;
+  r.visible = false;
+  scene.add(r);
+  rings.push({ m: r, t: 1 });
+}
+/* GPU 晶圆(同一思想 × 数千 lane) */
+const gpuG = new THREE.Group();
+gpuG.position.set(14.5, 0, -4);
+gpuG.rotation.y = -0.35;
+const gpuBase = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.3, 3.4), M.gpu);
+gpuBase.position.y = 0.15;
+gpuG.add(gpuBase);
+const gpuTiles = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 0.1, 0.16), M.gpuTile, 288);
+{
+  let n = 0;
+  for (let r = 0; r < 12; r++) for (let c = 0; c < 24; c++) {
+    setInst(gpuTiles, n, (c - 11.5) * 0.25, 0.36, (r - 5.5) * 0.25, 1);
+    n++;
+  }
+  gpuTiles.instanceMatrix.needsUpdate = true;
+}
+gpuG.add(gpuTiles);
+scene.add(gpuG);
+
+camera.position.set(7, 9.5, 16.5);
+controls.target.set(1, 0.4, -0.5);
+tgtVec.set(1, 0.4, -0.5);
+
+/* 飞行立方体池(当前 pulse 的 k 个元素) */
+const flyers = [];
+for (let i = 0; i < MAXW; i++) {
+  const f = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.32), M.dec.clone());
+  f.visible = false;
+  scene.add(f);
+  flyers.push(f);
+}
+
+/* ---------------- 重建 / 运行 ---------------- */
+function rebuildAll() {
+  const W = laneW(), rows = Math.ceil(nArr / W);
+  for (let i = 0; i < MAXN; i++) {
+    if (i < nArr) {
+      const p = slotPos(i, W, rows, -6.5, -1);
+      setInst(inMesh, i, p.x, 0.18, p.z, 1);
+      inMesh.setColorAt(i, _c3.setHex(C_PEND));
+    } else setInst(inMesh, i, 0, -10, 0, 0.001);
+    setInst(trayMesh, i, 0, -10, 0, 0.001);
+    trayMesh.setColorAt(i, _c3.setHex(C_DONE));
+  }
+  inMesh.instanceMatrix.needsUpdate = true;
+  inMesh.instanceColor.needsUpdate = true;
+  trayMesh.instanceMatrix.needsUpdate = true;
+  trayMesh.instanceColor.needsUpdate = true;
+  lanes.forEach((p, j) => { p.visible = j < W; p.material = M.ped; });
+  maskCaps.forEach((c, j) => { c.visible = false; c.position.x = (j - (W - 1) / 2) * SP; });
+  decoderG.position.set(W * SP / 2 + 1.0, 0, 0);
+  applyMode();
+}
+function applyMode() {
+  const W = laneW();
+  lanes.forEach((p, j) => {
+    if (j >= W) return;
+    p.material = (mode === 'scalar' && j > 0) ? M.pedDim : M.ped;
+  });
+  scalarCone.visible = mode === 'scalar';
+  barMesh.scale.x = mode === 'scalar' ? SP + 0.1 : W * SP + 0.1;
+  barMesh.position.x = mode === 'scalar' ? -(W - 1) / 2 * SP : 0;
+}
+function resetRun() {
+  processed = 0; pulses = 0; cyclesNow = 0;
+  run = null; doneT = -1;
+  const W = laneW();
+  for (let i = 0; i < nArr; i++) {
+    inMesh.setColorAt(i, _c3.setHex(C_PEND));
+    setInst(trayMesh, i, 0, -10, 0, 0.001);
+  }
+  inMesh.instanceColor.needsUpdate = true;
+  trayMesh.instanceMatrix.needsUpdate = true;
+  for (const f of flyers) f.visible = false;
+  for (const c of maskCaps) c.visible = false;
+  barMesh.position.y = 1.7;
+  rings.forEach(r => { r.m.visible = false; r.t = 1; });
+}
+function startPulse() {
+  const W = laneW(), rows = Math.ceil(nArr / W);
+  const k = Math.min(elemsPerPulse(), nArr - processed);
+  const idx = [];
+  for (let j = 0; j < k; j++) idx.push(processed + j);
+  run = {
+    k, masked: elemsPerPulse() - k, idx, phase: 'load', t: 0,
+    spd: (mode === 'simd' && fmaOn) ? 0.5 : 1,
+    from: idx.map(i => slotPos(i, W, rows, -6.5, -1)),
+    tray0: processed,
+  };
+  for (let j = 0; j < k; j++) {
+    const p = run.from[j];
+    flyers[j].visible = true;
+    flyers[j].position.set(p.x, 0.45, p.z);
+    flyers[j].scale.setScalar(0.01);
+    inMesh.setColorAt(idx[j], _c3.setHex(C_HOT));
+  }
+  inMesh.instanceColor.needsUpdate = true;
+}
+function finishPulse() {
+  const W = laneW(), rows = Math.ceil(nArr / W);
+  run.idx.forEach((gi, j) => {
+    const p = slotPos(gi, W, rows, 5.2, 1);
+    setInst(trayMesh, gi, p.x, 0.18, p.z, 1);
+    trayMesh.setColorAt(gi, _c3.setHex(C_DONE));
+    flyers[j].visible = false;
+    inMesh.setColorAt(gi, _c3.setHex(C_GHOST));
+  });
+  trayMesh.instanceMatrix.needsUpdate = true;
+  trayMesh.instanceColor.needsUpdate = true;
+  inMesh.instanceColor.needsUpdate = true;
+  for (const c of maskCaps) c.visible = false;
+  processed += run.k;
+  pulses++;
+  cyclesNow = Math.ceil(pulses * cyclesPerPulse());
+  beatBuf[beatI] = run.k; beatI = (beatI + 1) % beatBuf.length;
+  run = null;
+  if (processed >= nArr) doneT = 0;
+}
+
+/* ---------------- 每帧可视 ---------------- */
+const PH = { load: 0.16, fly: 0.30, comp: 0.26, out: 0.30, rest: 0.18 };
+let scopeAcc = 0;
+function sceneFrame(et, simDt, dt) {
+  /* GPU 晶圆微光呼吸 */
+  M.gpuTile.emissiveIntensity = 0.3 + 0.15 * (0.5 + 0.5 * Math.sin(et * 2.2));
+  M.bar.opacity = 0.24 + 0.08 * (0.5 + 0.5 * Math.sin(et * 3));
+  /* pulse 状态机推进 */
+  if (run && playing) {
+    run.t += simDt / run.spd;
+    const k = run.k, W = laneW(), rows = Math.ceil(nArr / W);
+    if (run.phase === 'load') {
+      const u = clamp01(run.t / PH.load);
+      for (let j = 0; j < k; j++) flyers[j].scale.setScalar(0.01 + 0.99 * u);
+      if (u >= 1) { run.phase = 'fly'; run.t = 0; }
+    } else if (run.phase === 'fly') {
+      const u = clamp01(run.t / PH.fly), e = u * u * (3 - 2 * u);
+      for (let j = 0; j < k; j++) {
+        const a = run.from[j], b = { x: (j - (W - 1) / 2) * SP, z: 0 };
+        flyers[j].position.set(a.x + (b.x - a.x) * e, 0.5 + Math.sin(u * Math.PI) * 1.5, a.z + (b.z - a.z) * e);
+      }
+      if (u >= 1) {
+        run.phase = 'comp'; run.t = 0;
+        for (const r of rings) if (r.t >= 1) { r.t = 0; r.m.visible = true; r.m.position.set(decoderG.position.x, 1.3, 0); break; }
+        if (run.masked > 0) for (let j = k; j < k + run.masked && j < W; j++) maskCaps[j].visible = true;
+      }
+    } else if (run.phase === 'comp') {
+      const u = clamp01(run.t / PH.comp);
+      barMesh.position.y = 1.7 - (1.7 - 0.72) * Math.sin(u * Math.PI);
+      M.ped.emissiveIntensity = 0.25 + 0.9 * Math.sin(u * Math.PI);
+      for (let j = 0; j < k; j++) flyers[j].position.y = 0.5 + 0.06 * Math.sin(u * Math.PI);
+      if (u >= 1) { run.phase = 'out'; run.t = 0; barMesh.position.y = 1.7; }
+    } else if (run.phase === 'out') {
+      const u = clamp01(run.t / PH.out), e = u * u * (3 - 2 * u);
+      for (let j = 0; j < k; j++) {
+        const gi = run.tray0 + j;
+        const p = slotPos(gi, W, rows, 5.2, 1);
+        const b = { x: (j - (W - 1) / 2) * SP, z: 0 };
+        flyers[j].position.set(b.x + (p.x - b.x) * e, 0.5 + Math.sin(u * Math.PI) * 1.3 - 0.3 * e, b.z + (p.z - b.z) * e);
+      }
+      if (u >= 1) finishPulse();
+    }
+  } else if (doneT >= 0 && playing) {
+    doneT += simDt;
+    if (doneT > 1.6) resetRun();
+  } else if (!run && doneT < 0 && playing) {
+    startPulse();
+  }
+  /* 指令环扩散 */
+  for (const r of rings) {
+    if (r.t < 1) {
+      r.t = Math.min(1, r.t + dt * 1.6);
+      r.m.scale.setScalar(0.6 + 2.8 * r.t);
+      r.m.material.opacity = 0.85 * (1 - r.t);
+      if (r.t >= 1) r.m.visible = false;
+    }
+  }
+  scalarCone.material.opacity = 0.12 + 0.07 * (0.5 + 0.5 * Math.sin(et * 4));
+  /* 步骤呼吸高亮 */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm && hlm.emissive !== undefined && hlm !== M.cube) {
+    hlm.emissiveIntensity = (hlm === M.mask ? 0.4 : 0.3) + 0.4 * (0.5 + 0.5 * Math.sin(et * 4.6));
+  }
+  syncLabelVis();
+  /* 示波器采样 */
+  scopeAcc += dt;
+  if (scopeAcc > 0.12) { scopeAcc = 0; pushSnd(beatBuf[(beatI + beatBuf.length - 1) % beatBuf.length] / MAXW, (run ? { load: 0.1, fly: 0.35, comp: 0.7, out: 0.35, rest: 0.05 }[run.phase] : doneT >= 0 ? 1 : 0)); }
+}
+function syncLabelVis() {
+  if (tailLabel) tailLabel.o.visible = labelsOn && !!(run && run.masked > 0 && run.phase !== 'rest');
+}
+
+/* ---------------- 标签 ---------------- */
+let tailLabel = null;
+addLabel(() => {
+  const W = laneW();
+  return L(`数组按 ${W}×32 bit = ${bits} bit 分组进厂 · 32/64 字节对齐,预取器吃得饱`,
+    `the array enters in groups of ${W} x 32 bit = ${bits} bit - 32/64-byte aligned, prefetcher well fed`);
+}, () => 'b', new THREE.Vector3(0, 2.4, -9.2));
+addLabel(() => {
+  if (mode === 'scalar') return L('标量:流水线填满后一拍也只出 1 个结果', 'scalar: even a filled pipeline retires one result per beat');
+  return L(`一条 vaddps: ${laneW()} lane 同一拍相加${fmaOn ? ' · FMA:a×b+c 一条指令' : ''}`,
+    `one vaddps: ${laneW()} lanes add in the same beat${fmaOn ? ' - FMA: a*b+c in one instruction' : ''}`);
+}, () => run && run.phase === 'comp' ? 'e' : 'w', new THREE.Vector3(0, 2.6, 0));
+tailLabel = addLabel(() => L(`尾部 ${run ? run.masked : 0} 个元素:掩码 lane 清零(predication),不浪费一拍`,
+  `last ${run ? run.masked : 0} elements: masked lanes zeroed (predication) - not one beat wasted`),
+  () => 'bad', new THREE.Vector3(0, 3.4, 1.2));
+addLabel(() => L(`已写入 ${processed}/${nArr} · ${cyclesNow} 拍(标量参照 ${scalarCycles()} 拍)`,
+  `${processed}/${nArr} written - ${cyclesNow} beats (scalar reference ${scalarCycles()})`),
+  () => processed >= nArr ? 'g' : 'st', new THREE.Vector3(0, 2.0, 6.4));
+addLabel(() => L('GPU:同一思想 × 数千 lane · 图像、卷积、编解码的主场',
+  'GPU: the same idea at thousands of lanes - home turf of images, convolutions, codecs'),
+  () => 'g', new THREE.Vector3(14.5, 2.6, -4));
+addLabel(() => L('对齐 · 连续 · 独立 · 少分支——四件事决定 SIMD 是否兑现',
+  'aligned - contiguous - independent - branch-free: four things decide whether SIMD pays out'),
+  () => 'st', new THREE.Vector3(-10.5, 3.2, 1.5));
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'scalar', tgt: [0, 1, 4],
+    b: '标量:一拍只有一个结果', be: 'Scalar: one result per cycle',
+    d: '先看基准真相:一条普通加法指令一拍只处理一对 float。流水线把执行拆成取指、译码、取数、执行等 8 级,填满之后每个节拍也只流出 1 个结果——N 个元素要 N 拍。按「标量对照」切到单车道模式:数据条一拍只走一个立方体,黄色光锥罩住的只有一个工位。这不是流水线慢,是数据通路只有 32 bit 宽。',
+    de: 'Start from the baseline truth: an ordinary addition instruction processes one pair of floats per beat. The pipeline splits execution into eight stages - fetch, decode, load, execute - and once filled it still retires only one result per beat: N elements cost N cycles. Press the scalar toggle for single-lane mode: the data bar advances one cube per beat, and the yellow cone of light covers a single workstation. The pipeline is not slow - the datapath is only 32 bits wide.' },
+  { hl: 'wall', tgt: [0, 2, -6],
+    b: '加宽数据通路:128/256/512 bit', be: 'Widen the datapath: 128/256/512 bit',
+    d: 'SIMD 的思路朴素到近乎鲁莽:一条指令的译码与控制开销是固定的,那就把寄存器加宽——SSE 128 bit、AVX2 256 bit、AVX-512 512 bit——当成 4、8、16 个并排的 lane 用。控制成本不变,数据通路宽 8 倍,吞吐就宽 8 倍:AVX2 整数吞吐 ×8,AVX-512 ×16。拖动「lane 宽度」滑杆,看仓库里的数据条按 128/256/512 bit 重新分组——每一行就是一个寄存器。',
+    de: 'The SIMD idea is almost recklessly simple: the decode and control cost of one instruction is fixed, so widen the register - SSE 128 bit, AVX2 256 bit, AVX-512 512 bit - and treat it as 4, 8 or 16 side-by-side lanes. Control cost unchanged, datapath eight times wider, throughput eight times higher: AVX2 gives x8 integer throughput, AVX-512 x16. Drag the lane-width slider and watch the warehouse regroup its bars by 128/256/512 bit - each row is one register.' },
+  { hl: 'lanes', tgt: [0, 1.5, 3],
+    b: '一条 vaddps,点亮全部 lane', be: 'One vaddps lights every lane',
+    d: '招牌瞬间在这里:同一条加法指令 vaddps 译码一次,8 个 lane 在同一拍并行相加——8 对 float 的和一拍完成。前提是元素彼此独立:lane 之间没有进位、没有依赖链,谁也不等谁。数据条按 256 bit 分组整整齐齐进厂,N=64 个元素只要 8 拍,而标量线还在一格一格挪。加速比不是魔法,是数据通路的宽度。',
+    de: 'The signature moment lives here: the same addition instruction vaddps is decoded once, and eight lanes add in parallel within the same beat - eight pairs of floats summed in one cycle. The precondition is independence: no carries between lanes, no dependency chains, nobody waiting on anybody. Bars enter grouped by 256 bit, N = 64 elements finish in 8 beats, and the scalar line is still shuffling along one cube at a time. The speedup is not magic - it is the width of the datapath.' },
+  { hl: 'fma', tgt: [4, 1.5, 2.5],
+    b: 'FMA 双发:96 GFLOPS 每核', be: 'Dual-issue FMA: 96 GFLOPS per core',
+    d: '乘加融合 FMA 把 a×b+c 压进一条指令:浮点运算数当场翻倍。真实 CPU 还有两条 FMA 端口可以双发:8 lane AVX2 每核每拍 16 个 float FMA,3 GHz 下约 96 GFLOPS/核——今天的一个核快过二十年前的整台机器。按「FMA 双发」,看指令节奏加倍、吞吐读数跳到 96:这就是 BLAS、卷积和 softmax 底层真正的计数方式。',
+    de: 'Fused multiply-add packs a*b+c into one instruction: the floating-point count doubles on the spot. Real CPUs also dual-issue on two FMA ports: 8-lane AVX2 retires sixteen float FMAs per core per cycle, roughly 96 GFLOPS per core at 3 GHz - one core today outruns an entire machine from twenty years ago. Press the FMA toggle: the instruction cadence doubles and the throughput readout jumps to 96. That is how BLAS, convolution and softmax are really counted.' },
+  { hl: 'tail', tgt: [0, 2.5, 2],
+    b: '对齐、预取与尾部掩码', be: 'Alignment, prefetch and tail masks',
+    d: '账面峰值要先过访存关:数据对齐到 32/64 字节,一条 cache line 不被撕裂;访问连续,硬件预取器才吃得饱;数组长度不是 lane 整数倍时,余数元素用掩码(predication)收尾——被掩的 lane 清零,不浪费一拍,这正是 AVX-512 的拿手戏。按「尾部掩码收尾」:最后一拍只有几个 lane 亮着,红帽扣在空 lane 上,总拍数却一拍不多花。',
+    de: 'Paper throughput must first survive memory: data aligned to 32/64 bytes so no cache line tears; contiguous access so the hardware prefetcher eats steadily; and when the array length is not a multiple of the lane count, the remainder finishes under a mask (predication) - masked lanes are zeroed without wasting a beat, an AVX-512 party trick. Press tail masking: on the last beat only a few lanes light up, red caps sit on the empty ones, and the total beat count does not grow by one.' },
+  { hl: 'gpu', tgt: [14.5, 1.5, 1],
+    b: '什么时候 SIMD 帮不上忙', be: 'When SIMD cannot help',
+    d: '四种情形会废掉向量化:链式依赖(lane 互相等结果)、发散分支(不同数据走不同路径)、散乱访存(预取器失明)、以及编译器没认出的模式。自动向量化(-O3 把 AXPY 循环翻成 SIMD)与手写 intrinsics 常差 2-5 倍;分支密集的解析器、链表、哈希表本质上是串行的。而 GPU 只是把同一思想推到上千 lane 的极端:图像、卷积、编解码、数据库扫描,全是 lane 的海洋。',
+    de: 'Four things wreck vectorization: chained dependencies (lanes wait on each other), divergent branches (different data takes different paths), scattered gathers (the prefetcher goes blind), and patterns the compiler fails to recognize. Autovectorization (-O3 turning an AXPY loop into SIMD) typically lands 2-5x short of hand-written intrinsics; branchy parsers, linked lists and hash tables are serial at heart. And a GPU is the same idea pushed to thousands of lanes: images, convolutions, codecs and database scans all swim in lanes.' },
+];
+
+/* ---------------- 滑杆 ---------------- */
+const elN = document.getElementById('vN'), elNVal = document.getElementById('vNVal');
+const elBits = document.getElementById('vBits'), elBitsVal = document.getElementById('vBitsVal');
+function updateSliderLabels() {
+  elNVal.textContent = L(nArr + ' 个 float', nArr + ' floats');
+  elBitsVal.textContent = `${bits} b · ${laneW()} lane`;
+}
+elN.addEventListener('input', () => {
+  nArr = +elN.value; prevN = nArr;
+  if (preset === 'mask') { preset = null; document.getElementById('btn-mask').classList.remove('on'); }
+  rebuildAll(); resetRun(); updateSliderLabels();
+});
+elBits.addEventListener('input', () => {
+  bits = +elBits.value;
+  rebuildAll(); resetRun(); updateSliderLabels();
+});
+
+/* ---------------- 每帧预设运行 ---------------- */
+function runModes(simDt) { /* 状态机已在 sceneFrame 内推进 */ }
+
+/* ---------------- 示波器:每拍产量直方图 ---------------- */
+const beatBuf = new Float32Array(46);
+let beatI = 0;
+const sndA = new Float32Array(260), sndB = new Float32Array(260);
+let sndI = 0;
+function pushSnd(a, b) {
+  sndA[sndI] = clamp(a, -1, 1);
+  sndB[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndA.length;
+}
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L('每拍产量(元素数):满宽柱 = 全部 lane · 矮柱 = 尾部掩码 · 标量恒 1',
+    'elements per beat: full bar = all lanes - short bar = tail mask - scalar stays 1'), 4 * dpr, 10 * dpr);
+  const x0 = 4 * dpr, x1 = cw - 4 * dpr, y0 = ch - 6 * dpr, yT = 16 * dpr;
+  const n = beatBuf.length, bw = (x1 - x0) / n;
+  for (let i = 0; i < n; i++) {
+    const v = beatBuf[(beatI + i) % n];
+    const hh = v / MAXW * (y0 - yT);
+    scopeCtx.fillStyle = 'rgba(110,196,255,.8)';
+    scopeCtx.fillRect(x0 + i * bw + 0.5 * dpr, y0 - hh, Math.max(1, bw - 1.5 * dpr), hh);
+  }
+  /* 满宽参考线 */
+  const yFull = y0 - laneW() / MAXW * (y0 - yT);
+  scopeCtx.strokeStyle = 'rgba(123,216,143,.6)';
+  scopeCtx.setLineDash([3 * dpr, 3 * dpr]);
+  scopeCtx.beginPath(); scopeCtx.moveTo(x0, yFull); scopeCtx.lineTo(x1, yFull); scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  scopeCtx.fillStyle = 'rgba(123,216,143,.9)';
+  scopeCtx.fillText(`${laneW()}`, x1 - 10 * dpr, yFull - 2 * dpr);
+}
+
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function updateFormula() {
+  const W = laneW();
+  const sp = totalCycles() > 0 ? scalarCycles() / totalCycles() : 1;
+  formulaEl.innerHTML =
+    L(`数据通路 <b>${bits} bit = ${W} lane × 32 bit</b> · ${mode === 'simd' ? `一条 vaddps 一拍 <b>${W}</b> 个${fmaOn ? '(FMA 双发:一拍 2 条指令)' : ''}` : '标量:一拍 <b>1</b> 个(8 级流水线)'}`,
+      `datapath <b>${bits} bit = ${W} lanes x 32 bit</b> - ${mode === 'simd' ? `one vaddps does <b>${W}</b> per beat${fmaOn ? ' (dual-issue FMA: 2 instructions per beat)' : ''}` : 'scalar: <b>1</b> per beat (8-stage pipeline)'}`) +
+    '<br>' +
+    L(`N=${nArr}:本模式 <b>${totalCycles()}</b> 拍 vs 标量 <b>${scalarCycles()}</b> 拍 → 加速比 <b>×${sp.toFixed(1)}</b> · 吞吐 <b>${gflops()}</b> GFLOPS/核 @3 GHz`,
+      `N=${nArr}: this mode <b>${totalCycles()}</b> beats vs scalar <b>${scalarCycles()}</b> -> speedup <b>x${sp.toFixed(1)}</b> - throughput <b>${gflops()}</b> GFLOPS/core @3 GHz`) +
+    '<br>' +
+    L(`FMA 双发:16 float-FMA/拍 = <b>96 GFLOPS</b>/核 · 对齐 32/64 B · 尾部掩码收尾 · 自动向量化 vs intrinsics 差 <b>2-5×</b>`,
+      `dual FMA: 16 float-FMAs/beat = <b>96 GFLOPS</b>/core - aligned 32/64 B - tail masks - autovectorization trails intrinsics by <b>2-5x</b>`);
+}
+function updateStats() {
+  const W = laneW();
+  const sp = totalCycles() > 0 ? scalarCycles() / totalCycles() : 1;
+  stA.innerHTML = `${W}<small> lane ×32 b</small>`;
+  stA.className = 'v ok';
+  stB.innerHTML = `${processed}<small> /${nArr}</small>`;
+  stB.className = 'v ' + (processed >= nArr ? 'ok' : '');
+  stC.innerHTML = `${cyclesNow}<small> vs ${scalarCycles()}</small>`;
+  stC.className = 'v ' + (mode === 'simd' ? 'ok' : 'warn');
+  stD.innerHTML = `×${sp.toFixed(1)}`;
+  stD.className = 'v ' + (sp >= 8 ? 'ok' : sp >= 2 ? 'warn' : 'bad');
+  stE.innerHTML = `${gflops()}<small> GFLOPS</small>`;
+  stE.className = 'v ' + (gflops() >= 90 ? 'ok' : gflops() >= 20 ? 'warn' : 'bad');
+  const masked = run && run.masked > 0 ? run.masked : 0;
+  stF.textContent = String(masked);
+  stF.className = 'v ' + (masked > 0 ? 'warn' : 'ok');
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  nArr = 64; bits = 256; prevN = 64;
+  mode = 'simd'; fmaOn = false;
+  elN.value = 64; elBits.value = 256;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  preset = null;
+  rebuildAll(); resetRun();
+  updateSliderLabels(); updateFormula();
+}
+
+/* ---------------- 预设按钮接线 / stats 元素 ---------------- */
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  sceneFrame(et, simDt, dt);
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked) drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+rebuildAll();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+gpuG.visible = tglGpu.checked;
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
