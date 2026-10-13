@@ -11,6 +11,24 @@
 - **自包含**：单个动画尽量不依赖重型构建，打开即可运行。
 - **中英双语 · 双主题**：所有页面右上角提供 中文/English 与 深色/浅色 切换，选择通过 localStorage 记住（主题默认跟随系统）。
 
+## 仓库结构与新增动画
+
+站点由 GitHub Pages 发布（`main` 分支的 `/docs` 目录），动画 URL 不受仓库结构影响：`…/how-things-work/<topic>/`。
+
+- `docs/<topic>/index.html` — 每个动画一个自包含文件夹，一主题一 URL
+- `docs/index.html` — 首页，**由脚本生成，请勿手改**
+- `data/topics.json` — 全部选题的单一事实来源：slug、八分区归属、中英标题与简介
+- `scripts/homepage.template.html` — 首页骨架（样式、首屏、页脚与全站脚本）
+- `scripts/build-homepage.mjs` — 从清单生成首页：卡片、八分区计数与顶部快捷计数自动对齐
+- `scripts/check-sync.mjs` — 校验 文件夹 ↔ 清单 ↔ 首页 ↔ README 登记的一致性
+
+新增一个动画的流程：
+
+1. 新建 `docs/<slug>/index.html`（自包含单文件）；
+2. 在 `data/topics.json` 增加一条记录（slug、分区、中英标题与简介）；
+3. 运行 `node scripts/build-homepage.mjs` 重新生成首页，`node scripts/check-sync.mjs` 自检；
+4. 在 README 登记（`✅ **<slug>/**`）。脚本的零依赖，仅需 Node 标准库。
+
 ## 内容领域
 
 | 领域 | 示例选题 |
