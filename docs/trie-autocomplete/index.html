@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>前缀树 · 搜索框的 0.1 秒</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#2f9e8f;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1d7268;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(47,158,143,.65); background: rgba(47,158,143,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(29,114,104,.55); background: rgba(29,114,104,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(47,158,143,.10); border-color: rgba(47,158,143,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(29,114,104,.08); border-color: rgba(29,114,104,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #a7e6dc; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="前缀树与自动补全" data-en="Tries &amp; Autocomplete">前缀树与自动补全</h1>
+  <div class="sub" data-zh="你在搜索框打出 &quot;apr&quot;,候选词 0.1 秒内浮现——这背后不是在十万词条里做模糊匹配,而是一棵前缀树(trie):每个节点是一个字符,从根到节点的路径就是前缀。&quot;apr&quot; 三个字符走三步落在一个节点上,查询成本只跟词长有关、与词库大小无关——十万词和一亿词都是 3 步。哈希表查一个词同样快,但它把前缀信息全打碎了:以 &quot;ap&quot; 开头的词散落在桶的四面八方,想找「所有 ap 开头的词」只能全表扫描;前缀树则把共同前缀收拢成同一条路,走到节点后收下整棵子树,前缀查询变成一次下行的顺路收获。候选词再按使用频率排序:每个节点存一个计数器,历史查询把高频词顶到建议前列——这就是搜索框前三名的来历。代价是内存:字符级分叉产生大量稀疏节点,工程上用压缩路径(radix tree,把单链压缩成一条边)或双数组 trie 压到可承受;路由器还发明了同构用法:IP 路由表按二进制位建前缀树,查 200.100.5.x 时取「最长前缀匹配」——/24 的专网路由优先于 /8 的默认路由,互联网每天靠这棵树转发百亿亿个包。拖「查询词」看树的下行路径点亮,拖「词库规模」看查询步数纹丝不动;按「线性扫描对照」看朴素搜索的多慢,按「IP 路由」看最长前缀匹配,按「压缩前后」看节点数坍缩。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Type &quot;apr&quot; into a search box and candidates appear in 0.1 seconds - not fuzzy matching across a hundred thousand entries, but a trie: each node is one character, each root-to-node path a prefix. Three characters land you three steps down, and query cost depends only on word length, not dictionary size - a hundred thousand words or a hundred million, still three steps. A hash table answers a single word just as fast, but it shreds prefix information: words starting with &quot;ap&quot; scatter across buckets, and finding all of them means a full scan. A trie gathers shared prefixes onto one path; walk to the node and take its whole subtree - prefix queries come free with the descent. Candidates then rank by frequency: every node keeps a counter, and past queries push hot words to the top of the suggestions - that is where the top three come from. The cost is memory: character-level branching creates sparse nodes, so production systems compress single-child chains (radix trees) or pack the trie into double arrays; routers invented an isomorphic use - IP forwarding tables are tries over binary bits, and 200.100.5.x resolves by longest-prefix match, a /24 specialized route beating a /8 default, a tree forwarding quintillions of packets a day. Drag the query to light up the descent, drag dictionary size to watch the step count refuse to move; press linear scan to see naive search crawl, IP routing for longest-prefix match, compression for the node count collapsing. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause
+- 场景要点: 3D 节点树(球+连线,字符标签);查询字符逐个下行点亮;命中子树整体高亮;候选词气泡按频率弹出;对照面板:线性扫描进度条 vs 树 3 步完成。">你在搜索框打出 &quot;apr&quot;,候选词 0.1 秒内浮现——这背后不是在十万词条里做模糊匹配,而是一棵前缀树(trie):每个节点是一个字符,从根到节点的路径就是前缀。&quot;apr&quot; 三个字符走三步落在一个节点上,查询成本只跟词长有关、与词库大小无关——十万词和一亿词都是 3 步。哈希表查一个词同样快,但它把前缀信息全打碎了:以 &quot;ap&quot; 开头的词散落在桶的四面八方,想找「所有 ap 开头的词」只能全表扫描;前缀树则把共同前缀收拢成同一条路,走到节点后收下整棵子树,前缀查询变成一次下行的顺路收获。候选词再按使用频率排序:每个节点存一个计数器,历史查询把高频词顶到建议前列——这就是搜索框前三名的来历。代价是内存:字符级分叉产生大量稀疏节点,工程上用压缩路径(radix tree,把单链压缩成一条边)或双数组 trie 压到可承受;路由器还发明了同构用法:IP 路由表按二进制位建前缀树,查 200.100.5.x 时取「最长前缀匹配」——/24 的专网路由优先于 /8 的默认路由,互联网每天靠这棵树转发百亿亿个包。拖「查询词」看树的下行路径点亮,拖「词库规模」看查询步数纹丝不动;按「线性扫描对照」看朴素搜索的多慢,按「IP 路由」看最长前缀匹配,按「压缩前后」看节点数坍缩。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="节点数" data-en="nodes">节点数</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="比较次数" data-en="comparisons">比较次数</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="查询步数" data-en="query steps">查询步数</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="候选数" data-en="candidates">候选数</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="词库规模" data-en="dictionary">词库规模</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="当前前缀" data-en="prefix">当前前缀</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip o" data-zh="金:查询下行路径" data-en="gold: query descent">金:查询下行路径</span>
+    <span class="chip g" data-zh="绿:候选子树" data-en="green: candidate subtree">绿:候选子树</span>
+    <span class="chip b" data-zh="蓝:普通节点与边" data-en="blue: plain nodes &amp; edges">蓝:普通节点与边</span>
+    <span class="chip r" data-zh="红:线性扫描对照" data-en="red: linear scan">红:线性扫描对照</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-linear" data-zh="线性扫描对照" data-en="linear scan">线性扫描对照</button>
+    <button class="abtn" id="btn-route" data-zh="IP 路由演示" data-en="IP routing">IP 路由演示</button>
+    <button class="abtn" id="btn-compress" data-zh="压缩前后" data-en="compression">压缩前后</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="词库规模" data-en="dictionary size">词库规模</label><input id="vD" type="range" min="12" max="28" step="4" value="28"><span class="val" id="vDVal"></span></div>
+  <div class="row"><label data-zh="查询词长度" data-en="query length">查询词长度</label><input id="vQ" type="range" min="1" max="5" step="1" value="3"><span class="val" id="vQVal"></span></div>
+  <div class="row"><label data-zh="候选数" data-en="top-k">候选数</label><input id="vK" type="range" min="1" max="6" step="1" value="3"><span class="val" id="vKVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="曲线/示波" data-en="curve scope">曲线/示波</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../hash-table/" data-zh="哈希表与布隆过滤器" data-en="hash tables">哈希表与布隆过滤器</a>
+    <a href="../binary-search-tree/" data-zh="二叉搜索树" data-en="binary search tree">二叉搜索树</a>
+    <a href="../dns/" data-zh="域名解析 DNS" data-en="DNS">域名解析 DNS</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.__errs = [];
+addEventListener('error', e => window.__errs.push((e.message || String(e)) + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(2.2, 4.6, 9.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 3.6, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.6;
+controls.maxDistance = 60;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 3.6, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  if (STEPS[scenario].act) STEPS[scenario].act();
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+
+/* ================= 前缀树与自动补全 ================= */
+const TITLE_ZH = '前缀树 · 搜索框的 0.1 秒';
+const TITLE_EN = 'The Trie: Autocomplete in 0.1 Seconds';
+const PRESET_IDS = ['linear', 'route', 'compress'];
+const HL = {};
+
+let dictSize = 28, qLen = 3, topK = 3;                // 词库规模 / 查询长度 / 候选数
+let routeOn = false, compressOn = false, linearT = 0, linearOn = false;
+let comps = 0, stepsUsed = 0;
+const tmpV = new THREE.Vector3();
+
+const WORDS = ['app', 'apple', 'apply', 'apt', 'april', 'aptitude', 'banana', 'band', 'bandana',
+  'bat', 'batch', 'bath', 'be', 'bed', 'bee', 'beer', 'cat', 'catalog', 'catch', 'cater',
+  'date', 'data', 'database', 'day', 'dawn', 'dot', 'download', 'down'];
+const FREQS = {};
+WORDS.forEach(w => { FREQS[w] = 5 + Math.floor(Math.random() * 96); });
+
+/* Trie 构建 */
+function buildTrie(words) {
+  const root = { ch: '', children: new Map(), freq: 0, leaf: false, word: '' };
+  for (const w of words) {
+    let node = root;
+    for (const ch of w) {
+      if (!node.children.has(ch)) node.children.set(ch, { ch, children: new Map(), freq: 0, leaf: false, word: '' });
+      node = node.children.get(ch);
+    }
+    node.leaf = true; node.word = w; node.freq = FREQS[w];
+  }
+  return root;
+}
+/* 压缩(radix)节点计数 */
+function countCompressed(words) {
+  const t = buildTrie(words);
+  let n = 0;
+  (function walk(node) {
+    n++;
+    let kids = [...node.children.values()];
+    while (kids.length === 1 && !node.leaf) {
+      node = kids[0];
+      n++;
+      kids = [...node.children.values()];
+    }
+    kids.forEach(walk);
+  })(t);
+  return n;
+}
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.3,
+    emissive: color, emissiveIntensity: 0.1, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.3, depthWrite: false }),
+  node: mat(0x5d6b7a, { roughness: 0.4 }),
+  nodeOn: new THREE.MeshStandardMaterial({ color: 0xffc070, roughness: 0.3,
+    emissive: 0xffc070, emissiveIntensity: 0.75 }),
+  nodeSub: new THREE.MeshStandardMaterial({ color: 0x7bd88f, roughness: 0.3,
+    emissive: 0x7bd88f, emissiveIntensity: 0.5 }),
+  edge: new THREE.LineBasicMaterial({ color: 0x77879a, transparent: true, opacity: 0.5 }),
+  edgeOn: new THREE.LineBasicMaterial({ color: 0xffc070, transparent: true, opacity: 0.95 }),
+  route: mat(0x91a7ff, { emissiveIntensity: 0.4 }),
+};
+HL.nodeOn = M.nodeOn;
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+}
+
+/* ---------------- 场景 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(24, 0.12, 16), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(16, 8, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* ---------------- 词 Trie 布局 ---------------- */
+const treeG = new THREE.Group();
+scene.add(treeG);
+const routeG = new THREE.Group();
+routeG.visible = false;
+scene.add(routeG);
+
+let trieNodes = [], trieEdges = [], pathSet = new Set(), subSet = new Set();
+let rootNode = null;
+let trieLabelStart = -1;
+function clearTrieLabels() {
+  if (trieLabelStart < 0) return;
+  for (let i = trieLabelStart; i < labelReg.length; i++) scene.remove(labelReg[i].o);
+  labelReg.length = Math.min(labelReg.length, trieLabelStart);
+}
+function layoutTrie() {
+  clearTrieLabels();
+  if (trieLabelStart < 0) trieLabelStart = labelReg.length;
+  const words = WORDS.slice(0, dictSize);
+  rootNode = buildTrie(words);
+  /* 叶序布局:DFS 叶子计数定角度 */
+  let leafIdx = 0, totalLeaves = 0;
+  (function count(n) { if (n.leaf || n.children.size === 0) { totalLeaves++; return; } n.children.forEach(count); })(rootNode);
+  while (treeG.children.length) treeG.remove(treeG.children[0]);
+  trieNodes = []; trieEdges = [];
+  pathSet = new Set(); subSet = new Set();
+  const nodeGeo = new THREE.SphereGeometry(0.16, 14, 10);
+  (function place(n, depth, a0, a1) {
+    let pos;
+    if (depth === 0) pos = new THREE.Vector3(0, 5.6, 0);
+    else {
+      const a = (a0 + a1) / 2;
+      pos = new THREE.Vector3(Math.cos(a) * depth * 1.5, 5.6 - depth * 1.05, Math.sin(a) * depth * 1.5 * 0.7);
+    }
+    const m = new THREE.Mesh(nodeGeo, M.node);
+    m.position.copy(pos);
+    treeG.add(m);
+    const entry = { n, m, depth, ch: n.ch };
+    trieNodes.push(entry);
+    n._entry = entry;
+    const span = (a1 - a0);
+    let acc = a0;
+    const kids = [...n.children.values()];
+    const kidLeaves = kids.map(k => { let c = 0; (function cc(x) { if (x.leaf || x.children.size === 0) { c++; return; } x.children.forEach(cc); })(k); return c; });
+    kids.forEach((k, i) => {
+      const kspan = span * kidLeaves[i] / Math.max(1, totalLeaves - 0);
+      place(k, depth + 1, acc, acc + kspan);
+      acc += kspan;
+    });
+  })(rootNode, 0, 0, TAU);
+  /* 连线 */
+  (function link(n) {
+    n.children.forEach(k => {
+      const geo = new THREE.BufferGeometry().setFromPoints([n._entry.m.position, k._entry.m.position]);
+      const ln = new THREE.Line(geo, M.edge);
+      treeG.add(ln);
+      trieEdges.push({ ln, from: n, to: k });
+      link(k);
+    });
+  })(rootNode);
+  /* 字符标签 */
+  trieNodes.forEach(e => {
+    if (e.depth === 0) {
+      const l = addLabel(() => L('root', 'root'), () => '', new THREE.Vector3(0, 0, 0));
+      labelReg[labelReg.length - 1].follow = op => { op.copy(e.m.position).add(tmpV.set(0, 0.35, 0)); };
+    } else {
+      const l = addLabel(() => e.ch, () => '', new THREE.Vector3(0, 0, 0));
+      labelReg[labelReg.length - 1].follow = op => { op.copy(e.m.position); };
+    }
+  });
+  runQuery();
+}
+const QUERY = 'april';
+function runQuery() {
+  comps = 0;
+  pathSet = new Set(); subSet = new Set();
+  let node = rootNode;
+  stepsUsed = 0;
+  for (let i = 0; i < qLen && node; i++) {
+    const ch = QUERY[i];
+    comps++;
+    node = node.children.get(ch) || null;
+    stepsUsed++;
+    if (node) pathSet.add(node);
+  }
+  /* 收子树 + 频率排序 */
+  const cands = [];
+  if (node) (function collect(n) {
+    if (n.leaf) cands.push(n);
+    n.children.forEach(collect);
+  })(node);
+  cands.sort((a, b) => FREQS[b.word] - FREQS[a.word]);
+  cands.slice(0, Math.min(40, 60)).forEach(n => subSet.add(n));
+  /* 着色 */
+  trieNodes.forEach(e => {
+    e.m.material = pathSet.has(e.n) ? M.nodeOn : subSet.has(e.n) ? M.nodeSub : M.node;
+  });
+  trieEdges.forEach(e => {
+    e.ln.material = pathSet.has(e.to.n) && pathSet.has(e.from.n) ? M.edgeOn : M.edge;
+  });
+  return cands;
+}
+
+/* ---------------- 候选气泡 ---------------- */
+const candDiv = document.createElement('div');
+candDiv.className = 'lbl st';
+candDiv.style.cssText = 'font-size:11.5px;line-height:1.6;padding:8px 12px;white-space:nowrap';
+const candObj = new CSS2DObject(candDiv);
+scene.add(candObj);
+let candAnchor = new THREE.Vector3(0, 3.4, 0);
+function updateCands() {
+  const cands = runQuery();
+  const top = cands.slice(0, topK);
+  if (pathSet.size === 0 || !top.length) { candObj.visible = false; return; }
+  candObj.visible = true;
+  const last = [...pathSet].pop();
+  if (last && last._entry) candAnchor.copy(last._entry.m.position);
+  candObj.position.copy(candAnchor).add(tmpV.set(1.4, 1.1, 0));
+  candDiv.innerHTML = L('<b>候选(按频率)</b><br>', '<b>candidates by freq</b><br>') +
+    top.map(n => `${n.word} <span style="opacity:.7">×${FREQS[n.word]}</span>`).join('<br>');
+}
+
+/* ---------------- 线性扫描对照 ---------------- */
+const linDiv = document.createElement('div');
+linDiv.className = 'lbl st';
+linDiv.style.cssText = 'font-size:11.5px;line-height:1.6;padding:8px 12px;white-space:nowrap';
+const linObj = new CSS2DObject(linDiv);
+linObj.position.set(0, 6.6, 0);
+scene.add(linObj);
+function updateLinear() {
+  if (!linearOn) { linObj.visible = false; return; }
+  linObj.visible = true;
+  const p = Math.min(1, linearT / 2.2);
+  const scanned = Math.floor(p * dictSize);
+  linDiv.innerHTML = L(
+    `<b>线性扫描 vs 前缀树</b><br>朴素扫描:${scanned}/${dictSize} 词 · ${scanned * QUERY.length} 次比较<br>前缀树:3 步下行 · ${qLen} 次比较 <b>已完成 ✓</b>`,
+    `<b>linear scan vs trie</b><br>naive scan: ${scanned}/${dictSize} words - ${scanned * QUERY.length} comparisons<br>trie: 3 steps down - ${qLen} comparisons <b>done ✓</b>`);
+}
+
+/* ---------------- IP 路由演示 ---------------- */
+function buildRouteTrie() {
+  while (routeG.children.length) routeG.remove(routeG.children[0]);
+  /* 目标 200.100.5.9 → 首字节 200 = 11001000;路由:默认 /0, 200/8, 200.100/16(截断展示) */
+  const bits = [1, 1, 0, 0, 1, 0, 0, 0];
+  let prev = null;
+  const nodeGeo = new THREE.SphereGeometry(0.15, 12, 9);
+  const nodes = [];
+  bits.forEach((b, i) => {
+    const m = new THREE.Mesh(nodeGeo, M.route);
+    m.position.set(-3 + i * 0.85, 3.4 - (b ? 0.4 : -0.4) * (i % 2 ? 1 : -1), 0);
+    routeG.add(m);
+    const entry = { m, bit: b, depth: i + 1, marker: i === 7 };
+    nodes.push(entry);
+    const l = addLabel(() => String(b), () => i === 7 ? 'g' : '', new THREE.Vector3(0, 0, 0));
+    labelReg[labelReg.length - 1].follow = op => { op.copy(m.position).add(tmpV.set(0, 0.3, 0)); };
+    if (prev) {
+      const geo = new THREE.BufferGeometry().setFromPoints([prev.m.position, m.position]);
+      routeG.add(new THREE.Line(geo, M.edge));
+    }
+    prev = entry;
+  });
+  const m8 = nodes[nodes.length - 1].m;
+  const hit = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.03, 8, 30), new THREE.MeshBasicMaterial({ color: 0x7bd88f }));
+  hit.position.copy(m8.position);
+  routeG.add(hit);
+  const l = addLabel(() => L('最长前缀 /8 → 下一跳 B', 'longest prefix /8 -> next-hop B'), () => 'g', new THREE.Vector3(0, 0, 0));
+  labelReg[labelReg.length - 1].follow = op => { op.copy(m8.position).add(tmpV.set(0, -0.5, 0)); };
+  const l2 = addLabel(() => L('目标 200.100.5.9:逐位下行,/16 与 /24 在更深处', 'target 200.100.5.9: bit by bit, /16 &amp; /24 deeper still'),
+    () => '', new THREE.Vector3(-3, 4.3, 0));
+  routeG.add(l2.o ? l2.o : new THREE.Object3D());
+}
+
+/* ---------------- 标签 ---------------- */
+addLabel(() => L('查询 "april" 前缀 · 金色=下行路径 · 绿色=候选子树', 'query "april" - gold=descent, green=candidates'),
+  () => '', new THREE.Vector3(0, 6.2, 0));
+addLabel(() => L(`词库 ${dictSize} 词 · 查询只要 ${stepsUsed} 步(与词库无关)`,
+  `${dictSize} words - query takes ${stepsUsed} steps (size-independent)`), () => 'e',
+  new THREE.Vector3(4.6, 1.2, 0));
+
+/* ---------------- 示波器:比较次数对比 ---------------- */
+function drawScope() {
+  const w = scope.width, h = scope.height;
+  scopeCtx.clearRect(0, 0, w, h);
+  scopeCtx.strokeStyle = 'rgba(127,140,160,.4)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.strokeRect(4, 4, w - 8, h - 8);
+  const x = n => 4 + (n / 32) * (w - 8);
+  const y = c => (h - 6) - Math.min(1, c / 100) * (h - 12);
+  /* 哈希/线性:随词库线性涨;Trie:O(L) 平线 */
+  scopeCtx.strokeStyle = '#ff8787';
+  scopeCtx.lineWidth = Math.max(1.4, 1.4 * Math.min(devicePixelRatio, 2));
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(x(0), y(0)); scopeCtx.lineTo(x(28), y(28 * 5));
+  scopeCtx.stroke();
+  scopeCtx.strokeStyle = '#7bd88f';
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(x(0), y(1)); scopeCtx.lineTo(x(28), y(6));
+  scopeCtx.stroke();
+  scopeCtx.fillStyle = '#7bd88f';
+  scopeCtx.beginPath(); scopeCtx.arc(x(dictSize), y(qLen), 4 * Math.min(devicePixelRatio, 2), 0, TAU); scopeCtx.fill();
+  scopeCtx.fillStyle = 'rgba(242,245,249,.85)';
+  scopeCtx.font = `${10 * Math.min(devicePixelRatio, 2)}px sans-serif`;
+  scopeCtx.fillText(L('红:线性扫描 O(N·L) · 绿:Trie O(L)', 'red: linear O(N*L) - green: trie O(L)'), 8, 14 * Math.min(devicePixelRatio, 2));
+  scopeCtx.fillText(L(`当前:${qLen} 次比较 @ ${dictSize} 词`, `now: ${qLen} comparisons at ${dictSize} words`), 8, h - 8);
+}
+
+/* ---------------- 步骤 ---------------- */
+const STEPS = [
+  { b: '哈希之短', be: 'what hashing cannot do', tgt: [0, 4, 7],
+    d: '哈希表查一个词同样快,但它把前缀信息全打碎了:以 "ap" 开头的词散落在桶的四面八方,想全找出来只能全表扫描。',
+    de: 'A hash table answers one word just as fast but shreds prefix information: words starting with "ap" scatter across buckets - finding them all means a full scan.' },
+  { b: '逐字分叉', be: 'branch per character', tgt: [0, 5, 6],
+    d: '前缀树把共同前缀收拢成同一条路:每个节点是一个字符,从根到节点的路径就是一个前缀——树即字典。',
+    de: 'A trie gathers shared prefixes onto one path: each node is a character, each root-to-node path a prefix - the tree is the dictionary.' },
+  { b: '三步落地', be: 'three steps down', tgt: [0, 4.4, 5.2],
+    d: '查询 "apr" 三个字符走三步落在一个节点上——查询成本只跟词长有关、与词库大小无关:十万词和一亿词都是 3 步。拖「词库规模」看步数纹丝不动。',
+    de: 'Three characters land you three steps down - query cost depends only on word length, not dictionary size: a hundred thousand words or a hundred million, still three steps. Drag dictionary size and watch it refuse to move.' },
+  { b: '收子树', be: 'take the subtree', tgt: [0, 3.4, 4.8],
+    d: '走到节点后收下整棵子树,前缀查询变成一次下行的顺路收获——绿色就是所有以 "apr" 开头的词。',
+    de: 'Walk to the node and take its whole subtree - prefix queries come free with the descent. Green marks every word starting with "apr".' },
+  { b: '频率排序', be: 'rank by frequency', tgt: [1.8, 3, 4.4],
+    d: '候选词按使用频率排序:每个节点存一个计数器,历史查询把高频词顶到建议前列——这就是搜索框前三名的来历。',
+    de: 'Candidates rank by frequency: every node keeps a counter and past queries push hot words to the top - that is where the search box\u2019s top three come from.' },
+  { b: '压缩', be: 'compression', tgt: [-3, 4, 4.6],
+    d: '字符级分叉产生大量稀疏节点:工程上把单链压缩成一条边(radix tree)——按「压缩前后」看节点数当场坍缩。',
+    de: 'Character-level branching creates sparse nodes; production systems compress single-child chains into one edge (radix trees) - press compression and watch the node count collapse.' },
+  { b: '最长前缀', be: 'longest prefix match', tgt: [-1, 3.4, 5.4],
+    d: '路由器发明了同构用法:IP 路由表按二进制位建前缀树,查 200.100.5.9 时取「最长前缀匹配」——/24 专网路由优先于 /8 默认路由,互联网每天靠这棵树转发百亿亿个包。',
+    de: 'Routers invented an isomorphic use: IP forwarding tables are tries over bits, and 200.100.5.9 resolves by longest-prefix match - a /24 specialized route beats a /8 default. The internet forwards on this tree.' },
+];
+
+/* ---------------- 公式 ---------------- */
+function updateFormula() {
+  el.formula.innerHTML =
+    L(`查询 O(L):${qLen} 个字符 ${stepsUsed} 步 · ${comps} 次比较 —— 与词库规模 N=<b>${dictSize}</b> 无关`,
+      `query O(L): ${qLen} chars, ${stepsUsed} steps, ${comps} comparisons - independent of N=<b>${dictSize}</b>`) +
+    '<br>' +
+    L(`朴素扫描 ${dictSize * QUERY.length} 次比较 · 前缀查询 = 下行 + 子树遍历 · 候选 Top-${topK} 按频率`,
+      `naive scan ${dictSize * QUERY.length} comparisons - prefix query = descent + subtree walk - top-${topK} by frequency`) +
+    '<br>' +
+    L(`节点 ${compressOn ? countCompressed(WORDS.slice(0, dictSize)) : trieNodes.length}${compressOn ? '(压缩后)' : ''} · ${routeOn ? '<b>IP 路由:最长前缀匹配</b>' : ''}`,
+      `nodes ${compressOn ? countCompressed(WORDS.slice(0, dictSize)) : trieNodes.length}${compressOn ? ' (compressed)' : ''} - ${routeOn ? '<b>IP routing: longest prefix match</b>' : ''}`);
+}
+
+/* ---------------- 状态面板 ---------------- */
+function updateSliderLabels() {
+  el.elDVal.textContent = dictSize + ' 词';
+  el.elQVal.textContent = QUERY.slice(0, qLen);
+  el.elKVal.textContent = 'Top-' + topK;
+}
+function updateStats() {
+  el.stA.innerHTML = trieNodes.length + '<small> 节点</small>';
+  el.stA.className = 'v';
+  el.stB.innerHTML = comps + '<small> 次</small>';
+  el.stB.className = 'v ok';
+  el.stC.innerHTML = stepsUsed + '<small> 步</small>';
+  el.stC.className = 'v ok';
+  el.stD.innerHTML = subSet.size + '<small> 个</small>';
+  el.stD.className = 'v';
+  el.stE.innerHTML = dictSize + '<small> 词</small>';
+  el.stE.className = 'v';
+  el.stF.innerHTML = QUERY.slice(0, qLen) || '—';
+  el.stF.className = 'v';
+}
+function resetMachine() {
+  dictSize = 28; qLen = 3; topK = 3;
+  routeOn = false; compressOn = false; linearOn = false; linearT = 0;
+  routeG.visible = false; treeG.visible = true;
+  linObj.visible = false;
+  layoutTrie(); updateCands();
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  preset = null;
+  tgtVec.set(0, 3.6, 0);
+  el.elD.value = 28; el.elQ.value = 3; el.elK.value = 3;
+  updateSliderLabels(); updateFormula();
+}
+
+/* ---------------- UI 接线 ---------------- */
+const el = {
+  elD: document.getElementById('vD'), elDVal: document.getElementById('vDVal'),
+  elQ: document.getElementById('vQ'), elQVal: document.getElementById('vQVal'),
+  elK: document.getElementById('vK'), elKVal: document.getElementById('vKVal'),
+  stA: document.getElementById('stA'), stB: document.getElementById('stB'),
+  stC: document.getElementById('stC'), stD: document.getElementById('stD'),
+  stE: document.getElementById('stE'), stF: document.getElementById('stF'),
+  formula: document.getElementById('formula'),
+};
+el.elD.addEventListener('input', () => { dictSize = +el.elD.value; layoutTrie(); updateCands(); updateSliderLabels(); });
+el.elQ.addEventListener('input', () => { qLen = +el.elQ.value; updateCands(); updateSliderLabels(); });
+el.elK.addEventListener('input', () => { topK = +el.elK.value; updateCands(); updateSliderLabels(); });
+function syncPresetUI() {
+  document.getElementById('btn-linear').classList.toggle('on', linearOn);
+  document.getElementById('btn-route').classList.toggle('on', routeOn);
+  document.getElementById('btn-compress').classList.toggle('on', compressOn);
+}
+document.getElementById('btn-linear').addEventListener('click', () => { linearOn = !linearOn; linearT = 0; updateLinear(); syncPresetUI(); });
+document.getElementById('btn-route').addEventListener('click', () => {
+  routeOn = !routeOn;
+  routeG.visible = routeOn;
+  treeG.visible = !routeOn;
+  if (routeOn && !routeG.children.length) buildRouteTrie();
+  tgtVec.set(-1, 3.2, 0);
+  syncPresetUI();
+});
+document.getElementById('btn-compress').addEventListener('click', () => { compressOn = !compressOn; syncPresetUI(); });
+
+/* ---------------- 主逻辑 ---------------- */
+function pageFrame(et, dt) {
+  if (linearOn && playing) {
+    linearT += dt;
+    updateLinear();
+  }
+  if (routeOn) tgtVec.set(-1, 3.2, 0);
+}
+
+/* ---------------- 装配 ---------------- */
+layoutTrie();
+updateCands();
+updateSliderLabels();
+
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  pageFrame(et, simDt);
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.emissiveIntensity = 0.4 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked && typeof drawScope === 'function') drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
+</body>
+</html>
