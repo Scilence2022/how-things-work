@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>缓冲区溢出与内存安全 · 越界的字节</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#3d7ea6;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#2a6183;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(179,135,62,.65); background: rgba(179,135,62,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(143,106,37,.55); background: rgba(143,106,37,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(179,135,62,.10); border-color: rgba(179,135,62,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(143,106,37,.08); border-color: rgba(143,106,37,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #e8c98f; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="缓冲区溢出与内存安全:越界的字节" data-en="Buffer Overflow &amp; Memory Safety">缓冲区溢出与内存安全:越界的字节</h1>
+  <div class="sub" data-zh="C 语言不检查数组边界:把 100 字节写进 64 字节的栈缓冲区,多出来的 36 字节会顺着栈向上「淹没」相邻数据。栈帧从低地址到高地址依次摆着:局部变量(含缓冲区)→ 保存的帧指针 → 返回地址;输入足够长时,返回地址就被攻击数据覆写——函数执行 ret 时,程序计数器被装上这个伪造值,控制流跳到攻击者指定的位置,这就是 1988 年莫里斯蠕虫利用的经典漏洞,数千台机器一夜沦陷。三十年防御进化:金丝雀 canary 在函数入口于返回地址前放一个哨兵值,返回前检查,被改即终止进程;ASLR 地址空间随机化让每次启动的栈/堆/共享库基址随机,写死的偏移失效;NX/DEP 把栈页标记为不可执行,注入的代码根本跑不起来;攻击者于是改用 ROP 面向返回编程,拼接程序里现成的代码片段(gadget)绕过 NX,防线又催生 CFI 控制流完整性;釜底抽薪是 Rust/Go/Java 这类内存安全语言的运行时边界检查——微软与谷歌统计自家产品约 70% 的严重漏洞源于内存安全问题,行业正在用 Rust 重写关键组件。工程教训:永远检查长度、用带边界的 API、开满编译器保护(-fstack-protector 等)。演示:拖「输入长度」滑块把数据块逐格灌进栈塔,亲眼看它越过 buf 边界、染红金丝雀与返回地址;按「函数返回」看四种结局——无防御时控制流被劫持、金丝雀报警当场终止、ASLR 让写死的跳转地址失效、NX 页拒绝执行;开「边界检查写入」对照安全版本,再按「重新调用」在 ASLR 下换一组随机基址。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="C never checks array bounds: write 100 bytes into a 64-byte stack buffer and the extra 36 bytes flood upward over the neighboring data. A stack frame lays out from low to high addresses as: local variables (including the buffer), then the saved frame pointer, then the return address; given enough input, the return address is overwritten with attacker data - when the function executes ret, the program counter is loaded with that forged value and control flow jumps wherever the attacker points: the classic bug the 1988 Morris worm exploited, toppling thousands of machines overnight. Thirty years of defense: the stack canary places a sentinel before the return address at function entry and checks it before returning, killing the process on tamper; ASLR randomizes stack/heap/library base addresses at every launch so hardcoded offsets miss; NX/DEP marks stack pages non-executable so injected code cannot run; attackers answered with ROP (return-oriented programming), chaining ready-made code gadgets already in the program to bypass NX, which in turn motivated CFI (control-flow integrity); the root cure is memory-safe languages - Rust/Go/Java with runtime bounds checks: Microsoft and Google report roughly 70% of severe security bugs are memory-safety issues, and the industry is rewriting critical components in Rust. Engineering lessons: always check lengths, use bounded APIs, and turn on compiler hardening (-fstack-protector and friends). In the demo: drag the input-length slider to pour data into the stack tower cell by cell and watch it cross the buffer edge, dyeing the canary and the return address red; press function return to see four endings - hijacked with no defenses, killed on the spot by the canary, hardcoded offsets defeated by ASLR, or the NX page refusing to execute; switch on bounds-checked writes to compare the safe version, and press re-call to draw a fresh random base under ASLR. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">C 语言不检查数组边界:把 100 字节写进 64 字节的栈缓冲区,多出来的 36 字节会顺着栈向上「淹没」相邻数据。栈帧从低地址到高地址依次摆着:局部变量(含缓冲区)→ 保存的帧指针 → 返回地址;输入足够长时,返回地址就被攻击数据覆写——函数执行 ret 时,程序计数器被装上这个伪造值,控制流跳到攻击者指定的位置,这就是 1988 年莫里斯蠕虫利用的经典漏洞,数千台机器一夜沦陷。三十年防御进化:金丝雀 canary 在函数入口于返回地址前放一个哨兵值,返回前检查,被改即终止进程;ASLR 地址空间随机化让每次启动的栈/堆/共享库基址随机,写死的偏移失效;NX/DEP 把栈页标记为不可执行,注入的代码根本跑不起来;攻击者于是改用 ROP 面向返回编程,拼接程序里现成的代码片段(gadget)绕过 NX,防线又催生 CFI 控制流完整性;釜底抽薪是 Rust/Go/Java 这类内存安全语言的运行时边界检查——微软与谷歌统计自家产品约 70% 的严重漏洞源于内存安全问题,行业正在用 Rust 重写关键组件。工程教训:永远检查长度、用带边界的 API、开满编译器保护(-fstack-protector 等)。演示:拖「输入长度」滑块把数据块逐格灌进栈塔,亲眼看它越过 buf 边界、染红金丝雀与返回地址;按「函数返回」看四种结局——无防御时控制流被劫持、金丝雀报警当场终止、ASLR 让写死的跳转地址失效、NX 页拒绝执行;开「边界检查写入」对照安全版本,再按「重新调用」在 ASLR 下换一组随机基址。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="输入长度" data-en="input length">输入长度</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="溢出字节" data-en="overflow bytes">溢出字节</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="金丝雀" data-en="canary">金丝雀</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="返回地址" data-en="return addr">返回地址</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="ASLR 基址" data-en="ASLR base">ASLR 基址</span><span class="v" id="stE">—</span>
+  <span class="k" data-zh="进程状态" data-en="process">进程状态</span><span class="v" id="stF">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="栈帧从低到高:buf → canary → saved FP → ret" data-en="frame low to high: buf -> canary -> saved FP -> ret">栈帧从低到高:buf → canary → saved FP → ret</span>
+    <span class="chip r" data-zh="溢出字节向上淹没:金丝雀与返回地址先后失守" data-en="overflow floods upward: canary then return address fall">溢出字节向上淹没:金丝雀与返回地址先后失守</span>
+    <span class="chip o" data-zh="canary / ASLR / NX / CFI:三十年防御进化" data-en="canary / ASLR / NX / CFI: 30 years of mitigation">canary / ASLR / NX / CFI:三十年防御进化</span>
+    <span class="chip g" data-zh="内存安全语言:运行时边界检查,釜底抽薪" data-en="memory-safe languages: runtime bounds checks, root cure">内存安全语言:运行时边界检查,釜底抽薪</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btnRet" data-zh="函数返回" data-en="function return">函数返回</button>
+    <button class="abtn" id="btnCall" data-zh="重新调用" data-en="re-call">重新调用</button>
+    <button class="abtn" id="btnFill" data-zh="重新写入" data-en="rewrite">重新写入</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="输入长度" data-en="input length">输入长度</label><input id="vLen" type="range" min="0" max="128" step="1" value="100"><span class="val" id="vLenVal"></span></div>
+  <div class="row"><label data-zh="写入速率" data-en="write rate">写入速率</label><input id="vRate" type="range" min="4" max="40" step="1" value="14"><span class="val" id="vRateVal"></span></div>
+  <div class="row"><label data-zh="显示调用帧" data-en="caller frames">显示调用帧</label><input id="vFrames" type="range" min="1" max="4" step="1" value="2"><span class="val" id="vFramesVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="时序示波" data-en="timeline scope">时序示波</span></label>
+        <label><input id="tglCanary" type="checkbox"> <span data-zh="金丝雀" data-en="canary">金丝雀</span></label>
+        <label><input id="tglASLR" type="checkbox"> <span data-zh="ASLR" data-en="ASLR">ASLR</span></label>
+        <label><input id="tglNX" type="checkbox"> <span data-zh="NX 不可执行" data-en="NX">NX 不可执行</span></label>
+        <label><input id="tglSafe" type="checkbox"> <span data-zh="边界检查写入" data-en="bounds-checked writes">边界检查写入</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../virtual-memory/" data-zh="虚拟内存" data-en="virtual memory">虚拟内存</a>
+    <a href="../cpu-pipeline/" data-zh="CPU 流水线" data-en="CPU pipeline">CPU 流水线</a>
+    <a href="../garbage-collection/" data-zh="垃圾回收" data-en="garbage collection">垃圾回收</a>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const clamp01 = x => clamp(x, 0, 1);
+const TAU = Math.PI * 2;
+const HEXC = '0123456789ABCDEF';
+const randHex8 = () => { let s = ''; for (let i = 0; i < 8; i++) s += HEXC[(Math.random() * 16) | 0]; return '0x' + s; };
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');          // 页面侧:场景背景与 M.* 材质
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(9, 8, 14);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 3.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fillL = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fillL.position.set(-7, 5, -6);
+scene.add(fillL);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };   // 返回包装对象,控制可见性用 .o.visible
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 3.5, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(300), sndA = new Float32Array(300);   // 双通道环形缓冲
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= 缓冲区溢出场景 ================= */
+const TITLE_ZH = '缓冲区溢出与内存安全 · 越界的字节';
+const TITLE_EN = 'Buffer Overflow & Memory Safety';
+const RET_ATTACK = '0xBFFFF200';      // 攻击者写死的跳转目标(经典栈地址)
+
+/* ---------------- 状态 ---------------- */
+let inLen = clamp(Math.round(qsFloat('len', 100)), 0, 128);
+let rate = clamp(qsFloat('rate', 14), 4, 40);
+let framesShown = clamp(Math.round(qsFloat('frames', 2)), 1, 4);
+let protCanary = false, protASLR = false, protNX = false, protSafe = false;
+let fillB = 0, st = 'writing', tSt = 0;       // writing | written | returning | done
+let procState = 'run', deadReason = '';       // run | dead | hijack | clean
+let retAnim = null;                            // {t, kind: clean|nx|hijack}
+let deadT = 0;
+const ADDR_FIX = { base: '0xBFFDF000', buf: '0xBFFDF070', canary: '0x39C71A55', fp: '0xBFFDF0B0', ret: '0x08049ABC' };
+let ADDR = { ...ADDR_FIX };
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.35,
+    emissive: color, emissiveIntensity: 0.08, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.4, depthWrite: false }),
+  plate: mat(0x39424d, { transparent: true, opacity: 0.14, roughness: 0.6, metalness: 0.2, depthWrite: false }),
+  slab: mat(0x39424d, { roughness: 0.55, metalness: 0.3 }),
+  cap: mat(0x2c3540, { roughness: 0.6, metalness: 0.3 }),
+  payload: mat(0x2f9e5f, { roughness: 0.4, metalness: 0.1, emissive: 0x1d7a43, emissiveIntensity: 0.25 }),
+  payloadNX: mat(0x5a6470, { roughness: 0.55, metalness: 0.3, emissiveIntensity: 0.05 }),
+  arrow: mat(0x6fc0ff, { roughness: 0.35, metalness: 0.4, emissive: 0x2a7abf, emissiveIntensity: 0.6 }),
+  canaryBase: mat(0xd9a13b, { roughness: 0.4, metalness: 0.2, emissive: 0xa8741a, emissiveIntensity: 0.45 }),
+  bufBase: mat(0x2a5f8a, { roughness: 0.5, metalness: 0.25, emissive: 0x1a3f5f, emissiveIntensity: 0.4 }),
+  retBase: mat(0x3d7ea6, { roughness: 0.5, metalness: 0.25, emissive: 0x24586f, emissiveIntensity: 0.4 }),
+};
+const PAL = { bufEmpty: 0x1d242d, steel: 0x39424d, dim: 0x22282f, data: 0x3f6e96 };
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  if (!scene.fog) scene.fog = new THREE.Fog(0x0f1216, 55, 160);
+  scene.fog.color.set(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+  M.slab.color.set(dark ? 0x39424d : 0x9aa6b4);
+  M.cap.color.set(dark ? 0x2c3540 : 0x8b97a6);
+  PAL.bufEmpty = dark ? 0x1d242d : 0xc4cdd8;
+  PAL.steel = dark ? 0x39424d : 0x9aa6b4;
+  PAL.dim = dark ? 0x22282f : 0xb5bfca;
+  PAL.data = dark ? 0x3f6e96 : 0x5b8bb8;
+}
+
+/* ---------------- 地面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(46, 0.12, 26), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(32, 16, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* ---------------- 栈内存塔 ---------------- */
+const NROWS = 14;                              // buf×8 + canary + fp + ret + caller×3
+const rowY = r => 0.55 + r * 0.52;
+const rows = [];
+{
+  const cellGeo = new THREE.BoxGeometry(3.2, 0.44, 1.15);
+  const kinds = ['buf', 'buf', 'buf', 'buf', 'buf', 'buf', 'buf', 'buf', 'canary', 'fp', 'ret', 'caller', 'caller', 'caller'];
+  kinds.forEach((kind, r) => {
+    const m = new THREE.MeshStandardMaterial({ color: 0x1d242d, roughness: 0.55, metalness: 0.2, emissive: 0x000000 });
+    const mesh = new THREE.Mesh(cellGeo, m);
+    mesh.position.set(0, rowY(r), 0);
+    scene.add(mesh);
+    rows.push({ kind, r, mat: m });
+  });
+}
+const framePlate = new THREE.Mesh(new THREE.BoxGeometry(3.8, 7.9, 0.12), M.plate);
+framePlate.position.set(0, rowY(6.5), -0.78);
+scene.add(framePlate);
+const callerSlabs = [];
+for (let i = 0; i < 4; i++) {
+  const s = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.72, 1.15), M.slab);
+  s.position.set(0, -0.62 - i * 0.92, 0);
+  scene.add(s);
+  callerSlabs.push(s);
+}
+const capTop = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.5, 1.15), M.cap);
+capTop.position.set(0, rowY(NROWS - 1) + 0.62, 0);
+scene.add(capTop);
+
+/* 程序计数器箭头 */
+const pcArrow = new THREE.Group();
+{
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.55, 14), M.arrow);
+  cone.rotation.z = -Math.PI / 2;
+  cone.position.x = 0.35;
+  pcArrow.add(cone);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.7, 10), M.arrow);
+  shaft.rotation.z = -Math.PI / 2;
+  shaft.position.x = -0.28;
+  pcArrow.add(shaft);
+}
+pcArrow.position.set(-3.3, rowY(10), 0);
+scene.add(pcArrow);
+const PC_HOME = new THREE.Vector3(-3.3, rowY(10), 0);
+const PC_CLEAN = new THREE.Vector3(-2.4, -0.62, 0);
+const PC_BAD = new THREE.Vector3(-5.6, 9.2, -1.5);
+
+/* 攻击者 payload 平台(教学示意,不含任何真实代码) */
+const payloadPad = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.16, 1.7), M.payloadNX);
+payloadPad.position.copy(PC_BAD);
+scene.add(payloadPad);
+const padLeg1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2, 8), M.cap);
+padLeg1.position.set(PC_BAD.x + 0.9, PC_BAD.y - 1.7, PC_BAD.z);
+scene.add(padLeg1);
+const padLeg2 = padLeg1.clone();
+padLeg2.position.x = PC_BAD.x - 0.9;
+scene.add(padLeg2);
+
+/* ---------------- 状态推进 ---------------- */
+function randomizeAddrs() {
+  if (!protASLR) { ADDR = { ...ADDR_FIX }; return; }
+  ADDR = { base: randHex8(), buf: randHex8(), canary: '0x' + randHex8().slice(2), fp: randHex8(), ret: randHex8() };
+}
+function rebuildFrame() {
+  fillB = 0; st = 'writing'; tSt = 0;
+  procState = 'run'; deadReason = ''; retAnim = null; deadT = 0;
+  randomizeAddrs();
+  pcArrow.position.copy(PC_HOME);
+  pcArrow.rotation.set(0, 0, 0);
+  M.arrow.color.setHex(0x6fc0ff); M.arrow.emissive.setHex(0x2a7abf);
+  M.payload.emissiveIntensity = 0.25;
+}
+function fillTarget() { return protSafe ? Math.min(inLen, 64) : inLen; }
+function overflowBytes() { return protSafe ? 0 : Math.max(0, inLen - 64); }
+const filledRows = () => Math.min(NROWS, Math.ceil(fillB / 8 - 1e-9));
+const canaryCorrupted = () => filledRows() >= 9;
+const retCorrupted = () => filledRows() >= 11;
+
+function doReturn() {
+  if (st !== 'written') return;
+  if (protCanary && canaryCorrupted()) {
+    procState = 'dead'; deadReason = 'canary'; st = 'done'; tSt = 0;
+  } else if (retCorrupted()) {
+    if (protASLR) { procState = 'dead'; deadReason = 'aslr'; st = 'done'; tSt = 0; }
+    else { retAnim = { t: 0, kind: protNX ? 'nx' : 'hijack' }; st = 'returning'; tSt = 0; }
+  } else {
+    retAnim = { t: 0, kind: 'clean' }; st = 'returning'; tSt = 0;
+  }
+}
+function finishReturn() {
+  if (retAnim.kind === 'nx') { procState = 'dead'; deadReason = 'nx'; }
+  else if (retAnim.kind === 'hijack') procState = 'hijack';
+  else procState = 'clean';
+  retAnim = null; st = 'done'; tSt = 0;
+}
+function procText() {
+  if (procState === 'hijack') return L('已失陷:控制流被劫持', 'compromised: control flow hijacked');
+  if (procState === 'clean') return L('正常返回', 'returned normally');
+  if (procState === 'dead') {
+    if (deadReason === 'canary') return L('已终止:*** stack smashing detected ***', 'aborted: *** stack smashing detected ***');
+    if (deadReason === 'aslr') return L('已终止:SIGSEGV——ASLR 使写死的跳转地址失效', 'killed: SIGSEGV - ASLR invalidated the hardcoded target');
+    return L('已终止:SIGSEGV——NX 页不可执行', 'killed: SIGSEGV - NX page is not executable');
+  }
+  return st === 'written' ? L('运行中:等待函数返回', 'running: awaiting function return')
+    : st === 'returning' ? L('返回中:PC 装入返回地址…', 'returning: PC loaded with return address...')
+    : L('运行中:正在写入栈帧', 'running: writing the stack frame');
+}
+
+/* ---------------- 标签 ---------------- */
+addLabel(() => L(`栈帧(低地址 → 高地址):buf[64] → canary(8B)→ saved FP(8B)→ 返回地址(8B)`,
+  `stack frame (low to high address): buf[64] -> canary (8B) -> saved FP (8B) -> return address (8B)`),
+  () => 'st', new THREE.Vector3(0, 8.9, 0));
+addLabel(() => procText(),
+  () => procState === 'run' ? 'g' : procState === 'clean' ? 'b' : 'bad', new THREE.Vector3(0, 0.45, 4.4));
+addLabel(() => L(`&buf = ${ADDR.buf} · char buf[64]`, `&buf = ${ADDR.buf} - char buf[64]`),
+  () => 'st', new THREE.Vector3(2.6, rowY(3.5), 0));
+addLabel(() => !protCanary ? L(`金丝雀:未启用`, `canary: disabled`)
+    : canaryCorrupted() ? L(`金丝雀:0x41414141 已被覆写!`, `canary: 0x41414141 overwritten!`)
+    : L(`金丝雀:${ADDR.canary} · 返回前检查`, `canary: ${ADDR.canary} - checked before return`),
+  () => !protCanary ? 'e' : canaryCorrupted() ? 'bad' : 'g', new THREE.Vector3(2.6, rowY(8), 0));
+addLabel(() => L(`saved FP = ${ADDR.fp}`, `saved FP = ${ADDR.fp}`),
+  () => 'st', new THREE.Vector3(2.6, rowY(9), 0));
+addLabel(() => retCorrupted() ? L(`ret = ${RET_ATTACK} → 攻击数据!`, `ret = ${RET_ATTACK} -> attacker data!`)
+    : L(`ret = ${ADDR.ret} → main`, `ret = ${ADDR.ret} -> main`),
+  () => retCorrupted() ? 'bad' : 'b', new THREE.Vector3(2.6, rowY(10), 0));
+addLabel(() => L(`caller 帧:main() 等更高地址`, `caller frames: main() and higher addresses`),
+  () => 'st', new THREE.Vector3(3.0, -0.62, 0));
+addLabel(() => L(`更高地址:env/argv(内核区之外)`, `higher addresses: env/argv (beyond lies the kernel)`),
+  () => 'st', new THREE.Vector3(0, rowY(NROWS - 1) + 1.25, 0));
+addLabel(() => protNX ? L(`注入页:NX 不可执行——跳过来也跑不了`, `injected page: NX non-executable - even a jump here cannot run`)
+    : procState === 'hijack' ? L(`注入页:已执行——控制流被劫持!`, `injected page: executed - control flow hijacked!`)
+    : L(`注入页(教学示意):无 NX 时可执行`, `injected page (teaching schematic): executable without NX`),
+  () => protNX ? 'st' : procState === 'hijack' ? 'bad' : 'w', new THREE.Vector3(-5.6, 10.1, -1.5));
+addLabel(() => L(`ASLR:${protASLR ? '开 · 本次栈基址 ' + ADDR.base + '(每次启动不同)' : '关 · 栈基址固定 ' + ADDR.base + '——写死的偏移可复用'}`,
+  `ASLR: ${protASLR ? 'on - stack base this run ' + ADDR.base + ' (new every launch)' : 'off - fixed stack base ' + ADDR.base + ': hardcoded offsets are reusable'}`),
+  () => protASLR ? 'g' : 'w', new THREE.Vector3(-0.2, 9.7, 1.6));
+addLabel(() => protSafe ? L(`边界检查写入:最多 64 字节,溢不出去`, `bounds-checked write: capped at 64 bytes, cannot overflow`)
+    : L(`无长度检查:strcpy 有多少写多少`, `no length check: strcpy copies as much as you give it`),
+  () => protSafe ? 'g' : 'bad', new THREE.Vector3(0, 1.0, 2.4));
+addLabel(() => L(`程序计数器 PC${procState === 'hijack' ? ' = 攻击者地址!' : ''}`,
+  `program counter${procState === 'hijack' ? ' = attacker address!' : ''}`),
+  () => procState === 'hijack' || (procState === 'dead' && deadReason !== 'nx') ? 'bad' : 'b',
+  new THREE.Vector3(-3.3, rowY(10) + 0.75, 0));
+{
+  const timeline = [
+    ['1988 莫里斯蠕虫:溢出首次大规模亮相', '1988 Morris worm: overflow debuts at scale', 'bad'],
+    ['1990s:溢出漏洞泛滥年代', '1990s: the overflow plague years', 'w'],
+    ['2000s:canary · ASLR · NX 三大缓解上线', '2000s: canary, ASLR, NX ship', 'b'],
+    ['2010s:ROP 绕过 NX → CFI 登场', '2010s: ROP beats NX -> CFI arrives', 'e'],
+    ['2020s:Rust 重写,内存安全成为标配', '2020s: Rust rewrites, memory safety by default', 'g'],
+  ];
+  timeline.forEach((t, i) => {
+    addLabel(() => L(t[0], t[1]), () => t[2],
+      new THREE.Vector3(-7.2 + i * 3.6, 0.4, 4.9));
+  });
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+const STEPS = [
+  { hl: 'plate', tgt: [0, 4, 6.5],
+    b: '栈帧的三层楼', be: 'The three floors of a stack frame',
+    d: '每次函数调用都在栈上压一层新帧,从低地址到高地址依次摆着:局部变量(含缓冲区)、保存的帧指针、返回地址——函数的世界就靠这个返回地址一层层「回家」,谁控制了它,谁就控制了程序的下一步。',
+    de: 'Every call pushes a new frame onto the stack, laid out from low to high addresses: locals (including the buffer), the saved frame pointer, then the return address - a function finds its way home through that return address, so whoever controls it controls the program next step.' },
+  { hl: 'bufBase', tgt: [0, 2, 5],
+    b: '没有边界的 strcpy', be: 'strcpy without boundaries',
+    d: 'C 语言不检查数组边界:strcpy 把 100 字节写进 64 字节的 buf,多出的 36 字节顺着栈向上「淹没」相邻数据——缓冲区之上有金丝雀、帧指针、返回地址,溢出字节一格一格向上吃。',
+    de: 'C never checks array bounds: strcpy writes 100 bytes into a 64-byte buf and the extra 36 flood upward over the neighboring stack - above the buffer sit the canary, the frame pointer and the return address, and the overflow eats them one cell at a time.' },
+  { hl: 'retBase', tgt: [0, 6.3, 5],
+    b: '返回地址被改写', be: 'The return address, overwritten',
+    d: '溢出若够长,返回地址就被攻击数据覆写成 0xBFFFF200 这样的指定值——函数还不知道自己的「回家路」已被换掉:数据与控制信息在栈上比邻而居,正是混乱的根源。',
+    de: 'Given a long enough overflow, the return address is overwritten with a chosen value like 0xBFFFF200 - and the function has no idea its way home was swapped: data and control information living side by side on the stack is the root of the chaos.' },
+  { hl: 'arrow', tgt: [-3.4, 8, 4],
+    b: '控制流劫持', be: 'Control-flow hijack',
+    d: 'ret 指令把程序计数器弹成被覆写的值,控制流跳到攻击者指定位置——1988 年莫里斯蠕虫正是利用这个漏洞蔓延到数千台机器;未开任何防护时,这是默认结局。',
+    de: 'The ret instruction pops the overwritten value into the program counter and control flow jumps wherever the attacker points - exactly the bug that carried the 1988 Morris worm to thousands of machines; with no defenses on, this is the default ending.' },
+  { hl: 'canaryBase', tgt: [0, 5.2, 4.6],
+    b: '金丝雀:返回前的哨兵', be: 'The canary: a sentinel before returning',
+    d: '函数入口在返回地址前放一个随机哨兵值,返回前先检查:哨兵被改,立即打印 *** stack smashing detected *** 并终止进程——像矿工的金丝雀,毒气(溢出)进来它先死,但工人(程序)得以及时撤离。',
+    de: 'At function entry a random sentinel is placed before the return address and checked before returning: if it was altered, the process prints *** stack smashing detected *** and dies at once - like a miner\'s canary, it falls first when the gas (overflow) arrives, but the workers (the process) get out in time.' },
+  { hl: 'payloadNX', tgt: [0, 7, 5.5],
+    b: 'ASLR 与 NX:让写死失效', be: 'ASLR and NX: defeating hardcoded exploits',
+    d: 'ASLR 每次启动随机化栈/堆/共享库基址,写死的偏移全部落空;NX/DEP 把栈页标记为不可执行,就算跳过去,注入的代码也跑不起来——按「重新调用」看 ASLR 换基址,开 NX 看跳转被页属性拒绝。',
+    de: 'ASLR randomizes stack/heap/library base addresses at every launch, so hardcoded offsets all miss; NX/DEP marks stack pages non-executable, so even a successful jump cannot run injected code - press re-call to watch ASLR reshuffle the base, and switch NX on to see the jump refused by page permissions.' },
+  { hl: 'payload', tgt: [0, 4.4, 8.5],
+    b: 'ROP 与釜底抽薪:内存安全语言', be: 'ROP and the root cure: memory-safe languages',
+    d: '攻击者改用 ROP 面向返回编程,拼接程序里现成的代码片段(gadget)绕过 NX,防线又催生 CFI 控制流完整性;真正的釜底抽薪是 Rust/Go/Java 这类内存安全语言的运行时边界检查——微软与谷歌统计约 70% 严重漏洞源于内存安全,Rust 重写正在进行。',
+    de: 'Attackers turned to ROP, chaining ready-made code gadgets already in the program to bypass NX, and the defense answered with CFI; the real root cure is memory-safe languages - Rust/Go/Java with runtime bounds checks: Microsoft and Google attribute about 70% of severe bugs to memory safety, and the Rust rewrite is underway.' },
+];
+
+/* ---------------- 滑杆 / 按钮 ---------------- */
+const elLen = document.getElementById('vLen'), elLenVal = document.getElementById('vLenVal');
+const elRate = document.getElementById('vRate'), elRateVal = document.getElementById('vRateVal');
+const elFrames = document.getElementById('vFrames'), elFramesVal = document.getElementById('vFramesVal');
+const btnRet = document.getElementById('btnRet'), btnCall = document.getElementById('btnCall'), btnFill = document.getElementById('btnFill');
+const tglCanary = document.getElementById('tglCanary'), tglASLR = document.getElementById('tglASLR'),
+  tglNX = document.getElementById('tglNX'), tglSafe = document.getElementById('tglSafe');
+function updateSliderLabels() {
+  elLenVal.textContent = inLen + ' B';
+  elRateVal.textContent = rate + ' B/s';
+  elFramesVal.textContent = framesShown + ' ' + L('层', 'frames');
+}
+elLen.addEventListener('input', () => {
+  inLen = +elLen.value;
+  if (st === 'written' || st === 'done') {      // 拖动长度即刻重演写入
+    fillB = 0; st = 'writing'; tSt = 0;
+    procState = 'run'; deadReason = ''; retAnim = null; deadT = 0;
+    pcArrow.position.copy(PC_HOME); pcArrow.rotation.set(0, 0, 0);
+  }
+  updateSliderLabels();
+});
+elRate.addEventListener('input', () => { rate = +elRate.value; updateSliderLabels(); });
+elFrames.addEventListener('input', () => { framesShown = +elFrames.value; updateSliderLabels(); });
+btnRet.addEventListener('click', () => doReturn());
+btnCall.addEventListener('click', () => rebuildFrame());
+btnFill.addEventListener('click', () => { if (st !== 'returning') { fillB = 0; st = 'writing'; tSt = 0; procState = 'run'; deadReason = ''; retAnim = null; pcArrow.position.copy(PC_HOME); pcArrow.rotation.set(0, 0, 0); } });
+tglCanary.addEventListener('change', () => { protCanary = tglCanary.checked; });
+tglASLR.addEventListener('change', () => { protASLR = tglASLR.checked; if (protASLR) rebuildFrame(); });
+tglNX.addEventListener('change', () => { protNX = tglNX.checked; });
+tglSafe.addEventListener('change', () => { protSafe = tglSafe.checked; });
+
+/* ---------------- 状态机 ---------------- */
+function runModes(simDt) {
+  const d = simDt;
+  tSt += d;
+  if (st === 'writing') {
+    fillB = Math.min(fillTarget(), fillB + rate * d);
+    if (fillB >= fillTarget() - 1e-6) { st = 'written'; tSt = 0; }
+  } else if (st === 'returning' && retAnim) {
+    retAnim.t += d / 0.9;
+    if (retAnim.t >= 1) finishReturn();
+  } else if (st === 'done') {
+    deadT += d;
+  }
+}
+
+/* ---------------- 每帧可视 ---------------- */
+function sceneFrame(et, simDt, dt) {
+  const filled = filledRows();
+  const cc = canaryCorrupted(), rc = retCorrupted();
+  /* 栈塔格子着色 */
+  for (const row of rows) {
+    const m = row.mat, isFilled = row.r < filled;
+    let col, em = 0x000000, emI = 0;
+    if (row.kind === 'canary') {
+      if (!protCanary) { col = PAL.dim; }
+      else if (cc) { col = 0x6e1616; em = 0xff3030; emI = 0.4 + 0.3 * Math.sin(et * 14); }
+      else { col = 0xd9a13b; em = 0xa8741a; emI = 0.45 + 0.1 * Math.sin(et * 3); }
+    } else if (row.kind === 'ret') {
+      if (rc) { col = 0x6e1616; em = 0xff3030; emI = 0.4 + 0.3 * Math.sin(et * 11); }
+      else { col = 0x24586f; em = 0x1a4a5f; emI = 0.4; }
+    } else if (row.kind === 'buf') {
+      if (isFilled) { col = PAL.data; em = 0x1a3f5f; emI = 0.4; }
+      else { col = PAL.bufEmpty; }
+    } else if (row.kind === 'fp') {
+      col = isFilled ? 0x6e1616 : PAL.steel;
+      if (isFilled) { em = 0x8a2020; emI = 0.3; }
+    } else {
+      if (isFilled) { col = 0x6e1616; em = 0x8a2020; emI = 0.3; }
+      else col = PAL.dim;
+    }
+    m.color.setHex(col); m.emissive.setHex(em); m.emissiveIntensity = emI;
+  }
+  /* caller 帧按滑杆显示 */
+  callerSlabs.forEach((s, i) => { s.visible = i < framesShown; });
+  /* PC 箭头动画 */
+  if (retAnim) {
+    const t = clamp01(retAnim.t);
+    const from = PC_HOME, to = retAnim.kind === 'clean' ? PC_CLEAN : PC_BAD;
+    pcArrow.position.lerpVectors(from, to, t);
+    pcArrow.position.y += Math.sin(t * Math.PI) * (retAnim.kind === 'clean' ? 0.6 : 2.6);
+  } else if (procState === 'dead' && deadReason === 'aslr') {
+    pcArrow.position.y = Math.max(0.35, PC_HOME.y - deadT * 7);
+    pcArrow.rotation.z = Math.min(1.2, deadT * 4);
+  } else if (procState === 'dead' && deadReason === 'canary') {
+    pcArrow.position.x = PC_HOME.x + Math.sin(et * 40) * 0.12 * Math.max(0, 1 - deadT);
+    pcArrow.position.y = PC_HOME.y;
+  } else if (st === 'writing' || st === 'written') {
+    pcArrow.position.lerp(PC_HOME, 0.2);
+    pcArrow.position.y = PC_HOME.y + Math.sin(et * 2) * 0.06;
+  }
+  /* 箭头颜色 */
+  if (procState === 'hijack') { M.arrow.color.setHex(0x7bd88f); M.arrow.emissive.setHex(0x2f9e5f); M.arrow.emissiveIntensity = 0.6 + 0.35 * Math.sin(et * 8); }
+  else if (procState === 'dead') { M.arrow.color.setHex(0xff6b6b); M.arrow.emissive.setHex(0xc22a2a); M.arrow.emissiveIntensity = 0.6; }
+  else { M.arrow.color.setHex(0x6fc0ff); M.arrow.emissive.setHex(0x2a7abf); M.arrow.emissiveIntensity = 0.6; }
+  /* payload 平台 */
+  payloadPad.material = protNX ? M.payloadNX : M.payload;
+  if (!protNX && procState === 'hijack') M.payload.emissiveIntensity = 0.5 + 0.35 * Math.sin(et * 8);
+  else if (!protNX) M.payload.emissiveIntensity = 0.25;
+  /* 金丝雀材质脉冲(步骤高亮之外的呼吸) */
+  M.canaryBase.emissiveIntensity = 0.45 + 0.12 * Math.sin(et * 3);
+  M.bufBase.emissiveIntensity = 0.4 + 0.1 * Math.sin(et * 2.4);
+}
+
+/* ---------------- 示波器:内存安全漏洞占比 + 写入时序 ---------------- */
+const YEAR_PTS = [[1988, 6], [1995, 22], [2000, 34], [2005, 48], [2010, 58], [2015, 64], [2020, 69], [2026, 70]];
+function drawScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const cw = scope.width, ch = scope.height;
+  scopeCtx.clearRect(0, 0, cw, ch);
+  scopeCtx.font = `${Math.round(9 * dpr)}px system-ui`;
+  scopeCtx.fillStyle = 'rgba(150,160,175,.9)';
+  scopeCtx.fillText(L(`内存安全漏洞占严重漏洞比例(示意,~70%:微软/谷歌)· 下半:写入进度(青)/ 金丝雀完好度(金)`,
+    `memory-safety share of severe bugs (schematic, ~70%: Microsoft/Google) - lower: write progress (cyan) / canary health (gold)`), 4 * dpr, 10 * dpr);
+  /* 上半:年度占比曲线 */
+  const x0 = 10 * dpr, x1 = cw - 6 * dpr, yt = 16 * dpr, ymid = ch * 0.52;
+  const xOf = yr => x0 + (x1 - x0) * (yr - 1985) / 45;
+  const yOf = p => ymid - clamp(p / 80, 0, 1) * (ymid - yt);
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.35)';
+  scopeCtx.lineWidth = Math.max(1, dpr);
+  scopeCtx.beginPath(); scopeCtx.moveTo(x0, ymid); scopeCtx.lineTo(x1, ymid); scopeCtx.stroke();
+  scopeCtx.strokeStyle = 'rgba(255,255,255,.28)';
+  scopeCtx.setLineDash([3 * dpr, 4 * dpr]);
+  for (const yr of [1988, 2000, 2010, 2020]) {
+    scopeCtx.beginPath(); scopeCtx.moveTo(xOf(yr), yt); scopeCtx.lineTo(xOf(yr), ymid); scopeCtx.stroke();
+  }
+  scopeCtx.setLineDash([]);
+  scopeCtx.strokeStyle = 'rgba(255,150,90,.95)';
+  scopeCtx.lineWidth = Math.max(1.4, 1.4 * dpr);
+  scopeCtx.beginPath();
+  YEAR_PTS.forEach(([yr, p], i) => { i === 0 ? scopeCtx.moveTo(xOf(yr), yOf(p)) : scopeCtx.lineTo(xOf(yr), yOf(p)); });
+  scopeCtx.stroke();
+  /* 下半:实时双通道 */
+  const mid = ch * 0.8, hh = ch * 0.5;
+  scopeCtx.strokeStyle = 'rgba(128,140,160,.3)';
+  scopeCtx.lineWidth = Math.max(1, dpr);
+  scopeCtx.beginPath(); scopeCtx.moveTo(0, mid); scopeCtx.lineTo(cw, mid); scopeCtx.stroke();
+  drawTrace(sndT, 'rgba(110,220,230,.95)', mid, hh, dpr);
+  drawTrace(sndA, 'rgba(255,205,112,.9)', mid, hh, dpr);
+}
+
+/* ---------------- 公式 / stats ---------------- */
+const formulaEl = document.getElementById('formula');
+const stA = document.getElementById('stA'), stB = document.getElementById('stB'),
+  stC = document.getElementById('stC'), stD = document.getElementById('stD'),
+  stE = document.getElementById('stE'), stF = document.getElementById('stF');
+function canaryStateText() {
+  if (!protCanary) return L('<b>未启用</b>', '<b>disabled</b>');
+  if (canaryCorrupted()) return L('<b>已被覆写 → 检查必失败</b>', '<b>overwritten -> check will fail</b>');
+  return L('完好', 'intact');
+}
+function updateFormula() {
+  formulaEl.innerHTML =
+    L(`栈帧布局(偏移):buf@0 · canary@<b>64</b> · saved FP@<b>72</b> · ret@<b>80</b> · 溢出字节 = 输入长度 − <b>64</b>`,
+      `Frame layout (offsets): buf@0, canary@<b>64</b>, saved FP@<b>72</b>, ret@<b>80</b> - overflow bytes = input length - <b>64</b>`) +
+    '<br>' +
+    L(`当前:输入 <b>${inLen} B</b> → 溢出 <b>${overflowBytes()} B</b> · 金丝雀 ${canaryStateText()} · ret ${retCorrupted() ? `<b>→ ${RET_ATTACK}(被覆写)</b>` : `→ ${ADDR.ret}`}`,
+      `Now: input <b>${inLen} B</b> -> overflow <b>${overflowBytes()} B</b> - canary ${canaryStateText()} - ret ${retCorrupted() ? `<b>-> ${RET_ATTACK} (overwritten)</b>` : `-> ${ADDR.ret}`}`) +
+    '<br>' +
+    L(`防御纵深:canary(-fstack-protector)· ASLR · NX/DEP · CFI ↔ ROP · <b>内存安全语言</b>(Rust/Go)——微软/谷歌:约 <b>70%</b> 严重漏洞源于内存安全`,
+      `Defense in depth: canary (-fstack-protector), ASLR, NX/DEP, CFI vs ROP, <b>memory-safe languages</b> (Rust/Go) - Microsoft/Google: about <b>70%</b> of severe bugs are memory-safety issues`);
+}
+function updateStats() {
+  const tgt = fillTarget();
+  stA.innerHTML = Math.round(fillB) + '<small>/' + tgt + ' B</small>';
+  stA.className = 'v ' + (fillB >= tgt - 0.5 ? '' : 'warn');
+  const over = overflowBytes();
+  stB.innerHTML = over.toFixed(0) + '<small> B</small>';
+  stB.className = 'v ' + (over > 0 ? 'bad' : 'ok');
+  if (!protCanary) { stC.innerHTML = L('未启用', 'off'); stC.className = 'v warn'; }
+  else if (canaryCorrupted()) { stC.innerHTML = L('被覆写!', 'smashed!'); stC.className = 'v bad'; }
+  else { stC.innerHTML = L('完好', 'intact'); stC.className = 'v ok'; }
+  stD.innerHTML = retCorrupted() ? RET_ATTACK : ADDR.ret;
+  stD.className = 'v ' + (retCorrupted() ? 'bad' : 'ok');
+  stE.innerHTML = protASLR ? ADDR.base : L('固定', 'fixed');
+  stE.className = 'v ' + (protASLR ? 'ok' : 'warn');
+  stF.innerHTML = procText();
+  stF.className = 'v ' + (procState === 'run' ? 'ok' : procState === 'clean' ? 'ok' : 'bad');
+}
+
+/* ---------------- 复位 ---------------- */
+function resetMachine() {
+  inLen = 100; rate = 14; framesShown = 2;
+  protCanary = protASLR = protNX = protSafe = false;
+  elLen.value = '100'; elRate.value = '14'; elFrames.value = '2';
+  tglCanary.checked = tglASLR.checked = tglNX.checked = tglSafe.checked = false;
+  rebuildFrame();
+  updateSliderLabels(); updateFormula();
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  runModes(simDt);
+  sceneFrame(et, simDt, dt);
+  /* 步骤高亮(呼吸脉冲) */
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm && hlm.emissive) hlm.emissiveIntensity = 0.55 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  /* 标签文本/样式逐帧刷新 */
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (playing) {
+    pushSnd((fillB / 128) * 2 - 1,
+      protCanary ? (canaryCorrupted() ? -0.85 : 0.72 + 0.06 * Math.sin(et * 3)) : 0.12);
+  }
+  if (tglCurve.checked) drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+const HL = { plate: M.plate, bufBase: M.bufBase, retBase: M.retBase, arrow: M.arrow, canaryBase: M.canaryBase, payloadNX: M.payloadNX, payload: M.payload };
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+rebuildFrame();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

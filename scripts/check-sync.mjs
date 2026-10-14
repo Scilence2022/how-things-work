@@ -51,7 +51,7 @@ for (const [file, hard] of [['README.md', true], ['README.en.md', false], ['ROAD
   const missing = [...new Set(jsonSlugs)].filter(s => !mentioned(file, s));
   if (missing.length === 0) continue;
   const msg = `${file} 未登记 ${missing.length} 个: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? ' …' : ''}`;
-  (hard ? bad : warns).push(msg);
+  (hard ? errors : warns).push(msg);
 }
 
 // 5. 分区计数快报
