@@ -40,7 +40,7 @@ if (homeSlugs.length !== jsonSlugs.length) {
 for (const s of homeSlugs) if (!jsonSlugs.includes(s)) bad(`首页链接了未知主题: ${s}`);
 const orderKey = t => t.slug;
 if (homeSlugs.map(s => s).join() !== [...data.topics].map(orderKey).join()) {
-  warn('首页卡片顺序与 topics.json 不一致（生成器输出是否最新？跑 node scripts/build-homepage.mjs）');
+  warns.push('首页卡片顺序与 topics.json 不一致（生成器输出是否最新？跑 node scripts/build-homepage.mjs）');
 }
 
 // 4. 文档登记覆盖：slug 以 `xxx/` 形式被提及（词边界）
@@ -51,7 +51,7 @@ for (const [file, hard] of [['README.md', true], ['README.en.md', false], ['ROAD
   const missing = [...new Set(jsonSlugs)].filter(s => !mentioned(file, s));
   if (missing.length === 0) continue;
   const msg = `${file} 未登记 ${missing.length} 个: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? ' …' : ''}`;
-  (hard ? bad : warns).push(msg);
+  (hard ? errors : warns).push(msg);
 }
 
 // 5. 分区计数快报
