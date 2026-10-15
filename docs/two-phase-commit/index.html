@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>两阶段提交 · 跨机器的「都」字</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#2f9e8f;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1d7268;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  .chip.n { color: #c7d2de; border-color: rgba(154,167,184,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  :root[data-theme="light"] .chip.n { color:#495463; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(47,158,143,.65); background: rgba(47,158,143,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(29,114,104,.55); background: rgba(29,114,104,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(47,158,143,.10); border-color: rgba(47,158,143,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(29,114,104,.08); border-color: rgba(29,114,104,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #a7e6dc; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="两阶段提交" data-en="Two-Phase Commit">两阶段提交</h1>
+  <div class="sub" data-zh="一笔转账要同时改两个数据库,要么都成功、要么都回滚——跨机器的「都」字怎么保证?两阶段提交(2PC)的答案是把决定权收给一个协调者:第一阶段「准备」,协调者问所有参与者「能提交吗」,每个参与者把 undo 日志写进磁盘后回答 yes 或 no——yes 是带后悔药的承诺:从此刻起它能提交也能回滚,但必须停住等第二阶段;第二阶段「提交」,协调者只要收到全票 yes 就广播 commit,所有参与者正式生效;任何一张 no 或超时,广播 rollback,大家 undo。协议本身简单,恶名在故障模式:最毒的一刀是「参与者投完 yes 后协调者失联」——参与者已锁定资源,不能单方面提交也不能回滚(它不知道别人投了什么),只能卡在 in-doubt 状态死等协调者苏醒,锁不释放,整条业务线排队;这正是 Raft/Paxos 一类共识协议与「协调者高可用」要解决的问题。第二毒是协调者在写 commit 记录前宕机——重启后读日志就能续发决定,所以「先写日志再发消息」是 2PC 的命根。代价清单:一次提交至少两次往返、每个参与者多一次 fsync,延迟是单机的三倍以上;MongoDB 4.0+、TiKV 的 Percolator 变体等分布式数据库都内置了它的变形。拖「故障时机」看每种宕机发生在哪一步,拖「节点数」看消息轮数;按「正常提交」看两幕完整流程,按「参与者宕机」看 in-doubt 阻塞,按「协调者宕机」看日志恢复续发,按「中止回滚」看 no 票引发的全员 undo。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="One transfer must update two databases - all-or-nothing across machines. How is that 'all' guaranteed? Two-phase commit's answer is a coordinator that owns the decision. Phase one, prepare: the coordinator asks every participant 'can you commit?' and each writes an undo log to disk before answering yes or no - yes is a promise with a safety catch: from that instant it can commit or roll back, but must stay parked until phase two. Phase two, commit: all yes votes and the coordinator broadcasts commit and everyone takes effect; a single no or timeout broadcasts rollback and everyone undoes. The protocol is simple; its infamy lives in the failure modes. The cruelest cut: a participant answers yes, then the coordinator vanishes - the participant holds locks, may not commit alone, may not roll back alone (it cannot know how the others voted), and freezes in the in-doubt state waiting for the coordinator to wake - the blocking that Raft-style consensus and highly available coordinators exist to cure. Second cruelest: the coordinator dies just before writing its commit record - on restart it replays the log and re-sends the decision, which is why 'log before message' is 2PC's lifeline. The bill: at least two round trips, one extra fsync on every participant, latency three times a local commit - and distributed databases from MongoDB 4.0 to TiKV's Percolator variant ship its descendants built in. Drag failure timing to place each crash on the timeline, drag node count for the message bill; press normal commit for the full two acts, participant crash for in-doubt blocking, coordinator crash for log-replay recovery, abort for one no sending everyone back. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause
+- 场景要点: 顶部协调者节点+下方参与者节点(数据库图标);阶段一 prepare 消息(绿)逐个飞出、各节点写 undo 日志闪盘图标后回票;阶段二 commit(金)/rollback(红)广播;宕机场景节点变灰、in-doubt 锁图标挂起;消息计数器与状态机面板。">一笔转账要同时改两个数据库,要么都成功、要么都回滚——跨机器的「都」字怎么保证?两阶段提交(2PC)的答案是把决定权收给一个协调者:第一阶段「准备」,协调者问所有参与者「能提交吗」,每个参与者把 undo 日志写进磁盘后回答 yes 或 no——yes 是带后悔药的承诺:从此刻起它能提交也能回滚,但必须停住等第二阶段;第二阶段「提交」,协调者只要收到全票 yes 就广播 commit,所有参与者正式生效;任何一张 no 或超时,广播 rollback,大家 undo。协议本身简单,恶名在故障模式:最毒的一刀是「参与者投完 yes 后协调者失联」——参与者已锁定资源,不能单方面提交也不能回滚(它不知道别人投了什么),只能卡在 in-doubt 状态死等协调者苏醒,锁不释放,整条业务线排队;这正是 Raft/Paxos 一类共识协议与「协调者高可用」要解决的问题。第二毒是协调者在写 commit 记录前宕机——重启后读日志就能续发决定,所以「先写日志再发消息」是 2PC 的命根。代价清单:一次提交至少两次往返、每个参与者多一次 fsync,延迟是单机的三倍以上;MongoDB 4.0+、TiKV 的 Percolator 变体等分布式数据库都内置了它的变形。拖「故障时机」看每种宕机发生在哪一步,拖「节点数」看消息轮数;按「正常提交」看两幕完整流程,按「参与者宕机」看 in-doubt 阻塞,按「协调者宕机」看日志恢复续发,按「中止回滚」看 no 票引发的全员 undo。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="当前阶段" data-en="phase">当前阶段</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="已投票" data-en="votes">已投票</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="全局状态" data-en="global">全局状态</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="消息轮数" data-en="messages">消息轮数</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="锁定资源" data-en="locks">锁定资源</span><span class="v" id="stE">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip o" data-zh="金:协调者" data-en="gold: coordinator">金:协调者</span>
+    <span class="chip b" data-zh="蓝:参与者" data-en="blue: participants">蓝:参与者</span>
+    <span class="chip g" data-zh="绿:prepare" data-en="green: prepare">绿:prepare</span>
+    <span class="chip o" data-zh="金:commit" data-en="gold: commit">金:commit</span>
+    <span class="chip r" data-zh="红:rollback" data-en="red: rollback">红:rollback</span>
+    <span class="chip n" data-zh="灰:in-doubt 锁" data-en="gray: in-doubt lock">灰:in-doubt 锁</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-normal" data-zh="正常提交" data-en="Normal commit">正常提交</button>
+    <button class="abtn" id="btn-pcrash" data-zh="参与者宕机" data-en="Participant crash">参与者宕机</button>
+    <button class="abtn" id="btn-ccrash" data-zh="协调者宕机" data-en="Coordinator crash">协调者宕机</button>
+    <button class="abtn" id="btn-abort" data-zh="中止回滚" data-en="Abort &amp; rollback">中止回滚</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="故障时机(0-100%)" data-en="fail timing (0-100%)">故障时机(0-100%)</label><input id="vA" type="range" min="0" max="100" step="5" value="50"><span class="val" id="vAVal"></span></div>
+  <div class="row"><label data-zh="节点数(参与者 3-8)" data-en="nodes (participants 3-8)">节点数(参与者 3-8)</label><input id="vB" type="range" min="3" max="8" step="1" value="5"><span class="val" id="vBVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="时序图" data-en="timeline">时序图</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../raft-consensus/" data-zh="Raft 共识" data-en="Raft consensus">Raft 共识</a>
+    <a href="../mutex-race/" data-zh="互斥与竞态" data-en="Mutex &amp; races">互斥与竞态</a>
+    <a href="../mvcc/" data-zh="MVCC 快照隔离" data-en="MVCC snapshot isolation">MVCC 快照隔离</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.__errs = [];
+addEventListener('error', e => window.__errs.push((e.message || String(e)) + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(2.4, 6.6, 11.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.2, 0.2);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 42;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+let labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 1.2, 0.4);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  if (STEPS[scenario].act) STEPS[scenario].act();
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器(节点状态甘特时序图) ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+/* ================= 两阶段提交 ================= */
+const TITLE_ZH = '两阶段提交 · 跨机器的「都」字';
+const TITLE_EN = 'Two-Phase Commit: The "All" Across Machines';
+const PRESET_IDS = ['normal', 'pcrash', 'ccrash', 'abort'];
+const HL = {};
+
+let failPct = 50, nodeCount = 5;
+let simT = 0, msgCount = 0, runCrashT = null;
+let coord = null;                       /* 协调者状态机 */
+let coordAnim = { kind: '', t: 1 };     /* 卷轴动画:flip=翻页写决定 / rewind=倒翻读日志 */
+const parts = [];                       /* 参与者状态机 */
+const netLabels = [];
+const netDispose = [];
+const tmpV = new THREE.Vector3(), lookV = new THREE.Vector3();
+
+/* 材质 */
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.25,
+    emissive: color, emissiveIntensity: 0.1, ...opts });
+}
+function glow(color, i = 0.85) {
+  return new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: i, roughness: 0.35, metalness: 0.1 });
+}
+const M = {
+  ground: mat(0x151a20, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.3, depthWrite: false }),
+  gold: mat(0xffd43b, { roughness: 0.3, metalness: 0.6, emissiveIntensity: 0.35 }),
+  steel: mat(0x46525e, { roughness: 0.5, metalness: 0.55 }),
+  parchment: mat(0xf1e3bd, { roughness: 0.7, metalness: 0, emissive: 0xffe9b8, emissiveIntensity: 0.18 }),
+  roller: mat(0xb08968, { roughness: 0.55 }),
+  discLight: mat(0xd0e4ff, { roughness: 0.4 }),
+  queue: mat(0x748ffc, { roughness: 0.6, emissiveIntensity: 0.12 }),
+};
+const coordRingM = glow(0xffd43b, 0.7);
+const lockM = mat(0x9aa4ad, { metalness: 0.5, emissiveIntensity: 0.08 });
+const lockHotM = mat(0xffc078, { emissiveIntensity: 0.6 });
+const envM = {
+  green: glow(0x51cf66),
+  gold: glow(0xffd43b),
+  red: glow(0xff6b6b),
+  ack: glow(0x91a7ff, 0.45),
+};
+const kindColorHex = { green: 0x51cf66, gold: 0xffd43b, red: 0xff6b6b, ack: 0x91a7ff };
+const haloMats = {};
+for (const k of Object.keys(kindColorHex)) {
+  haloMats[k] = new THREE.MeshBasicMaterial({ color: kindColorHex[k], transparent: true, opacity: 0.18,
+    blending: THREE.AdditiveBlending, depthWrite: false });
+}
+HL.coord = M.parchment;
+HL.vote = envM.green;
+
+/* 共享几何体 */
+const pedGeo = new THREE.CylinderGeometry(0.6, 0.72, 0.16, 24);
+const dbGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.78, 22);
+const dbRingGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.07, 22);
+const lampGeo = new THREE.SphereGeometry(0.1, 14, 10);
+const stemGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.16, 8);
+const diskGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.05, 18);
+const hubGeo = new THREE.BoxGeometry(0.1, 0.08, 0.1);
+const lockBodyGeo = new THREE.BoxGeometry(0.19, 0.14, 0.07);
+const shackleGeo = new THREE.TorusGeometry(0.085, 0.026, 8, 18, Math.PI);
+const figBodyGeo = new THREE.CapsuleGeometry(0.075, 0.12, 3, 8);
+const figHeadGeo = new THREE.SphereGeometry(0.062, 10, 8);
+const envGeo = new THREE.BoxGeometry(0.26, 0.16, 0.06);
+const haloGeo = new THREE.BoxGeometry(0.42, 0.28, 0.16);
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x151a20 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+}
+
+/* ---------------- 场景:地面 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(26, 0.12, 14), M.ground);
+ground.position.y = -0.07;
+scene.add(ground);
+const grid = new THREE.GridHelper(16, 8, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = -0.005;
+scene.add(grid);
+
+/* ---------------- 场景:协调者(金色圆盘 + 日志卷轴) ---------------- */
+const COORD_POS = new THREE.Vector3(0, 3.05, -2.3);
+const coordG = new THREE.Group();
+coordG.position.copy(COORD_POS);
+scene.add(coordG);
+const coordDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.86, 0.2, 36), M.gold);
+coordG.add(coordDisc);
+const coordRing = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.05, 10, 40), coordRingM);
+coordRing.rotation.x = Math.PI / 2;
+coordRing.position.y = -0.1;
+coordG.add(coordRing);
+const scrollPaper = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.42, 0.035), M.parchment);
+scrollPaper.position.y = 0.62;
+coordG.add(scrollPaper);
+const rollerL = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.52, 12), M.roller);
+rollerL.position.set(-0.36, 0.62, 0);
+coordG.add(rollerL);
+const rollerR = rollerL.clone();
+rollerR.position.x = 0.36;
+coordG.add(rollerR);
+const coordColumn = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, 3.0, 12), M.steel);
+coordColumn.position.set(0, 1.5, -2.3);
+scene.add(coordColumn);
+
+/* ---------------- 场景:参与者网络(vB 重建) ---------------- */
+const netG = new THREE.Group();
+scene.add(netG);
+const lineDimC = new THREE.Color(0x3d4754);
+
+function focusIdx() { return Math.min(2, nodeCount - 1); }
+function anchorOf(p) { return new THREE.Vector3(p.x, 1.05, p.z); }
+function coordAnchorTo(p) {
+  const t = anchorOf(p);
+  return COORD_POS.clone().add(new THREE.Vector3().subVectors(t, COORD_POS).setLength(0.92));
+}
+
+function clearNet() {
+  for (const r of netLabels) r.o.element.remove();
+  netLabels.length = 0;
+  labelReg = labelReg.filter(r => !r.net);
+  for (const d of netDispose) d.dispose();
+  netDispose.length = 0;
+  netG.clear();
+  parts.length = 0;
+}
+
+function buildParticipants() {
+  clearNet();
+  const n = clamp(nodeCount, 3, 8);
+  nodeCount = n;
+  const spacing = n > 1 ? Math.min(2.05, 10.2 / (n - 1)) : 2.05;
+  for (let i = 0; i < n; i++) {
+    const x = (i - (n - 1) / 2) * spacing;
+    const z = 1.85 - Math.pow(x / 6, 2) * 0.9;
+    const g = new THREE.Group();
+    g.position.set(x, 0, z);
+    netG.add(g);
+    const bodyM = mat(0x5c7cfa, { roughness: 0.38, metalness: 0.35, emissiveIntensity: 0.16 });
+    const lampM = glow(0x8a96a8, 0.25);
+    const diskM = glow(0x8a96a8, 0.12);
+    netDispose.push(bodyM, lampM, diskM);
+    const ped = new THREE.Mesh(pedGeo, M.steel);
+    ped.position.y = 0.08;
+    g.add(ped);
+    const db = new THREE.Mesh(dbGeo, bodyM);
+    db.position.y = 0.55;
+    g.add(db);
+    const ring1 = new THREE.Mesh(dbRingGeo, M.discLight);
+    ring1.position.y = 0.38;
+    g.add(ring1);
+    const ring2 = new THREE.Mesh(dbRingGeo, M.discLight);
+    ring2.position.y = 0.72;
+    g.add(ring2);
+    const stem = new THREE.Mesh(stemGeo, M.steel);
+    stem.position.y = 1.0;
+    g.add(stem);
+    const lamp = new THREE.Mesh(lampGeo, lampM);
+    lamp.position.y = 1.12;
+    g.add(lamp);
+    /* undo 日志磁盘(写入时闪) */
+    const disk = new THREE.Mesh(diskGeo, diskM);
+    disk.position.set(0.66, 0.16, 0.42);
+    g.add(disk);
+    const hub = new THREE.Mesh(hubGeo, M.steel);
+    hub.position.set(0.66, 0.26, 0.42);
+    g.add(hub);
+    /* 锁图标(in-doubt 时闪烁) */
+    const lockGrp = new THREE.Group();
+    lockGrp.position.set(-0.66, 0.74, 0.34);
+    lockGrp.visible = false;
+    const lockBody = new THREE.Mesh(lockBodyGeo, lockM);
+    lockGrp.add(lockBody);
+    const shackle = new THREE.Mesh(shackleGeo, lockM);
+    shackle.position.y = 0.08;
+    lockGrp.add(shackle);
+    g.add(lockGrp);
+    /* 业务队列(小人) */
+    const figs = [];
+    for (let k = 0; k < 8; k++) {
+      const f = new THREE.Group();
+      f.position.set(0.5 + k * 0.24, 0, 1.06);
+      const fb = new THREE.Mesh(figBodyGeo, M.queue);
+      fb.position.y = 0.16;
+      f.add(fb);
+      const fh = new THREE.Mesh(figHeadGeo, M.queue);
+      fh.position.y = 0.36;
+      f.add(fh);
+      f.visible = false;
+      g.add(f);
+      figs.push(f);
+    }
+    /* 与协调者的连线 */
+    const a = coordAnchorTo({ x, z }), b = new THREE.Vector3(x, 1.05, z);
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([a, b]);
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x3d4754, transparent: true, opacity: 0.85 });
+    netDispose.push(lineGeo, lineMat);
+    const line = new THREE.Line(lineGeo, lineMat);
+    netG.add(line);
+    /* 标签 */
+    const p = { i, grp: g, x, z, bodyM, lampM, diskM, disk, lockGrp, figs,
+      lineMat, glowT: 0, glowC: new THREE.Color(0x51cf66),
+      state: 'init', hist: [{ t: 0, s: 'init' }],
+      locked: false, hasLog: false, crashed: false, queue: 0,
+      flashT: 0, flashCol: new THREE.Color(0x51cf66), spinDir: 1 };
+    const r = addLabel(() => {
+      const ds = displayState(p);
+      let s = `${L('参与者', 'participant')} P${p.i + 1} · ${stateName(ds)}`;
+      if (p.locked && ds !== 'down') s += L(' · 已锁', ' · locked');
+      if (p.queue > 0.5) s += L(` · 排队 ${Math.min(99, Math.ceil(p.queue))}`, ` · queue ${Math.min(99, Math.ceil(p.queue))}`);
+      return s;
+    }, () => ({ init: 'b', prepared: 'b', indoubt: 'w', committed: 'g', aborted: 'bad', down: 'st' }[displayState(p)]),
+      new THREE.Vector3(0, 1.72, 0), null, g);
+    r.net = true;
+    netLabels.push(r);
+    parts.push(p);
+  }
+}
+
+/* 协调者标签 */
+const lblCoord = addLabel(() => {
+  if (!coord) return ' ';
+  if (!coord.alive) return L('协调者 · 宕机 — 已投票节点全部 in-doubt', 'coordinator · DOWN - every voted node in-doubt');
+  if (coord.decided === 'commit') return L('协调者 · 决定 = commit(先写日志再广播)', 'coordinator · decision = commit (log first, then broadcast)');
+  if (coord.decided === 'abort') return L('协调者 · 决定 = rollback', 'coordinator · decision = rollback');
+  if (coord.blocked) return L(`协调者 · 等待 P${focusIdx() + 1} 响应 — 反复重试中`, `coordinator · waiting for P${focusIdx() + 1} - retrying`);
+  return L(`协调者 · 收票 ${coord.votesIn}/${nodeCount}`, `coordinator · votes ${coord.votesIn}/${nodeCount}`);
+}, () => {
+  if (!coord) return 'e';
+  if (!coord.alive || coord.decided === 'abort') return 'bad';
+  if (coord.decided === 'commit') return 'g';
+  if (coord.blocked) return 'w';
+  return 'e';
+}, new THREE.Vector3(0, 4.35, -2.3));
+
+/* 阻塞提示标签 */
+const lblQueue = addLabel(() => {
+  if (!coord) return ' ';
+  const q = totalQueue();
+  return q > 0.5
+    ? L(`业务队列堆积 ×${Math.round(q)}:锁未释放,请求原地干等`, `queue backed up ×${Math.round(q)}: locks held, requests wait`)
+    : ' ';
+}, () => 'bad', new THREE.Vector3(0, 4.85, 0));
+
+/* ---------------- 消息池(发光信封) ---------------- */
+const MSG_N = 44;
+const msgPool = [];
+for (let i = 0; i < MSG_N; i++) {
+  const g = new THREE.Group();
+  const env = new THREE.Mesh(envGeo, envM.green);
+  g.add(env);
+  const halo = new THREE.Mesh(haloGeo, haloMats.green);
+  g.add(halo);
+  g.visible = false;
+  scene.add(g);
+  msgPool.push({ g, env, halo, on: false, t: 0, T: 0.85, kind: 'prepare', data: {},
+    a: new THREE.Vector3(), b: new THREE.Vector3(), mid: new THREE.Vector3(), seed: Math.random() * TAU });
+}
+function kindKey(kind) {
+  return kind === 'commit' ? 'gold' : (kind === 'rollback' || kind === 'voteN') ? 'red' : kind === 'ack' ? 'ack' : 'green';
+}
+function clearMsgs() { for (const q of msgPool) { q.on = false; q.g.visible = false; } }
+function sendMsg(kind, a, b, data = {}) {
+  const q = msgPool.find(m => !m.on);
+  if (!q) return;
+  const key = kindKey(kind);
+  q.on = true; q.t = 0;
+  q.T = kind === 'ack' ? 0.7 : 0.85;
+  q.a.copy(a); q.b.copy(b);
+  q.mid.copy(a).lerp(b, 0.5);
+  q.mid.y += 1.0 + a.distanceTo(b) * 0.07;
+  q.kind = kind; q.data = data;
+  q.env.material = envM[key];
+  q.halo.material = haloMats[key];
+  q.g.visible = true;
+  msgCount++;
+  if (data.i != null && parts[data.i]) { parts[data.i].glowT = 1; parts[data.i].glowC.setHex(kindColorHex[key]); }
+}
+
+/* ---------------- 时间轴事件引擎 ---------------- */
+let evts = [];
+function sched(delay, fn) { evts.push({ t: simT + Math.max(delay, 0.001), fn }); }
+function pumpEvts() {
+  if (!evts.length) return;
+  const due = evts.filter(e => e.t <= simT);
+  if (!due.length) return;
+  evts = evts.filter(e => e.t > simT);
+  for (const e of due) e.fn();
+}
+
+/* ---------------- 状态工具 ---------------- */
+function histLast(p) { return p.hist[p.hist.length - 1].s; }
+function setPState(p, s) { if (histLast(p) !== s) p.hist.push({ t: simT, s }); }
+function coordHist(s) {
+  if (coord && coord.hist[coord.hist.length - 1].s !== s) coord.hist.push({ t: simT, s });
+}
+function displayState(p) {
+  if (p.crashed) return 'down';
+  if (p.state === 'prepared' && coord && (coord.blocked || !coord.alive)) return 'indoubt';
+  return p.state;
+}
+function stateName(ds) {
+  return { init: L('初始', 'init'), prepared: L('已备', 'prepared'), indoubt: 'in-doubt',
+    committed: L('提交', 'committed'), aborted: L('中止', 'aborted'), down: L('宕机', 'down') }[ds];
+}
+function totalQueue() { let q = 0; for (const p of parts) q += p.queue; return q; }
+function diskFlash(p, dir) {
+  p.flashT = 0.55;
+  p.spinDir = dir;
+  p.flashCol.setHex(dir > 0 ? 0x51cf66 : 0xff6b6b);
+}
+function startScroll(kind) { coordAnim.kind = kind; coordAnim.t = 0; }
+
+/* ---------------- 协议时序参数 ---------------- */
+function voteArriveTime(i) { return 0.5 + i * 0.3 + 0.85 + 0.5 + 0.85; }
+function runSpan(N) {
+  return 0.5 + (N - 1) * 0.3 + 0.85 + 0.5 + 0.85 + 0.55 + 0.3 + (N - 1) * 0.13 + 0.85 + 0.4 + 0.7 + 1.3;
+}
+function crashTimeFor() {
+  const N = nodeCount, span = runSpan(N);
+  let t = span * failPct / 100;
+  if (preset === 'pcrash') t = Math.max(t, voteArriveTime(focusIdx()) + 0.12); /* 投票后才允许崩 */
+  return clamp(t, 0.6, span * 0.95);
+}
+
+/* ---------------- 协议动作 ---------------- */
+function sendPrepare(i) {
+  if (!coord || !coord.alive) return;
+  const p = parts[i];
+  if (!p) return;
+  sendMsg('prepare', coordAnchorTo(p), anchorOf(p), { i });
+}
+function partPrepare(i) {
+  const p = parts[i];
+  if (!p || p.crashed || p.state !== 'init') return;
+  p.hasLog = true; p.locked = true;
+  diskFlash(p, 1);                       /* 先写 undo 日志(磁盘闪)再投票 */
+  setPState(p, 'prepared');
+  const ok = !(preset === 'abort' && i === focusIdx());
+  sched(0.5, () => { if (!p.crashed) sendMsg(ok ? 'voteY' : 'voteN', anchorOf(p), coordAnchorTo(p), { i }); });
+}
+function coordVote(i, ok) {
+  if (!coord || !coord.alive || coord.votes[i] !== undefined) return;
+  coord.votes[i] = ok;
+  coord.votesIn++;
+  if (coord.votesIn >= nodeCount && !coord.decided && !coord.decideQueued) {
+    coord.decideQueued = true;
+    sched(0.55, coordDecide);
+  }
+}
+function coordDecide() {
+  if (!coord || !coord.alive || coord.decided) return;
+  let anyNo = false;
+  for (let i = 0; i < nodeCount; i++) if (coord.votes[i] === false) anyNo = true;
+  coord.decided = anyNo ? 'abort' : 'commit';
+  startScroll('flip');                   /* 卷轴翻页:决定落盘 */
+  coordHist(anyNo ? 'cabort' : 'ccommit');
+  coordRingM.color.setHex(anyNo ? 0xff6b6b : 0x51cf66);
+  coordRingM.emissive.setHex(anyNo ? 0xff6b6b : 0x51cf66);
+  for (let i = 0; i < nodeCount; i++) sched(0.3 + i * 0.13, () => sendDecision(i));
+}
+function sendDecision(i) {
+  if (!coord || !coord.alive) return;
+  const p = parts[i];
+  if (!p) return;
+  sendMsg(coord.decided === 'commit' ? 'commit' : 'rollback', coordAnchorTo(p), anchorOf(p), { i });
+}
+function partDecide(i, dec) {
+  const p = parts[i];
+  if (!p || p.crashed) return;
+  if (dec === 'commit') {
+    if (!p.hasLog || p.state === 'committed') return;   /* 没准备过的节点忽略 commit(现实中会反询) */
+    p.locked = false;
+    diskFlash(p, 1);
+    setPState(p, 'committed');
+    sched(0.4, () => { if (!p.crashed) sendMsg('ack', anchorOf(p), coordAnchorTo(p), { i }); });
+  } else {
+    if (p.state === 'aborted') return;
+    if (p.hasLog) { p.locked = false; diskFlash(p, -1); }  /* undo:日志倒放 */
+    setPState(p, 'aborted');
+  }
+}
+function coordAck(i) { if (coord && coord.alive) coord.delivered.add(i); }
+function arrive(q) {
+  const d = q.data || {};
+  if (q.kind === 'prepare') partPrepare(d.i);
+  else if (q.kind === 'voteY' || q.kind === 'voteN') coordVote(d.i, q.kind === 'voteY');
+  else if (q.kind === 'commit') partDecide(d.i, 'commit');
+  else if (q.kind === 'rollback') partDecide(d.i, 'abort');
+  else if (q.kind === 'ack') coordAck(d.i);
+}
+
+/* ---------------- 故障注入 ---------------- */
+function doCrash() {
+  if (preset === 'pcrash') {
+    const p = parts[focusIdx()];
+    if (!p || p.crashed) return;
+    p.crashed = true;
+    if (p.state !== 'committed' && p.state !== 'aborted') setPState(p, 'down');
+    else setPState(p, 'down');
+    if (coord && !coord.decided) coord.blocked = true;  /* 群龙无首:已投票节点转 in-doubt */
+  } else if (preset === 'ccrash') {
+    if (!coord || !coord.alive) return;
+    coord.alive = false;
+    coordHist('cdown');
+    for (const p of parts) if (p.state === 'prepared') setPState(p, 'indoubt');
+    sched(2.3, coordRestart);         /* 稍后重启,读日志续发决定 */
+  }
+}
+function coordRestart() {
+  if (!coord || coord.alive) return;
+  coord.alive = true;
+  coordHist('cwork');
+  coordRingM.color.setHex(0xffd43b);
+  coordRingM.emissive.setHex(0xffd43b);
+  startScroll('rewind');                 /* 卷轴倒翻:重启读日志 */
+  for (const p of parts) if (p.state === 'prepared' && histLast(p) === 'indoubt') setPState(p, 'prepared');
+  sched(0.9, () => {
+    if (!coord || !coord.alive) return;
+    if (coord.decided) {
+      /* 决定已落盘 → 续发 */
+      for (let i = 0; i < nodeCount; i++) if (!coord.delivered.has(i)) sendDecision(i);
+    } else {
+      /* 日志里没有完整决定 → 安全回滚 */
+      coord.decided = 'abort';
+      startScroll('flip');
+      coordHist('cabort');
+      coordRingM.color.setHex(0xff6b6b);
+      coordRingM.emissive.setHex(0xff6b6b);
+      for (let i = 0; i < nodeCount; i++) {
+        const p = parts[i];
+        if (p.hasLog && !p.crashed && p.state !== 'aborted' && p.state !== 'committed')
+          sched(0.15 + i * 0.1, () => sendDecision(i));
+      }
+    }
+  });
+}
+function retryLoop() {
+  if (preset !== 'pcrash' || !coord || !coord.alive) return;
+  const p = parts[focusIdx()];
+  if (p && p.crashed) {
+    if (coord.decided === 'commit') sendDecision(p.i);        /* 反复补投 commit */
+    else if (!coord.decided) sendPrepare(p.i);                /* 反复重试 prepare */
+  }
+  sched(1.7, retryLoop);
+}
+
+/* ---------------- 跑一幕 ---------------- */
+function startRun(pid) {
+  preset = pid;
+  simT = 0; evts = []; msgCount = 0; runCrashT = null;
+  clearMsgs();
+  coord = { alive: true, decided: null, votes: {}, votesIn: 0, decideQueued: false,
+    delivered: new Set(), blocked: false, hist: [{ t: 0, s: 'cwork' }] };
+  for (const p of parts) {
+    p.state = 'init'; p.locked = false; p.hasLog = false; p.crashed = false;
+    p.queue = 0; p.flashT = 0; p.glowT = 0;
+    p.hist = [{ t: 0, s: 'init' }];
+    p.grp.rotation.z = 0; p.grp.position.y = 0;
+  }
+  coordAnim = { kind: '', t: 1 };
+  scrollPaper.rotation.x = 0; scrollPaper.scale.set(1, 1, 1);
+  coordRingM.color.setHex(0xffd43b); coordRingM.emissive.setHex(0xffd43b);
+  for (let i = 0; i < nodeCount; i++) sched(0.5 + i * 0.3, () => sendPrepare(i));
+  if (preset === 'pcrash' || preset === 'ccrash') {
+    runCrashT = crashTimeFor();
+    sched(runCrashT, doCrash);
+  }
+  sched(1.2, retryLoop);
+  updateSliderLabels(); updateFormula();
+}
+function runPreset(pid, opts = {}) {
+  if (opts.fail != null) { failPct = clamp(opts.fail, 0, 100); el.elA.value = failPct; }
+  if (opts.nodes != null) { nodeCount = clamp(opts.nodes, 3, 8); el.elB.value = nodeCount; buildParticipants(); }
+  setPreset(pid);
+  startRun(pid);
+  if (opts.tgt) tgtVec.fromArray(opts.tgt);
+  updateSliderLabels();
+}
+
+/* ---------------- 步骤 ---------------- */
+const STEPS = [
+  { b: '跨机器的「都」字', be: 'The "all" across machines', hl: 'coord', tgt: [0, 1.2, 0.4],
+    d: '一笔转账要同时改两个数据库:要么都成功、要么都回滚。单机里一个事务就能保证,跨机器却没有共享内存可仰仗——网络会丢包、机器会宕机,「都」字必须交给协议来保证,这正是两阶段提交(2PC)要解决的问题。',
+    de: 'One transfer must update two databases at once: all succeed or all roll back. On one machine a transaction guarantees it; across machines there is no shared memory to lean on - packets drop, machines die - so the word "all" has to be guaranteed by a protocol. That is exactly the problem two-phase commit (2PC) was built to solve.',
+    act() { runPreset('normal'); } },
+  { b: '阶段一:准备与投票', be: 'Phase 1: prepare and vote', hl: 'vote', tgt: [-1.6, 0.9, 2.6],
+    d: '阶段一叫准备:协调者向每个参与者发 prepare(绿色信封);参与者先把 undo 日志写进磁盘——看磁盘图标闪烁——然后才回答 yes 或 no。先落盘再投票:凭据留在磁盘上,后面无论出什么乱子都翻得了账。',
+    de: 'Phase one is prepare: the coordinator sends every participant a prepare (green envelope); each participant first writes its undo log to disk - watch the disk icon flash - and only then answers yes or no. Log first, vote second: the evidence sits on the disk, so no matter what happens later the books can be recovered.',
+    act() { runPreset('normal'); } },
+  { b: '阶段二:全票 commit / 一票 rollback', be: 'Phase 2: commit on all-yes, rollback on one no', hl: 'coord', tgt: [0, 2.4, -1.4],
+    d: '阶段二才见分晓:全票 yes,协调者先写 commit 记录(卷轴翻页),再广播 commit(金信封),全员正式生效;任何一张 no 或超时,就广播 rollback(红信封),大家凭 undo 日志原地回滚。决定权在协调者,凭据在日志里。',
+    de: 'Phase two delivers the verdict: all yes, and the coordinator first writes its commit record (the scroll turns a page), then broadcasts commit (gold envelopes) and everyone takes effect; a single no or a timeout, and it broadcasts rollback (red envelopes) - everyone undoes from its undo log. The decision belongs to the coordinator; the evidence lives in the logs.',
+    act() { runPreset('abort'); } },
+  { b: 'yes 是带后悔药的承诺', be: 'yes: a promise with a safety catch', tgt: [1.8, 0.9, 2.4],
+    d: '投出 yes 的瞬间,参与者进入「已备」:资源被锁、undo 日志落盘,从此既能提交也能回滚,唯独不能撤退——必须停在原地等第二阶段的裁决。这颗后悔药的价值,是用锁住资源、中断业务的代价换来的。',
+    de: 'The instant a participant votes yes it is "prepared": resources locked, undo log on disk, able to commit or roll back but unable to retreat - it must stay parked until phase two rules. That safety catch is paid for with locked resources and stalled business.',
+    act() { runPreset('normal'); } },
+  { b: '最毒一刀:in-doubt 阻塞', be: 'The cruelest cut: in-doubt blocking', tgt: [1.2, 1.1, 2.2],
+    d: '最毒的一刀:参与者投完 yes 后与协调者失联。它不能单方面提交(不知道别人投了什么),也不能擅自回滚,只能卡在 in-doubt 死等——锁不释放、业务排队,整条流水线被一个下落不明的决定堵死。按「参与者宕机」看这场堵塞。',
+    de: 'The cruelest cut: a participant answers yes, then loses the coordinator. It may not commit alone (it cannot know how the others voted) and may not roll back alone, so it freezes in-doubt - locks unreleased, requests queueing, the whole pipeline jammed behind a decision that may or may not exist. Press participant crash to watch the jam.',
+    act() { runPreset('pcrash', { fail: 40 }); } },
+  { b: '先写日志再发消息', be: 'Log before message', hl: 'coord', tgt: [0, 2.6, -1.2],
+    d: '协调者若在写出决定前宕机,重启后连自己都想不起当时要提交还是回滚。所以铁律是「先写日志再发消息」:决定先落盘,重启后读日志(卷轴倒翻)就能续发;日志里没有决定,就只能安全地全员回滚。拖「故障时机」对比两种结局。',
+    de: 'If the coordinator dies before writing its decision, even it cannot remember whether it meant to commit or abort. Hence the iron rule "log before message": write the decision to disk first, and after a restart the log (scroll unrolling) re-sends it; with no decision logged, the only safe move is to roll everyone back. Drag the failure timing to compare both endings.',
+    act() { runPreset('ccrash', { fail: 50 }); } },
+  { b: '成本账:两次往返 + fsync', be: 'The bill: two round trips plus fsync', tgt: [0, 1.0, 1.0],
+    d: '算笔成本账:一次提交至少两轮往返——N 份 prepare、N 张票、N 份决定、N 个确认,消息数 4N;每个参与者多一次 fsync,协调者再多一次,延迟常是单机的三倍以上。把「节点数」拉到 8,看消息计数怎么涨到 32。',
+    de: 'Count the bill: one commit is at least two round trips - N prepares, N votes, N decisions, N acks, 4N messages; every participant adds one fsync and the coordinator one more, so latency is often 3x a local commit. Drag nodes to 8 and watch the message counter climb to 32.',
+    act() { runPreset('normal', { nodes: 8 }); } },
+  { b: 'Raft 们如何治阻塞', be: 'How Raft-style consensus cures blocking', tgt: [0, 1.4, 0],
+    d: '阻塞的根源是把决定权交给了一个会宕机的单点。Raft、Paxos 一类共识协议把「决定」本身复制成多数派日志:只要多数存活,决定总能被续发;再配合协调者高可用,in-doubt 窗口被压到毫秒级。参见相关页:Raft 共识。',
+    de: 'Blocking comes from handing the decision to a single fallible point. Raft- and Paxos-style consensus replicate the decision itself into a majority log: while a majority lives, the decision can always be re-delivered, and with a highly available coordinator the in-doubt window shrinks to milliseconds. See the related page: Raft consensus.',
+    act() { runPreset('ccrash', { fail: 65 }); } },
+];
+
+/* ---------------- 公式 ---------------- */
+function updateFormula() {
+  const N = nodeCount;
+  let locked = 0, indoubt = 0, q = 0;
+  for (const p of parts) {
+    if (p.locked) locked++;
+    if (displayState(p) === 'indoubt') indoubt++;
+    q += p.queue;
+  }
+  const decidedLine = coord && coord.decided
+    ? L(`决定 = <b>${coord.decided === 'commit' ? 'commit 全员生效' : 'rollback 全员 undo'}</b> · 凭据是各自磁盘上的日志`,
+        `decision = <b>${coord.decided}</b> - the receipt is the log on each disk`)
+    : L('阶段一:先写 undo 日志(1×fsync),再投出 yes / no——票是带凭据的承诺',
+        'phase 1: write the undo log (1x fsync), then vote yes/no - a vote is a promise with a receipt');
+  const blockLine = indoubt > 0
+    ? L(`in-doubt 阻塞:<b>${indoubt}</b> 节点持锁干等 · 队列 <b>${Math.round(q)}</b>——决定权在别人手里的代价`,
+        `in-doubt blocking: <b>${indoubt}</b> nodes holding locks, queue <b>${Math.round(q)}</b> - the price of a decision you do not own`)
+    : decidedLine;
+  el.formula.innerHTML =
+    L(`消息数 = 4N = 4×${N} = <b>${4 * N}</b>(prepare + 票 + 决定 + ack 各 N,两轮往返)· 已发 <b>${msgCount}</b>`,
+      `messages = 4N = 4x${N} = <b>${4 * N}</b> (N prepares + N votes + N decisions + N acks, two round trips) - sent <b>${msgCount}</b>`) +
+    '<br>' +
+    L('延迟 ≥ <b>2×RTT + 2×fsync</b>(协调者决定日志 + 参与者 undo 日志)· 常是单机提交的三倍以上',
+      'latency ≥ <b>2xRTT + 2xfsync</b> (coordinator decision log + participant undo log) - often 3x a local commit') +
+    '<br>' + blockLine;
+}
+
+/* ---------------- 滑杆标签 / 统计 ---------------- */
+function updateSliderLabels() {
+  const band = failPct < 30 ? L('阶段一早段', 'early phase 1')
+    : failPct < 50 ? L('投票窗口', 'voting window')
+    : failPct < 72 ? L('决定前后', 'around the decision')
+    : L('阶段二后段', 'late phase 2');
+  el.elAVal.textContent = failPct + '% · ' + band;
+  el.elBVal.textContent = nodeCount + ' ' + L('节点', 'nodes');
+}
+function updateStats() {
+  if (!coord) return;
+  const N = nodeCount;
+  let locked = 0;
+  for (const p of parts) if (p.locked) locked++;
+  const allC = parts.length > 0 && parts.every(p => p.state === 'committed');
+  const anyA = parts.some(p => p.state === 'aborted');
+  const stalled = !coord.alive || parts.some(p => p.crashed);
+  let phase;
+  if (!coord.decided) phase = L('阶段一 · 准备', 'phase 1 · prepare');
+  else if (allC || (anyA && locked === 0)) phase = L('结束', 'done');
+  else phase = coord.decided === 'commit' ? L('阶段二 · 提交', 'phase 2 · commit') : L('阶段二 · 回滚', 'phase 2 · rollback');
+  el.stA.textContent = phase;
+  el.stA.className = 'v' + (phase === L('结束', 'done') && allC ? ' ok' : '');
+  el.stB.innerHTML = `${coord.votesIn}<small> / ${N}</small>`;
+  el.stB.className = 'v' + (coord.votesIn >= N ? ' ok' : '');
+  let g, gc;
+  if (allC) { g = L('提交', 'committed'); gc = ' ok'; }
+  else if (stalled && locked > 0) { g = L('阻塞', 'blocked'); gc = ' warn'; }
+  else if (anyA && locked === 0) { g = L('中止', 'aborted'); gc = ' bad'; }
+  else { g = L('进行中', 'running'); gc = ''; }
+  el.stC.textContent = g;
+  el.stC.className = 'v' + gc;
+  el.stD.innerHTML = msgCount + '<small> / 4N=' + (4 * N) + '</small>';
+  el.stD.className = 'v';
+  el.stE.innerHTML = locked;
+  el.stE.className = 'v' + (locked > 0 ? ' warn' : '');
+}
+function resetMachine() {
+  failPct = 50; nodeCount = 5;
+  el.elA.value = 50; el.elB.value = 5;
+  buildParticipants();
+  setPreset('normal');
+  startRun('normal');
+  tgtVec.set(0, 1.2, 0.4);
+  updateSliderLabels(); updateFormula(); updateStats();
+}
+
+/* ---------------- UI 接线 ---------------- */
+const el = {
+  elA: document.getElementById('vA'), elAVal: document.getElementById('vAVal'),
+  elB: document.getElementById('vB'), elBVal: document.getElementById('vBVal'),
+  stA: document.getElementById('stA'), stB: document.getElementById('stB'),
+  stC: document.getElementById('stC'), stD: document.getElementById('stD'),
+  stE: document.getElementById('stE'),
+  formula: document.getElementById('formula'),
+};
+el.elA.addEventListener('input', () => { failPct = +el.elA.value; updateSliderLabels(); updateFormula(); });
+el.elA.addEventListener('change', () => { if (preset === 'pcrash' || preset === 'ccrash') startRun(preset); });
+el.elB.addEventListener('input', () => { nodeCount = +el.elB.value; buildParticipants(); startRun(preset); updateSliderLabels(); updateFormula(); });
+for (const pid of PRESET_IDS) {
+  document.getElementById('btn-' + pid).addEventListener('click', () => { setPreset(pid); startRun(pid); });
+}
+
+/* ---------------- 示波器:各节点状态时序图(甘特色带 + 故障竖线) ---------------- */
+const SCOPE_COL = { init: '#3f4855', prepared: '#3b9ecf', indoubt: '#e8893c', committed: '#37b24d',
+  aborted: '#e03131', down: '#20262e', cwork: '#b08d2f', ccommit: '#37b24d', cabort: '#e03131', cdown: '#20262e' };
+function drawScope() {
+  const w = scope.width, h = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, w, h);
+  scopeCtx.strokeStyle = 'rgba(127,140,160,.4)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.strokeRect(2, 2, w - 4, h - 4);
+  if (!coord) return;
+  const N = nodeCount;
+  const T = Math.max(runSpan(N) * 1.12, simT + 0.01);
+  const x0 = 18 * dpr, x1 = w - 4;
+  const rows = N + 1, rowH = (h - 8) / rows;
+  const tx = t => x0 + clamp(t / T, 0, 1) * (x1 - x0);
+  const seg = (row, t0, t1, col) => {
+    scopeCtx.fillStyle = col;
+    scopeCtx.fillRect(tx(t0), 4 + row * rowH + 1, Math.max(1, tx(t1) - tx(t0)), Math.max(2, rowH - 2));
+  };
+  const drawHist = (hist, row) => {
+    for (let k = 0; k < hist.length; k++) {
+      const t0 = hist[k].t;
+      const t1 = k + 1 < hist.length ? hist[k + 1].t : Math.max(simT, t0 + 0.05);
+      if (t0 > T) break;
+      seg(row, t0, Math.min(t1, T), SCOPE_COL[hist[k].s] || '#666');
+    }
+  };
+  drawHist(coord.hist, 0);
+  parts.forEach((p, i) => drawHist(p.hist, i + 1));
+  scopeCtx.fillStyle = 'rgba(199,210,222,.75)';
+  scopeCtx.font = `${9 * dpr}px sans-serif`;
+  scopeCtx.fillText('C', 5 * dpr, 4 + rowH * 0.75);
+  for (let i = 0; i < N; i++) scopeCtx.fillText(String(i + 1), 6 * dpr, 4 + (i + 1) * rowH + rowH * 0.75);
+  if (runCrashT != null) {
+    scopeCtx.strokeStyle = '#ff5252';
+    scopeCtx.lineWidth = Math.max(1, 1.2 * dpr);
+    scopeCtx.setLineDash([4 * dpr, 3 * dpr]);
+    scopeCtx.beginPath();
+    scopeCtx.moveTo(tx(runCrashT), 3);
+    scopeCtx.lineTo(tx(runCrashT), h - 3);
+    scopeCtx.stroke();
+    scopeCtx.setLineDash([]);
+  }
+  scopeCtx.strokeStyle = 'rgba(255,212,59,.9)';
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(tx(simT), 3);
+  scopeCtx.lineTo(tx(simT), h - 3);
+  scopeCtx.stroke();
+}
+
+/* ---------------- 主逻辑 ---------------- */
+const STATE_LAMP = {
+  init: { c: 0x8a96a8, i: 0.25 },
+  prepared: { c: 0x74c0fc, i: 0.8 },
+  indoubt: { c: 0xffa94d, i: 1.0 },
+  committed: { c: 0x51cf66, i: 0.9 },
+  aborted: { c: 0xff8787, i: 0.7 },
+  down: { c: 0x2b323b, i: 0.05 },
+};
+function pageFrame(et, dt) {
+  if (!coord) return;
+  simT += dt;
+  pumpEvts();
+  /* 信封飞行 */
+  for (const q of msgPool) {
+    if (!q.on) continue;
+    q.t += dt;
+    const u = clamp(q.t / q.T, 0, 1), iu = 1 - u;
+    tmpV.set(0, 0, 0).addScaledVector(q.a, iu * iu).addScaledVector(q.mid, 2 * iu * u).addScaledVector(q.b, u * u);
+    q.g.position.copy(tmpV);
+    const u2 = Math.min(1, u + 0.04), iu2 = 1 - u2;
+    lookV.set(0, 0, 0).addScaledVector(q.a, iu2 * iu2).addScaledVector(q.mid, 2 * iu2 * u2).addScaledVector(q.b, u2 * u2);
+    q.g.lookAt(lookV);
+    q.g.scale.setScalar(1 + 0.12 * Math.sin(et * 12 + q.seed));
+    if (q.t >= q.T) { q.on = false; q.g.visible = false; arrive(q); }
+  }
+  /* 协调者视觉 */
+  coordG.position.y = coord.alive ? COORD_POS.y + 0.05 * Math.sin(et * 1.3) : COORD_POS.y - 0.5;
+  coordG.rotation.z = coord.alive ? 0.04 * Math.sin(et * 0.8) : 0.3;
+  M.gold.emissiveIntensity = coord.alive ? 0.35 : 0.06;
+  coordRingM.emissiveIntensity = coord.alive ? 0.55 + 0.3 * Math.sin(et * 3) : 0.08;
+  if (coordAnim.t < 1) {
+    coordAnim.t = Math.min(1, coordAnim.t + dt / (coordAnim.kind === 'rewind' ? 1.1 : 0.55));
+    const u = coordAnim.t;
+    if (coordAnim.kind === 'flip') scrollPaper.rotation.x = -Math.sin(u * Math.PI) * 0.6;
+    else if (coordAnim.kind === 'rewind') { scrollPaper.scale.y = 0.3 + 0.7 * u; scrollPaper.rotation.x = 0; }
+    M.parchment.emissiveIntensity = 0.18 + (1 - Math.abs(2 * u - 1)) * 0.8;
+    if (coordAnim.t >= 1) { scrollPaper.rotation.x = 0; scrollPaper.scale.y = 1; }
+  } else M.parchment.emissiveIntensity = 0.18;
+  /* 参与者视觉 */
+  for (const p of parts) {
+    const ds = displayState(p);
+    const sl = STATE_LAMP[ds];
+    let inten = sl.i;
+    if (ds === 'indoubt') inten = 0.5 + 0.55 * (0.5 + 0.5 * Math.sin(et * 6));
+    p.lampM.color.setHex(sl.c);
+    p.lampM.emissive.setHex(sl.c);
+    p.lampM.emissiveIntensity = inten;
+    p.bodyM.color.setHex(p.crashed ? 0x3a4149 : 0x5c7cfa);
+    p.bodyM.emissive.setHex(p.crashed ? 0x000000 : 0x5c7cfa);
+    p.bodyM.emissiveIntensity = p.crashed ? 0 : 0.16 + 0.08 * Math.sin(et * 2 + p.i);
+    p.lockGrp.visible = p.locked;
+    if (p.locked) {
+      const hot = ds === 'indoubt';
+      p.lockGrp.children.forEach(ch => { ch.material = hot ? lockHotM : lockM; });
+      p.lockGrp.position.y = 0.74 + 0.03 * Math.sin(et * 2.4 + p.i);
+    }
+    p.flashT = Math.max(0, p.flashT - dt);
+    p.diskM.emissiveIntensity = p.flashT > 0 ? 1.3 : 0.12;
+    p.diskM.emissive.copy(p.flashT > 0 ? p.flashCol : new THREE.Color(0x8a96a8));
+    p.disk.rotation.y += dt * (p.flashT > 0 ? p.spinDir * 13 : 0.6);
+    /* 业务队列:in-doubt / 宕机持锁 → 堆积;定局 → 消散 */
+    if (ds === 'indoubt' || (p.crashed && p.locked)) p.queue = Math.min(40, p.queue + dt * 1.25);
+    else if (p.state === 'committed' || p.state === 'aborted') p.queue = Math.max(0, p.queue - dt * 9);
+    const qv = Math.min(p.figs.length, Math.floor(p.queue));
+    p.figs.forEach((f, k) => {
+      f.visible = k < qv;
+      if (f.visible) f.position.y = Math.abs(Math.sin(et * 3 + k * 0.7)) * 0.05;
+    });
+    /* 连线辉光衰减 */
+    p.glowT = Math.max(0, p.glowT - dt * 1.8);
+    p.lineMat.color.copy(lineDimC).lerp(p.glowC, Math.min(1, p.glowT));
+  }
+  lblQueue.o.visible = labelsOn && totalQueue() > 0.5;
+}
+
+/* ---------------- 装配 ---------------- */
+buildParticipants();
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  pageFrame(et, simDt);
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.emissiveIntensity = 0.4 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked && typeof drawScope === 'function') drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HyperLogLog 基数估计 · 十亿访客只要 12 KB</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#2f9e8f;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1d7268;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(47,158,143,.65); background: rgba(47,158,143,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(29,114,104,.55); background: rgba(29,114,104,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(47,158,143,.10); border-color: rgba(47,158,143,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(29,114,104,.08); border-color: rgba(29,114,104,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #a7e6dc; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="HyperLogLog 基数估计" data-en="HyperLogLog Cardinality Estimation">HyperLogLog 基数估计</h1>
+  <div class="sub" data-zh="统计「十亿访客里有几个不重复的用户」,精确数法要一个装十亿 ID 的哈希集合——几个 GB 内存;HyperLogLog 用 12 KB 做同样的事,误差约 2%,它的洞察只有一句:均匀随机的哈希值里,「前导零的个数」携带基数信息。一个集合基数越大,出现「一长串前导零」的哈希值的概率就越大——看到 k 个前导零,基数大概率在 2^k 量级。单次观测噪声太大,LogLog 的办法是分桶平均:用哈希值的前几个 bit 把元素分到 m 个桶(比如 16384 个),每个桶只记一个数字——该桶见过的最大前导零数;最后用调和平均把所有桶的估计聚合起来,调和平均对离群桶不敏感,这正是选它的原因。HyperLogLog 再修两处偏差:小基数时的线性计数(空桶太多就直接数)与大基数时的偏差修正表,把误差压到约 1.04/√m,且无需存任何元素本身。工程上它是 Redis 的 PFADD/PFCOUNT、Google 的 PowerDrill、各家数据库的近似 COUNT(DISTINCT)——所有「UV 统计、独立访客、不同卡片数」的海量场景,本质都是在「精度 2%」与「内存 12 KB」之间做交换。反方向姊妹是布隆过滤器:那个回答「见过没有」,这个回答「见过几个」。拖「元素数」看估计曲线贴合真值,拖「桶数 m」看误差与内存的交换;按「散列入桶」看前缀分流,按「寄存器更新」看最大前导零,按「调和估计」看聚合公式,按「对比精确」看内存差距。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Counting distinct visitors out of a billion, the exact way needs a hash set holding a billion IDs - gigabytes of memory; HyperLogLog does the same job in 12 KB with about 2 percent error, and its insight is one sentence: in uniformly random hash values, the number of leading zeros carries cardinality information. The bigger a set, the likelier some hash begins with a long run of zeros - see k leading zeros and the cardinality is probably on the order of 2^k. One observation is too noisy, so LogLog averages over buckets: the first few bits of each hash route the element to one of m buckets (say 16384), and each bucket keeps a single number - the longest leading-zero run it has seen; a harmonic mean then aggregates all buckets, chosen because it tolerates outlier buckets. HyperLogLog patches two edges - linear counting when many buckets are empty (small cardinalities) and a bias-correction table for large ones - cutting the error to about 1.04 over the square root of m while storing no elements at all. In production it is Redis's PFADD/PFCOUNT, Google's PowerDrill, and every database's approximate COUNT(DISTINCT) - all the massive unique-visitor tallies are trading two percent accuracy for twelve kilobytes. Its opposite-number sibling is the Bloom filter: that one answers 'have I seen it', this one answers 'how many'. Drag element count to track the estimate hugging truth, drag bucket count m for the accuracy-memory trade; press hash routing to watch the prefix split, register update for the longest zero-run, harmonic estimate for the aggregation, versus exact for the memory gap. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause
+- 场景要点: 元素流(发光方块)经哈希变成二进制串;前缀路由到 m 列桶;每列一个寄存器柱显示最大前导零;调和平均仪表实时输出估计值与真值曲线;内存对比条:哈希集合 GB 级 vs HLL 12 KB。">统计「十亿访客里有几个不重复的用户」,精确数法要一个装十亿 ID 的哈希集合——几个 GB 内存;HyperLogLog 用 12 KB 做同样的事,误差约 2%,它的洞察只有一句:均匀随机的哈希值里,「前导零的个数」携带基数信息。一个集合基数越大,出现「一长串前导零」的哈希值的概率就越大——看到 k 个前导零,基数大概率在 2^k 量级。单次观测噪声太大,LogLog 的办法是分桶平均:用哈希值的前几个 bit 把元素分到 m 个桶(比如 16384 个),每个桶只记一个数字——该桶见过的最大前导零数;最后用调和平均把所有桶的估计聚合起来,调和平均对离群桶不敏感,这正是选它的原因。HyperLogLog 再修两处偏差:小基数时的线性计数(空桶太多就直接数)与大基数时的偏差修正表,把误差压到约 1.04/√m,且无需存任何元素本身。工程上它是 Redis 的 PFADD/PFCOUNT、Google 的 PowerDrill、各家数据库的近似 COUNT(DISTINCT)——所有「UV 统计、独立访客、不同卡片数」的海量场景,本质都是在「精度 2%」与「内存 12 KB」之间做交换。反方向姊妹是布隆过滤器:那个回答「见过没有」,这个回答「见过几个」。拖「元素数」看估计曲线贴合真值,拖「桶数 m」看误差与内存的交换;按「散列入桶」看前缀分流,按「寄存器更新」看最大前导零,按「调和估计」看聚合公式,按「对比精确」看内存差距。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="已见元素" data-en="elements seen">已见元素</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="真实基数" data-en="true distinct">真实基数</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="HLL 估计" data-en="HLL estimate">HLL 估计</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="相对误差" data-en="rel. error">相对误差</span><span class="v" id="stD">—</span>
+  <span class="k" data-zh="内存" data-en="memory">内存</span><span class="v" id="stE">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="蓝:元素方块流" data-en="blue: element cubes">蓝:元素方块流</span>
+    <span class="chip b" data-zh="蓝:哈希串(01)" data-en="blue: hash string (01)">蓝:哈希串(01)</span>
+    <span class="chip o" data-zh="金:路由前缀" data-en="gold: routing prefix">金:路由前缀</span>
+    <span class="chip g" data-zh="绿:寄存器柱 ρ" data-en="green: register pillar">绿:寄存器柱 ρ</span>
+    <span class="chip r" data-zh="红:精确哈希集合" data-en="red: exact hash set">红:精确哈希集合</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-route" data-zh="散列入桶" data-en="route to buckets">散列入桶</button>
+    <button class="abtn" id="btn-register" data-zh="寄存器更新" data-en="register update">寄存器更新</button>
+    <button class="abtn" id="btn-harmonic" data-zh="调和估计" data-en="harmonic estimate">调和估计</button>
+    <button class="abtn" id="btn-exact" data-zh="对比精确" data-en="vs exact">对比精确</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="元素数(10²-10⁹)" data-en="elements (10^2-10^9)">元素数(10²-10⁹)</label><input id="vA" type="range" min="2" max="9" step="0.1" value="5"><span class="val" id="vAVal"></span></div>
+  <div class="row"><label data-zh="桶数 m(2⁴-2¹⁴)" data-en="buckets m (2^4-2^14)">桶数 m(2⁴-2¹⁴)</label><input id="vB" type="range" min="4" max="14" step="1" value="14"><span class="val" id="vBVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="曲线/示波" data-en="curve scope">曲线/示波</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../bloom-filter/" data-zh="布隆过滤器" data-en="Bloom filter">布隆过滤器</a>
+    <a href="../information-entropy/" data-zh="信息熵" data-en="information entropy">信息熵</a>
+    <a href="../birthday-paradox/" data-zh="生日悖论" data-en="birthday paradox">生日悖论</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.__errs = [];
+addEventListener('error', e => window.__errs.push((e.message || String(e)) + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(1.2, 4.8, 13.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.6, 1.0, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.6;
+controls.maxDistance = 60;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0.6, 1.0, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  if (STEPS[scenario].act) STEPS[scenario].act();
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+
+/* ================= HyperLogLog 基数估计 ================= */
+const TITLE_ZH = 'HyperLogLog 基数估计 · 十亿访客只要 12 KB';
+const TITLE_EN = 'HyperLogLog Cardinality Estimation · A Billion Visitors in 12 KB';
+const PRESET_IDS = ['route', 'register', 'harmonic', 'exact'];
+const HL = {};
+
+/* 状态:vA=元素数目标(对数 10²-10⁹),vB=桶数 m 指数(2⁴-2¹⁴) */
+let vAExp = 5, mExp = 14;
+let target = Math.pow(10, vAExp);
+let m = 1 << mExp, p = mExp;                         // 桶数 / 前缀 bit 数
+const NVIS = 16;                                      // 最多 16 列显示,多桶聚合
+let G = m / NVIS;                                     // 每列聚合的桶数
+let registers = new Uint8Array(m);                    // 每桶最大前导零 Mⱼ
+let seen = 0, trueDistinct = 0, idCounter = 0;
+const idPool = [];                                    // 已见 ID(模拟 20% 重复访客)
+const LIVE_CAP = 20000;                               // 此规模内逐元素真算,超出按分布统计
+let slowDemo = null, slowTimer = 0, slowCount = 0;    // 慢动作单步演示
+let harmonicOn = false, exactOn = false;
+let lastId = 0, lastHash = 0, lastRoute = 0, lastRho = 0;
+let lastBits = '00000000', dispRho = 0, dispId = 0;
+let dispT = 0, nextSample = 100;
+let memExStr = '0 B', memHllStr = '12 KB';
+const samples = [];                                   // {x:log10(seen), t:真值, e:估计}
+let estCache = { est: 0, sum: 1, V: m, err: 0, mode: 'lin' };
+const gMax = new Float64Array(NVIS), gAvg = new Float64Array(NVIS);
+const flashT = new Float32Array(NVIS);
+let etG = 0;
+const tmpV = new THREE.Vector3();
+
+/* 32 位整数哈希(均匀性足够演示) */
+function hash32(x) {
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  x ^= x >>> 16;
+  return x >>> 0;
+}
+/* 统计采样:b 个期望抽样(泊松分流)的最大前导零。
+   P(本批无新元素) = e^−b → 返回 -1;有元素时 P(最大 lz ≤ k) ∝ e^{−b·2^−(k+1)} − e^−b,
+   逆 CDF 直接采样,免逐个哈希;寄存器值 = lz+1,在调用处加一 */
+function sampleMaxRho(b) {
+  const w = -Math.log(Math.random());
+  if (w >= b) return -1;                             // 该桶本批没有新元素
+  for (let k = 0; k < 32; k++) if (b * Math.pow(2, -(k + 1)) <= w) return k;
+  return 31;
+}
+function fmtN(x) {
+  x = Math.round(x);
+  if (LANG === 'en') {
+    if (x >= 1e9) return (x / 1e9).toFixed(2) + ' B';
+    if (x >= 1e6) return (x / 1e6).toFixed(2) + ' M';
+    if (x >= 1e4) return (x / 1e3).toFixed(1) + ' K';
+    return String(x);
+  }
+  if (x >= 1e8) return (x / 1e8).toFixed(2) + ' 亿';
+  if (x >= 1e4) return (x / 1e4).toFixed(1) + ' 万';
+  return String(x);
+}
+function fmtBytes(b) {
+  if (b >= 1e9) return (b / 1e9).toFixed(1) + ' GB';
+  if (b >= 1e6) return (b / 1e6).toFixed(1) + ' MB';
+  if (b >= 1e3) return (b / 1e3).toFixed(1) + ' KB';
+  return Math.round(b) + ' B';
+}
+
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.3,
+    emissive: color, emissiveIntensity: 0.12, ...opts });
+}
+const M = {
+  ground: mat(0x171b21, { roughness: 0.95, metalness: 0, emissive: 0x000000 }),
+  grid: new THREE.MeshBasicMaterial({ color: 0x2c3540, transparent: true, opacity: 0.3, depthWrite: false }),
+  cube: mat(0x4d9fff, { emissiveIntensity: 0.55 }),
+  cube2: mat(0x74c0fc, { emissiveIntensity: 0.5 }),
+  cube3: mat(0x3f86e0, { emissiveIntensity: 0.5 }),
+  shell: new THREE.MeshStandardMaterial({ color: 0x8fb8c8, transparent: true, opacity: 0.16, roughness: 0.2, metalness: 0.5, depthWrite: false }),
+  knot: mat(0x2f9e8f, { emissiveIntensity: 0.7 }),
+  bucket: mat(0x3a4754, { roughness: 0.6, metalness: 0.35 }),
+  reg: mat(0x51cf66, { emissiveIntensity: 0.3 }),
+  contrib: mat(0xffc070, { emissiveIntensity: 0.5 }),
+  exact: mat(0xff5f5f, { emissiveIntensity: 0.45 }),
+  hll: mat(0x2f9e8f, { emissiveIntensity: 0.5 }),
+  arc: new THREE.LineBasicMaterial({ color: 0xffc96b, transparent: true, opacity: 0.9 }),
+  edge: new THREE.LineBasicMaterial({ color: 0x8fb0c8, transparent: true, opacity: 0.5 }),
+  pulse: new THREE.MeshBasicMaterial({ color: 0xffc96b }),
+};
+HL.hash = M.knot;
+HL.harm = M.contrib;
+const GOLD = new THREE.Color(0xffc96b);
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0f1216 : 0xeff1f4);
+  M.ground.color.set(dark ? 0x171b21 : 0xd8dee5);
+  M.grid.color.set(dark ? 0x2c3540 : 0xa9b6c2);
+}
+
+/* ---------------- 场景 ---------------- */
+const ground = new THREE.Mesh(new THREE.BoxGeometry(26, 0.12, 12), M.ground);
+ground.position.y = -0.06;
+scene.add(ground);
+const grid = new THREE.GridHelper(20, 10, 0xffffff, 0xffffff);
+grid.material = M.grid;
+grid.position.y = 0.002;
+scene.add(grid);
+
+/* 左:元素方块流(带 ID 标签) */
+const cubeGeo = new THREE.BoxGeometry(0.26, 0.26, 0.26);
+const cubes = [];
+for (let i = 0; i < 12; i++) {
+  const mm = new THREE.Mesh(cubeGeo, [M.cube, M.cube2, M.cube3][i % 3]);
+  mm.position.set(-7.4 + (i / 12) * 4.2, 0.75, 0);
+  scene.add(mm);
+  cubes.push({ m: mm, t: i / 12, sp: 0.8 + Math.random() * 0.5, y: 0.75, z: 0, id: 1000 + ((Math.random() * 89999) | 0) });
+}
+[2, 6, 10].forEach(i => {
+  const c = cubes[i];
+  addLabel(() => '#' + c.id, () => 'b', new THREE.Vector3(0, 0.4, 0),
+    v => v.set(c.m.position.x, c.m.position.y + 0.34, c.m.position.z));
+});
+addLabel(() => L('元素方块流(访客 ID)', 'element cube stream (visitor IDs)'), () => '',
+  new THREE.Vector3(-5.4, 1.9, 0));
+
+/* 中:哈希机(方框 + 旋转符号) */
+const machine = new THREE.Group();
+machine.position.set(-2.7, 1.05, 0);
+scene.add(machine);
+machine.add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.1), M.shell));
+machine.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.5, 1.5, 1.1)), M.edge));
+const knot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.3, 0.09, 80, 10), M.knot);
+machine.add(knot);
+addLabel(() => L('哈希函数:ID → 均匀随机比特', 'hash function: ID -> uniform random bits'), () => '',
+  new THREE.Vector3(-2.7, 2.35, 0));
+
+/* 输出:8 位二进制串(前 p 位=桶号金色)+ ρ 标签 */
+const strG = new THREE.Group();
+strG.position.set(-0.2, 1.75, 0);
+scene.add(strG);
+for (let i = 0; i < 8; i++) {
+  const bi = i;
+  addLabel(() => lastBits[bi], () => (bi < Math.min(p, 8) ? 'e' : 'b'),
+    new THREE.Vector3((bi - 3.5) * 0.36, 0, 0), null, strG);
+}
+addLabel(() => 'ρ=' + dispRho, () => 'g', new THREE.Vector3(1.85, 0, 0), null, strG);
+addLabel(() => dispId > 0 ? L('元素 #' + dispId, 'element #' + dispId)
+    : (seen > 0 ? L('批量注入中…', 'bulk feeding…') : L('待输入…', 'idle…')),
+  () => 'st', new THREE.Vector3(0, 0.55, 0), null, strG);
+addLabel(() => L(`前 ${p} bit = 桶号(金)`, `first ${p} bits = bucket no. (gold)`), () => 'e',
+  new THREE.Vector3(-0.2, 2.85, 0));
+addLabel(() => L('ρ = 余下比特里首个 1 的位置(前导零数+1)', 'rho = position of first 1 in the rest (leading zeros + 1)'), () => 'g',
+  new THREE.Vector3(-0.2, 1.1, 0));
+
+/* 右:m 列桶 + 寄存器柱 */
+const bucketG = new THREE.Group();
+scene.add(bucketG);
+const bucketGeo = new THREE.BoxGeometry(0.5, 0.55, 0.5);
+const regGeo = new THREE.CylinderGeometry(0.1, 0.13, 1, 10).translate(0, 0.5, 0);
+const regMesh = [], regMats = [], rhoLbl = [], colX = [];
+for (let i = 0; i < NVIS; i++) {
+  const x = -0.8 + i * 0.6;
+  colX.push(x);
+  rhoLbl.push(addLabel(() => String(gMax[i]), () => 'g', new THREE.Vector3(x, 1.0, 0), null, bucketG));
+}
+addLabel(() => L(`m = ${m} 列桶 · 寄存器柱高 = Mⱼ(最大前导零数+1)`, `m = ${m} bucket columns - register height = Mⱼ (longest zero-run + 1)`),
+  () => 'g', new THREE.Vector3(3.7, 3.55, 0));
+addLabel(() => G > 1 ? L(`每列 = ${G} 桶聚合(显示取最大)`, `each column aggregates ${G} buckets (max shown)`)
+    : L('每列 = 1 个桶', 'one bucket per column'),
+  () => 'st', new THREE.Vector3(8.35, 1.35, -0.9));
+function regH(Mj) { return 0.14 + Math.min(Mj, 26) * 0.078; }
+function updateRegVisual(i) {
+  const h = regH(gMax[i]);
+  regMesh[i].scale.y = h;
+  rhoLbl[i].o.position.set(colX[i], 0.62 + h + 0.24, 0);
+}
+function updateAllRegs() { for (let i = 0; i < NVIS; i++) updateRegVisual(i); }
+function rebuildBuckets() {
+  for (const c of [...bucketG.children]) if (!rhoLbl.some(r => r.o === c)) bucketG.remove(c);
+  regMesh.length = 0; regMats.length = 0;
+  for (let i = 0; i < NVIS; i++) {
+    const bx = new THREE.Mesh(bucketGeo, M.bucket);
+    bx.position.set(colX[i], 0.3, 0);
+    bucketG.add(bx);
+    const rm = new THREE.Mesh(regGeo, M.reg.clone());
+    rm.position.set(colX[i], 0.62, 0);
+    rm.scale.y = 0.14;
+    bucketG.add(rm);
+    regMesh.push(rm); regMats.push(rm.material);
+  }
+  updateAllRegs();
+}
+
+/* 调和估计:各桶贡献条 2^−Mⱼ(调和估计预设) */
+const contribG = new THREE.Group();
+contribG.visible = false;
+scene.add(contribG);
+const contribGeo = new THREE.BoxGeometry(0.3, 1, 0.3).translate(0, 0.5, 0);
+const contribBars = [];
+for (let i = 0; i < NVIS; i++) {
+  const b = new THREE.Mesh(contribGeo, M.contrib);
+  b.position.set(colX[i], 0, 0.85);
+  b.scale.y = 0.05;
+  contribG.add(b);
+  contribBars.push(b);
+}
+addLabel(() => L(`Σ2<sup>−Mⱼ</sup> = ${estCache.sum >= 1e4 ? estCache.sum.toExponential(2) : estCache.sum.toFixed(2)}`,
+    `Σ 2^-Mⱼ = ${estCache.sum >= 1e4 ? estCache.sum.toExponential(2) : estCache.sum.toFixed(2)}`),
+  () => 'e', new THREE.Vector3(-1.5, 2.1, 0.85), null, contribG);
+
+/* 对比精确:哈希集合(红) vs HLL 恒定内存 */
+const memG = new THREE.Group();
+memG.position.set(2.0, 0, -3.2);
+memG.visible = false;
+scene.add(memG);
+const memBarGeo = new THREE.BoxGeometry(0.55, 1, 0.55).translate(0, 0.5, 0);
+const plateGeo = new THREE.BoxGeometry(1.0, 0.08, 0.8);
+const exPlate = new THREE.Mesh(plateGeo, M.bucket); exPlate.position.set(-0.5, 0.04, 0); memG.add(exPlate);
+const hlPlate = new THREE.Mesh(plateGeo, M.bucket); hlPlate.position.set(0.5, 0.04, 0); memG.add(hlPlate);
+const exBar = new THREE.Mesh(memBarGeo, M.exact); exBar.position.set(-0.5, 0.08, 0); exBar.scale.y = 0.25; memG.add(exBar);
+const hlBar = new THREE.Mesh(memBarGeo, M.hll); hlBar.position.set(0.5, 0.08, 0); hlBar.scale.y = 0.3; memG.add(hlBar);
+addLabel(() => L('对比精确:内存占用', 'versus exact: memory'), () => 'st',
+  new THREE.Vector3(0, 5.2, 0), null, memG);
+addLabel(() => L(`精确哈希集合 ≈ ${memExStr}`, `exact hash set ≈ ${memExStr}`), () => 'bad',
+  new THREE.Vector3(-0.5, 1, 0), v => v.set(-0.5, exBar.scale.y + 0.4, 0), memG);
+addLabel(() => L(`HLL 寄存器 ${memHllStr}(恒定)`, `HLL registers ${memHllStr} (fixed)`), () => 'g',
+  new THREE.Vector3(0.5, 0.85, 0), null, memG);
+
+/* 路由弧线 + 脉冲 */
+const arcLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+  [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)]), M.arc);
+arcLine.visible = false;
+scene.add(arcLine);
+const arcPulse = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), M.pulse);
+arcPulse.visible = false;
+scene.add(arcPulse);
+let arcCurve = null, arcT = 1;
+function drawArc(rep) {
+  const a = new THREE.Vector3(0.6, 1.75, 0);
+  const b = new THREE.Vector3(colX[rep], 0.62 + regH(gMax[rep]), 0);
+  arcCurve = new THREE.QuadraticBezierCurve3(a,
+    new THREE.Vector3((a.x + b.x) / 2, Math.max(a.y, b.y) + 1.0, 0.6), b);
+  arcLine.geometry.dispose();
+  arcLine.geometry = new THREE.BufferGeometry().setFromPoints(arcCurve.getPoints(28));
+  arcLine.visible = true;
+  arcT = 0;
+  arcPulse.visible = true;
+  arcPulse.position.copy(a);
+}
+
+/* 估计读数(挂在桶阵上方) */
+addLabel(() => seen > 0
+    ? L(`E ≈ ${fmtN(estCache.est)} vs 真值 ${fmtN(trueDistinct)}`, `E ≈ ${fmtN(estCache.est)} vs truth ${fmtN(trueDistinct)}`)
+    : L('等待元素流…', 'waiting for the stream…'),
+  () => seen > 0 ? (Math.abs(estCache.err) > 5 ? 'bad' : 'g') : 'st',
+  new THREE.Vector3(2.2, 3.15, 0));
+
+/* ---------------- HLL 核心 ---------------- */
+function computeEst() {
+  let sum = 0, V = 0;
+  for (let i = 0; i < NVIS; i++) {
+    const s0 = i * G;
+    let mx = 0, sm = 0;
+    for (let k = 0; k < G; k++) {
+      const r = registers[s0 + k];
+      sum += Math.pow(2, -r);
+      if (r === 0) V++;
+      if (r > mx) mx = r;
+      sm += r;
+    }
+    gMax[i] = mx; gAvg[i] = sm / G;
+  }
+  const am = 0.7213 / (1 + 1.079 / m);
+  const raw = am * m * m / (sum || 1);
+  let est, mode;
+  if (raw <= 5 * m && V > 0) { est = m * Math.log(m / V); mode = 'lin'; }   // 小基数:线性计数(覆盖 raw 偏差区)
+  else { est = raw; mode = 'hll'; }
+  estCache = { est, sum, V, mode, err: trueDistinct > 0 ? (est - trueDistinct) / trueDistinct * 100 : 0 };
+}
+function showHash() {
+  lastBits = lastHash.toString(2).padStart(32, '0').slice(0, 8);
+  dispRho = lastRho;
+  dispId = lastId;
+}
+function recordSample() {
+  let guard = 0;
+  while (seen >= nextSample && guard++ < 10) {
+    computeEst();
+    samples.push({ x: Math.log10(Math.max(10, seen)), t: Math.max(1, trueDistinct), e: Math.max(0.001, estCache.est) });
+    nextSample *= 1.13;
+  }
+}
+/* 慢动作:单步喂一个元素 */
+function feedOne() {
+  const id = ++idCounter;
+  const hash = hash32(id);
+  const route = hash >>> (32 - p);
+  const rho = Math.min(31, Math.clz32(hash << p)) + 1;   // 首个 1 的位置 = 前导零数+1
+  if (rho > registers[route]) { registers[route] = rho; flashT[route / G | 0] = 1.35; }
+  seen++; trueDistinct++;
+  lastId = id; lastHash = hash; lastRoute = route; lastRho = rho;
+  showHash();
+  updateStats();
+  drawArc(route / G | 0);
+  recordSample();
+}
+/* 逐元素真算(小流量,含 20% 重复访客) */
+function feedLive(n) {
+  for (let i = 0; i < n; i++) {
+    let id;
+    if (idPool.length > 16 && Math.random() < 0.2) id = idPool[(Math.random() * idPool.length) | 0];
+    else { id = ++idCounter; idPool.push(id); trueDistinct++; }
+    const hash = hash32(id);
+    const route = hash >>> (32 - p);
+    const rho = Math.min(31, Math.clz32(hash << p)) + 1; // 首个 1 的位置 = 前导零数+1
+    if (rho > registers[route]) registers[route] = rho;
+    lastId = id; lastHash = hash; lastRoute = route; lastRho = rho;
+  }
+  seen += n;
+}
+/* 统计式批量(大流量):每桶按「b 个抽样的最大 ρ」的分布直接采样 */
+function feedStat(B) {
+  const nd = B * 0.8;
+  trueDistinct += nd;
+  const per = nd / m;
+  for (let j = 0; j < m; j++) {
+    const lz = sampleMaxRho(per);
+    if (lz < 0) continue;                              // 本批该桶没有新元素
+    const k = lz + 1;                                  // 寄存器值 = 前导零数+1
+    if (k > registers[j]) { registers[j] = k; const rep = j / G | 0; flashT[rep] = Math.max(flashT[rep], 0.8); }
+  }
+  seen += B;
+  lastId = 0;
+}
+function resetStream() {
+  seen = 0; trueDistinct = 0; idCounter = 0; idPool.length = 0;
+  if (registers) registers.fill(0);
+  samples.length = 0; nextSample = 100;
+  flashT.fill(0);
+  lastId = 0; lastHash = 0; lastRoute = 0; lastRho = 0;
+  lastBits = '00000000'; dispRho = 0; dispId = 0;
+  estCache = { est: 0, sum: 1, V: m, err: 0, mode: 'lin' };
+  arcLine.visible = false; arcPulse.visible = false;
+  computeEst();
+  updateAllRegs();
+}
+
+/* ---------------- 示波器:估计/真值双曲线 + 误差带 ---------------- */
+function drawScope() {
+  const w = scope.width, h = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, w, h);
+  scopeCtx.strokeStyle = 'rgba(127,140,160,.4)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.strokeRect(4, 4, w - 8, h - 8);
+  if (samples.length < 2) {
+    scopeCtx.fillStyle = 'rgba(159,176,195,.85)';
+    scopeCtx.font = `${10 * dpr}px sans-serif`;
+    scopeCtx.fillText(L('喂入元素后,这里画出 估计值/真值 双曲线 + 误差带',
+      'feed elements to plot the estimate/truth curves + error band'), 8, h / 2);
+    return;
+  }
+  const x0 = 2, x1 = clamp(samples[samples.length - 1].x, 3, 9);
+  let vmax = 1;
+  for (const s of samples) vmax = Math.max(vmax, s.t, s.e);
+  vmax *= 1.18;
+  const X = lx => 6 + (lx - x0) / (x1 - x0) * (w - 12);
+  const Y = v => (h - 6) - v / vmax * (h - 14);
+  /* 误差带 ±1.04/√m */
+  const band = 1.04 / Math.sqrt(m);
+  scopeCtx.fillStyle = 'rgba(255,201,107,.16)';
+  scopeCtx.beginPath();
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i], y = Y(s.t * (1 + band));
+    i ? scopeCtx.lineTo(X(s.x), y) : scopeCtx.moveTo(X(s.x), y);
+  }
+  for (let i = samples.length - 1; i >= 0; i--) {
+    const s = samples[i];
+    scopeCtx.lineTo(X(s.x), Y(s.t * Math.max(0, 1 - band)));
+  }
+  scopeCtx.closePath();
+  scopeCtx.fill();
+  const plot = (f, color) => {
+    scopeCtx.strokeStyle = color;
+    scopeCtx.lineWidth = Math.max(1.4, 1.4 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      i ? scopeCtx.lineTo(X(s.x), Y(f(s))) : scopeCtx.moveTo(X(s.x), Y(f(s)));
+    }
+    scopeCtx.stroke();
+  };
+  plot(s => s.t, '#7bd88f');
+  plot(s => s.e, '#74c0fc');
+  const sL = samples[samples.length - 1];
+  scopeCtx.fillStyle = '#ffe2ae';
+  scopeCtx.beginPath();
+  scopeCtx.arc(X(sL.x), Y(sL.e), 2.6 * dpr, 0, TAU);
+  scopeCtx.fill();
+  scopeCtx.fillStyle = 'rgba(242,245,249,.85)';
+  scopeCtx.font = `${9.5 * dpr}px sans-serif`;
+  scopeCtx.fillText(L('绿:真实基数 · 蓝:HLL 估计 · 金带:±1.04/√m',
+    'green: truth - blue: HLL estimate - gold band: +/-1.04/sqrt(m)'), 8, h - 4);
+}
+
+/* ---------------- 步骤 ---------------- */
+const STEPS = [
+  { b: '十亿访客的内存危机', be: 'the billion-visitor memory crisis', tgt: [-4.6, 1.0, 4.6],
+    d: '统计「十亿访客里有几个不重复的用户」,精确数法要维护一个装下十亿 ID 的哈希集合——每条几十字节,几个 GB 内存说没就没;HyperLogLog 只用 12 KB 就给出误差约百分之几的答案,而且内存与数据流大小完全无关。',
+    de: 'Counting distinct visitors out of a billion, the exact way needs a hash set holding a billion IDs at tens of bytes each - gigabytes gone; HyperLogLog answers within a few percent from 12 KB, and its memory does not care how big the stream is.' },
+  { b: '洞察:前导零携带基数', be: 'leading zeros carry cardinality', hl: 'hash', tgt: [-2.4, 1.2, 4.2],
+    d: '均匀随机的哈希值里,出现 k 个前导零的概率是 2^−k,像连抛 k 次硬币全是花面;集合越大,越容易撞见更长的零串——看到 k 个前导零,基数大概率在 2^k 量级,一个哈希值就是一次对基数的抽样。',
+    de: 'In uniformly random hash values, seeing k leading zeros has probability 2^-k, like flipping k tails in a row; the bigger the set, the likelier a long zero-run appears - k leading zeros puts the cardinality near 2^k, so every hash is one sample of it.' },
+  { b: '分桶平均:前缀路由', be: 'bucketing: route by prefix', tgt: [0.4, 1.4, 4.4],
+    d: '单次观测噪声太大,LogLog 的办法是分桶平均:用哈希值最前面的几个 bit 当地址,把元素分到 m 个桶(最多 16384 个),m 路独立抽样取平均后,噪声按 1/√m 收缩——页面上金色的就是这段路由前缀。',
+    de: 'One observation is too noisy, so LogLog averages over buckets: the first few bits of the hash act as an address routing elements into m buckets (up to 16384); averaging m independent samples shrinks the noise by 1/sqrt(m) - the golden prefix on screen is exactly that address.' },
+  { b: '寄存器=最大前导零', be: 'register = longest zero-run', tgt: [2.6, 1.0, 4.4],
+    d: '每个桶不存元素,只记一个 6 bit 的数字:该桶见过的最大 ρ(首个 1 的位置,即前导零数+1)。新元素算出 ρ,超过旧纪录就更新,否则丢弃;重复元素算出同样的 ρ,天然去重——这就是「不存元素本身」的含义。',
+    de: 'Each bucket stores no element, just a 6-bit number: the largest rho it has seen (position of the first 1, i.e. leading zeros plus one). A new element raises the record or is dropped; duplicates compute the same rho and vanish - that is what storing no elements means.' },
+  { b: '调和平均为何抗离群', be: 'why the harmonic mean', hl: 'harm', tgt: [3.2, 1.1, 4.8],
+    act: () => { harmonicOn = true; contribG.visible = true; syncPresetUI(); },
+    d: '聚合公式取调和平均:估计量 E 正比于 m²/Σ2^−Mⱼ。某桶运气爆棚见到超长零串,它的 2^−Mⱼ 趋近于零,拖不偏整体;算术平均会被这种离群桶带偏,调和平均对大值钝感——这正是选它的原因。',
+    de: 'The aggregation is a harmonic mean: E is proportional to m squared over the sum of 2^-M. A freak bucket that saw an extravagant zero-run contributes almost nothing and cannot skew the result, where an arithmetic mean would be dragged - that is why harmonic.' },
+  { b: '两处修正:线性计数与偏差表', be: 'two patches: linear counting & bias table', tgt: [3.0, 0.9, 5.6],
+    d: '两处边界修正:小基数时空桶太多,调和公式失真,改用线性计数 E=m·ln(m/空桶数) 直接数;大基数时哈希函数的微小偏差会系统性抬高估计,查实测偏差表校正——两刀下去,全量程都贴合真值。',
+    de: 'Two edge patches: at small cardinalities too many buckets stay empty and the harmonic formula distorts, so linear counting E = m*ln(m/empty) takes over; at large ones tiny hash biases inflate the estimate, fixed by an empirical bias table - together they hug the truth.' },
+  { b: '误差 1.04/√m 与 12 KB', be: 'error 1.04/sqrt(m) and 12 KB', tgt: [1.6, 1.0, -4.2],
+    act: () => { exactOn = true; memG.visible = true; syncPresetUI(); },
+    d: '标准误约等于 1.04/√m:m 取 16384 时约 0.81%,寄存器 16384×6 bit 恰好 12 KB;想更准就加桶——内存线性涨、误差按平方根降,「精度换内存」的汇率写死在公式里,与流过多大的数据无关。',
+    de: 'The standard error is about 1.04 over sqrt(m): at m = 16384 roughly 0.81 percent, with 16384 six-bit registers exactly 12 KB; more buckets buy accuracy - memory grows linearly, error falls with the square root, an exchange rate fixed by the formula regardless of stream size.' },
+  { b: '布隆过滤器是姊妹', be: 'the Bloom filter sibling', tgt: [0.8, 0.9, 6.8],
+    d: '反方向姊妹是布隆过滤器:那个回答「见过没有」,这个回答「见过几个」。工程上它是 Redis 的 PFADD/PFCOUNT、Google 的 PowerDrill 与各家数据库的近似 COUNT(DISTINCT)——UV 统计、独立访客、海量去重计数全在这一族。',
+    de: "Its opposite-number sibling is the Bloom filter: that one answers \"have I seen it\", this one answers \"how many\". In production it is Redis PFADD/PFCOUNT, Google PowerDrill and every database's approximate COUNT(DISTINCT) - the family behind every unique-visitor tally." },
+];
+
+/* ---------------- 公式 ---------------- */
+function updateFormula() {
+  computeEst();
+  const am = 0.7213 / (1 + 1.079 / m);
+  const band = 1.04 / Math.sqrt(m) * 100;
+  const bytes = Math.ceil(m * 6 / 8);
+  const memStr = bytes >= 1024 ? (bytes / 1024).toFixed(1).replace(/\.0$/, '') + ' KB' : bytes + ' B';
+  const sumS = estCache.sum >= 1e4 ? estCache.sum.toExponential(2) : estCache.sum.toFixed(2);
+  const harm = t => harmonicOn ? '<b>' + t + '</b>' : t;
+  el.formula.innerHTML =
+    L(`E = ${harm('α<sub>m</sub>·m²/Σⱼ2<sup>−Mⱼ</sup>')},α<sub>m</sub> = 0.7213/(1+1.079/m) = ${am.toFixed(4)}${harmonicOn ? ',Σ2<sup>−Mⱼ</sup> = <b>' + sumS + '</b>' : ''}`,
+      `E = ${harm('α_m·m²/Σ 2<sup>−Mⱼ</sup>')}, α_m = 0.7213/(1+1.079/m) = ${am.toFixed(4)}${harmonicOn ? ', Σ 2<sup>−M</sup> = <b>' + sumS + '</b>' : ''}`) +
+    '<br>' +
+    L(`m = ${m} → 标准误 ≈ 1.04/√m = <b>${band.toFixed(2)} %</b> · 内存 = m·6 bit = <b>${memStr}</b>`,
+      `m = ${m} -> stderr ≈ 1.04/sqrt(m) = <b>${band.toFixed(2)} %</b> - memory = m·6 bit = <b>${memStr}</b>`) +
+    '<br>' +
+    (estCache.mode === 'lin'
+      ? L(`小基数:空桶 ${estCache.V} → 线性计数 m·ln(m/V) → E ≈ <b>${fmtN(estCache.est)}</b> vs 真值 ${fmtN(trueDistinct)}`,
+          `small range: ${estCache.V} empty buckets -> linear counting m·ln(m/V) -> E ≈ <b>${fmtN(estCache.est)}</b> vs truth ${fmtN(trueDistinct)}`)
+      : L(`Σ2<sup>−Mⱼ</sup> = ${sumS} → E ≈ <b>${fmtN(estCache.est)}</b> vs 真值 ${fmtN(trueDistinct)} · 相对误差 ${estCache.err >= 0 ? '+' : ''}${estCache.err.toFixed(2)} %`,
+          `Σ 2<sup>−M</sup> = ${sumS} -> E ≈ <b>${fmtN(estCache.est)}</b> vs truth ${fmtN(trueDistinct)} - rel. error ${estCache.err >= 0 ? '+' : ''}${estCache.err.toFixed(2)} %`)) +
+    (exactOn ? ' · ' + L(`哈希集合 ≈ <b>${fmtBytes(trueDistinct * 48)}</b> vs HLL ${memStr}`,
+        `hash set ≈ <b>${fmtBytes(trueDistinct * 48)}</b> vs HLL ${memStr}`) : '');
+}
+
+/* ---------------- 状态面板 ---------------- */
+function updateSliderLabels() {
+  el.elAVal.textContent = '10^' + (+el.elA.value).toFixed(1) + ' ≈ ' + fmtN(Math.pow(10, +el.elA.value));
+  el.elBVal.textContent = 'm = 2^' + el.elB.value + ' = ' + (1 << +el.elB.value);
+}
+function updateStats() {
+  computeEst();
+  updateAllRegs();
+  el.stA.innerHTML = fmtN(seen);
+  el.stA.className = 'v';
+  el.stB.innerHTML = fmtN(trueDistinct);
+  el.stB.className = 'v';
+  el.stC.innerHTML = fmtN(estCache.est);
+  el.stC.className = 'v';
+  const ae = Math.abs(estCache.err);
+  el.stD.innerHTML = ae.toFixed(2) + '<small> %</small>';
+  el.stD.className = 'v ' + (seen === 0 ? '' : ae > 5 ? 'bad' : ae > 2.5 ? 'warn' : 'ok');
+  const bytes = Math.ceil(m * 6 / 8);
+  el.stE.innerHTML = bytes >= 1024 ? (bytes / 1024).toFixed(1).replace(/\.0$/, '') + '<small> KB</small>' : bytes + '<small> B</small>';
+  el.stE.className = 'v ok';
+  memHllStr = bytes >= 1024 ? (bytes / 1024).toFixed(1).replace(/\.0$/, '') + ' KB' : bytes + ' B';
+}
+function resetMachine() {
+  el.elA.value = '5'; el.elB.value = '14';
+  vAExp = 5; mExp = 14; m = 1 << 14; p = 14; G = m / NVIS;
+  registers = new Uint8Array(m);
+  slowDemo = null; slowTimer = 0; slowCount = 0;
+  harmonicOn = false; exactOn = false;
+  contribG.visible = false; memG.visible = false;
+  rebuildBuckets();
+  resetStream();
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  tgtVec.set(0.6, 1.0, 0);
+  updateSliderLabels();
+  updateFormula();
+}
+
+/* ---------------- UI 接线 ---------------- */
+const el = {
+  elA: document.getElementById('vA'), elAVal: document.getElementById('vAVal'),
+  elB: document.getElementById('vB'), elBVal: document.getElementById('vBVal'),
+  stA: document.getElementById('stA'), stB: document.getElementById('stB'),
+  stC: document.getElementById('stC'), stD: document.getElementById('stD'),
+  stE: document.getElementById('stE'),
+  formula: document.getElementById('formula'),
+};
+el.elA.addEventListener('input', () => {
+  vAExp = +el.elA.value;
+  const nt = Math.pow(10, vAExp);
+  if (nt < seen) resetStream();                      // 目标变小:清流重喂
+  target = nt;
+  updateSliderLabels();
+});
+el.elB.addEventListener('input', () => {
+  mExp = +el.elB.value; m = 1 << mExp; p = mExp; G = m / NVIS;
+  registers = new Uint8Array(m);
+  rebuildBuckets();
+  resetStream();
+  updateSliderLabels();
+});
+function syncPresetUI() {
+  document.getElementById('btn-route').classList.toggle('on', slowDemo === 'route');
+  document.getElementById('btn-register').classList.toggle('on', slowDemo === 'register');
+  document.getElementById('btn-harmonic').classList.toggle('on', harmonicOn);
+  document.getElementById('btn-exact').classList.toggle('on', exactOn);
+}
+function startSlow(kind) {
+  slowDemo = kind; slowTimer = 0; slowCount = 0;
+  resetStream();
+}
+document.getElementById('btn-route').addEventListener('click', () => {
+  if (slowDemo === 'route') slowDemo = null;
+  else { startSlow('route'); tgtVec.set(-1.2, 1.3, 4.6); }
+  syncPresetUI(); updateFormula();
+});
+document.getElementById('btn-register').addEventListener('click', () => {
+  if (slowDemo === 'register') slowDemo = null;
+  else { startSlow('register'); tgtVec.set(3.2, 1.1, 4.4); }
+  syncPresetUI(); updateFormula();
+});
+document.getElementById('btn-harmonic').addEventListener('click', () => {
+  harmonicOn = !harmonicOn;
+  contribG.visible = harmonicOn;
+  if (harmonicOn) tgtVec.set(3.2, 1.0, 4.8);
+  syncPresetUI(); updateFormula();
+});
+document.getElementById('btn-exact').addEventListener('click', () => {
+  exactOn = !exactOn;
+  memG.visible = exactOn;
+  if (exactOn) tgtVec.set(1.6, 1.1, -4.0);
+  syncPresetUI(); updateFormula();
+});
+
+/* ---------------- 主逻辑 ---------------- */
+function pageFrame(et, dt) {
+  etG = et;
+  /* 喂数 */
+  if (playing) {
+    if (slowDemo) {
+      slowTimer += dt;
+      if (slowTimer >= 0.95) {
+        slowTimer = 0;
+        feedOne();
+        slowCount++;
+        if (slowCount >= 18 || seen >= target) { slowDemo = null; syncPresetUI(); }
+      }
+    } else if (seen < target) {
+      let adv = Math.max(1, Math.round(seen * dt * 1.15));
+      adv = Math.min(adv, target - seen, 10000000);
+      const liveN = Math.min(adv, Math.max(0, LIVE_CAP - seen));
+      if (liveN > 0) feedLive(liveN);
+      if (adv > liveN) feedStat(adv - liveN);
+      recordSample();
+      dispT += dt;
+      if (lastId > 0 && dispT > 0.18) { dispT = 0; showHash(); }
+    }
+  }
+  /* 元素方块流装饰 */
+  const flow = slowDemo ? 0.35 : (seen < target ? 0.5 + Math.min(1.6, Math.log10(seen + 10) * 0.22) : 0.06);
+  for (const c of cubes) {
+    c.t += dt * flow * c.sp;
+    if (c.t >= 1) {
+      c.t = 0;
+      c.y = 0.75 + (Math.random() - 0.5) * 0.5;
+      c.z = (Math.random() - 0.5) * 0.6;
+      c.id = 1000 + ((Math.random() * 89999) | 0);
+    }
+    c.m.position.set(-7.4 + c.t * 4.2, c.y, c.z);
+    c.m.rotation.y += dt * 2;
+  }
+  /* 哈希机旋转符号 */
+  knot.rotation.x += dt * (slowDemo ? 1.2 : 0.6 + flow * 0.8);
+  knot.rotation.y += dt * (slowDemo ? 1.6 : 0.9 + flow);
+  /* 寄存器闪金衰减 */
+  for (let i = 0; i < NVIS; i++) {
+    const f = Math.max(0, flashT[i]);
+    if (f > 0) flashT[i] = f - dt * 1.4;
+    const k = Math.min(1, f);
+    regMats[i].color.copy(M.reg.color).lerp(GOLD, k);
+    regMats[i].emissive.copy(regMats[i].color);
+    regMats[i].emissiveIntensity = 0.3 + k * 1.1;
+  }
+  /* 路由脉冲 */
+  if (arcPulse.visible && arcCurve) {
+    arcT += dt * 1.5;
+    if (arcT >= 1) arcPulse.visible = false;
+    else arcPulse.position.copy(arcCurve.getPoint(arcT));
+  }
+  /* 调和贡献条 / 内存条 */
+  if (harmonicOn) {
+    let mn = 64;
+    for (let i = 0; i < NVIS; i++) mn = Math.min(mn, gAvg[i]);
+    for (let i = 0; i < NVIS; i++) contribBars[i].scale.y = 0.05 + 1.45 * Math.pow(2, mn - gAvg[i]);
+  }
+  if (exactOn) {
+    const gb = trueDistinct * 48;
+    exBar.scale.y = clamp(0.25 + (Math.log10(Math.max(gb, 1024)) - 3) / 8 * 4.2, 0.25, 4.6);
+    memExStr = fmtBytes(gb);
+  }
+  /* 预设相机钉扎 */
+  if (slowDemo === 'route') tgtVec.set(-1.2, 1.3, 4.6);
+  else if (slowDemo === 'register') tgtVec.set(3.2, 1.1, 4.4);
+  if (harmonicOn) tgtVec.set(3.2, 1.0, 4.8);
+  if (exactOn) tgtVec.set(1.6, 1.1, -4.0);
+}
+
+/* ---------------- 装配 ---------------- */
+rebuildBuckets();
+resetStream();
+updateSliderLabels();
+
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  pageFrame(et, simDt);
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.emissiveIntensity = 0.4 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked && typeof drawScope === 'function') drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
