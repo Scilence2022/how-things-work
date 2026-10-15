@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>隐马尔可夫模型 · 看见输出,猜出状态</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#2f9e8f;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1d7268;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(47,158,143,.65); background: rgba(47,158,143,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(29,114,104,.55); background: rgba(29,114,104,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(47,158,143,.10); border-color: rgba(47,158,143,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(29,114,104,.08); border-color: rgba(29,114,104,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #a7e6dc; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="隐马尔可夫模型" data-en="Hidden Markov Models">隐马尔可夫模型</h1>
+  <div class="sub" data-zh="有些系统的真相看不见,只能看见它扔出来的线索——天气是隐的,你朋友的行动(散步/购物/打扫)是显的;隐马尔可夫模型把这类「隔着毛玻璃猜状态」形式化:状态按马尔可夫链转移(下一状态只依赖当前),每个状态按自己的概率分布发出观测;围绕它有三个经典问题各有算法:评估——前向算法 O(N²T) 算出「这条观测序列出现」的概率;解码——Viterbi 算法用动态规划从 N^T 条状态路径里高效挑出最可能的一条(记录每步最优、最后回溯);学习——观测序列只有输出没有标注时,鲍姆-韦尔奇(EM 的前身)交替估计状态期望与重估转移/发射参数直到收敛;这套机器统治了语音识别三十年(音素作为隐状态),也是基因序列找编码区、拼音输入法整句转换、金融 regime 切换检测的第一代主力——直到深度学习接管,但「隐状态+发射」的思考方式已经渗进整个序列建模。拖「转移概率」看隐状态的黏性,拖「观测噪声」看线索变得含糊;按「生成观测」让天气暗中掷骰子,按「前向评估」看概率格逐列点亮,按「Viterbi 解码」看红线回溯最优路径,按「Baum-Welch 学习」看热图迭代收敛。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Some systems hide their truth and only throw out clues - the weather is hidden, your friend's activities (walk / shop / clean) are visible; the Hidden Markov Model formalizes this guessing-through-frosted-glass: states evolve as a Markov chain (the next state depends only on the current one), and each state emits observations from its own probability distribution; three classic problems come with three classic algorithms: evaluation - the forward algorithm computes, in O(N²T), the probability that this observation sequence appeared; decoding - the Viterbi algorithm uses dynamic programming to pick the single most likely state path out of N^T candidates (record the best move per cell, backtrack at the end); learning - when you only have outputs and no labels, Baum-Welch (the ancestor of EM) alternates between estimating state expectations and re-estimating transition/emission parameters until convergence; this machinery ruled speech recognition for thirty years (phonemes as hidden states) and was the first-generation workhorse for finding coding regions in genes, whole-sentence pinyin input, and financial regime detection - deep learning has since taken over, but the hidden-state-plus-emission way of thinking has seeped into all of sequence modeling. Drag transition prob to feel the stickiness of the hidden states, drag observation noise to blur the clues; press generate obs to let the weather roll dice backstage, press forward eval to watch probability cells light up column by column, press Viterbi decode to watch the red line backtrack the best path, press Baum-Welch learn to watch the heatmap converge. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause
+- 场景要点: 上排晴/雨两颗玻璃感隐状态球,弧形转移箭头有脉冲点流动;下排散步/购物/打扫三颗观测球,虚线光束粗细随发射概率变化;前方 10 格时间线摆出观测序列,每格上下两片概率格随前向算法逐列点亮;Viterbi 红线穿格回溯最优路径;右侧 2×2 转移矩阵热图随 EM 迭代渐变收敛。">有些系统的真相看不见,只能看见它扔出来的线索——天气是隐的,你朋友的行动(散步/购物/打扫)是显的;隐马尔可夫模型把这类「隔着毛玻璃猜状态」形式化:状态按马尔可夫链转移(下一状态只依赖当前),每个状态按自己的概率分布发出观测;围绕它有三个经典问题各有算法:评估——前向算法 O(N²T) 算出「这条观测序列出现」的概率;解码——Viterbi 算法用动态规划从 N^T 条状态路径里高效挑出最可能的一条(记录每步最优、最后回溯);学习——观测序列只有输出没有标注时,鲍姆-韦尔奇(EM 的前身)交替估计状态期望与重估转移/发射参数直到收敛;这套机器统治了语音识别三十年(音素作为隐状态),也是基因序列找编码区、拼音输入法整句转换、金融 regime 切换检测的第一代主力——直到深度学习接管,但「隐状态+发射」的思考方式已经渗进整个序列建模。拖「转移概率」看隐状态的黏性,拖「观测噪声」看线索变得含糊;按「生成观测」让天气暗中掷骰子,按「前向评估」看概率格逐列点亮,按「Viterbi 解码」看红线回溯最优路径,按「Baum-Welch 学习」看热图迭代收敛。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="对数似然" data-en="log-likelihood">对数似然</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="解码准确率" data-en="decode accuracy">解码准确率</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="迭代轮数" data-en="EM rounds">迭代轮数</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="步置信度" data-en="step confidence">步置信度</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip o" data-zh="晴(隐状态)" data-en="sunny (hidden)">晴(隐状态)</span>
+    <span class="chip b" data-zh="雨(隐状态)" data-en="rainy (hidden)">雨(隐状态)</span>
+    <span class="chip g" data-zh="观测(实心球)" data-en="observations (solid)">观测(实心球)</span>
+    <span class="chip" style="color:#d6ecff;border-color:rgba(159,216,255,.7)" data-zh="发射光束(虚线)" data-en="emission beams (dashed)">发射光束(虚线)</span>
+    <span class="chip r" data-zh="Viterbi 路径(红线)" data-en="Viterbi path (red)">Viterbi 路径(红线)</span>
+    <span class="chip" style="color:#bfe8dd;border-color:rgba(47,158,143,.7)" data-zh="转移热图(右侧)" data-en="transition heatmap (right)">转移热图(右侧)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-gen" data-zh="生成观测" data-en="generate obs">生成观测</button>
+    <button class="abtn" id="btn-forward" data-zh="前向评估" data-en="forward eval">前向评估</button>
+    <button class="abtn" id="btn-viterbi" data-zh="Viterbi 解码" data-en="Viterbi decode">Viterbi 解码</button>
+    <button class="abtn" id="btn-learn" data-zh="Baum-Welch 学习" data-en="Baum-Welch learn">Baum-Welch 学习</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="转移概率" data-en="transition prob">转移概率</label><input id="vA" type="range" min="0" max="95" step="1" value="70"><span class="val" id="vAVal"></span></div>
+  <div class="row"><label data-zh="观测噪声" data-en="observation noise">观测噪声</label><input id="vB" type="range" min="0" max="100" step="1" value="35"><span class="val" id="vBVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="曲线/示波" data-en="curve scope">曲线/示波</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../markov-chain/" data-zh="马尔可夫链" data-en="Markov chain">马尔可夫链</a>
+    <a href="../dynamic-programming/" data-zh="动态规划" data-en="dynamic programming">动态规划</a>
+    <a href="../em-clustering/" data-zh="EM 聚类" data-en="EM clustering">EM 聚类</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.__errs = [];
+addEventListener('error', e => window.__errs.push((e.message || String(e)) + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(0, 2.0, 11.2);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.58;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 0.3, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  if (STEPS[scenario].act) STEPS[scenario].act();
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  applyViewMode();
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+
+/* ================= 隐马尔可夫模型 ================= */
+const TITLE_ZH = '隐马尔可夫模型 · 看见输出,猜出状态';
+const TITLE_EN = 'Hidden Markov Models: See the Output, Guess the State';
+const PRESET_IDS = ['gen', 'forward', 'viterbi', 'learn'];
+const HL = {};
+
+const T = 10;                // 观测序列长度
+const OBS_N = 3;             // 观测种类:散步 / 购物 / 打扫
+let pRR = 0.70;              // vA: 转移概率 P(雨|雨)
+let noiseK = 0.35;           // vB: 观测噪声 0–1
+let obsSeq = new Array(T).fill(0);
+let trueSeq = new Array(T).fill(0);
+let alphaN = [];             // 归一化前向概率 [t][s]
+let vPath = new Array(T).fill(0);
+let llVal = 0, accPct = 0;
+let emIters = 0, emLLs = [];
+let learnA = [[0.5, 0.5], [0.5, 0.5]];
+let learnE = [[1 / 3, 1 / 3, 1 / 3], [1 / 3, 1 / 3, 1 / 3]];
+let revealT = T;
+let modeFwd = false, modeVit = false, modeLearn = false;
+let learnClock = 0;
+let etG = 0;
+
+/* ---------------- HMM 三算法 ---------------- */
+function transMx() { return [[0.65, 0.35], [1 - pRR, pRR]]; }
+function emisMx() {
+  const b = [[0.5, 0.25, 0.25], [0.12, 0.28, 0.6]];
+  const k = noiseK * 0.85, u = k / 3;
+  const mix = x => x * (1 - k) + u;
+  return [[mix(b[0][0]), mix(b[0][1]), mix(b[0][2])], [mix(b[1][0]), mix(b[1][1]), mix(b[1][2])]];
+}
+function curA() { return modeLearn && emIters > 0 ? learnA : transMx(); }
+function curE() { return modeLearn && emIters > 0 ? learnE : emisMx(); }
+function computeForward(A, E) {
+  const rows = [];
+  let prev = null, ll = 0;
+  for (let t = 0; t < T; t++) {
+    const row = [0, 0];
+    for (let j = 0; j < 2; j++) {
+      if (t === 0) row[j] = 0.5 * E[j][obsSeq[0]];
+      else {
+        let s = 0;
+        for (let i = 0; i < 2; i++) s += prev[i] * A[i][j];
+        row[j] = E[j][obsSeq[t]] * s;
+      }
+    }
+    const tot = row[0] + row[1];
+    const tt = tot > 1e-300 ? tot : 1e-300;
+    rows.push([row[0] / tt, row[1] / tt]);
+    ll += Math.log(tt);
+    prev = row;
+  }
+  return { rows, ll };
+}
+function computeViterbi(A, E) {
+  const d = [[0.5 * E[0][obsSeq[0]], 0.5 * E[1][obsSeq[0]]]];
+  const psi = [];
+  for (let t = 1; t < T; t++) {
+    const row = [0, 0], pr = [0, 0];
+    for (let j = 0; j < 2; j++) {
+      let best = -1, bi = 0;
+      for (let i = 0; i < 2; i++) {
+        const v = d[t - 1][i] * A[i][j];
+        if (v > best) { best = v; bi = i; }
+      }
+      row[j] = best * E[j][obsSeq[t]];
+      pr[j] = bi;
+    }
+    d.push(row); psi.push(pr);
+  }
+  let last = d[T - 1][0] >= d[T - 1][1] ? 0 : 1;
+  vPath[T - 1] = last;
+  for (let t = T - 2; t >= 0; t--) { last = psi[t][last]; vPath[t] = last; }
+  let ok = 0;
+  for (let t = 0; t < T; t++) if (vPath[t] === trueSeq[t]) ok++;
+  accPct = Math.round(ok / T * 100);
+}
+function computeAll() {
+  const r = computeForward(curA(), curE());
+  alphaN = r.rows;
+  llVal = r.ll;
+  computeViterbi(curA(), curE());
+}
+function resetLearn() {
+  emIters = 0;
+  emLLs = [];
+  learnA = [[0.5, 0.5], [0.5, 0.5]];
+  learnE = [[1 / 3, 1 / 3, 1 / 3], [1 / 3, 1 / 3, 1 / 3]];
+  learnClock = 0;
+}
+function emStep() {
+  /*鲍姆-韦尔奇一轮:前向-后向 → gamma/xi 期望 → 重估参数 */
+  const A = learnA, E = learnE;
+  const aSc = [], bSc = [], sc = [];
+  let row = [0.5 * E[0][obsSeq[0]], 0.5 * E[1][obsSeq[0]]];
+  for (let t = 0; t < T; t++) {
+    if (t > 0) {
+      const r2 = [0, 0];
+      for (let j = 0; j < 2; j++) {
+        let s = 0;
+        for (let i = 0; i < 2; i++) s += row[i] * A[i][j];
+        r2[j] = E[j][obsSeq[t]] * s;
+      }
+      row = r2;
+    }
+    const tot = (row[0] + row[1]) || 1e-300;
+    sc.push(tot);
+    aSc.push([row[0] / tot, row[1] / tot]);
+  }
+  bSc[T - 1] = [1, 1];
+  for (let t = T - 2; t >= 0; t--) {
+    const r2 = [0, 0];
+    for (let i = 0; i < 2; i++) {
+      let s = 0;
+      for (let j = 0; j < 2; j++) s += A[i][j] * E[j][obsSeq[t + 1]] * bSc[t + 1][j];
+      r2[i] = s;
+    }
+    bSc[t] = r2;
+  }
+  const gam = [], xi = [];
+  for (let t = 0; t < T; t++) {
+    const g = [0, 0];
+    let tot = 0;
+    for (let i = 0; i < 2; i++) { g[i] = aSc[t][i] * bSc[t][i]; tot += g[i]; }
+    for (let i = 0; i < 2; i++) g[i] /= tot || 1e-300;
+    gam.push(g);
+    const xr = [[0, 0], [0, 0]];
+    if (t < T - 1) {
+      let xtot = 0;
+      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+        xr[i][j] = aSc[t][i] * A[i][j] * E[j][obsSeq[t + 1]] * bSc[t + 1][j];
+        xtot += xr[i][j];
+      }
+      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) xr[i][j] /= xtot || 1e-300;
+    }
+    xi.push(xr);
+  }
+  const EPS = 1e-4;
+  for (let i = 0; i < 2; i++) {
+    let gi = 0;
+    for (let t = 0; t < T - 1; t++) gi += gam[t][i];
+    for (let j = 0; j < 2; j++) {
+      let s = 0;
+      for (let t = 0; t < T - 1; t++) s += xi[t][i][j];
+      A[i][j] = (s + EPS) / (gi + 2 * EPS);
+    }
+    for (let o = 0; o < OBS_N; o++) {
+      let s = 0;
+      for (let t = 0; t < T; t++) if (obsSeq[t] === o) s += gam[t][i];
+      E[i][o] = (s + EPS) / (T + 3 * EPS);
+    }
+  }
+  emIters++;
+  const r = computeForward(learnA, learnE);
+  emLLs.push(r.ll);
+  llVal = r.ll;
+  alphaN = r.rows;
+  computeViterbi(learnA, learnE);
+}
+function genSequence() {
+  const A = transMx(), E = emisMx();
+  let s = Math.random() < 0.5 ? 0 : 1;
+  for (let t = 0; t < T; t++) {
+    trueSeq[t] = s;
+    let r = Math.random(), o = OBS_N - 1;
+    for (let k = 0; k < OBS_N; k++) { if (r < E[s][k]) { o = k; break; } r -= E[s][k]; }
+    obsSeq[t] = o;
+    s = Math.random() < A[s][s] ? s : 1 - s;
+  }
+  resetLearn();
+  computeAll();
+  refreshSequence();
+}
+
+/* 柔和圆点贴图(背景星共用) */
+function softDot() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,255,255,.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const dotTex = softDot();
+
+const M = {
+  star: new THREE.PointsMaterial({ color: 0xdfe8ff, size: 0.07, map: dotTex, transparent: true, opacity: 0.7, depthWrite: false }),
+  sun: new THREE.MeshStandardMaterial({ color: 0xffc06a, emissive: 0xff9d3d, emissiveIntensity: 0.4, transparent: true, opacity: 0.72, roughness: 0.2 }),
+  rain: new THREE.MeshStandardMaterial({ color: 0x5aa2ff, emissive: 0x2f6fd6, emissiveIntensity: 0.4, transparent: true, opacity: 0.72, roughness: 0.2 }),
+  walk: new THREE.MeshStandardMaterial({ color: 0x39b26f, emissive: 0x1d7a46, emissiveIntensity: 0.45, roughness: 0.3 }),
+  shop: new THREE.MeshStandardMaterial({ color: 0xff9d3d, emissive: 0xb05e10, emissiveIntensity: 0.45, roughness: 0.3 }),
+  clean: new THREE.MeshStandardMaterial({ color: 0x8fa3bd, emissive: 0x44586f, emissiveIntensity: 0.45, roughness: 0.3 }),
+  arcSun: new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.7 }),
+  arcRain: new THREE.MeshBasicMaterial({ color: 0x86b8ff, transparent: true, opacity: 0.7 }),
+  pulse: new THREE.MeshBasicMaterial({ color: 0xfff2cc }),
+  pulseB: new THREE.MeshBasicMaterial({ color: 0xbde9ff }),
+  vline: new THREE.LineBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0.9 }),
+};
+HL.sun = M.sun;
+HL.rain = M.rain;
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0b0e14 : 0xeef1f6);
+  M.star.color.set(dark ? 0xdfe8ff : 0x33414f);
+  M.star.opacity = dark ? 0.7 : 0.45;
+  M.arcSun.color.set(dark ? 0xffd9a0 : 0xa8720e);
+  M.arcRain.color.set(dark ? 0x86b8ff : 0x2b62b8);
+  M.pulse.color.set(dark ? 0xfff2cc : 0xa8720e);
+  M.pulseB.color.set(dark ? 0xbde9ff : 0x2b62b8);
+  heatLow.set(dark ? 0x1c2530 : 0xd9e0e8);
+  heatHigh.set(dark ? 0x2f9e8f : 0x1d7268);
+  updateHeat();
+}
+
+/* ---------------- 场景:深空背景星 ---------------- */
+const NBG = 280;
+const bgBase = new Float32Array(NBG * 3);
+for (let i = 0; i < NBG; i++) {
+  bgBase[i * 3] = (Math.random() - 0.5) * 50;
+  bgBase[i * 3 + 1] = (Math.random() - 0.5) * 30;
+  bgBase[i * 3 + 2] = -6 - Math.random() * 22;
+}
+const bgGeo = new THREE.BufferGeometry();
+bgGeo.setAttribute('position', new THREE.BufferAttribute(bgBase.slice(), 3));
+const bgGroup = new THREE.Group();
+bgGroup.add(new THREE.Points(bgGeo, M.star));
+scene.add(bgGroup);
+
+/* ---------------- 场景:隐状态双球 + 转移弧 ---------------- */
+const sunBall = new THREE.Mesh(new THREE.SphereGeometry(0.75, 32, 24), M.sun);
+sunBall.position.set(-2.3, 2.5, 0);
+const rainBall = new THREE.Mesh(new THREE.SphereGeometry(0.75, 32, 24), M.rain);
+rainBall.position.set(2.3, 2.5, 0);
+scene.add(sunBall, rainBall);
+
+const ARC_R = 2.6, ARC_C = 2.5;
+const span = 130 * Math.PI / 180;
+const arcUp = new THREE.Mesh(new THREE.TorusGeometry(ARC_R, 0.035, 8, 48, span), M.arcSun);
+arcUp.position.y = ARC_C;
+arcUp.rotation.z = 25 * Math.PI / 180;
+const arcDn = new THREE.Mesh(new THREE.TorusGeometry(ARC_R, 0.035, 8, 48, span), M.arcRain);
+arcDn.position.y = ARC_C;
+arcDn.rotation.z = 205 * Math.PI / 180;
+scene.add(arcUp, arcDn);
+/* 箭头:晴→雨(上弧末端,顺时针)与 雨→晴(下弧末端) */
+function arrowCone(thDeg) {
+  const th = thDeg * Math.PI / 180;
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.28, 10), M.arcSun.clone());
+  cone.position.set(Math.cos(th) * ARC_R, ARC_C + Math.sin(th) * ARC_R, 0);
+  cone.rotation.z = Math.atan2(-Math.cos(th), Math.sin(th)) - Math.PI / 2;
+  return cone;
+}
+scene.add(arrowCone(25));
+const coneDn = arrowCone(335);
+coneDn.material = M.arcRain.clone();
+scene.add(coneDn);
+/* 自循环小环 */
+const loopSun = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.022, 6, 24), M.arcSun);
+loopSun.position.set(-2.3, 3.62, 0);
+const loopRain = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.022, 6, 24), M.arcRain);
+loopRain.position.set(2.3, 3.62, 0);
+scene.add(loopSun, loopRain);
+/* 弧上脉冲点 */
+const PULSES = 5;
+const sunPulses = [], rainPulses = [];
+for (let i = 0; i < PULSES; i++) {
+  const p1 = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), M.pulse);
+  const p2 = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), M.pulseB);
+  scene.add(p1, p2);
+  sunPulses.push(p1); rainPulses.push(p2);
+}
+
+/* ---------------- 场景:观测三球 + 发射光束 ---------------- */
+const SUN_P = new THREE.Vector3(-2.3, 2.5, 0);
+const RAIN_P = new THREE.Vector3(2.3, 2.5, 0);
+const OBS_POS = [new THREE.Vector3(-3.4, -2.1, 0), new THREE.Vector3(0, -2.5, 0), new THREE.Vector3(3.4, -2.1, 0)];
+const OBS_MATS = [M.walk, M.shop, M.clean];
+const obsBalls = [];
+for (let o = 0; o < OBS_N; o++) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.55, 28, 20), OBS_MATS[o]);
+  m.position.copy(OBS_POS[o]);
+  scene.add(m);
+  obsBalls.push(m);
+}
+const beams = [];
+for (let s = 0; s < 2; s++) {
+  const row = [];
+  for (let o = 0; o < OBS_N; o++) {
+    const bm = new THREE.LineDashedMaterial({ color: 0x9fb0c3, dashSize: 0.18, gapSize: 0.12, transparent: true, opacity: 0.4 });
+    const g = new THREE.BufferGeometry().setFromPoints([s === 0 ? SUN_P : RAIN_P, OBS_POS[o]]);
+    const ln = new THREE.Line(g, bm);
+    ln.computeLineDistances();
+    scene.add(ln);
+    row.push(ln);
+  }
+  beams.push(row);
+}
+
+/* ---------------- 场景:观测序列时间线 + 前向概率格 + Viterbi 红线 ---------------- */
+const tlG = new THREE.Group();
+tlG.position.set(0, 0, 2.6);
+scene.add(tlG);
+const tlX = t => -4.5 + t * 1.0;
+const OBS_PILL = [M.walk, M.shop, M.clean];
+const obsMesh = [], tiles = [[], []];
+for (let t = 0; t < T; t++) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.3, 20, 14), OBS_PILL[0]);
+  m.position.set(tlX(t), -0.15, 0);
+  tlG.add(m);
+  obsMesh.push(m);
+  const mtSun = new THREE.MeshBasicMaterial({ color: 0xffc06a, transparent: true, opacity: 0.5 });
+  const tSun = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.42, 0.1), mtSun);
+  tSun.position.set(tlX(t), 0.85, 0);
+  tlG.add(tSun);
+  tiles[0].push(tSun);
+  const mtRain = new THREE.MeshBasicMaterial({ color: 0x5aa2ff, transparent: true, opacity: 0.5 });
+  const tRain = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.42, 0.1), mtRain);
+  tRain.position.set(tlX(t), -1.25, 0);
+  tlG.add(tRain);
+  tiles[1].push(tRain);
+}
+const vPos = new Float32Array(T * 3);
+const vGeo = new THREE.BufferGeometry();
+vGeo.setAttribute('position', new THREE.BufferAttribute(vPos, 3));
+const vLine = new THREE.Line(vGeo, M.vline);
+vLine.frustumCulled = false;
+vLine.visible = false;
+tlG.add(vLine);
+
+/* ---------------- 场景:转移矩阵热图(右侧,学习时更新) ---------------- */
+const heatMats = [];
+const heatLow = new THREE.Color(0x1c2530);
+const heatHigh = new THREE.Color(0x2f9e8f);
+const heatG = new THREE.Group();
+heatG.position.set(6.2, 2.4, 0);
+scene.add(heatG);
+for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+  const mt = new THREE.MeshBasicMaterial({ color: 0x1c2530, transparent: true, opacity: 0.9 });
+  const cell = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.92, 0.1), mt);
+  cell.position.set(-0.56 + j * 1.12, 0.56 - i * 1.12, 0);
+  heatG.add(cell);
+  heatMats.push(mt);
+}
+const heatTmp = new THREE.Color();
+function updateHeat() {
+  const A = curA();
+  for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+    heatTmp.copy(heatLow).lerp(heatHigh, clamp(A[i][j], 0, 1));
+    heatMats[i * 2 + j].color.copy(heatTmp);
+  }
+}
+
+function refreshSequence() {
+  for (let t = 0; t < T; t++) obsMesh[t].material = OBS_PILL[obsSeq[t]];
+}
+function updateTimeline() {
+  const col = Math.max(0, Math.floor(revealT));
+  for (let t = 0; t < T; t++) {
+    const vis = t < col && alphaN.length === T;
+    obsMesh[t].visible = vis;
+    tiles[0][t].visible = tiles[1][t].visible = vis;
+    if (vis) {
+      const aS = alphaN[t][0], aR = alphaN[t][1];
+      tiles[0][t].scale.set(1, 0.5 + aS, 1);
+      tiles[1][t].scale.set(1, 0.5 + aR, 1);
+      tiles[0][t].material.opacity = 0.25 + 0.7 * aS;
+      tiles[1][t].material.opacity = 0.25 + 0.7 * aR;
+    }
+    const j = t * 3;
+    vPos[j] = tlX(t);
+    vPos[j + 1] = vPath[t] === 0 ? 0.85 : -1.25;
+    vPos[j + 2] = 0.12;
+  }
+  vGeo.attributes.position.needsUpdate = true;
+  vGeo.setDrawRange(0, Math.max(2, col));
+  vLine.visible = modeVit && col > 1;
+}
+
+addLabel(() => L('晴(隐状态)', 'sunny (hidden)'), () => 'w', new THREE.Vector3(0, 0.95, 0), null, sunBall);
+addLabel(() => L('雨(隐状态)', 'rainy (hidden)'), () => 'b', new THREE.Vector3(0, 0.95, 0), null, rainBall);
+addLabel(() => L('散步', 'walk'), () => 'g', new THREE.Vector3(0, 0.75, 0), null, obsBalls[0]);
+addLabel(() => L('购物', 'shop'), () => 'e', new THREE.Vector3(0, 0.75, 0), null, obsBalls[1]);
+addLabel(() => L('打扫', 'clean'), () => '', new THREE.Vector3(0, 0.75, 0), null, obsBalls[2]);
+addLabel(() => L('观测序列 · 上=晴格 下=雨格', 'obs sequence - sunny row / rainy row'), () => '',
+  new THREE.Vector3(0, -2.1, 0), null, tlG);
+addLabel(() => L('转移矩阵热图(学习时更新)', 'transition heatmap (updates while learning)'), () => '',
+  new THREE.Vector3(0, -1.6, 0), null, heatG);
+
+/* ---------------- 视图模式(预设接线) ---------------- */
+function applyViewMode() {
+  modeFwd = preset === 'forward';
+  modeVit = preset === 'viterbi';
+  modeLearn = preset === 'learn';
+  if (preset === 'gen') { genSequence(); revealT = T; }
+  if (modeFwd || modeVit) revealT = 0;
+  if (modeLearn) { resetLearn(); revealT = T; }
+  updateTimeline();
+  updateHeat();
+}
+
+/* ---------------- 示波器:前向概率曲线 / 学习对数似然 ---------------- */
+function drawScope() {
+  const w = scope.width, h = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, w, h);
+  scopeCtx.strokeStyle = 'rgba(127,140,160,.4)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.strokeRect(4, 4, w - 8, h - 8);
+  const mid = h * 0.62, amp = h * 0.5;
+  const curve = (fn, col) => {
+    scopeCtx.strokeStyle = col;
+    scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i <= 90; i++) {
+      const t = i / 90, n = fn(t);
+      const x = 4 + t * (w - 8), y = mid - n * amp;
+      i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+    }
+    scopeCtx.stroke();
+  };
+  if (modeLearn && emLLs.length > 1) {
+    let mn = Infinity, mx = -Infinity;
+    for (const v of emLLs) { if (v < mn) mn = v; if (v > mx) mx = v; }
+    const span2 = Math.max(mx - mn, 1e-6);
+    curve(t => (emLLs[Math.round(t * (emLLs.length - 1))] - mn) / span2, '#7bd88f');
+    scopeCtx.fillStyle = 'rgba(242,245,249,.85)';
+    scopeCtx.font = `${10 * dpr}px sans-serif`;
+    scopeCtx.fillText(L('Baum-Welch:对数似然随迭代爬升', 'Baum-Welch: log-likelihood climbs per iteration'), 8, 14 * dpr);
+  } else if (alphaN.length === T) {
+    curve(t => alphaN[Math.min(T - 1, Math.floor(t * T))][0], '#ffd9a0');
+    curve(t => alphaN[Math.min(T - 1, Math.floor(t * T))][1], '#6fb6ff');
+    const xc = 4 + clamp(revealT / T, 0, 1) * (w - 8);
+    scopeCtx.strokeStyle = 'rgba(255,255,255,.5)';
+    scopeCtx.beginPath(); scopeCtx.moveTo(xc, 4); scopeCtx.lineTo(xc, h - 4); scopeCtx.stroke();
+    scopeCtx.fillStyle = 'rgba(242,245,249,.85)';
+    scopeCtx.font = `${10 * dpr}px sans-serif`;
+    scopeCtx.fillText(L('前向概率:P(晴|观测)(琥珀)与 P(雨|观测)(蓝),白线=揭示进度', 'forward probs: P(sunny|obs) (amber) and P(rainy|obs) (blue), white = reveal'), 8, 14 * dpr);
+  } else {
+    scopeCtx.fillStyle = 'rgba(242,245,249,.6)';
+    scopeCtx.font = `${10 * dpr}px sans-serif`;
+    scopeCtx.fillText(L('等待观测序列…', 'waiting for observations...'), 8, 14 * dpr);
+  }
+}
+
+/* ---------------- 步骤 ---------------- */
+const STEPS = [
+  { b: '看不见的天气,看得见的行动', be: 'hidden weather, visible deeds', tgt: [0, 0.6, 3.5],
+    d: '朋友连续十天的行动你看得见:散步、购物、打扫;背后的天气你看不见。隐马尔可夫模型把这类「隔着毛玻璃猜状态」形式化:隐状态按马尔可夫链演化,每个状态按自己的概率分布「发出」观测——我们只能从输出反推状态。',
+    de: 'You can see ten days of your friend\'s deeds - walk, shop, clean - but not the weather behind them. The HMM formalizes this guessing through frosted glass: hidden states evolve as a Markov chain, and each state emits observations from its own distribution - we infer states from outputs alone.' },
+  { b: '转移与发射两本账', be: 'two books: transition and emission', tgt: [0, 2.2, 4],
+    d: '模型只有两本概率账:转移账(上排弧线,下一状态只依赖当前状态——马尔可夫性)与发射账(虚线光束,每个状态用它自己的分布吐出观测)。两本账都越粗越好猜;拖动下方滑块,能亲手拧动这两本账。',
+    de: 'The model keeps two probability books: the transition book (upper arcs - the next state depends only on the current one, the Markov property) and the emission book (dashed beams - each state emits observations from its own distribution). Fatter books make guessing easier; the sliders below let you turn the pages.' },
+  { b: '评估:这条序列多可能', be: 'evaluation: how likely is this sequence', tgt: [-1.6, 0.4, 3.5],
+    d: '问题一:给定模型,这条观测序列出现的概率是多少?前向算法逐列递推:每格只存「到当前为止、处于某状态」的概率和,复杂度 O(N²T)——暴力枚举全部 N^T 条状态路径根本不可行。',
+    de: 'Problem one: given the model, how probable is this observation sequence? The forward algorithm recurses column by column, each cell holding the probability of having reached a state so far - complexity O(N²T), while enumerating all N^T state paths is hopeless.' },
+  { b: '解码:最可能的状态路径', be: 'decoding: the most likely state path', tgt: [0, -0.2, 4],
+    d: '问题二:哪条隐状态路径最可能生成这条观测?Viterbi 用动态规划:每格记录「到这里的最大概率与上一步来自哪」,末端回溯(红线)一次取出最优路径——同样是 O(N²T),准确率相对真实天气显示在面板上。',
+    de: 'Problem two: which hidden path most probably produced the observations? Viterbi runs dynamic programming: each cell stores its best probability and where it came from, and a single backtrack at the end (red line) unrolls the optimum - again O(N²T), with accuracy against the true weather shown in the panel.' },
+  { b: '指数爆炸与动态规划', be: 'exponential blowup meets DP', tgt: [2.6, 0.6, 3.2],
+    d: '十步序列就有 2^10 = 1024 条路径,五十步就是一千万亿条——指数爆炸。动态规划的釜底抽薪:每格只留最优,子路径的最优性可以继承,千万亿瞬间变成 N²T 次乘法。这是 Viterbi 与前向共同的底牌。',
+    de: 'Ten steps already span 2^10 = 1024 paths; fifty steps give a quadrillion - exponential blowup. Dynamic programming cuts the knot: keep only the best per cell, let optimal subpaths inherit, and a quadrillion paths collapse into N²T multiplications - the shared trump card of Viterbi and forward.' },
+  { b: '学习:鲍姆-韦尔奇', be: 'learning: Baum-Welch', tgt: [5.4, 1.8, 3],
+    d: '问题三:只有输出、没有标注时,连模型参数本身都未知。鲍姆-韦尔奇(EM 的前身)交替两步:先用当前参数估计每个时刻处于各状态的期望,再据此重估转移/发射参数——右侧热图随迭代变色,对数似然爬升直到收敛。',
+    de: 'Problem three: with outputs only and no labels, even the parameters are unknown. Baum-Welch (the ancestor of EM) alternates: estimate the expected state occupancy at each instant under current parameters, then re-estimate transition/emission from those expectations - the heatmap recolors per iteration while the log-likelihood climbs to convergence.' },
+  { b: '从语音识别到基因找码', be: 'from speech to genes', tgt: [0, -0.6, 4.5],
+    d: '这套机器统治了语音识别三十年(音素作为隐状态),也是基因序列找编码区、拼音输入法整句转换、金融 regime 切换检测的第一代主力——深度学习接管之后,「隐状态+发射」的思考方式已经渗进整个序列建模。',
+    de: 'This machinery ruled speech recognition for thirty years (phonemes as hidden states) and was the first-generation workhorse for gene finding, whole-sentence pinyin input and financial regime detection - deep learning has taken over, but the hidden-state-plus-emission way of thinking has seeped into all of sequence modeling.' },
+];
+
+/* ---------------- 公式 ---------------- */
+function updateFormula() {
+  el.formula.innerHTML =
+    L(`马尔可夫性:<b>P(S_t|S_t−1)</b> · 发射:<b>P(O_t|S_t)</b>——两本账共同生成观测序列`,
+      `Markov property: <b>P(S_t|S_t−1)</b> - emission: <b>P(O_t|S_t)</b> - two books generate the sequence`) +
+    '<br>' +
+    L(`前向 / Viterbi <b>O(N²T)</b> vs 枚举 <b>N^T</b>;鲍姆-韦尔奇 = EM:交替「估期望 / 重估参数」`,
+      `forward / Viterbi <b>O(N²T)</b> vs enumeration <b>N^T</b>; Baum-Welch = EM: alternate expectation / re-estimate`) +
+    '<br>' +
+    L(`当前:P(雨|雨)=<b>${pRR.toFixed(2)}</b> · 噪声=<b>${Math.round(noiseK * 100)}%</b> · log-lik=<b>${llVal.toFixed(1)}</b> · 解码准确率 <b>${accPct}%</b> · 迭代 <b>${emIters}</b> 轮`,
+      `now: P(rain|rain)=<b>${pRR.toFixed(2)}</b> - noise=<b>${Math.round(noiseK * 100)}%</b> - log-lik=<b>${llVal.toFixed(1)}</b> - accuracy <b>${accPct}%</b> - rounds <b>${emIters}</b>`);
+}
+
+/* ---------------- 状态面板 ---------------- */
+function updateSliderLabels() {
+  el.elAVal.textContent = 'P(雨|雨)=' + pRR.toFixed(2);
+  el.elBVal.textContent = Math.round(noiseK * 100) + '%';
+}
+function updateStats() {
+  el.stA.innerHTML = llVal.toFixed(1);
+  el.stA.className = 'v';
+  el.stB.innerHTML = accPct + '<small> %</small>';
+  el.stB.className = 'v' + (accPct >= 80 ? ' ok' : accPct < 50 ? ' bad' : ' warn');
+  el.stC.innerHTML = emIters + '<small> / 40</small>';
+  el.stC.className = 'v';
+  const idx = clamp(Math.floor(revealT) - 1, 0, T - 1);
+  const conf = alphaN.length === T ? Math.max(alphaN[idx][0], alphaN[idx][1]) * 100 : 0;
+  el.stD.innerHTML = conf.toFixed(0) + '<small> %</small>';
+  el.stD.className = 'v' + (conf > 80 ? ' ok' : conf < 60 ? ' warn' : '');
+}
+function resetMachine() {
+  pRR = 0.70; noiseK = 0.35; revealT = T;
+  preset = null;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  applyViewMode();
+  el.elA.value = 70; el.elB.value = 35;
+  tgtVec.set(0, 0.3, 0);
+  genSequence();
+  updateSliderLabels(); updateStats(); updateFormula();
+}
+
+/* ---------------- UI 接线 ---------------- */
+const el = {
+  elA: document.getElementById('vA'), elAVal: document.getElementById('vAVal'),
+  elB: document.getElementById('vB'), elBVal: document.getElementById('vBVal'),
+  stA: document.getElementById('stA'), stB: document.getElementById('stB'),
+  stC: document.getElementById('stC'), stD: document.getElementById('stD'),
+  formula: document.getElementById('formula'),
+};
+el.elA.addEventListener('input', () => { pRR = (+el.elA.value) / 100; genSequence(); updateSliderLabels(); updateStats(); });
+el.elB.addEventListener('input', () => { noiseK = (+el.elB.value) / 100; genSequence(); updateSliderLabels(); updateStats(); });
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主逻辑 ---------------- */
+function pageFrame(et, dt) {
+  etG = et;
+  sunBall.position.y = 2.5 + Math.sin(et * 1.1) * 0.07;
+  rainBall.position.y = 2.5 + Math.sin(et * 1.1 + 2.1) * 0.07;
+  /* 转移弧脉冲点流动 */
+  for (let i = 0; i < PULSES; i++) {
+    const s1 = (i / PULSES + et * 0.14) % 1;
+    const th1 = (155 - 130 * s1) * Math.PI / 180;
+    sunPulses[i].position.set(Math.cos(th1) * ARC_R, ARC_C + Math.sin(th1) * ARC_R, 0);
+    const s2 = (i / PULSES + et * 0.14 + 0.5) % 1;
+    const th2 = (205 + 130 * s2) * Math.PI / 180;
+    rainPulses[i].position.set(Math.cos(th2) * ARC_R, ARC_C + Math.sin(th2) * ARC_R, 0);
+  }
+  loopSun.rotation.z += dt * 1.2;
+  loopRain.rotation.z -= dt * 1.2;
+  /* 发射光束粗细随发射概率 */
+  const E = curE();
+  for (let s = 0; s < 2; s++) for (let o = 0; o < OBS_N; o++)
+    beams[s][o].material.opacity = 0.08 + 0.5 * E[s][o];
+  /* 揭示进度(前向/维特比) */
+  if ((modeFwd || modeVit) && playing && revealT < T) {
+    revealT = Math.min(T, revealT + dt * 2.4);
+    updateTimeline();
+  }
+  /* Baum-Welch:每 0.4 s 迭代一轮 */
+  if (modeLearn && playing && emIters < 40) {
+    learnClock += dt;
+    if (learnClock > 0.4) {
+      learnClock = 0;
+      emStep();
+      updateHeat();
+      updateTimeline();
+    }
+  }
+  bgGroup.rotation.y = et * 0.004;
+}
+
+/* ---------------- 装配 ---------------- */
+genSequence();
+applyViewMode();
+updateSliderLabels();
+updateStats();
+
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  pageFrame(et, simDt);
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.emissiveIntensity = 0.4 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked && typeof drawScope === 'function') drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

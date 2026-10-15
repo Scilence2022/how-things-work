@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>直升机涡环状态 · 掉进自己造的下洗漩涡</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#2f9e8f;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1d7268;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(47,158,143,.65); background: rgba(47,158,143,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(29,114,104,.55); background: rgba(29,114,104,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(47,158,143,.10); border-color: rgba(47,158,143,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(29,114,104,.08); border-color: rgba(29,114,104,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #a7e6dc; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="直升机涡环状态" data-en="The Vortex Ring State">直升机涡环状态</h1>
+  <div class="sub" data-zh="直升机悬停时,旋翼往下打出一根稳定的下洗流柱,升力账本干净利落;可一旦飞行员带功率做大下降率、又几乎没有前飞速度,旋翼就会一头扎进自己刚排出的下洗里:桨尖涡来不及被带走,在桨盘外缘卷成一个环状回流——外缘的空气被重新吸上桨盘、再从中心喷下去,升力分布乱成一团,总距拉满也只换来下降率自我加剧,飞机「掉进自己制造的漩涡」,越补总距掉得越快;触发窗口有公式可查:垂直下降速度超过诱导速度的一半(Vv > ~0.5·Vi)、而前飞速度比 μ < 0.25 时最危险——功率下降区就是它的家门口;改出的正解反直觉:不是拉总距,而是前推驾驶杆获得 15–20 节以上的平飞速度,让新鲜的来流把涡环整个吹散(或干脆降总距进自转);桨尖涡环可视化、风洞与试飞数据共同画出了这张「涡环危险包线」,它被写进每一本直升机教材与每一次山地/吊挂作业的简报里。拖「下降率」看旋翼扎进自己的下洗,拖「前飞速度」看来流如何吹散涡环;按「悬停基准」看干净下洗柱,按「进入涡环」看桨尖涡卷成回流,按「危险包线」看工作点漂进红区,按「改出动作」看前推杆脱困。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="When hovering, a helicopter's rotor pumps out a stable column of downwash and the lift ledger is clean; but once the pilot commits to a high rate of descent with power on and almost no forward speed, the rotor flies straight into the downwash it just made: tip vortices have no time to be carried away and curl into a ring of recirculation at the disc edge - air at the rim is sucked back up through the disc and sprayed down the middle, the lift distribution falls apart, and pulling full collective only buys a self-reinforcing descent rate - the aircraft has fallen into the vortex of its own making, and the more collective you pull, the faster it falls; the trigger window has a formula: it is most dangerous when vertical descent speed exceeds about half the induced velocity (Vv > ~0.5·Vi) while the forward-speed ratio μ < 0.25 - the power-required trough is right at its doorstep; the correct recovery is counter-intuitive: not pulling collective but pushing the cyclic forward to gain level speed above 15-20 knots, letting fresh airflow blow the ring apart (or dropping collective into autorotation); tip-vortex visualization, wind tunnels and flight tests together drew this VRS avoidance envelope, and it is written into every helicopter textbook and every mountain and sling-load briefing. Drag sink rate to watch the rotor fly into its own downwash, drag forward speed to watch fresh airflow shred the ring; press hover baseline for the clean downwash column, press enter vortex ring to watch the tip vortices curl back, press danger envelope to see the working point drift into the red zone, press recovery maneuver to watch the push-forward escape. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause
+- 场景要点: 简单机体+旋翼盘的直升机悬在半空,蓝色粒子柱为稳定下洗;红色环形粒子在桨盘外缘卷成涡环,淡蓝回流粒子沿外缘上升补入桨盘;黄色前飞来流从机头方向扫过;涡环越强,机体摇晃下沉越厉害;示波器画出下降率-前飞速度平面的危险包线与工作点漂移轨迹。">直升机悬停时,旋翼往下打出一根稳定的下洗流柱,升力账本干净利落;可一旦飞行员带功率做大下降率、又几乎没有前飞速度,旋翼就会一头扎进自己刚排出的下洗里:桨尖涡来不及被带走,在桨盘外缘卷成一个环状回流——外缘的空气被重新吸上桨盘、再从中心喷下去,升力分布乱成一团,总距拉满也只换来下降率自我加剧,飞机「掉进自己制造的漩涡」,越补总距掉得越快;触发窗口有公式可查:垂直下降速度超过诱导速度的一半(Vv > ~0.5·Vi)、而前飞速度比 μ < 0.25 时最危险——功率下降区就是它的家门口;改出的正解反直觉:不是拉总距,而是前推驾驶杆获得 15–20 节以上的平飞速度,让新鲜的来流把涡环整个吹散(或干脆降总距进自转);桨尖涡环可视化、风洞与试飞数据共同画出了这张「涡环危险包线」,它被写进每一本直升机教材与每一次山地/吊挂作业的简报里。拖「下降率」看旋翼扎进自己的下洗,拖「前飞速度」看来流如何吹散涡环;按「悬停基准」看干净下洗柱,按「进入涡环」看桨尖涡卷成回流,按「危险包线」看工作点漂进红区,按「改出动作」看前推杆脱困。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="诱导速度" data-en="induced velocity">诱导速度</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="涡环强度" data-en="VRS strength">涡环强度</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="剩余功率" data-en="power margin">剩余功率</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="状态判定" data-en="state">状态判定</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="下洗流(蓝柱)" data-en="downwash (blue column)">下洗流(蓝柱)</span>
+    <span class="chip r" data-zh="桨尖涡环(红卷)" data-en="tip-vortex ring (red)">桨尖涡环(红卷)</span>
+    <span class="chip" style="color:#d6ecff;border-color:rgba(159,216,255,.7)" data-zh="回流上洗(淡蓝)" data-en="recirculation (pale blue)">回流上洗(淡蓝)</span>
+    <span class="chip o" data-zh="前飞来流(黄)" data-en="freestream (yellow)">前飞来流(黄)</span>
+    <span class="chip g" data-zh="旋翼盘(半透明)" data-en="rotor disc (translucent)">旋翼盘(半透明)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-hover" data-zh="悬停基准" data-en="hover baseline">悬停基准</button>
+    <button class="abtn" id="btn-enter" data-zh="进入涡环" data-en="enter vortex ring">进入涡环</button>
+    <button class="abtn" id="btn-envelope" data-zh="危险包线" data-en="danger envelope">危险包线</button>
+    <button class="abtn" id="btn-recover" data-zh="改出动作" data-en="recovery maneuver">改出动作</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="下降率" data-en="sink rate">下降率</label><input id="vA" type="range" min="0" max="80" step="1" value="45"><span class="val" id="vAVal"></span></div>
+  <div class="row"><label data-zh="前飞速度" data-en="forward speed">前飞速度</label><input id="vB" type="range" min="0" max="30" step="1" value="4"><span class="val" id="vBVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="曲线/示波" data-en="curve scope">曲线/示波</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../autorotation/" data-zh="自转着陆" data-en="autorotation">自转着陆</a>
+    <a href="../vortex-ring/" data-zh="涡环" data-en="vortex ring">涡环</a>
+    <a href="../wingtip-vortices/" data-zh="翼尖涡流" data-en="wingtip vortices">翼尖涡流</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.__errs = [];
+addEventListener('error', e => window.__errs.push((e.message || String(e)) + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(6.2, 2.8, 9.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.2, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 42;
+controls.maxPolarAngle = Math.PI * 0.58;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 0.2, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  if (STEPS[scenario].act) STEPS[scenario].act();
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  applyViewMode();
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+
+/* ================= 直升机涡环状态 ================= */
+const TITLE_ZH = '直升机涡环状态 · 掉进自己造的下洗漩涡';
+const TITLE_EN = 'The Vortex Ring State: Swallowed by Your Own Downwash';
+const PRESET_IDS = ['hover', 'enter', 'envelope', 'recover'];
+const HL = {};
+
+const VI = 6.2;              // 诱导速度 m/s(悬停下洗的特征速度)
+let vSink = 4.5;             // vA: 下降率 m/s(0–8)
+let vFwd = 4;                // vB: 前飞速度 m/s(0–30)
+let vrsI = 0;                // 涡环强度 0–1(平滑)
+let recoverT = -1, recoverPause = 0, trailT = 0;
+let etG = 0;
+const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 0.816;
+const vrsTarget = () => clamp((vSink / VI - 0.42) / 0.9, 0, 1) * clamp(1 - vFwd / 11, 0, 1);
+const powerMargin = () => Math.round(100 - 82 * vrsI);
+
+/* 柔和圆点贴图(各粒子系统共用) */
+function softDot() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,255,255,.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const dotTex = softDot();
+
+const M = {
+  body: new THREE.MeshStandardMaterial({ color: 0x3d4c60, roughness: 0.45, metalness: 0.35 }),
+  blade: new THREE.MeshStandardMaterial({ color: 0x1a2129, roughness: 0.4, metalness: 0.5 }),
+  disc: new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }),
+  ground: new THREE.MeshStandardMaterial({ color: 0x141a22, roughness: 0.95, metalness: 0 }),
+  grid: new THREE.LineBasicMaterial({ color: 0x2a323c, transparent: true, opacity: 0.7 }),
+  dw: new THREE.PointsMaterial({ color: 0x6fa8ff, size: 0.11, map: dotTex, transparent: true, opacity: 0.6, depthWrite: false }),
+  ring: new THREE.PointsMaterial({ color: 0xff5f6f, size: 0.13, map: dotTex, transparent: true, opacity: 0, depthWrite: false }),
+  recirc: new THREE.PointsMaterial({ color: 0x9fd8ff, size: 0.1, map: dotTex, transparent: true, opacity: 0, depthWrite: false }),
+  fs: new THREE.PointsMaterial({ color: 0xffd970, size: 0.1, map: dotTex, transparent: true, opacity: 0, depthWrite: false }),
+  ringHi: new THREE.MeshStandardMaterial({ color: 0xff5f6f, emissive: 0xff5f6f, emissiveIntensity: 0.6, transparent: true, opacity: 0.25, depthWrite: false }),
+};
+HL.ringHi = M.ringHi;
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0b0e14 : 0xdde3ea);
+  M.body.color.set(dark ? 0x3d4c60 : 0x43536b);
+  M.disc.color.set(dark ? 0x9fd8ff : 0x1864ab);
+  M.disc.opacity = dark ? 0.1 : 0.16;
+  M.ground.color.set(dark ? 0x141a22 : 0xc8d0da);
+  M.grid.color.set(dark ? 0x2a323c : 0xa8b4c0);
+  M.dw.color.set(dark ? 0x6fa8ff : 0x1864ab);
+  M.ring.color.set(dark ? 0xff5f6f : 0xc92a2a);
+  M.ringHi.color.set(dark ? 0xff5f6f : 0xc92a2a);
+  M.ringHi.emissive.set(dark ? 0xff5f6f : 0xc92a2a);
+  M.recirc.color.set(dark ? 0x9fd8ff : 0x3b82c4);
+  M.fs.color.set(dark ? 0xffd970 : 0xa06a00);
+}
+
+/* ---------------- 场景:地面 ---------------- */
+const ground = new THREE.Mesh(new THREE.CircleGeometry(34, 48), M.ground);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -13;
+scene.add(ground);
+const gridPts = [];
+for (let k = 0; k < 12; k++) {
+  const a = k / 12 * TAU;
+  gridPts.push(Math.cos(a) * 6, -12.99, Math.sin(a) * 6, Math.cos(a) * 34, -12.99, Math.sin(a) * 34);
+}
+for (const rr of [14, 24, 34]) {
+  const SEG = 48;
+  for (let k = 0; k < SEG; k++) {
+    const a0 = k / SEG * TAU, a1 = (k + 1) / SEG * TAU;
+    gridPts.push(Math.cos(a0) * rr, -12.99, Math.sin(a0) * rr, Math.cos(a1) * rr, -12.99, Math.sin(a1) * rr);
+  }
+}
+const gridGeo = new THREE.BufferGeometry();
+gridGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(gridPts), 3));
+scene.add(new THREE.LineSegments(gridGeo, M.grid));
+
+/* ---------------- 场景:直升机(机体+旋翼盘) ---------------- */
+const helG = new THREE.Group();
+helG.position.y = 0.6;
+const fuselage = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 1.5, 8, 18), M.body);
+fuselage.rotation.z = Math.PI / 2;
+helG.add(fuselage);
+const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.36, 20, 14), M.body);
+canopy.position.set(0.95, 0.12, 0);
+canopy.scale.set(1.25, 0.85, 1);
+helG.add(canopy);
+const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.13, 2.3, 10), M.body);
+boom.rotation.z = Math.PI / 2;
+boom.position.set(-1.75, 0.1, 0);
+helG.add(boom);
+const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.55, 0.3), M.body);
+fin.position.set(-2.85, 0.4, 0);
+helG.add(fin);
+const tailRotor = new THREE.Mesh(new THREE.CircleGeometry(0.28, 20), M.disc);
+tailRotor.position.set(-2.85, 0.42, 0.16);
+helG.add(tailRotor);
+for (const sz of [-0.38, 0.38]) {
+  const skid = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.1, 8), M.blade);
+  skid.rotation.z = Math.PI / 2;
+  skid.position.set(0, -0.68, sz);
+  helG.add(skid);
+}
+const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.36, 8), M.blade);
+mast.position.y = 0.6;
+helG.add(mast);
+const rotorG = new THREE.Group();
+rotorG.position.y = 0.82;
+const bladeA = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.05, 0.26), M.blade);
+const bladeB = bladeA.clone();
+bladeB.rotation.y = Math.PI / 2;
+rotorG.add(bladeA, bladeB);
+const disc = new THREE.Mesh(new THREE.CircleGeometry(2.4, 40), M.disc);
+disc.rotation.x = -Math.PI / 2;
+rotorG.add(disc);
+helG.add(rotorG);
+scene.add(helG);
+
+/* ---------------- 场景:下洗流粒子柱(跟随机体) ---------------- */
+const N_DW = 460;
+const dwPos = new Float32Array(N_DW * 3);
+const dwMeta = new Float32Array(N_DW * 3);   // r, angle, speed
+for (let i = 0; i < N_DW; i++) {
+  dwMeta[i * 3] = 0.2 + Math.sqrt(Math.random()) * 2.0;
+  dwMeta[i * 3 + 1] = Math.random() * TAU;
+  dwMeta[i * 3 + 2] = 0.8 + Math.random() * 0.5;
+  dwPos[i * 3] = Math.cos(dwMeta[i * 3 + 1]) * dwMeta[i * 3];
+  dwPos[i * 3 + 1] = 0.4 - Math.random() * 6.6;
+  dwPos[i * 3 + 2] = Math.sin(dwMeta[i * 3 + 1]) * dwMeta[i * 3];
+}
+const dwGeo = new THREE.BufferGeometry();
+dwGeo.setAttribute('position', new THREE.BufferAttribute(dwPos, 3));
+const dwPts = new THREE.Points(dwGeo, M.dw);
+dwPts.frustumCulled = false;
+helG.add(dwPts);
+
+/* ---------------- 场景:桨尖涡环粒子(环面卷绕) ---------------- */
+const N_RING = 300;
+const ringPos = new Float32Array(N_RING * 3);
+const ringMeta = new Float32Array(N_RING * 3);   // theta, phi, speed
+const RING_R = 2.5, RING_T = 0.52;
+for (let i = 0; i < N_RING; i++) {
+  ringMeta[i * 3] = Math.random() * TAU;
+  ringMeta[i * 3 + 1] = Math.random() * TAU;
+  ringMeta[i * 3 + 2] = 0.7 + Math.random() * 0.6;
+}
+const ringGeo = new THREE.BufferGeometry();
+ringGeo.setAttribute('position', new THREE.BufferAttribute(ringPos, 3));
+const ringPts = new THREE.Points(ringGeo, M.ring);
+ringPts.frustumCulled = false;
+ringPts.position.y = 0.42;
+helG.add(ringPts);
+const ringHi = new THREE.Mesh(new THREE.TorusGeometry(RING_R, 0.05, 8, 72), M.ringHi);
+ringHi.rotation.x = Math.PI / 2;
+ringHi.position.y = 0.42;
+helG.add(ringHi);
+
+/* ---------------- 场景:回流上洗粒子(子午圈环流) ---------------- */
+const N_RE = 140;
+const rePos = new Float32Array(N_RE * 3);
+const reMeta = new Float32Array(N_RE * 3);   // s, azimuth, speed
+for (let i = 0; i < N_RE; i++) {
+  reMeta[i * 3] = Math.random();
+  reMeta[i * 3 + 1] = Math.random() * TAU;
+  reMeta[i * 3 + 2] = 0.7 + Math.random() * 0.6;
+}
+const reGeo = new THREE.BufferGeometry();
+reGeo.setAttribute('position', new THREE.BufferAttribute(rePos, 3));
+const rePts = new THREE.Points(reGeo, M.recirc);
+rePts.frustumCulled = false;
+helG.add(rePts);
+
+/* ---------------- 场景:前飞来流粒子(世界系) ---------------- */
+const N_FS = 200;
+const fsPos = new Float32Array(N_FS * 3);
+const fsSpd = new Float32Array(N_FS);
+for (let i = 0; i < N_FS; i++) {
+  fsPos[i * 3] = (Math.random() - 0.5) * 32;
+  fsPos[i * 3 + 1] = -2 + Math.random() * 6;
+  fsPos[i * 3 + 2] = (Math.random() - 0.5) * 9;
+  fsSpd[i] = 0.8 + Math.random() * 0.5;
+}
+const fsGeo = new THREE.BufferGeometry();
+fsGeo.setAttribute('position', new THREE.BufferAttribute(fsPos, 3));
+const fsPts = new THREE.Points(fsGeo, M.fs);
+fsPts.frustumCulled = false;
+scene.add(fsPts);
+const fsAnchor = new THREE.Object3D();
+fsAnchor.position.set(-10, 2.2, 0);
+scene.add(fsAnchor);
+
+addLabel(() => L('旋翼盘', 'rotor disc'), () => '',
+  new THREE.Vector3(1.6, 0.9, 0), null, rotorG);
+addLabel(() => L('稳定下洗柱(蓝)', 'stable downwash (blue)'), () => 'b',
+  new THREE.Vector3(0.7, -3.2, 0), null, dwPts);
+addLabel(() => L('桨尖涡环:卷成回流', 'tip-vortex ring: recirculation'), () => 'bad',
+  new THREE.Vector3(1.8, -0.5, 0), null, ringPts);
+addLabel(() => L('回流上洗:外缘补入桨盘', 'recirculation: rim feeds back up'), () => 'b',
+  new THREE.Vector3(2.2, -0.2, 0), null, rePts);
+addLabel(() => L('前飞来流(黄)', 'freestream (yellow)'), () => 'w',
+  new THREE.Vector3(0, 0, 0), null, fsAnchor);
+
+/* ---------------- 危险包线(示波器图) ---------------- */
+const ENV_CTRL = [
+  [0.5, 2.0], [1.2, 4.0], [2.5, 5.8], [4.5, 7.2], [7.5, 7.85],
+  [9.8, 7.3], [10.8, 5.9], [9.5, 4.2], [6.5, 3.0], [3.0, 2.2], [1.2, 1.8],
+];
+const ENV_PTS = new THREE.CatmullRomCurve3(
+  ENV_CTRL.map(p => new THREE.Vector3(p[0] / 30, p[1] / 8, 0)), true).getPoints(72);
+
+/* ---------------- 视图模式(预设接线) ---------------- */
+function applyViewMode() {
+  if (preset === 'hover') { vSink = 0.4; vFwd = 0; el.elA.value = 4; el.elB.value = 0; }
+  if (preset === 'enter') { vSink = 6.4; vFwd = 1; el.elA.value = 64; el.elB.value = 1; }
+  if (preset === 'envelope') { vSink = 5.5; vFwd = 3; el.elA.value = 55; el.elB.value = 3; }
+  recoverT = preset === 'recover' ? 0 : -1;
+  recoverPause = 0;
+  updateSliderLabels();
+}
+
+/* ---------------- 示波器:涡环危险包线(下降率-前飞速度平面) ---------------- */
+function drawScope() {
+  const w = scope.width, h = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, w, h);
+  const mx = 6, my = 6, mw = w - 12, mh = h - 12;
+  const cx = v => mx + v / 30 * mw;
+  const cy = v => my + (1 - v / 8) * mh;
+  scopeCtx.strokeStyle = 'rgba(127,140,160,.4)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.strokeRect(mx, my, mw, mh);
+  /* 危险区填充 */
+  scopeCtx.beginPath();
+  for (let i = 0; i < ENV_PTS.length; i++) {
+    const px = cx(ENV_PTS[i].x * 30), py = cy(ENV_PTS[i].y * 8);
+    i === 0 ? scopeCtx.moveTo(px, py) : scopeCtx.lineTo(px, py);
+  }
+  scopeCtx.closePath();
+  scopeCtx.fillStyle = 'rgba(255,95,111,.16)';
+  scopeCtx.fill();
+  scopeCtx.strokeStyle = 'rgba(255,95,111,.75)';
+  scopeCtx.lineWidth = Math.max(1.2, 1.2 * dpr);
+  scopeCtx.stroke();
+  /* 工作点轨迹(环缓冲) */
+  scopeCtx.strokeStyle = 'rgba(255,255,255,.45)';
+  scopeCtx.beginPath();
+  const n = sndT.length;
+  for (let i = 0; i < n; i++) {
+    const j = (sndI + i) % n;
+    if (sndT[j] === 0 && sndA[j] === 0) continue;
+    const px = cx((sndT[j] + 1) / 2 * 30), py = cy((sndA[j] + 1) / 2 * 8);
+    i === 0 ? scopeCtx.moveTo(px, py) : scopeCtx.lineTo(px, py);
+  }
+  scopeCtx.stroke();
+  /* 当前工作点 */
+  const px = cx(vFwd), py = cy(vSink);
+  scopeCtx.fillStyle = '#ffffff';
+  scopeCtx.beginPath(); scopeCtx.arc(px, py, 2.6 * dpr, 0, TAU); scopeCtx.fill();
+  scopeCtx.strokeStyle = vrsI > 0.5 ? '#ff5f6f' : vrsI > 0.22 ? '#ffa94d' : '#7bd88f';
+  scopeCtx.beginPath(); scopeCtx.arc(px, py, 5 * dpr, 0, TAU); scopeCtx.stroke();
+  scopeCtx.fillStyle = 'rgba(242,245,249,.85)';
+  scopeCtx.font = `${10 * dpr}px sans-serif`;
+  scopeCtx.fillText(L('涡环危险包线:横轴=前飞速度 m/s · 纵轴=下降率 m/s', 'VRS envelope: x = forward speed m/s - y = sink rate m/s'), 8, (my + 10) * dpr);
+}
+
+/* ---------------- 步骤 ---------------- */
+const STEPS = [
+  { b: '悬停:干净的下洗柱', be: 'hover: a clean downwash column', tgt: [1.5, 0.6, 5.5],
+    d: '悬停时,旋翼每秒把一大片空气往下加速,反作用力托起机身;气流离开桨盘后收拢成一根稳定的下洗流柱,诱导速度 Vi 是这本升力账的「成本价」——账本干净利落,发动机的功率全部花在刀刃上。',
+    de: 'Hovering, the rotor accelerates a large slab of air downward every second, and the reaction holds the aircraft up; away from the disc the flow gathers into a stable downwash column, and the induced velocity Vi is the cost price of this lift ledger - clean, with every watt of engine power doing its job.' },
+  { b: '两个条件凑齐', be: 'two conditions line up', tgt: [2.5, 1.0, 3.5],
+    d: '危险窗口需要两个条件同时成立:带功率的大下降率(垂直下降速度超过诱导速度的一半,Vv ≳ 0.5·Vi),以及几乎没有前飞速度(μ < 0.25)。这时旋翼下降的速度追上了自己排出的下洗——它开始「喝自己刚吐出来的空气」。',
+    de: 'The danger window needs both conditions at once: a powered high descent rate (vertical speed beyond about half the induced velocity, Vv ≳ 0.5·Vi) and almost no forward speed (μ < 0.25). Then the rotor sinks into its own exhaust - it starts drinking the air it just spat out.' },
+  { b: '桨尖涡卷成环', be: 'tip vortices curl into a ring', hl: 'ringHi', tgt: [2.6, -0.4, 3],
+    d: '桨尖涡来不及被带走,在桨盘外缘卷成一个环状回流:外缘的空气被重新吸上桨盘,再从中心喷下去——升力分布乱成一团,旋翼陷入自己造的漩涡,下降率自我加剧。',
+    de: 'The tip vortices, with no time to be carried away, curl into a ring of recirculation at the disc edge: air at the rim is sucked back up through the disc and sprayed down the middle - the lift distribution falls apart, the rotor sits in the vortex of its own making, and the descent rate feeds on itself.' },
+  { b: '拉总距,越拉越糟', be: 'pulling collective makes it worse', tgt: [0.5, 0.3, 4.5],
+    d: '直觉告诉你拉总距、加功率;可涡环里额外的功率只是把更多的空气喂进回流,下降率反而自我加剧——剩余功率越来越薄,越补总距掉得越快。这是涡环状态最反直觉、也最致命的一段因果。',
+    de: 'Instinct says pull collective and add power; but inside the ring the extra power only feeds more air into the recirculation and the descent rate grows faster still - the power margin thins out, and the more collective you pull, the quicker you fall. The most counter-intuitive, most lethal link in the chain.' },
+  { b: '危险包线图', be: 'the danger envelope chart', tgt: [4.5, 1.6, 5],
+    d: '把触发条件画成一张图:横轴前飞速度,纵轴下降率,红色区域就是涡环区。桨尖涡可视化、风洞与试飞数据共同描出了这条包线——工作点(白点)一旦漂进红区,留给飞行员的反应时间以秒计。',
+    de: 'Draw the trigger conditions and you get the envelope chart: forward speed on x, descent rate on y, the red patch is the VRS zone. Tip-vortex visualization, wind tunnels and flight tests traced this line together - once the working point (white dot) drifts inside, the pilot\'s reaction time is counted in seconds.' },
+  { b: '改出:前推杆', be: 'recovery: push the cyclic', tgt: [-2.5, 0.6, 4],
+    d: '正解反直觉:不拉总距,而是前推驾驶杆,获得 15–20 节以上的平飞速度——新鲜的来流从前面灌进来,把整个涡环吹散,旋翼重新吃进干净的空气(或者干脆降总距进自转,用动能换时间)。',
+    de: 'The correct fix is counter-intuitive: not pulling collective but pushing the cyclic forward to gain level speed above 15-20 knots - fresh airflow floods in from the front and blows the whole ring apart, and the rotor breathes clean air again (or drop collective into autorotation and trade kinetic energy for time).' },
+  { b: '写进教材的一条线', be: 'a line written into every textbook', tgt: [0, 1.6, 7],
+    d: '这张「涡环危险包线」被写进每一本直升机教材与每一次山地作业、吊挂作业、夜间编队的飞行简报;与它配套的另一张王牌是自转着陆——理解涡环,本质上是理解旋翼与自己的下洗之间的收支关系。',
+    de: 'This VRS avoidance envelope is written into every helicopter textbook and every mountain-operation, sling-load and night-formation briefing; its companion ace is autorotation. Understanding vortex ring state is, at heart, understanding the balance sheet between a rotor and its own downwash.' },
+];
+
+/* ---------------- 公式 ---------------- */
+function updateFormula() {
+  el.formula.innerHTML =
+    L(`触发窗口:<b>Vv ≳ 0.5·Vi</b> 且 <b>μ < 0.25</b>(功率下降区就是涡环的家门口)`,
+      `onset window: <b>Vv ≳ 0.5·Vi</b> and <b>μ < 0.25</b> - the power-required trough is the ring's doorstep`) +
+    '<br>' +
+    L(`改出正解:<b>前推杆 ≥ 15–20 kt(8–10 m/s)</b> 用来流吹散涡环;或降总距进自转`,
+      `recovery: <b>forward cyclic to ≥ 15-20 kt</b> blows the ring apart; or lower collective into autorotation`) +
+    '<br>' +
+    L(`当前:Vv=<b>${vSink.toFixed(1)}</b> m/s · v∞=<b>${vFwd.toFixed(0)}</b> m/s · 涡环强度 <b>${Math.round(vrsI * 100)}%</b> · 剩余功率 <b>${powerMargin()}%</b>`,
+      `now: Vv=<b>${vSink.toFixed(1)}</b> m/s - v∞=<b>${vFwd.toFixed(0)}</b> m/s - VRS strength <b>${Math.round(vrsI * 100)}%</b> - power margin <b>${powerMargin()}%</b>`);
+}
+
+/* ---------------- 状态面板 ---------------- */
+function updateSliderLabels() {
+  el.elAVal.textContent = vSink.toFixed(1) + ' m/s';
+  el.elBVal.textContent = vFwd.toFixed(0) + ' m/s';
+}
+function updateStats() {
+  el.stA.innerHTML = VI.toFixed(1) + '<small> m/s</small>';
+  el.stA.className = 'v';
+  el.stB.innerHTML = Math.round(vrsI * 100) + '<small> %</small>';
+  el.stB.className = 'v' + (vrsI > 0.5 ? ' bad' : vrsI > 0.22 ? ' warn' : '');
+  const pm = powerMargin();
+  el.stC.innerHTML = pm + '<small> %</small>';
+  el.stC.className = 'v' + (pm < 50 ? ' bad' : pm < 78 ? ' warn' : ' ok');
+  const st = vrsI > 0.5 ? L('涡环', 'VRS') : vrsI > 0.22 ? L('临界', 'marginal') : L('安全', 'clear');
+  el.stD.innerHTML = st;
+  el.stD.className = 'v' + (vrsI > 0.5 ? ' bad' : vrsI > 0.22 ? ' warn' : ' ok');
+}
+function resetMachine() {
+  vSink = 4.5; vFwd = 4; vrsI = 0; recoverT = -1; recoverPause = 0;
+  helG.position.set(0, 0.6, 0); helG.rotation.set(0, 0, 0);
+  preset = null;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  applyViewMode();
+  el.elA.value = 45; el.elB.value = 4;
+  tgtVec.set(0, 0.2, 0);
+  updateSliderLabels(); updateStats(); updateFormula();
+}
+
+/* ---------------- UI 接线 ---------------- */
+const el = {
+  elA: document.getElementById('vA'), elAVal: document.getElementById('vAVal'),
+  elB: document.getElementById('vB'), elBVal: document.getElementById('vBVal'),
+  stA: document.getElementById('stA'), stB: document.getElementById('stB'),
+  stC: document.getElementById('stC'), stD: document.getElementById('stD'),
+  formula: document.getElementById('formula'),
+};
+el.elA.addEventListener('input', () => { vSink = (+el.elA.value) / 10; updateSliderLabels(); });
+el.elB.addEventListener('input', () => { vFwd = +el.elB.value; updateSliderLabels(); });
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主逻辑 ---------------- */
+function pageFrame(et, dt) {
+  etG = et;
+  /* 「改出动作」预设:先扎进涡环,再前推杆脱困 */
+  if (preset === 'recover' && playing) {
+    recoverT += dt;
+    if (recoverT < 1.4) {
+      vSink = 6.4; vFwd = 1;
+      el.elA.value = 64; el.elB.value = 1;
+    } else if (recoverT < 3.6) {
+      const u = (recoverT - 1.4) / 2.2;
+      vSink = 6.4 - 5.2 * u; vFwd = 1 + 19 * u;
+      el.elA.value = String(Math.round(vSink * 10)); el.elB.value = String(Math.round(vFwd));
+    } else if (recoverT > 4.4) {
+      recoverT = 0;
+    }
+    updateSliderLabels();
+  }
+  /* 涡环强度平滑逼近目标 */
+  vrsI += (vrsTarget() - vrsI) * Math.min(1, dt * 1.4);
+
+  /* 直升机:下沉 + 涡环摇晃 */
+  if (playing) {
+    helG.position.y -= (0.12 * vSink + 0.5 * vrsI) * dt;
+    if (helG.position.y < -5.5) helG.position.y = 1.5;
+    helG.position.x = Math.sin(et * 2.6) * 0.1 * vrsI;
+    helG.position.z = Math.cos(et * 1.9) * 0.08 * vrsI;
+    helG.rotation.z = Math.sin(et * 3.3) * 0.06 * vrsI - clamp(vFwd * 0.006, 0, 0.14);
+    helG.rotation.x = Math.cos(et * 2.7) * 0.05 * vrsI;
+    rotorG.rotation.y += dt * 22;
+    tailRotor.rotation.y += dt * 30;
+  }
+  rotorG.rotation.z = -clamp(vFwd * 0.012, 0, 0.22);
+
+  /* 下洗柱:持续下排 */
+  const dwV = 5.5 + vSink * 0.5;
+  for (let i = 0; i < N_DW; i++) {
+    const j = i * 3;
+    dwMeta[j + 1] += dt * 0.35;
+    dwPos[j] = Math.cos(dwMeta[j + 1]) * dwMeta[j];
+    dwPos[j + 1] -= dt * dwV * dwMeta[j + 2];
+    if (dwPos[j + 1] < -6.2) dwPos[j + 1] += 6.7;
+    dwPos[j + 2] = Math.sin(dwMeta[j + 1]) * dwMeta[j];
+  }
+  dwGeo.attributes.position.needsUpdate = true;
+  M.dw.opacity = 0.42 + 0.18 * Math.sin(et * 2);
+
+  /* 桨尖涡环:环面卷绕,强度随 vrsI */
+  const swirl = 0.5 + 2.6 * vrsI;
+  for (let i = 0; i < N_RING; i++) {
+    const j = i * 3;
+    ringMeta[j] += dt * swirl * ringMeta[j + 2];
+    const th = ringMeta[j], ph = ringMeta[j + 1];
+    const rr = RING_R + RING_T * Math.cos(ph);
+    ringPos[j] = rr * Math.cos(th);
+    ringPos[j + 1] = RING_T * Math.sin(ph) * 1.15;
+    ringPos[j + 2] = rr * Math.sin(th);
+  }
+  ringGeo.attributes.position.needsUpdate = true;
+  M.ring.opacity = vrsI * 0.85;
+  M.ringHi.opacity = vrsI * 0.3;
+  ringHi.scale.setScalar(1 + 0.05 * Math.sin(et * 4.1));
+
+  /* 回流上洗:外缘沿子午圈补入桨盘 */
+  for (let i = 0; i < N_RE; i++) {
+    const j = i * 3;
+    reMeta[j] += dt * (0.18 + 0.45 * vrsI) * reMeta[j + 2];
+    const ang = reMeta[j] * TAU;
+    const rx = 3.05 + 1.5 * Math.cos(ang);
+    const ry = -1.7 + 1.5 * Math.sin(ang);
+    rePos[j] = rx * Math.cos(reMeta[j + 1]);
+    rePos[j + 1] = ry;
+    rePos[j + 2] = rx * Math.sin(reMeta[j + 1]);
+  }
+  reGeo.attributes.position.needsUpdate = true;
+  M.recirc.opacity = vrsI * 0.55;
+
+  /* 前飞来流:相对风从机头方向吹来 */
+  const fsV = 2 + vFwd * 1.1;
+  for (let i = 0; i < N_FS; i++) {
+    const j = i * 3;
+    fsPos[j] -= dt * fsV * fsSpd[i];
+    if (fsPos[j] < -16) fsPos[j] += 32;
+  }
+  fsGeo.attributes.position.needsUpdate = true;
+  M.fs.opacity = clamp(vFwd / 10, 0, 1) * 0.7;
+
+  /* 包线图工作点轨迹采样 */
+  trailT += dt;
+  if (trailT > 0.12) {
+    trailT = 0;
+    pushSnd(vFwd / 15 - 1, vSink / 4 - 1);
+  }
+}
+
+/* ---------------- 装配 ---------------- */
+applyViewMode();
+updateSliderLabels();
+updateStats();
+
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  pageFrame(et, simDt);
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.emissiveIntensity = 0.4 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked && typeof drawScope === 'function') drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

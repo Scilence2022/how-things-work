@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAP 定理 · 分区时刻的取舍</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#2f9e8f;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1d7268;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(47,158,143,.65); background: rgba(47,158,143,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(29,114,104,.55); background: rgba(29,114,104,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(47,158,143,.10); border-color: rgba(47,158,143,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(29,114,104,.08); border-color: rgba(29,114,104,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #a7e6dc; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="CAP 定理" data-en="The CAP Theorem">CAP 定理</h1>
+  <div class="sub" data-zh="把一份数据复制到三台机器,你就免费买到了可用性,也签下了一份风险合同:网络一旦把集群劈成两半(P=分区容忍,必选——网络必然故障),复制之间就出现裂口,这时 C(线性一致)与 A(处处可响应)只能保一个——Gilbert 与 Lynch 2002 年证明了这条 CAP 定理;CP 阵营(ZooKeeper、etcd):分区时少数派宁可不服务,等多数派凑齐再写,一致性无价;AP 阵营(Cassandra、DNS):两半都继续收写,各留一份「暂时的真相」,愈合后再用向量时钟/最后写入胜出等策略合并——期间读到的可能是旧数据;被误读最多的是「三选二」:没有分区时 C 与 A 可兼得,真正的日常权衡是延迟(PACELC),Quorum 滑杆(W+R>N):读多写少调 W、写多读少调 R;理解 CAP 的正确姿势不是背结论,而是盯着「分区发生的那一秒」——所有分布式数据库的架构分歧,都是从那一秒开始分岔的。拖「写 Quorum W」看写入要凑几张票,拖「读 Quorum R」看读到多新的数据;按「无分区基线」看复制流水线,按「分区-CP」看少数派拒绝写入,按「分区-AP」看两半真相分叉,按「愈合与冲突」看版本合并收场。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Replicate one dataset across three machines and you get availability for free - and sign a risk contract: the moment the network splits the cluster in two (P = partition tolerance, mandatory - networks do fail), a crack opens between the replicas, and then C (linearizability: every read sees the latest write) and A (every non-failing node answers) cannot both hold - the CAP theorem, proved by Gilbert and Lynch in 2002; the CP camp (ZooKeeper, etcd): during a partition the minority side would rather serve nothing and wait for the majority to reunite - consistency at any price; the AP camp (Cassandra, DNS): both halves keep accepting writes, each holding a temporarily true copy, merged after healing with vector clocks or last-write-wins - reads in between may be stale; the most misread part is the pick-two slogan: with no partition, C and A coexist fine - the everyday trade is latency (PACELC), and the quorum knobs (W+R>N) are that slider: read-heavy tune W, write-heavy tune R; the right way to read CAP is not to memorize the slogan but to stare at the second the partition happens - every distributed database's architecture forks from that second. Drag write quorum W to see how many votes a write must gather, drag read quorum R to see how fresh your reads are; press no-partition baseline to watch smooth replication, press partition-CP to watch the minority refuse writes, press partition-AP to watch two truths fork, press heal & merge to watch versions reconcile. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause
+- 场景要点: 三颗节点球由绿色复制链路连成三角,客户端写入光点落到节点、再沿链路脉冲复制到副本;分区时两条链路闪红断开,少数派节点弹红色拒绝环或版本号分裂成 v′;愈合阶段链路恢复、版本比较后合并闪光;示波器画出 R-W Quorum 平面,绿区表示 W+R>N 的强一致读,白点为当前工作点。">把一份数据复制到三台机器,你就免费买到了可用性,也签下了一份风险合同:网络一旦把集群劈成两半(P=分区容忍,必选——网络必然故障),复制之间就出现裂口,这时 C(线性一致)与 A(处处可响应)只能保一个——Gilbert 与 Lynch 2002 年证明了这条 CAP 定理;CP 阵营(ZooKeeper、etcd):分区时少数派宁可不服务,等多数派凑齐再写,一致性无价;AP 阵营(Cassandra、DNS):两半都继续收写,各留一份「暂时的真相」,愈合后再用向量时钟/最后写入胜出等策略合并——期间读到的可能是旧数据;被误读最多的是「三选二」:没有分区时 C 与 A 可兼得,真正的日常权衡是延迟(PACELC),Quorum 滑杆(W+R>N):读多写少调 W、写多读少调 R;理解 CAP 的正确姿势不是背结论,而是盯着「分区发生的那一秒」——所有分布式数据库的架构分歧,都是从那一秒开始分岔的。拖「写 Quorum W」看写入要凑几张票,拖「读 Quorum R」看读到多新的数据;按「无分区基线」看复制流水线,按「分区-CP」看少数派拒绝写入,按「分区-AP」看两半真相分叉,按「愈合与冲突」看版本合并收场。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="可用性" data-en="availability">可用性</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="一致性" data-en="consistency">一致性</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="写延迟" data-en="write latency">写延迟</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="分歧条数" data-en="divergent">分歧条数</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="节点副本(球)" data-en="replica nodes (spheres)">节点副本(球)</span>
+    <span class="chip g" data-zh="复制链路(绿)" data-en="replication links (green)">复制链路(绿)</span>
+    <span class="chip r" data-zh="断链(红闪)" data-en="cut links (red flash)">断链(红闪)</span>
+    <span class="chip o" data-zh="客户端写入(白点)" data-en="client writes (white dots)">客户端写入(白点)</span>
+    <span class="chip r" data-zh="拒绝写入(红环)" data-en="rejected writes (red ring)">拒绝写入(红环)</span>
+    <span class="chip" style="color:#ffe9c2;border-color:rgba(255,205,112,.7)" data-zh="版本分叉(v′)" data-en="forked versions (v′)">版本分叉(v′)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-base" data-zh="无分区基线" data-en="no-partition baseline">无分区基线</button>
+    <button class="abtn" id="btn-cp" data-zh="分区-CP" data-en="partition-CP">分区-CP</button>
+    <button class="abtn" id="btn-ap" data-zh="分区-AP" data-en="partition-AP">分区-AP</button>
+    <button class="abtn" id="btn-heal" data-zh="愈合与冲突" data-en="heal & merge">愈合与冲突</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="写 Quorum W" data-en="write quorum W">写 Quorum W</label><input id="vA" type="range" min="1" max="3" step="1" value="2"><span class="val" id="vAVal"></span></div>
+  <div class="row"><label data-zh="读 Quorum R" data-en="read quorum R">读 Quorum R</label><input id="vB" type="range" min="1" max="3" step="1" value="2"><span class="val" id="vBVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="曲线/示波" data-en="curve scope">曲线/示波</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../raft-consensus/" data-zh="Raft 共识" data-en="Raft consensus">Raft 共识</a>
+    <a href="../two-phase-commit/" data-zh="两阶段提交" data-en="two-phase commit">两阶段提交</a>
+    <a href="../crdt-collab/" data-zh="CRDT 协同" data-en="CRDT collaboration">CRDT 协同</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.__errs = [];
+addEventListener('error', e => window.__errs.push((e.message || String(e)) + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(0, 4.6, 10.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 0.3, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  if (STEPS[scenario].act) STEPS[scenario].act();
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  applyViewMode();
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+
+/* ================= CAP 定理 ================= */
+const TITLE_ZH = 'CAP 定理 · 分区时刻的取舍';
+const TITLE_EN = 'The CAP Theorem: Choosing at the Moment of Partition';
+const PRESET_IDS = ['base', 'cp', 'ap', 'heal'];
+const HL = {};
+
+let mode = 'base';           // base | cp | ap | heal
+let wQ = 2, rQ = 2;          // vA/vB: Quorum 参数(N=3)
+let partT = 0;               // 0 链路完整 → 1 完全分区
+let healStage = '';          // heal: hold → closing → merge → done
+let healT = 0;
+let ver = [2, 2, 2];
+let rejected = 0;
+let writeT = 0.8, writeCycle = 0;
+let rejPulse = 0, partFlash = 0, mergeFlash = 0, prevPartT = 0;
+let etG = 0;
+const parted = () => partT > 0.5;
+const divergent = () => Math.abs(Math.max(ver[0], ver[1]) - ver[2]);
+const availPct = () => parted() ? (mode === 'cp' ? 67 : 100) : 100;
+const latMs = () => Math.round((11 + 9 * wQ) * (mode === 'cp' && parted() ? 1.4 : 1));
+
+const NODE_POS = [new THREE.Vector3(-3.4, 0.5, 0.9), new THREE.Vector3(3.4, 0.5, 0.9), new THREE.Vector3(0, 0.5, -3.5)];
+const LINK_PAIRS = [[0, 1], [1, 2], [0, 2]];
+const CLIENT_POS = new THREE.Vector3(-6.2, 0.5, 3.4);
+const n2Dir = new THREE.Vector3().subVectors(NODE_POS[2],
+  new THREE.Vector3((NODE_POS[0].x + NODE_POS[1].x) / 2, 0.5, NODE_POS[0].z)).normalize();
+const vA1 = new THREE.Vector3(), vB1 = new THREE.Vector3(), vD1 = new THREE.Vector3(), vQ1 = new THREE.Quaternion();
+const UP = new THREE.Vector3(0, 1, 0);
+
+/* 柔和圆点贴图(背景星共用) */
+function softDot() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,255,255,.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const dotTex = softDot();
+
+const M = {
+  star: new THREE.PointsMaterial({ color: 0xdfe8ff, size: 0.07, map: dotTex, transparent: true, opacity: 0.7, depthWrite: false }),
+  node: new THREE.MeshStandardMaterial({ color: 0x9fb8d6, emissive: 0x2f5f8f, emissiveIntensity: 0.3, roughness: 0.3, metalness: 0.35 }),
+  linkOk: new THREE.MeshBasicMaterial({ color: 0x7bd88f, transparent: true, opacity: 0.6 }),
+  linkCut: new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0.7 }),
+  client: new THREE.MeshStandardMaterial({ color: 0xffe08a, emissive: 0xb07a1a, emissiveIntensity: 0.5, roughness: 0.3 }),
+  dotW: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 }),
+  dotG: new THREE.MeshBasicMaterial({ color: 0x9fe8b0, transparent: true, opacity: 0.95 }),
+  spark: new THREE.LineBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0 }),
+  rejRing: new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0 }),
+};
+HL.node = M.node;
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0b0e14 : 0xeef1f6);
+  M.star.color.set(dark ? 0xdfe8ff : 0x33414f);
+  M.star.opacity = dark ? 0.7 : 0.45;
+  M.node.color.set(dark ? 0x9fb8d6 : 0x6c829e);
+  M.node.emissive.set(dark ? 0x2f5f8f : 0x1d5f8f);
+  M.linkOk.color.set(dark ? 0x7bd88f : 0x2b8a3e);
+  M.linkCut.color.set(dark ? 0xff6b6b : 0xc92a2a);
+  M.spark.color.set(dark ? 0xffd9a0 : 0xc92a2a);
+  M.client.color.set(dark ? 0xffe08a : 0xd9a02a);
+}
+
+/* ---------------- 场景:深空背景星 ---------------- */
+const NBG = 300;
+const bgBase = new Float32Array(NBG * 3);
+for (let i = 0; i < NBG; i++) {
+  bgBase[i * 3] = (Math.random() - 0.5) * 52;
+  bgBase[i * 3 + 1] = (Math.random() - 0.5) * 32;
+  bgBase[i * 3 + 2] = -6 - Math.random() * 24;
+}
+const bgGeo = new THREE.BufferGeometry();
+bgGeo.setAttribute('position', new THREE.BufferAttribute(bgBase.slice(), 3));
+const bgGroup = new THREE.Group();
+bgGroup.add(new THREE.Points(bgGeo, M.star));
+scene.add(bgGroup);
+
+/* ---------------- 场景:三节点 + 复制链路 ---------------- */
+const nodeMesh = [];
+for (let i = 0; i < 3; i++) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.72, 32, 24), M.node);
+  m.position.copy(NODE_POS[i]);
+  scene.add(m);
+  nodeMesh.push(m);
+}
+const linkMesh = [];
+for (const [a, b] of LINK_PAIRS) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 8), M.linkOk);
+  scene.add(m);
+  linkMesh.push(m);
+}
+function positionLink(mesh, pa, pb) {
+  vD1.subVectors(pb, pa);
+  const len = vD1.length() || 1e-6;
+  mesh.scale.set(1, len, 1);
+  vQ1.setFromUnitVectors(UP, vD1.divideScalar(len));
+  mesh.quaternion.copy(vQ1);
+  mesh.position.copy(pa).addScaledVector(vD1, len / 2);
+}
+/* 分区闪电(锯齿线,预生成) */
+const sparks = [];
+for (const [a, b] of LINK_PAIRS.slice(1)) {
+  const pts = [];
+  const seg = 8;
+  for (let k = 0; k <= seg; k++) {
+    const t = k / seg;
+    const px = NODE_POS[a].x + (NODE_POS[b].x - NODE_POS[a].x) * t + (Math.random() - 0.5) * (k > 0 && k < seg ? 0.9 : 0);
+    const py = 0.5 + (Math.random() - 0.5) * (k > 0 && k < seg ? 0.7 : 0);
+    const pz = NODE_POS[a].z + (NODE_POS[b].z - NODE_POS[a].z) * t + (Math.random() - 0.5) * (k > 0 && k < seg ? 0.9 : 0);
+    pts.push(new THREE.Vector3(px, py, pz));
+  }
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  const ln = new THREE.Line(g, M.spark);
+  ln.visible = false;
+  scene.add(ln);
+  sparks.push(ln);
+}
+
+/* ---------------- 场景:客户端 + 写入/复制脉冲点 ---------------- */
+const client = new THREE.Mesh(new THREE.OctahedronGeometry(0.34), M.client);
+client.position.copy(CLIENT_POS);
+scene.add(client);
+
+const N_DOT = 8;
+const writeDots = [], writeQ = [];
+for (let i = 0; i < N_DOT; i++) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 8), M.dotW);
+  m.visible = false;
+  scene.add(m);
+  writeDots.push(m);
+  writeQ.push({ active: false, to: 0, u: 0 });
+}
+const REP_N = 6;
+const repDots = [], repQ = [];
+for (let i = 0; i < REP_N; i++) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), M.dotG);
+  m.visible = false;
+  scene.add(m);
+  repDots.push(m);
+  repQ.push({ active: false, from: 0, to: 0, u: 0, ver: 0 });
+}
+
+/* 拒绝写入红环(挂在少数派节点上) */
+const rejRing = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.05, 8, 48), M.rejRing);
+rejRing.rotation.x = Math.PI / 2;
+rejRing.position.set(0, 0.95, 0);
+nodeMesh[2].add(rejRing);
+
+/* 动态锚点 */
+const cutAnchor = new THREE.Object3D();
+scene.add(cutAnchor);
+const rejAnchor = new THREE.Object3D();
+rejAnchor.position.set(0, 1.9, 0);
+nodeMesh[2].add(rejAnchor);
+const divAnchor = new THREE.Object3D();
+divAnchor.position.set(0, -1.15, 0);
+nodeMesh[2].add(divAnchor);
+const healAnchor = new THREE.Object3D();
+healAnchor.position.set(0, 2.3, 0);
+scene.add(healAnchor);
+
+addLabel(() => L(`N1 · v${ver[0]}`, `N1 · v${ver[0]}`), () => '', new THREE.Vector3(0, 1.05, 0), null, nodeMesh[0]);
+addLabel(() => L(`N2 · v${ver[1]}`, `N2 · v${ver[1]}`), () => '', new THREE.Vector3(0, 1.05, 0), null, nodeMesh[1]);
+addLabel(() => {
+  const prime = parted() && mode !== 'cp' && divergent() > 0 ? '′' : '';
+  return L(`N3 · v${ver[2]}${prime}`, `N3 · v${ver[2]}${prime}`);
+}, () => (parted() && mode !== 'cp' && divergent() > 0 ? 'e' : ''), new THREE.Vector3(0, 1.05, 0), null, nodeMesh[2]);
+addLabel(() => L('客户端写入', 'client writes'), () => 'w', new THREE.Vector3(0, 0.7, 0), null, client);
+addLabel(() => L('分区断链:多数派/少数派隔断', 'partition: majority / minority cut off'), () => 'bad',
+  new THREE.Vector3(0, 0.6, 0), null, cutAnchor);
+addLabel(() => L('拒绝写入:宁可不服务', 'rejecting writes: better silent than stale'), () => 'bad',
+  new THREE.Vector3(0, 0, 0), null, rejAnchor);
+addLabel(() => L('版本分叉:两份「暂时的真相」', 'forked versions: two temporary truths'), () => 'e',
+  new THREE.Vector3(0, 0, 0), null, divAnchor);
+addLabel(() => L('愈合:比较版本,合并真相', 'healing: compare versions, merge truths'), () => 'g',
+  new THREE.Vector3(0, 0, 0), null, healAnchor);
+
+/* ---------------- 写入 / 复制事件 ---------------- */
+function spawnWrite(to) {
+  for (let i = 0; i < N_DOT; i++) {
+    if (!writeQ[i].active) { writeQ[i].active = true; writeQ[i].to = to; writeQ[i].u = 0; writeDots[i].visible = true; return; }
+  }
+}
+function tryRep(from, to, v) {
+  for (let i = 0; i < REP_N; i++) {
+    if (!repQ[i].active) { repQ[i].active = true; repQ[i].from = from; repQ[i].to = to; repQ[i].u = 0; repQ[i].ver = v; repDots[i].visible = true; return; }
+  }
+}
+function doWrite() {
+  const target = writeCycle % 3;
+  writeCycle++;
+  if (parted() && mode === 'cp' && target === 2) { rejected++; rejPulse = 1; return; }
+  ver[target]++;
+  spawnWrite(target);
+  if (parted()) {
+    if (target !== 2) tryRep(target, target === 0 ? 1 : 0, ver[target]);   // 分区:多数派内部同步
+  } else {
+    for (let k = 0; k < 3; k++) if (k !== target) tryRep(target, k, ver[target]);
+  }
+}
+
+/* ---------------- 视图模式(预设接线) ---------------- */
+function applyViewMode() {
+  mode = preset || 'base';
+  if (preset === 'heal') { healStage = 'hold'; healT = 0; }
+  else healStage = '';
+  updateSliderLabels();
+}
+
+/* ---------------- 示波器:R-W Quorum 平面 ---------------- */
+function drawScope() {
+  const w = scope.width, h = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, w, h);
+  const mx = 6, my = 6, mw = w - 12, mh = h - 12;
+  const cx = v => mx + (v - 0.5) / 3 * mw;
+  const cy = v => my + (1 - (v - 0.5) / 3) * mh;
+  scopeCtx.strokeStyle = 'rgba(127,140,160,.4)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.strokeRect(mx, my, mw, mh);
+  /* W+R>3 绿区 */
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(cx(0.5), cy(2.5));
+  scopeCtx.lineTo(cx(0.5), cy(3.5));
+  scopeCtx.lineTo(cx(3.5), cy(3.5));
+  scopeCtx.lineTo(cx(3.5), cy(0.5));
+  scopeCtx.lineTo(cx(2.5), cy(0.5));
+  scopeCtx.closePath();
+  scopeCtx.fillStyle = 'rgba(123,216,143,.15)';
+  scopeCtx.fill();
+  /* W+R=3 界线 */
+  scopeCtx.strokeStyle = 'rgba(123,216,143,.8)';
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  scopeCtx.moveTo(cx(0.5), cy(2.5));
+  scopeCtx.lineTo(cx(2.5), cy(0.5));
+  scopeCtx.stroke();
+  /* 当前 (R,W) 工作点 */
+  const px = cx(rQ), py = cy(wQ);
+  scopeCtx.fillStyle = '#ffffff';
+  scopeCtx.beginPath(); scopeCtx.arc(px, py, 2.6 * dpr, 0, TAU); scopeCtx.fill();
+  scopeCtx.strokeStyle = wQ + rQ > 3 ? '#7bd88f' : '#ffa94d';
+  scopeCtx.beginPath(); scopeCtx.arc(px, py, 5 * dpr, 0, TAU); scopeCtx.stroke();
+  scopeCtx.fillStyle = 'rgba(242,245,249,.85)';
+  scopeCtx.font = `${10 * dpr}px sans-serif`;
+  scopeCtx.fillText(L('Quorum 平面:绿区 = W+R>N 强一致读 · 白点 = 当前 (R,W)', 'quorum plane: green = W+R>N consistent reads - white = current (R,W)'), 8, (my + 10) * dpr);
+}
+
+/* ---------------- 步骤 ---------------- */
+const STEPS = [
+  { b: '三副本:免费午餐与风险合同', be: 'three replicas: free lunch, hidden contract', tgt: [0, 0.8, 3],
+    d: '把一份数据复制到三台机器,你就免费买到了可用性——一台挂了还有两台;但同时签下了一份风险合同:三份副本必须互相追赶,一旦网络出问题,「追不齐」的那一刻就是 CAP 定理生效的那一刻。',
+    de: 'Replicate data across three machines and availability comes free - lose one, two remain; but you also sign a risk contract: the copies must keep chasing each other, and the moment the network stumbles and they fall out of step is the moment the CAP theorem takes effect.' },
+  { b: '分区那一秒', be: 'the second the partition hits', tgt: [0, 0.6, 3.5],
+    d: '网络把集群劈成两半:多数派(N1+N2)与少数派(N3)之间链路闪红断开。P=分区容忍是必选项——网络必然故障;剩下的问题是:这一秒里,C(线性一致)与 A(处处可响应)只能保一个。',
+    de: 'The network splits the cluster: links between the majority (N1+N2) and the minority (N3) flash red and break. P, partition tolerance, is mandatory - networks do fail; the open question is that within this second, C (linearizability) and A (always answering) cannot both hold.' },
+  { b: 'CP:宁可不服务', be: 'CP: better silent than stale', tgt: [-2.8, 0.8, 2],
+    d: 'CP 阵营(ZooKeeper、etcd)选一致性:分区时少数派节点弹红「拒绝写入」,读写只认凑得齐 Quorum 的多数派——一致性无价,可用性先放一放;等多数派重新凑齐,服务才恢复。可用性掉到 67%,写延迟因 Quorum 变长。',
+    de: 'The CP camp (ZooKeeper, etcd) picks consistency: during a partition the minority flashes red and refuses writes; only the quorum-forming majority serves - consistency at any price, availability deferred until the majority reunites. Availability drops to 67% and quorum lengthens write latency.' },
+  { b: 'AP:两半各自收写', be: 'AP: both halves keep taking writes', tgt: [2.8, 0.8, 2],
+    d: 'AP 阵营(Cassandra、DNS)选可用性:两半都继续收写,各自留下一份「暂时的真相」——版本号当场分叉(v 与 v′),期间读到的可能是旧数据;一致性账被推迟到愈合那一刻再算。',
+    de: 'The AP camp (Cassandra, DNS) picks availability: both halves keep accepting writes, each holding a temporarily true copy - version numbers fork on the spot (v vs v′), reads in between may be stale, and the consistency bill is postponed to the moment of healing.' },
+  { b: '愈合:把两份真相合并', be: 'healing: merging two truths', tgt: [0, 1.0, 3],
+    d: '链路恢复后进入愈合:节点互相比较版本(向量时钟/版本号),用最后写入胜出、多版本合并(CRDT)等策略收敛到同一份真相,分歧条数归零——AP 的账在这里结清。',
+    de: 'When the link returns, healing begins: nodes compare versions (vector clocks / version numbers) and converge on one truth via last-write-wins or multi-version merge (CRDTs); the divergent count drops to zero - this is where the AP bill gets settled.' },
+  { b: '「三选二」是误读', be: 'pick-two is a misreading', tgt: [0, 0.3, 3.5],
+    d: '被误读最多的是「三选二」:没有分区时,C 与 A 完全可以兼得;真正的日常权衡是延迟(PACELC:else,Latency)。Quorum 滑杆(W+R>N)就是那根滑杆:读多写少调 W、写多读少调 R——示波器绿区就是强一致读的参数域。',
+    de: 'The most misread part is the pick-two slogan: with no partition, C and A coexist fine; the everyday trade is latency (PACELC: else, Latency). The quorum knobs (W+R>N) are that slider: read-heavy workloads tune W, write-heavy tune R - the green region on the scope is exactly the consistent-read parameter zone.' },
+  { b: '每一套数据库都在选', be: 'every database is choosing', tgt: [0, 2.0, 4.5],
+    d: 'ZooKeeper 与 etcd 选 CP,Cassandra 与 DNS 选 AP,Raft 用多数派日志同时买下 C 与分区后的 A(少数派同样拒绝),两阶段提交在协调者失联时干脆全体阻塞——所有分布式数据库的架构分歧,都是从分区那一秒开始分岔的。',
+    de: 'ZooKeeper and etcd choose CP; Cassandra and DNS choose AP; Raft buys C and post-partition A together with its majority log (the minority likewise refuses); two-phase commit blocks everyone when the coordinator vanishes - every distributed database\'s architecture forks from the second the partition happens.' },
+];
+
+/* ---------------- 公式 ---------------- */
+function updateFormula() {
+  el.formula.innerHTML =
+    L(`CAP:分区发生时 <b>C(线性一致)与 A(完全可用)不可兼得</b>;P 必选——网络必然故障`,
+      `CAP: at partition, <b>C (linearizable) and A (always answering) cannot both hold</b>; P is mandatory - networks fail`) +
+    '<br>' +
+    L(`Quorum:<b>W + R > N</b> 保证不读到旧值(N=3);PACELC:无分区时拼的是延迟`,
+      `quorum: <b>W + R > N</b> guarantees fresh reads (N=3); PACELC: without partition the game is latency`) +
+    '<br>' +
+    L(`当前:W=<b>${wQ}</b> · R=<b>${rQ}</b> · 可用性 <b>${availPct()}%</b> · 写延迟 ≈ <b>${latMs()} ms</b> · 分歧 <b>${divergent()}</b> 条`,
+      `now: W=<b>${wQ}</b> - R=<b>${rQ}</b> - availability <b>${availPct()}%</b> - write latency ≈ <b>${latMs()} ms</b> - divergent <b>${divergent()}</b>`);
+}
+
+/* ---------------- 状态面板 ---------------- */
+function updateSliderLabels() {
+  el.elAVal.textContent = 'W = ' + wQ;
+  el.elBVal.textContent = 'R = ' + rQ;
+}
+function updateStats() {
+  const avail = availPct();
+  el.stA.innerHTML = avail + '<small> %</small>';
+  el.stA.className = 'v' + (avail >= 100 ? ' ok' : avail >= 67 ? ' warn' : ' bad');
+  let txt, cls;
+  if (mode === 'heal' && healStage === 'merge') { txt = L('合并中', 'merging'); cls = 'warn'; }
+  else if (parted() && mode === 'cp') { txt = L('拒绝访问', 'rejects'); cls = 'bad'; }
+  else if (parted()) { txt = divergent() > 0 ? L('分歧', 'diverged') : L('暂一致', 'in sync'); cls = divergent() > 0 ? 'bad' : 'warn'; }
+  else { txt = wQ + rQ > 3 ? L('通过', 'pass') : L('旧读风险', 'stale risk'); cls = wQ + rQ > 3 ? 'ok' : 'warn'; }
+  el.stB.innerHTML = txt;
+  el.stB.className = 'v ' + cls;
+  el.stC.innerHTML = latMs() + '<small> ms</small>';
+  el.stC.className = 'v' + (latMs() > 30 ? ' warn' : '');
+  const dv = divergent();
+  el.stD.innerHTML = dv + '<small> 条</small>';
+  el.stD.className = 'v' + (dv > 0 ? ' bad' : ' ok');
+}
+function resetMachine() {
+  wQ = 2; rQ = 2; partT = 0; healStage = ''; healT = 0;
+  ver = [2, 2, 2]; rejected = 0; writeCycle = 0; writeT = 0.8;
+  rejPulse = 0; partFlash = 0; mergeFlash = 0;
+  preset = null;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  applyViewMode();
+  el.elA.value = 2; el.elB.value = 2;
+  tgtVec.set(0, 0.3, 0);
+  updateSliderLabels(); updateStats(); updateFormula();
+}
+
+/* ---------------- UI 接线 ---------------- */
+const el = {
+  elA: document.getElementById('vA'), elAVal: document.getElementById('vAVal'),
+  elB: document.getElementById('vB'), elBVal: document.getElementById('vBVal'),
+  stA: document.getElementById('stA'), stB: document.getElementById('stB'),
+  stC: document.getElementById('stC'), stD: document.getElementById('stD'),
+  formula: document.getElementById('formula'),
+};
+el.elA.addEventListener('input', () => { wQ = +el.elA.value; updateSliderLabels(); });
+el.elB.addEventListener('input', () => { rQ = +el.elB.value; updateSliderLabels(); });
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主逻辑 ---------------- */
+function pageFrame(et, dt) {
+  etG = et;
+  /* 分区进度(愈合模式自己管 closing 段) */
+  if (mode === 'heal' && playing) {
+    healT += dt;
+    if (healStage === 'hold') {
+      if (healT > 2.6) { healStage = 'closing'; healT = 0; }
+    } else if (healStage === 'closing') {
+      partT = Math.max(0, partT - dt * 0.9);
+      if (partT <= 0) { healStage = 'merge'; healT = 0; }
+    } else if (healStage === 'merge') {
+      if (healT > 0.6) {
+        const m = Math.max(ver[0], ver[1], ver[2]);
+        if (ver[0] !== m || ver[1] !== m || ver[2] !== m) {
+          ver[0] = ver[1] = ver[2] = m;
+          mergeFlash = 1;
+        }
+      }
+      if (healT > 1.8) { healStage = 'done'; healT = 0; }
+    } else if (healStage === 'done') {
+      if (healT > 3.2) { healStage = 'hold'; healT = 0; }
+    }
+  }
+  let pTarget = 0;
+  if (mode === 'cp' || mode === 'ap') pTarget = 1;
+  if (mode === 'heal' && healStage === 'hold') pTarget = 1;
+  if (!(mode === 'heal' && healStage === 'closing')) partT += (pTarget - partT) * Math.min(1, dt * 2.2);
+  if (partT > 0.45 && prevPartT <= 0.45) partFlash = 1;
+  prevPartT = partT;
+  partFlash *= Math.max(0, 1 - dt * 2);
+  mergeFlash *= Math.max(0, 1 - dt * 1.6);
+  rejPulse *= Math.max(0, 1 - dt * 2);
+  M.node.emissiveIntensity = 0.3 + mergeFlash * 1.1;
+
+  /* 少数派节点被拉开 */
+  nodeMesh[2].position.copy(NODE_POS[2]).addScaledVector(n2Dir, 1.2 * partT);
+  for (let i = 0; i < 3; i++) {
+    if (i === 2) continue;
+    nodeMesh[i].position.copy(NODE_POS[i]);
+    nodeMesh[i].position.y = 0.5 + Math.sin(et * 1.3 + i * 2.1) * 0.05;
+  }
+  nodeMesh[2].position.y = 0.5 + Math.sin(et * 1.3 + 4.2) * 0.05;
+  client.position.y = 0.5 + Math.sin(et * 1.6) * 0.08;
+
+  /* 链路:多数派链路(N1-N2)始终绿;跨少数派的两条按 partT 切红并留缺口 */
+  const gapK = 1 - 0.32 * partT;
+  positionLink(linkMesh[0], nodeMesh[0].position, nodeMesh[1].position);
+  positionLink(linkMesh[1], nodeMesh[1].position, nodeMesh[2].position);
+  linkMesh[1].scale.y *= gapK;
+  positionLink(linkMesh[2], nodeMesh[0].position, nodeMesh[2].position);
+  linkMesh[2].scale.y *= gapK;
+  const cut = partT > 0.4;
+  linkMesh[1].material = linkMesh[2].material = cut ? M.linkCut : M.linkOk;
+  for (const sp of sparks) sp.visible = cut;
+  M.spark.opacity = cut ? 0.35 + 0.3 * Math.sin(et * 10) + 0.4 * partFlash : 0;
+  cutAnchor.position.copy(nodeMesh[2].position).add(nodeMesh[1].position).multiplyScalar(0.5);
+  cutAnchor.visible = cut;
+
+  /* 写入 / 复制事件 */
+  if (playing && !(mode === 'heal' && healStage === 'merge')) {
+    writeT -= dt;
+    if (writeT <= 0) { writeT = 1.3 + Math.random() * 0.9; doWrite(); }
+  }
+  for (let i = 0; i < N_DOT; i++) {
+    if (!writeQ[i].active) continue;
+    writeQ[i].u += dt * 1.7;
+    const q = writeQ[i];
+    if (q.u >= 1) { q.active = false; writeDots[i].visible = false; continue; }
+    writeDots[i].position.copy(CLIENT_POS).lerp(nodeMesh[q.to].position, q.u);
+    writeDots[i].position.y += 0.35;
+  }
+  for (let i = 0; i < REP_N; i++) {
+    if (!repQ[i].active) continue;
+    repQ[i].u += dt * 1.4;
+    const q = repQ[i];
+    if (q.u >= 1) {
+      q.active = false;
+      repDots[i].visible = false;
+      ver[q.to] = Math.max(ver[q.to], q.ver);
+      continue;
+    }
+    repDots[i].position.copy(nodeMesh[q.from].position).lerp(nodeMesh[q.to].position, q.u);
+    repDots[i].position.y += 0.35;
+  }
+
+  /* 拒绝环 / 版本分叉标记 */
+  rejRing.visible = cut && mode === 'cp';
+  M.rejRing.opacity = 0.35 + 0.35 * Math.sin(et * 6) + 0.5 * rejPulse;
+  rejAnchor.visible = rejRing.visible;
+  divAnchor.visible = cut && mode !== 'cp' && divergent() > 0;
+  healAnchor.visible = mode === 'heal';
+  bgGroup.rotation.y = et * 0.004;
+}
+
+/* ---------------- 装配 ---------------- */
+applyViewMode();
+updateSliderLabels();
+updateStats();
+
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  pageFrame(et, simDt);
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.emissiveIntensity = 0.4 + 0.35 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked && typeof drawScope === 'function') drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
