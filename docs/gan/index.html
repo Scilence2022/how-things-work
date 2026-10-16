@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生成对抗网络 · 两台机器的一场骗局博弈</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#be4bdb;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#9c36b5;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  .lbl.p { border-color: rgba(190,75,219,.9); color: #eccdfa; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+  :root[data-theme="light"] .lbl.p { border-color: rgba(156,54,181,.9); color: #7d2aa8; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(190,75,219,.65); background: rgba(190,75,219,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(156,54,181,.55); background: rgba(156,54,181,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(190,75,219,.10); border-color: rgba(190,75,219,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(156,54,181,.08); border-color: rgba(156,54,181,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #dfb0f0; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="生成对抗网络" data-en="GAN">生成对抗网络</h1>
+  <div class="sub" data-zh="2014 年,Goodfellow 把「让机器学会生成」写成一场博弈:生成器 G 吃进 100 维高斯噪声 z,吐出假样本 G(z);判别器 D 看一眼样本,吐出「这是真数据」的概率。两者共用一个价值函数 V(D,G)=E[log D(x)]+E[log(1−D(G(z)))]——D 拼命最大化它,把假货揪出来;G 拼命最小化它,让假货过关。理论上这场极小极大博弈存在纳什均衡:G 的分布与数据分布完全重合时,D 对任何输入都只能输出 1/2,「看不清」恰是「骗过了」的证明;训练因此像自由市场里造假者与鉴伪师的军备竞赛,双方轮流出招、交替升级。但两个网络同时学习并不安分,三道难题接踵而至:模式坍缩——G 发现只造一两种最安全的假货就能暂时骗过 D,输出多样性应声崩塌;不收敛与振荡——两股梯度互相干扰,损失曲线锯齿交锋、迟迟不肯落定;梯度消失——D 太强时 log(1−D(G(z))) 饱和,G 收不到误差信号,于是实操改用最大化 log D(G(z)) 的非饱和损失。修复工具箱随之成型:WGAN 用 Wasserstein(推土机)距离替代 JS 散度,让梯度在分布没对上的区域依然有效,再以权重裁剪或梯度惩罚维持 Lipschitz 约束;谱归一化压住 D 的火力,特征匹配与 mini-batch 判别专治千篇一律,条件 GAN 用标签给生成加上方向盘。2016–2020 年,GAN 是生成图像的主舞台:StyleGAN 逐级合成以假乱真的人脸,超分辨率、图像修复、数据增广全面开花,deepfake 则是同一枚硬币的阴影面;生成质量交给 Inception Score 与 FID 打分,FID 衡量真假两个分布的特征距离,越低越好。2020 年之后,训练更稳的扩散模型接管舞台,但对抗训练的思想并未退场——它活在对抗样本、生成对抗的评估博弈与 RLHF 的偏好对齐里。拖「学习率」看训练快慢与振荡,拖「噪声维度」看多样性与坍缩倾向;按「判别器攻势」「生成器反攻」「模式坍缩」「WGAN 修复」看四种战局。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停
+- 场景要点: 一张二维数据平面上,三个青色高斯光斑是真实数据的三座峰,紫色粒子是 G 吐出的假样本,起伏网格曲面是 D 的决策面——绿峰判真、红谷判假;判别器攻势中曲面迅速包住三峰、假粒子成片闪红、准确率飙升;生成器反攻中紫粒子拖着橙色梯度箭头爬向真峰,准确率跌向 50%;纳什均衡时曲面摊平到 0.5、紫青重合、FID 探底;模式坍缩时假粒子全部涌进一座峰、覆盖掉到 33%,WGAN 修复再像推土机一样把假样本摊回三峰。" data-en="In 2014 Goodfellow recast generative modeling as a game between two machines: a generator G takes a 100-dimensional Gaussian noise vector z and emits a fake sample G(z), while a discriminator D looks at any sample and outputs the probability that it is real. Both share one value function, V(D,G) = E[log D(x)] + E[log(1−D(G(z)))]: D climbs to maximize it and unmask fakes, G dives to minimize it and slip fakes past the judge. In theory this minimax game has a Nash equilibrium: when the distribution of G exactly matches the data distribution, D outputs 1/2 for every input - the inability to tell is the very proof of deception - so training becomes an arms race between a counterfeiter and an appraiser in a free market. Yet training two networks at once is unruly, with three classic pathologies: mode collapse, where G finds that one or two safe fake types suffice and its output diversity crumbles; oscillation and non-convergence, as the two gradients interfere and the loss curves saw at each other; and vanishing gradients, when a too-strong D saturates log(1−D(G(z))) so G receives no error signal - hence the non-saturating loss that maximizes log D(G(z)) instead. A repair kit followed: WGAN swaps JS divergence for the Wasserstein earth-mover distance so gradients stay useful where distributions disagree, holding the Lipschitz constraint with weight clipping or gradient penalty; spectral normalization reins in D; feature matching and mini-batch discrimination fight sameness; conditional GAN adds labels to steer generation. From 2016 to 2020 GANs ran the main stage of image generation: StyleGAN composed startling faces level by level, super-resolution, inpainting and data augmentation flourished, and deepfake was the dark side of the same coin; quality was scored by Inception Score and FID, where lower FID means the two feature distributions sit closer together. After 2020, diffusion models with steadier training took over the stage, but adversarial thinking lives on in adversarial examples, adversarial evaluation and the preference games of RLHF. Drag the learning-rate slider to watch training speed and oscillation, drag noise dims to see diversity and collapse tendency; press D attacks, G fights back, mode collapse and WGAN repair for the four standoffs. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause
+- 场景要点: 一张二维数据平面上,三个青色高斯光斑是真实数据的三座峰,紫色粒子是 G 吐出的假样本,起伏网格曲面是 D 的决策面——绿峰判真、红谷判假;判别器攻势中曲面迅速包住三峰、假粒子成片闪红、准确率飙升;生成器反攻中紫粒子拖着橙色梯度箭头爬向真峰,准确率跌向 50%;纳什均衡时曲面摊平到 0.5、紫青重合、FID 探底;模式坍缩时假粒子全部涌进一座峰、覆盖掉到 33%,WGAN 修复再像推土机一样把假样本摊回三峰。">2014 年,Goodfellow 把「让机器学会生成」写成一场博弈:生成器 G 吃进 100 维高斯噪声 z,吐出假样本 G(z);判别器 D 看一眼样本,吐出「这是真数据」的概率。两者共用一个价值函数 V(D,G)=E[log D(x)]+E[log(1−D(G(z)))]——D 拼命最大化它,把假货揪出来;G 拼命最小化它,让假货过关。理论上这场极小极大博弈存在纳什均衡:G 的分布与数据分布完全重合时,D 对任何输入都只能输出 1/2,「看不清」恰是「骗过了」的证明;训练因此像自由市场里造假者与鉴伪师的军备竞赛,双方轮流出招、交替升级。但两个网络同时学习并不安分,三道难题接踵而至:模式坍缩——G 发现只造一两种最安全的假货就能暂时骗过 D,输出多样性应声崩塌;不收敛与振荡——两股梯度互相干扰,损失曲线锯齿交锋、迟迟不肯落定;梯度消失——D 太强时 log(1−D(G(z))) 饱和,G 收不到误差信号,于是实操改用最大化 log D(G(z)) 的非饱和损失。修复工具箱随之成型:WGAN 用 Wasserstein(推土机)距离替代 JS 散度,让梯度在分布没对上的区域依然有效,再以权重裁剪或梯度惩罚维持 Lipschitz 约束;谱归一化压住 D 的火力,特征匹配与 mini-batch 判别专治千篇一律,条件 GAN 用标签给生成加上方向盘。2016–2020 年,GAN 是生成图像的主舞台:StyleGAN 逐级合成以假乱真的人脸,超分辨率、图像修复、数据增广全面开花,deepfake 则是同一枚硬币的阴影面;生成质量交给 Inception Score 与 FID 打分,FID 衡量真假两个分布的特征距离,越低越好。2020 年之后,训练更稳的扩散模型接管舞台,但对抗训练的思想并未退场——它活在对抗样本、生成对抗的评估博弈与 RLHF 的偏好对齐里。拖「学习率」看训练快慢与振荡,拖「噪声维度」看多样性与坍缩倾向;按「判别器攻势」「生成器反攻」「模式坍缩」「WGAN 修复」看四种战局。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="D 准确率" data-en="D accuracy">D 准确率</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="FID 距离" data-en="FID distance">FID 距离</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="模式覆盖" data-en="mode coverage">模式覆盖</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="训练步数" data-en="train steps">训练步数</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="真样本(青)" data-en="real samples">真样本(青)</span>
+    <span class="chip" style="color:#cfa8ea;border-color:rgba(190,75,219,.6)" data-zh="假样本 G(z)(紫)" data-en="fakes G(z)">假样本 G(z)(紫)</span>
+    <span class="chip g" data-zh="判真区(绿)" data-en="judged real">判真区(绿)</span>
+    <span class="chip r" data-zh="判假区(红)" data-en="judged fake">判假区(红)</span>
+    <span class="chip" style="color:#e6dcf2;border-color:rgba(217,194,245,.6)" data-zh="噪声 z" data-en="noise z">噪声 z</span>
+    <span class="chip o" data-zh="梯度箭头" data-en="gradient arrows">梯度箭头</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-dlearn" data-zh="判别器攻势" data-en="D attacks">判别器攻势</button>
+    <button class="abtn" id="btn-glearn" data-zh="生成器反攻" data-en="G fights back">生成器反攻</button>
+    <button class="abtn hot" id="btn-collapse" data-zh="模式坍缩" data-en="mode collapse">模式坍缩</button>
+    <button class="abtn" id="btn-wgan" data-zh="WGAN 修复" data-en="WGAN repair">WGAN 修复</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="学习率" data-en="learning rate">学习率</label><input id="vA" type="range" min="1" max="50" step="1" value="10"><span class="val" id="vAVal"></span></div>
+  <div class="row"><label data-zh="噪声维度" data-en="noise dims">噪声维度</label><input id="vB" type="range" min="1" max="10" step="1" value="5"><span class="val" id="vBVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="曲线/示波" data-en="curve scope">曲线/示波</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../neural-network/" data-zh="神经网络地基" data-en="neural-network basis">神经网络地基</a>
+    <a href="../neural-gradient/" data-zh="梯度怎么传" data-en="how gradients flow">梯度怎么传</a>
+    <a href="../diffusion-model/" data-zh="后起的生成劲敌" data-en="diffusion model">后起的生成劲敌</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.__errs = [];
+addEventListener('error', e => window.__errs.push((e.message || String(e)) + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(8.8, 9.4, 12.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.9, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3.5;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 0.9, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  if (STEPS[scenario].act) STEPS[scenario].act();
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  applyViewMode();
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260);
+let sndI = 0;
+function pushSnd(a, b) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+
+/* ================= 生成对抗网络 ================= */
+const TITLE_ZH = '生成对抗网络 · 两台机器的一场骗局博弈';
+const TITLE_EN = 'Generative Adversarial Networks: A Con Game Between Two Machines';
+const PRESET_IDS = ['dlearn', 'glearn', 'collapse', 'wgan'];
+const HL = {};
+
+let lr = 1.0;                 /* vA 学习率倍率 0.1–5× */
+let zDim = 5;                 /* vB 噪声维度(示意)1–10 */
+let iter = 0;                 /* 训练步数 */
+let phase = 'D';              /* 当前训练相:'D' 判别器学 / 'G' 生成器学 */
+let phaseT = 0, totalT = 0;
+let accS = 50, fidS = 110, gLossS = 0.69, dLossS = 1.39, covS = 0;
+let collapseMode = false, wganMode = false, forcedPhase = null;
+let wganQueue = [], wganTick = 0, wganFlip = 0;
+let sndClock = 0;
+let scopeDark = true;
+/* 粒子预算:真样本 300 + 假样本 300 + 噪声云 60 = 660 < 2000;决策面/网格/箭头为普通几何,不计入粒子 */
+const NReal = 300, NFake = 300, NNoise = 60;
+const PEAKS = [[-2.9, -1.6], [3.0, -1.9], [0.4, 2.7]];   /* 三座真实数据峰(x,z) */
+const SIG_R = 0.55;
+const EPS_D = 0.025;
+let wfE = [1 / 3, 1 / 3, 1 / 3], sgE = [0.6, 0.6, 0.6], fFloor = 0.02;
+const cnt = [0, 0, 0], d2s = [0, 0, 0];
+
+function gauss() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v); }
+function jitterSigma() { return collapseMode ? 0.17 : 0.15 + 0.05 * zDim; }
+function densR(x, z) {
+  let s = 0.02;
+  for (let i = 0; i < 3; i++) { const dx = x - PEAKS[i][0], dz = z - PEAKS[i][1]; s += Math.exp(-(dx * dx + dz * dz) / (2 * SIG_R * SIG_R)); }
+  return s;
+}
+function densF(x, z) {
+  let s = fFloor;
+  for (let i = 0; i < 3; i++) { const dx = x - PEAKS[i][0], dz = z - PEAKS[i][1], sg = sgE[i]; s += 3 * wfE[i] * Math.exp(-(dx * dx + dz * dz) / (2 * sg * sg)); }
+  return s;
+}
+function evalD(x, z) { const r = densR(x, z), f = densF(x, z); return (r + EPS_D) / (r + f + 2 * EPS_D); }
+
+/* 柔和圆点贴图(样本粒子/光晕/噪声云共用) */
+function softDot() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,255,255,.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const dotTex = softDot();
+
+const M = {
+  surf: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.40, side: THREE.DoubleSide, depthWrite: false }),
+  wire: new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.10, depthWrite: false }),
+  ring: new THREE.MeshBasicMaterial({ color: 0x53d6e8, transparent: true, opacity: 0.4 }),
+  real: new THREE.PointsMaterial({ color: 0x53d6e8, size: 0.12, map: dotTex, transparent: true, opacity: 0.9, depthWrite: false }),
+  fake: new THREE.PointsMaterial({ vertexColors: true, size: 0.14, map: dotTex, transparent: true, opacity: 0.95, depthWrite: false }),
+  noise: new THREE.PointsMaterial({ color: 0xd9c2f5, size: 0.09, map: dotTex, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }),
+  peakGlow: new THREE.SpriteMaterial({ color: 0x35c4d8, map: dotTex, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }),
+  halo: new THREE.SpriteMaterial({ color: 0xbe4bdb, map: dotTex, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }),
+  gBody: new THREE.MeshStandardMaterial({ color: 0x45315e, roughness: 0.5, metalness: 0.15 }),
+  gTrim: new THREE.MeshStandardMaterial({ color: 0x8a5bb5, roughness: 0.35, metalness: 0.45 }),
+  dBody: new THREE.MeshStandardMaterial({ color: 0x2e3642, roughness: 0.6, metalness: 0.2 }),
+  dRing: new THREE.MeshStandardMaterial({ color: 0x53d6e8, roughness: 0.3, metalness: 0.6, emissive: 0x14424a }),
+  dLens: new THREE.MeshStandardMaterial({ color: 0x9fdcf0, transparent: true, opacity: 0.5, roughness: 0.15, metalness: 0.1 }),
+};
+HL.halo = M.halo;
+HL.ring = M.ring;
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0d1013 : 0xe9e4da);
+  scopeDark = dark;
+  M.surf.opacity = dark ? 0.40 : 0.50;
+  M.wire.opacity = dark ? 0.10 : 0.16;
+  M.peakGlow.opacity = dark ? 0.35 : 0.2;
+  M.noise.opacity = dark ? 0.85 : 0.65;
+  grid.material.opacity = dark ? 0.4 : 0.6;
+}
+
+/* ---------------- 场景:数据平面 / 决策面 ---------------- */
+const grid = new THREE.GridHelper(13, 26, 0x56606e, 0x39424e);
+grid.material.transparent = true;
+scene.add(grid);
+
+const surfGeo = new THREE.PlaneGeometry(13, 13, 36, 36);
+surfGeo.rotateX(-Math.PI / 2);
+surfGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(surfGeo.attributes.position.count * 3), 3));
+const surf = new THREE.Mesh(surfGeo, M.surf);
+const wire = new THREE.Mesh(surfGeo, M.wire);
+surf.renderOrder = 2;
+wire.renderOrder = 3;
+scene.add(surf);
+scene.add(wire);
+
+/* 峰标记环 + 峰上光斑 */
+const ringGeo = new THREE.TorusGeometry(1.05, 0.022, 8, 48);
+for (const p of PEAKS) {
+  const ring = new THREE.Mesh(ringGeo, M.ring);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(p[0], 0.03, p[1]);
+  scene.add(ring);
+  const glow = new THREE.Sprite(M.peakGlow);
+  glow.position.set(p[0], 0.35, p[1]);
+  glow.scale.setScalar(2.4);
+  scene.add(glow);
+}
+
+/* ---------------- 场景:真样本粒子(青,300) ---------------- */
+const rPos = new Float32Array(NReal * 3);
+const rOx = new Float32Array(NReal), rOz = new Float32Array(NReal), rPh = new Float32Array(NReal);
+const rGeo = new THREE.BufferGeometry();
+rGeo.setAttribute('position', new THREE.BufferAttribute(rPos, 3));
+const realPts = new THREE.Points(rGeo, M.real);
+realPts.frustumCulled = false;
+realPts.renderOrder = 4;
+scene.add(realPts);
+
+/* ---------------- 场景:假样本粒子(紫,300,可闪红) ---------------- */
+const fX = new Float32Array(NFake), fZ = new Float32Array(NFake);
+const fVX = new Float32Array(NFake), fVZ = new Float32Array(NFake);
+const fTgt = new Uint8Array(NFake);
+const fOx = new Float32Array(NFake), fOz = new Float32Array(NFake);
+const fPh = new Float32Array(NFake), fFlash = new Float32Array(NFake), fD = new Float32Array(NFake);
+const fPos = new Float32Array(NFake * 3), fCol = new Float32Array(NFake * 3);
+const fGeo = new THREE.BufferGeometry();
+fGeo.setAttribute('position', new THREE.BufferAttribute(fPos, 3));
+fGeo.setAttribute('color', new THREE.BufferAttribute(fCol, 3));
+const fakePts = new THREE.Points(fGeo, M.fake);
+fakePts.frustumCulled = false;
+fakePts.renderOrder = 5;
+scene.add(fakePts);
+
+/* ---------------- 场景:噪声云(60,维度越大越散) ---------------- */
+const nPos = new Float32Array(NNoise * 3);
+const nAng = new Float32Array(NNoise), nR = new Float32Array(NNoise), nPh = new Float32Array(NNoise);
+for (let i = 0; i < NNoise; i++) { nAng[i] = Math.random() * TAU; nR[i] = 0.22 + Math.random() * 0.42; nPh[i] = Math.random() * TAU; }
+const nGeo = new THREE.BufferGeometry();
+nGeo.setAttribute('position', new THREE.BufferAttribute(nPos, 3));
+const noisePts = new THREE.Points(nGeo, M.noise);
+noisePts.frustumCulled = false;
+scene.add(noisePts);
+
+/* ---------------- 场景:两台机器(G 造假工坊 / D 鉴伪台) ---------------- */
+const gG = new THREE.Group();
+gG.position.set(7.3, 0, 0);
+scene.add(gG);
+const gBase = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.95, 1.2), M.gBody);
+gBase.position.y = 0.48;
+gG.add(gBase);
+const gHopper = new THREE.Mesh(new THREE.ConeGeometry(0.55, 0.7, 18, 1, true), M.gTrim);
+gHopper.position.y = 1.3;
+gG.add(gHopper);
+const gChute = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.9, 10), M.gTrim);
+gChute.rotation.z = Math.PI / 2;
+gChute.position.set(-0.95, 0.5, 0);
+gG.add(gChute);
+const halo = new THREE.Sprite(M.halo);
+halo.position.set(7.3, 1.85, 0);
+halo.scale.setScalar(1.8);
+scene.add(halo);
+
+const dG = new THREE.Group();
+dG.position.set(-7.3, 0, 0);
+scene.add(dG);
+const dPed = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.6, 0.55, 18), M.dBody);
+dPed.position.y = 0.28;
+dG.add(dPed);
+const dRingM = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.055, 10, 40), M.dRing);
+dRingM.rotation.x = Math.PI / 2;
+dRingM.position.y = 1.0;
+dG.add(dRingM);
+const dLens = new THREE.Mesh(new THREE.SphereGeometry(0.26, 18, 14), M.dLens);
+dLens.position.y = 1.0;
+dG.add(dLens);
+
+/* ---------------- 场景:梯度箭头(12 支,指示 max log D(G(z)) 方向) ---------------- */
+const arrows = [];
+for (let i = 0; i < 12; i++) {
+  const a = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0.16, 0), 1, 0xf0a058, 0.2, 0.11);
+  a.visible = false;
+  scene.add(a);
+  arrows.push(a);
+}
+const arrowDir = new THREE.Vector3();
+
+/* ---------------- 场景标签 ---------------- */
+addLabel(() => L('生成器 G:噪声 z → 假样本 G(z)', 'Generator G: noise z -> fake G(z)'), () => 'p', new THREE.Vector3(7.3, 2.1, 0));
+addLabel(() => L('判别器 D:输出「像真的」概率', 'Discriminator D: outputs a probability'), () => '', new THREE.Vector3(-7.3, 2.0, 0));
+addLabel(() => L('真实数据:三座高斯峰', 'real data: three Gaussian peaks'), () => 'b', new THREE.Vector3(-2.9, 0.85, -1.6));
+addLabel(() => L('D 决策面:绿 = 判真 / 红 = 判假', 'decision surface: green = real, red = fake'), () => '', new THREE.Vector3(2.4, 1.35, 2.6));
+const collapseLbl = addLabel(() => L('模式坍缩:假样本挤进一座峰,多样性崩塌', 'mode collapse: fakes crowd one peak'), () => 'bad', new THREE.Vector3(-2.9, 1.7, -1.6));
+collapseLbl.o.visible = false;
+const eqLbl = addLabel(() => L('纳什均衡:D ≡ 1/2,真假难辨', 'Nash equilibrium: D = 1/2 everywhere'), () => 'g', new THREE.Vector3(0, 2.1, 0));
+eqLbl.o.visible = false;
+const gradLbl = addLabel(() => L('梯度方向:max log D(G(z))', 'gradient: max log D(G(z))'), () => 'p', new THREE.Vector3(1.5, 0.75, 1.6));
+gradLbl.o.visible = false;
+
+/* ---------------- 状态与重采样 ---------------- */
+function resampleOffset(i) { const s = jitterSigma(); fOx[i] = gauss() * s; fOz[i] = gauss() * s; }
+function resetSamples() {
+  for (let i = 0; i < NFake; i++) {
+    fX[i] = (Math.random() - 0.5) * 12.2; fZ[i] = (Math.random() - 0.5) * 12.2;
+    fVX[i] = 0; fVZ[i] = 0; fTgt[i] = i % 3; fFlash[i] = 0; fD[i] = 0.5;
+    fPh[i] = Math.random() * TAU;
+    resampleOffset(i);
+  }
+  for (let i = 0; i < NReal; i++) { rOx[i] = gauss() * 0.5; rOz[i] = gauss() * 0.5; rPh[i] = Math.random() * TAU; }
+}
+function buildWganQueue() {
+  wganQueue.length = 0;
+  for (let i = 0; i < NFake; i++) {
+    const dx = fX[i] - PEAKS[0][0], dz = fZ[i] - PEAKS[0][1];
+    if (dx * dx + dz * dz < 1.44) wganQueue.push(i);
+  }
+  /* 洗牌,让「推土机」的搬运看起来自然 */
+  for (let i = wganQueue.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    const t = wganQueue[i]; wganQueue[i] = wganQueue[j]; wganQueue[j] = t;
+  }
+  /* 只搬走约 65%:峰 0 保留约 1/3 份额,最终三峰各占约 1/3 */
+  wganQueue.length = Math.round(wganQueue.length * 0.65);
+  wganTick = 0;
+}
+
+/* ---------------- 视图模式(预设接线) ---------------- */
+function applyViewMode() {
+  const was = collapseMode;
+  collapseMode = preset === 'collapse';
+  wganMode = preset === 'wgan';
+  forcedPhase = preset === 'dlearn' ? 'D' : (preset ? 'G' : null);
+  if (collapseMode && !was) {
+    for (let i = 0; i < NFake; i++) { fTgt[i] = 0; resampleOffset(i); }
+  } else if (!collapseMode && was) {
+    if (wganMode) buildWganQueue();
+    else for (let i = 0; i < NFake; i++) { fTgt[i] = i % 3; resampleOffset(i); }
+  }
+  if (wganMode) buildWganQueue();
+  updateSliderLabels();
+}
+
+/* ---------------- 示波器:D 准确率(绿)与 G 损失(橙) ---------------- */
+function drawScope() {
+  const w = scope.width, h = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, w, h);
+  scopeCtx.strokeStyle = 'rgba(127,140,160,.4)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.strokeRect(4, 4, w - 8, h - 8);
+  const mid = h * 0.52, ch = h * 1.15;
+  /* 50% 均衡参考线 */
+  scopeCtx.setLineDash([4 * dpr, 4 * dpr]);
+  scopeCtx.strokeStyle = scopeDark ? 'rgba(255,255,255,.28)' : 'rgba(22,32,44,.3)';
+  scopeCtx.beginPath(); scopeCtx.moveTo(4, mid); scopeCtx.lineTo(w - 4, mid); scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  drawTrace(sndT, '#37b56a', mid, ch, dpr);
+  drawTrace(sndA, '#f09a3e', mid, ch, dpr);
+  scopeCtx.fillStyle = scopeDark ? 'rgba(242,245,249,.85)' : 'rgba(22,32,44,.85)';
+  scopeCtx.font = (10 * dpr) + 'px sans-serif';
+  scopeCtx.fillText(L('绿:D 准确率(虚线 50% 为均衡线) · 橙:G 损失 −log D(G(z))', 'green: D accuracy (dashed = 50% equilibrium) - orange: G loss'), 8, 14 * dpr);
+}
+
+/* ---------------- 步骤 ---------------- */
+const STEPS = [
+  { b: '一场博弈', be: 'a two-player game', tgt: [0, 0.8, 3.6],
+    d: '2014 年,Goodfellow 把生成问题写成一场两人博弈:生成器 G 从 100 维高斯噪声 z 出发,合成假样本 G(z);判别器 D 同时看真样本与假样本,输出「这是真的」的概率。D 要辨清真假,G 要骗过 D——一个最大化、一个最小化同一个价值函数。这场像自由市场里造假者与鉴伪师军备竞赛的博弈,就此开局。',
+    de: 'In 2014 Goodfellow framed generation as a two-player game: a generator G starts from 100-dimensional Gaussian noise z and synthesizes a fake sample G(z); a discriminator D sees both real and fake samples and outputs the probability that a sample is real. D tries to tell true from false, G tries to fool D - one maximizes, the other minimizes the very same value function. Like an arms race between a counterfeiter and an appraiser in a free market, the game begins.' },
+  { b: '造假工坊 G', be: 'the forge: generator', hl: 'halo', tgt: [6.6, 1.1, 0.8],
+    d: '生成器是一间造假工坊:入口是一团随机噪声 z,出口是假样本 G(z)。噪声的维度决定工坊的表达力:维度太低,原料里变不出花样,输出多样性先天不足,正是模式坍缩的温床;每次重采样 z,工坊就换一批原料。拖动「噪声维度」滑杆,看假样本的散布与抖动如何随维度伸缩。',
+    de: 'The generator is a counterfeit workshop: random noise z goes in, fake samples G(z) come out. The dimension of z sets the expressive power of the workshop - too low, and the raw material holds no variety, dooming output diversity and breeding mode collapse; every resampling of z swaps in a fresh batch of material. Drag the noise-dims slider and watch the spread and jitter of the fake samples stretch and shrink.' },
+  { b: '鉴伪师 D', be: 'the appraiser: discriminator', hl: 'ring', tgt: [-3.2, 0.7, 2.2],
+    d: '判别器是一位鉴伪师:吃进样本,吐出 0 到 1 的概率——「这是真的吗」。把它的判断铺满整张平面,就是脚下的决策面:绿色凸起是判真区,红色凹陷是判假区,颜色分界即 0.5 等高线。理论最优判别器满足 D(x)=p_data/(p_data+p_g):真样本密度越高、假样本密度越低的地方,它越敢判真。',
+    de: 'The discriminator is an appraiser: a sample goes in, a probability between 0 and 1 comes out - how real does this look? Spread across the whole plane, its judgment becomes the surface under your feet: green ridges mark regions judged real, red basins regions judged fake, and the color boundary is the 0.5 contour. The optimal discriminator satisfies D(x) = p_data / (p_data + p_g): where real density is high and fake density low, it dares to say real.' },
+  { b: '同一个价值函数', be: 'one shared value function', tgt: [0, 1.1, 0.6],
+    d: '双方共用一个价值函数 V(D,G)=E[log D(x)]+E[log(1−D(G(z)))]:第一项奖励 D 认出真样本,第二项惩罚 D 放走假货。D 做最大化,把决策面凸向真峰、凹向假堆;G 做最小化,把假样本推向绿色高地。固定一方、优化另一方就是一次普通的爬山,两边轮流出招,便是交替训练。',
+    de: 'Both players share one value function, V(D,G) = E[log D(x)] + E[log(1-D(G(z)))]: the first term rewards D for recognizing real samples, the second punishes D for letting fakes through. D maximizes, ridging the surface toward real peaks and dipping it under fake piles; G minimizes, pushing its outputs toward the green highlands. Fix one player and optimize the other and this is ordinary hill climbing; taking turns is alternating training.' },
+  { b: '训练动力学', be: 'training dynamics', tgt: [-2.9, 0.55, -1.4],
+    d: '两个网络同时学习,动力学并不安分。模式坍缩:G 发现只造一两种最安全的假货就能骗过 D,输出多样性崩塌;不收敛与振荡:两股梯度互相干扰,损失曲线锯齿交锋;梯度消失:D 太强时 log(1−D(G(z))) 饱和,G 收不到误差信号。实操的解法是非饱和损失:让 G 最大化 log D(G(z)),梯度重新流动。',
+    de: 'Two networks learning at once make unruly dynamics. Mode collapse: G discovers that one or two safe fake types suffice to fool D, and output diversity crumbles. Non-convergence and oscillation: the two gradients interfere, and the loss curves saw at each other. Vanishing gradients: when D grows too strong, log(1-D(G(z))) saturates and G receives no error signal. The practical fix is the non-saturating loss: let G maximize log D(G(z)) and the gradient flows again.' },
+  { b: '修复工具箱', be: 'the repair kit', tgt: [0, 0.7, 3.4],
+    d: '修复方案各有抓手:WGAN 换一把尺,用 Wasserstein(推土机)距离替代 JS 散度——分布没对上的区域梯度依然有效,再以权重裁剪或梯度惩罚维持 Lipschitz 约束;谱归一化压住 D 的火力;特征匹配让 G 对齐 D 的中间特征;mini-batch 判别专治千篇一律;条件 GAN 给生成加上标签方向盘。',
+    de: 'Each repair grabs a different lever: WGAN swaps the ruler, replacing JS divergence with the Wasserstein earth-mover distance so gradients stay useful wherever distributions disagree, while weight clipping or gradient penalty maintains the Lipschitz constraint; spectral normalization reins in D; feature matching aligns G with intermediate features of D; mini-batch discrimination treats look-alike outputs; conditional GAN bolts a steering wheel of labels onto generation.' },
+  { b: '均衡与余波', be: 'equilibrium and aftermath', tgt: [0, 1.5, 0.2],
+    d: '交替训练多轮后,博弈抵达纳什均衡:G 的分布与数据分布完全重合,D 对任何输入都只能输出 1/2——看不清,恰是骗过的证明。质量交给 Inception Score 与 FID 打分,FID 衡量真假分布的特征距离,越低越好。2016–2020 年 GAN 主宰生成图像:StyleGAN 逐级合成人脸,超分、修复、数据增广全面开花,deepfake 是它的阴影;2020 年后扩散模型凭训练稳定接管,而对抗训练的思想活在对抗样本与 RLHF 的评估博弈里。',
+    de: 'After many alternating rounds the game reaches its Nash equilibrium: the distribution of G coincides with the data distribution, and D outputs 1/2 for every input - inability to tell is the proof of deception. Quality is scored by Inception Score and FID, where lower FID means the feature distributions of real and fake sit closer. From 2016 to 2020 GANs ruled image generation: StyleGAN composed faces level by level, super-resolution, inpainting and data augmentation flourished, and deepfake was their shadow; after 2020 diffusion models took over with steadier training, while adversarial thinking lives on in adversarial examples and the evaluation games of RLHF.' },
+];
+
+/* ---------------- 公式 ---------------- */
+function updateFormula() {
+  el.formula.innerHTML =
+    L('<b>min_G max_D V(D,G) = E[log D(x)] + E[log(1−D(G(z)))]</b>',
+      '<b>min_G max_D V(D,G) = E[log D(x)] + E[log(1-D(G(z)))]</b>') + '<br>' +
+    L('最优判别器 <b>D(x) = p_data / (p_data + p_g)</b>;均衡时 <b>G* = p_data、D ≡ 1/2</b>;实操 G 用非饱和损失 <b>max log D(G(z))</b>',
+      'optimal critic <b>D(x) = p_data / (p_data + p_g)</b>; at equilibrium <b>G* = p_data, D = 1/2</b>; in practice G maximizes <b>log D(G(z))</b>') + '<br>' +
+    L(`当前:D 准确率 <b>${Math.round(accS)}%</b> · G 损失 <b>${gLossS.toFixed(2)}</b> · D 损失 <b>${dLossS.toFixed(2)}</b> · FID ≈ <b>${Math.round(fidS)}</b> · 学习率 <b>${lr.toFixed(1)}×</b> · 噪声 z <b>${zDim} 维</b>`,
+      `now: D acc <b>${Math.round(accS)}%</b> - G loss <b>${gLossS.toFixed(2)}</b> - D loss <b>${dLossS.toFixed(2)}</b> - FID <b>${Math.round(fidS)}</b> - lr <b>${lr.toFixed(1)}x</b> - z <b>${zDim} dims</b>`);
+}
+
+/* ---------------- 状态面板 ---------------- */
+function updateSliderLabels() {
+  el.elAVal.textContent = lr.toFixed(1) + '×';
+  el.elBVal.textContent = zDim + L(' 维', ' dims');
+}
+function fmtIter() { return iter < 1000 ? String(Math.round(iter)) : (iter / 1000).toFixed(1) + 'k'; }
+function updateStats() {
+  const dev = Math.abs(accS - 50);
+  el.stA.innerHTML = Math.round(accS) + '<small> %</small>';
+  el.stA.className = 'v' + (dev <= 10 ? ' ok' : (accS >= 92 || accS <= 12 ? ' bad' : ' warn'));
+  el.stB.innerHTML = Math.round(fidS) + '<small> FID</small>';
+  el.stB.className = 'v' + (fidS < 25 ? ' ok' : fidS < 65 ? ' warn' : ' bad');
+  el.stC.innerHTML = Math.round(covS) + '<small> %</small>';
+  el.stC.className = 'v' + (covS > 95 ? ' ok' : covS > 45 ? ' warn' : ' bad');
+  el.stD.innerHTML = fmtIter() + '<small> ' + L('步', ' iters') + '</small>';
+  el.stD.className = 'v';
+}
+function resetMachine() {
+  lr = 1; zDim = 5; iter = 0;
+  phase = 'D'; phaseT = 0; totalT = 0;
+  accS = 50; fidS = 110; gLossS = 0.69; dLossS = 1.39; covS = 0;
+  wfE = [1 / 3, 1 / 3, 1 / 3]; sgE = [0.6, 0.6, 0.6]; fFloor = 0.02;
+  wganQueue.length = 0; wganFlip = 0;
+  sndT.fill(0); sndA.fill(0);
+  preset = null;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  applyViewMode();
+  resetSamples();
+  el.elA.value = 10; el.elB.value = 5;
+  tgtVec.set(0, 0.9, 0);
+  updateSliderLabels(); updateStats(); updateFormula();
+}
+
+/* ---------------- UI 接线 ---------------- */
+const el = {
+  elA: document.getElementById('vA'), elAVal: document.getElementById('vAVal'),
+  elB: document.getElementById('vB'), elBVal: document.getElementById('vBVal'),
+  stA: document.getElementById('stA'), stB: document.getElementById('stB'),
+  stC: document.getElementById('stC'), stD: document.getElementById('stD'),
+  formula: document.getElementById('formula'),
+};
+el.elA.addEventListener('input', () => { lr = (+el.elA.value) / 10; updateSliderLabels(); });
+el.elB.addEventListener('input', () => { zDim = +el.elB.value; updateSliderLabels(); });
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主逻辑 ---------------- */
+function pageFrame(et, dt) {
+  /* 相位控制:默认自动交替;预设锁定单一相位 */
+  if (forcedPhase) phase = forcedPhase;
+  else {
+    phaseT += dt;
+    const dur = phase === 'D' ? (totalT < 5.5 ? 6 : 2.6) : 3.8;
+    if (phaseT > dur && dt > 0) { phase = phase === 'D' ? 'G' : 'D'; phaseT = 0; }
+  }
+  if (dt > 0) totalT += dt;
+  const gOn = phase === 'G';
+  let dMul;
+  if (preset === 'dlearn') dMul = 2.5;
+  else if (preset === 'glearn') dMul = 0.02;
+  else dMul = gOn ? 0.35 : 1.0;
+  const dLearn = 2.4 * lr * dMul;
+
+  /* WGAN 修复:像推土机一样把坍缩的假样本分批搬去空峰 */
+  if (wganMode && wganQueue.length && dt > 0) {
+    wganTick += dt;
+    while (wganTick > 0.08) {
+      wganTick -= 0.08;
+      for (let k = 0; k < 3 && wganQueue.length; k++) {
+        const idx = wganQueue.pop();
+        fTgt[idx] = (wganFlip++ % 2) ? 2 : 1;
+        resampleOffset(idx);
+      }
+    }
+  }
+
+  /* 假样本动力学 + 现场测量 + 判别打分(G 未轮到时冻结,符合交替训练的物理) */
+  const gLeak = gOn ? (preset === 'glearn' ? 1.15 : 1) : 0;
+  const kSpring = 5.5 * lr * gLeak;
+  const damp = 3.6 / Math.sqrt(Math.max(0.12, lr));
+  const vmax = 2.0 + 1.3 * lr;
+  const rsP = dt * lr * (0.10 + 0.045 * zDim) * gLeak;
+  const rwAmp = 0.24 * gLeak * Math.sqrt(Math.max(dt, 0));
+  cnt[0] = cnt[1] = cnt[2] = 0; d2s[0] = d2s[1] = d2s[2] = 0;
+  let cFake = 0, lgSum = 0, ldFkSum = 0;
+  for (let i = 0; i < NFake; i++) {
+    if (dt > 0) {
+      const t = fTgt[i];
+      fVX[i] += (PEAKS[t][0] + fOx[i] - fX[i]) * kSpring * dt;
+      fVZ[i] += (PEAKS[t][1] + fOz[i] - fZ[i]) * kSpring * dt;
+      const sp = Math.hypot(fVX[i], fVZ[i]);
+      if (sp > vmax) { const sc = vmax / sp; fVX[i] *= sc; fVZ[i] *= sc; }
+      const dmp = Math.exp(-dt * damp);
+      fVX[i] *= dmp; fVZ[i] *= dmp;
+      if (Math.random() < rsP) resampleOffset(i);
+      fX[i] = clamp(fX[i] + fVX[i] * dt + (Math.random() - 0.5) * rwAmp, -6.3, 6.3);
+      fZ[i] = clamp(fZ[i] + fVZ[i] * dt + (Math.random() - 0.5) * rwAmp, -6.3, 6.3);
+    }
+    let best = 0, bd = 1e9;
+    for (let p = 0; p < 3; p++) {
+      const dx = fX[i] - PEAKS[p][0], dz = fZ[i] - PEAKS[p][1], d2 = dx * dx + dz * dz;
+      if (d2 < bd) { bd = d2; best = p; }
+    }
+    if (bd < 1.69) { cnt[best]++; d2s[best] += bd; }
+    const d = evalD(fX[i], fZ[i]);
+    fD[i] = d;
+    if (d < 0.5) cFake++;
+    lgSum += -Math.log(Math.max(0.02, d));
+    ldFkSum += -Math.log(1 - Math.min(0.98, d));
+    fFlash[i] += ((d < 0.46 ? 1 : 0) - fFlash[i]) * Math.min(1, dt * 6 + 0.02);
+  }
+
+  /* 判别器对假分布的估计(EMA 即 D 在学习) */
+  if (dt > 0) {
+    const q = Math.min(1, dt * dLearn);
+    const assigned = cnt[0] + cnt[1] + cnt[2];
+    const offFrac = 1 - assigned / NFake;
+    fFloor += (0.02 + clamp(offFrac, 0, 1) * 0.09 - fFloor) * q;
+    for (let p = 0; p < 3; p++) {
+      wfE[p] += (cnt[p] / NFake - wfE[p]) * q;
+      const sgT = cnt[p] >= 6 ? clamp(Math.sqrt(d2s[p] / cnt[p]), 0.13, 0.85) : 0.5;
+      sgE[p] += (sgT - sgE[p]) * q;
+    }
+  }
+
+  /* 真样本跳动 + 判别打分 */
+  let cReal = 0, ldReSum = 0;
+  for (let i = 0; i < NReal; i++) {
+    const p = i % 3;
+    const br = 1 + 0.03 * Math.sin(et * 0.7 + rPh[i]);
+    const x = PEAKS[p][0] + rOx[i] * br, z = PEAKS[p][1] + rOz[i] * br;
+    rPos[i * 3] = x;
+    rPos[i * 3 + 1] = 0.06 + 0.02 * Math.sin(et * 2.2 + rPh[i]);
+    rPos[i * 3 + 2] = z;
+    const d = evalD(x, z);
+    if (d >= 0.5) cReal++;
+    ldReSum += -Math.log(Math.max(0.02, d));
+  }
+  rGeo.attributes.position.needsUpdate = true;
+
+  /* 指标(平滑)+ 示波历史 + 步数 */
+  if (dt > 0) {
+    accS += ((cReal + cFake) / (NReal + NFake) * 100 - accS) * Math.min(1, dt * 2.2);
+    gLossS += (lgSum / NFake - gLossS) * Math.min(1, dt * 3);
+    dLossS += ((ldReSum / NReal + ldFkSum / NFake) - dLossS) * Math.min(1, dt * 3);
+    const mismatch = Math.abs(cnt[0] / NFake - 1 / 3) + Math.abs(cnt[1] / NFake - 1 / 3) + Math.abs(cnt[2] / NFake - 1 / 3);
+    fidS += (clamp(6 + 118 * mismatch, 4, 160) - fidS) * Math.min(1, dt * 1.2);
+    const cov = (cnt[0] / NFake >= 0.05 ? 1 : 0) + (cnt[1] / NFake >= 0.05 ? 1 : 0) + (cnt[2] / NFake >= 0.05 ? 1 : 0);
+    covS += (cov * 100 / 3 - covS) * Math.min(1, dt * 2);
+    iter += dt * lr * 230;
+    sndClock += dt;
+    while (sndClock > 0.12) { sndClock -= 0.12; pushSnd(accS / 100, clamp(gLossS / 2.4, 0, 1)); }
+  }
+
+  /* 决策面:高度与顶点颜色随 D(x) 起伏 */
+  const posA = surfGeo.attributes.position, colA = surfGeo.attributes.color;
+  for (let i = 0; i < posA.count; i++) {
+    const d = evalD(posA.getX(i), posA.getZ(i));
+    posA.setY(i, 0.04 + 1.25 * (d - 0.5));
+    let r, g, b;
+    if (d < 0.5) { const t = clamp((0.5 - d) * 2.6, 0, 1); r = 0.30 + 0.60 * t; g = 0.34 - 0.08 * t; b = 0.42 - 0.12 * t; }
+    else { const t = clamp((d - 0.5) * 2.6, 0, 1); r = 0.30 - 0.12 * t; g = 0.34 + 0.42 * t; b = 0.42 + 0.02 * t; }
+    colA.setXYZ(i, r, g, b);
+  }
+  posA.needsUpdate = true; colA.needsUpdate = true;
+
+  /* 假样本粒子位置与颜色(被判假闪红,被判骗过泛白) */
+  for (let i = 0; i < NFake; i++) {
+    fPos[i * 3] = fX[i];
+    fPos[i * 3 + 1] = 0.09 + 0.03 * Math.sin(et * 2 + fPh[i]);
+    fPos[i * 3 + 2] = fZ[i];
+    const fl = fFlash[i], d = fD[i];
+    let r = 0.75 + (1.0 - 0.75) * fl, g = 0.48 + (0.36 - 0.48) * fl, b = 0.91 + (0.36 - 0.91) * fl;
+    if (d > 0.55) { const w = clamp((d - 0.55) * 1.6, 0, 0.5); r += (0.97 - r) * w; g += (0.85 - g) * w; b += (1.0 - b) * w; }
+    fCol[i * 3] = r; fCol[i * 3 + 1] = g; fCol[i * 3 + 2] = b;
+  }
+  fGeo.attributes.position.needsUpdate = true;
+  fGeo.attributes.color.needsUpdate = true;
+
+  /* 梯度箭头(仅 G 学习相显示) */
+  for (let i = 0; i < 12; i++) {
+    const idx = i * 25, t = fTgt[idx];
+    const dx = PEAKS[t][0] + fOx[idx] - fX[idx], dz = PEAKS[t][1] + fOz[idx] - fZ[idx];
+    const len = Math.hypot(dx, dz);
+    if (!gOn || len < 0.12) { arrows[i].visible = false; continue; }
+    arrows[i].visible = true;
+    arrows[i].position.set(fX[idx], 0.16, fZ[idx]);
+    arrowDir.set(dx / len, 0, dz / len);
+    arrows[i].setDirection(arrowDir);
+    arrows[i].setLength(clamp(len * 0.55, 0.35, 1.5), 0.2, 0.11);
+  }
+
+  /* 噪声云(z 维度越大越散) */
+  const cs = 0.55 + 0.09 * zDim;
+  for (let i = 0; i < NNoise; i++) {
+    const a = nAng[i] + et * 0.6 + nPh[i];
+    nPos[i * 3] = 7.3 + Math.cos(a) * nR[i] * cs;
+    nPos[i * 3 + 1] = 1.45 + Math.sin(et * 0.8 + nPh[i]) * 0.22;
+    nPos[i * 3 + 2] = Math.sin(a) * nR[i] * cs;
+  }
+  nGeo.attributes.position.needsUpdate = true;
+
+  /* 机器微动 */
+  halo.material.opacity = 0.24 + 0.1 * (0.5 + 0.5 * Math.sin(et * 2.2));
+  halo.scale.setScalar(1.6 + 0.3 * (0.5 + 0.5 * Math.sin(et * 2.2)));
+  dRingM.rotation.x = Math.PI / 2 + 0.18 * Math.sin(et * 0.9);
+  dLens.position.y = 1.0 + 0.08 * Math.sin(et * 1.3);
+
+  /* 条件标签 */
+  gradLbl.o.visible = labelsOn && gOn;
+  collapseLbl.o.visible = labelsOn && covS <= 45 && (collapseMode || wganQueue.length > 0);
+  eqLbl.o.visible = labelsOn && Math.abs(accS - 50) < 6 && fidS < 30 && covS > 95;
+}
+
+/* ---------------- 装配 ---------------- */
+resetSamples();
+applyViewMode();
+updateSliderLabels();
+updateStats();
+
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  pageFrame(et, simDt);
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.opacity = 0.3 + 0.25 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked && typeof drawScope === 'function') drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
