@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CFD 数值风洞 · 把流体装进网格里算</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#3b9ae1;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#1f6ea8;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(59,154,225,.65); background: rgba(59,154,225,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(31,110,168,.55); background: rgba(31,110,168,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(59,154,225,.10); border-color: rgba(59,154,225,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(31,110,168,.08); border-color: rgba(31,110,168,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #a9d4f5; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="CFD 数值风洞" data-en="CFD Simulation">CFD 数值风洞</h1>
+  <div class="sub" data-zh="飞机还没造出来,工程师就先在计算机里把风「吹」了一遍——这就是 CFD 数值风洞。流体力学有三根支柱:理论是一组 Navier–Stokes 方程(动量方程:惯性 + 压力 + 黏性;连续性方程:散度为零),实验是风洞,数值模拟是第三条路:把连续流体切成上百万个小控制体(finite volume),对每个格子守恒记账——进出通量 + 源项 = 变化率,再用时间步一步步推进。压力和速度没有各自的现成方程,靠 SIMPLE/PISO 迭代拧到自洽;显式时间步还受 CFL 条件 Δt ≤ Δx/(u+c) 约束——格距越小、流速越快,步子必须越小,否则解直接发散。网格是 CFD 的地基:近壁边界层按 y+ 加密(气动计算通常要求 y+≈1),钝体后缘加密捕捉分离,网格的正交性与长细比决定解的可信度。最贵的是湍流:DNS 直接算所有涡,网格量按 Re^(9/4) 增长,雷诺数百万级的绕流要 10¹⁵ 量级格子——不可能;工程折中是 RANS(k-ε/k-ω 模型把脉动打包成涡黏性,一次稳态解、几百万网格)与 LES(直接算大涡、只建模小涡,成本高 10–100 倍)。粗网格还会「骗人」:它把涡街抹得对称、把阻力算低近两成——所以要用粗-中-细三套网格做收敛外推,再与风洞、飞行试验对表,升阻差常见 2–5% 才算过关。同一套数学,今天也在算飞机全机气动、汽车风阻与噪声、洁净室气流、血管血流和天气预报;一台翼型优化要跑上千个工况,云上算力替吹风分担了一半。最后别忘了「看图」:流线、涡量、Q 准则涡核、压力云图是 CFD 的一半——数据不画出来,等于没算。拖「来流速度」跨雷诺数 10³–10⁶,拖「网格密度」从 1 万格加到 300 万格;按「网格剖分」看网格生成与 y+ 加密带,按「粒子输运」看示踪粒子绕过钝体、尾流拉出卡门涡街,按「涡量涡街」看旋涡交替脱落的周期与斯特劳哈尔数,按「加密对比」看粗网格伪解与细网格真解并排对质。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停
+- 场景要点: 线框计算域标注入口、出口与无滑移壁面,中央钝体圆柱,结构网格随「网格密度」滑杆从 1 万格加密到约 300 万格,y+ 近壁带与尾流加密区橙色高亮;示踪粒子按速度蓝→红着色绕流,尾流交替脱落卡门涡街;涡量模式显示红蓝涡量云带并实时标注脱涡周期与 St≈0.20;加密对比模式并排细网格非对称涡街与粗网格对称伪解,CFL 超限时红色发散报警亮起。" data-en="Engineers fly an aircraft in a computer before the aircraft exists - that is the CFD numerical wind tunnel. Fluid dynamics stands on three pillars: theory in the Navier-Stokes equations (momentum: inertia + pressure + viscosity; continuity: zero divergence), experiment in the wind tunnel, and simulation as the third road: chop the continuous fluid into millions of small control volumes and keep a conservation ledger for every cell - fluxes in and out plus sources equal the rate of change - then march forward in time steps. Pressure and velocity have no standalone equations, so SIMPLE/PISO iterations lock them together; an explicit time step obeys the CFL condition Δt ≤ Δx/(u+c) - the finer the spacing and the faster the flow, the smaller the step must be, or the solution blows up. The mesh is the foundation: near-wall boundary layers are clustered by y+ (aerodynamic jobs usually demand y+ of about 1), wakes behind blunt bodies are refined to capture separation, and mesh orthogonality and aspect ratio decide how trustworthy the answer is. Turbulence is the expensive part: DNS resolves every eddy at a cell count growing like Re^(9/4) - a million-Reynolds flow would need on the order of 10^15 cells, which is impossible; the engineering compromises are RANS (k-epsilon / k-omega models pack the fluctuations into an eddy viscosity: one steady solve on a few million cells) and LES (resolve the large eddies, model the small ones, 10-100 times the cost). Coarse meshes also lie: they smear the vortex street symmetric and under-predict drag by nearly a fifth - so run coarse, medium and fine meshes, extrapolate, then check against wind-tunnel and flight data; lift and drag within 2-5% is the passing grade. The same mathematics today computes full-aircraft aerodynamics, car drag and wind noise, cleanroom airflow, blood flow and weather forecasts; one airfoil optimization sweeps thousands of cases, with cloud compute sharing the blowing. And do not skip the pictures: streamlines, vorticity, Q-criterion vortex cores and pressure maps are half of CFD - data you never plot is data you never really computed. Drag inlet speed to sweep Reynolds numbers from 10^3 to 10^6, drag mesh density from 10 thousand to 3 million cells; press meshing to watch the grid grow with its y+ band, particle flow for tracers rounding the cylinder and a Karman street in the wake, vorticity street for the shedding period and Strouhal number, grid convergence for the coarse pseudo-solution facing the fine-mesh truth. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause
+- 场景要点: 线框计算域标注入口、出口与无滑移壁面,中央钝体圆柱,结构网格随「网格密度」滑杆从 1 万格加密到约 300 万格,y+ 近壁带与尾流加密区橙色高亮;示踪粒子按速度蓝→红着色绕流,尾流交替脱落卡门涡街;涡量模式显示红蓝涡量云带并实时标注脱涡周期与 St≈0.20;加密对比模式并排细网格非对称涡街与粗网格对称伪解,CFL 超限时红色发散报警亮起。">飞机还没造出来,工程师就先在计算机里把风「吹」了一遍——这就是 CFD 数值风洞。流体力学有三根支柱:理论是一组 Navier–Stokes 方程(动量方程:惯性 + 压力 + 黏性;连续性方程:散度为零),实验是风洞,数值模拟是第三条路:把连续流体切成上百万个小控制体(finite volume),对每个格子守恒记账——进出通量 + 源项 = 变化率,再用时间步一步步推进。压力和速度没有各自的现成方程,靠 SIMPLE/PISO 迭代拧到自洽;显式时间步还受 CFL 条件 Δt ≤ Δx/(u+c) 约束——格距越小、流速越快,步子必须越小,否则解直接发散。网格是 CFD 的地基:近壁边界层按 y+ 加密(气动计算通常要求 y+≈1),钝体后缘加密捕捉分离,网格的正交性与长细比决定解的可信度。最贵的是湍流:DNS 直接算所有涡,网格量按 Re^(9/4) 增长,雷诺数百万级的绕流要 10¹⁵ 量级格子——不可能;工程折中是 RANS(k-ε/k-ω 模型把脉动打包成涡黏性,一次稳态解、几百万网格)与 LES(直接算大涡、只建模小涡,成本高 10–100 倍)。粗网格还会「骗人」:它把涡街抹得对称、把阻力算低近两成——所以要用粗-中-细三套网格做收敛外推,再与风洞、飞行试验对表,升阻差常见 2–5% 才算过关。同一套数学,今天也在算飞机全机气动、汽车风阻与噪声、洁净室气流、血管血流和天气预报;一台翼型优化要跑上千个工况,云上算力替吹风分担了一半。最后别忘了「看图」:流线、涡量、Q 准则涡核、压力云图是 CFD 的一半——数据不画出来,等于没算。拖「来流速度」跨雷诺数 10³–10⁶,拖「网格密度」从 1 万格加到 300 万格;按「网格剖分」看网格生成与 y+ 加密带,按「粒子输运」看示踪粒子绕过钝体、尾流拉出卡门涡街,按「涡量涡街」看旋涡交替脱落的周期与斯特劳哈尔数,按「加密对比」看粗网格伪解与细网格真解并排对质。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="雷诺数" data-en="Reynolds no.">雷诺数</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="CFL 数" data-en="CFL no.">CFL 数</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="阻力系数" data-en="drag coeff.">阻力系数</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="网格单元" data-en="mesh cells">网格单元</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="计算域:入口/出口/壁面" data-en="domain: inlet/outlet/walls">计算域:入口/出口/壁面</span>
+    <span class="chip" style="color:#ccd5e0;border-color:rgba(204,213,224,.55)" data-zh="结构网格(密度可调)" data-en="structured mesh (adjustable)">结构网格(密度可调)</span>
+    <span class="chip o" data-zh="钝体圆柱与 y+ 加密带" data-en="bluff body & y+ refinement">钝体圆柱与 y+ 加密带</span>
+    <span class="chip g" data-zh="示踪粒子(蓝慢红快)" data-en="tracers (blue slow, red fast)">示踪粒子(蓝慢红快)</span>
+    <span class="chip r" data-zh="涡量 ω(红 + / 蓝 −)" data-en="vorticity (red + / blue -)">涡量 ω(红 + / 蓝 −)</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-mesh" data-zh="网格剖分" data-en="meshing">网格剖分</button>
+    <button class="abtn" id="btn-flow" data-zh="粒子输运" data-en="particle flow">粒子输运</button>
+    <button class="abtn" id="btn-vort" data-zh="涡量涡街" data-en="vorticity street">涡量涡街</button>
+    <button class="abtn hot" id="btn-grid" data-zh="加密对比" data-en="grid convergence">加密对比</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="来流速度" data-en="inlet speed">来流速度</label><input id="vA" type="range" min="10" max="250" step="1" value="100"><span class="val" id="vAVal"></span></div>
+  <div class="row"><label data-zh="网格密度" data-en="mesh density">网格密度</label><input id="vB" type="range" min="1" max="10" step="1" value="6"><span class="val" id="vBVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="曲线/示波" data-en="curve scope">曲线/示波</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../wind-tunnel/" data-zh="实体风洞对照" data-en="wind tunnel">实体风洞对照</a>
+    <a href="../turbulence-cascade/" data-zh="湍流级串" data-en="turbulence cascade">湍流级串</a>
+    <a href="../reynolds-number/" data-zh="相似准则" data-en="Reynolds number">相似准则</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.__errs = [];
+addEventListener('error', e => window.__errs.push((e.message || String(e)) + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(14, 10.5, 17);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 60;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 2.5, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  if (STEPS[scenario].act) STEPS[scenario].act();
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const elx = document.getElementById('steps');
+  elx.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    elx.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  applyViewMode();
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+const sndT = new Float32Array(260), sndA = new Float32Array(260), sndB = new Float32Array(260);
+let sndI = 0;
+function pushSnd(a, b, c) {
+  sndT[sndI] = clamp(a, -1, 1);
+  sndA[sndI] = clamp(b, -1, 1);
+  sndB[sndI] = clamp(c, -1, 1);
+  sndI = (sndI + 1) % sndT.length;
+}
+function drawTrace(buf, color, mid, ch, dpr) {
+  scopeCtx.strokeStyle = color;
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  const n = buf.length, step = scope.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = buf[(sndI + i) % n];
+    const y = mid - v * ch * 0.4;
+    i === 0 ? scopeCtx.moveTo(i * step, y) : scopeCtx.lineTo(i * step, y);
+  }
+  scopeCtx.stroke();
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+
+/* ================= CFD 数值风洞 ================= */
+const TITLE_ZH = 'CFD 数值风洞 · 把流体装进网格里算';
+const TITLE_EN = 'CFD Numerical Wind Tunnel: Putting a Flow into Cells and Computing It';
+const PRESET_IDS = ['mesh', 'flow', 'vort', 'grid'];
+const HL = {};
+
+let vA = 1;                 /* vA 来流速度倍率 0.1-2.5(映射 Re 10^3-10^6) */
+let dens = 6;               /* vB 网格密度 1-10 档 */
+let tsim = 0;               /* 流动仿真时间(视觉单位 s) */
+let nextShed = 0.6, nextCoarse = 0.6, shedSide = 1;
+let meshT = 0, meshStage = -1, meshStageT = 0;
+let pAmt = 1, coreAmt = 1;  /* 粒子 / 涡核淡入淡出 */
+let etG = 0, scopeDark = true;
+let frameN = 0;
+const vorts = [];           /* 主涡街(细网格:上下交替脱落) */
+const cVorts = [];          /* 粗网格伪解(对称涡对,同时脱出) */
+/* 粒子预算:示踪粒子 1400 + 涡核标记点 14 = 1414 < 2000(涡量云带为网格面片,不计粒子) */
+const NTr = 1400, NCore = 14;
+const CY = 2.5, CR = 0.7, RC = 0.55;   /* 圆柱中心高 / 半径,涡核正则化半径(视觉单位) */
+
+/* 状态量:来流 / 雷诺数 / 单元数 / CFL / 升阻力 */
+const Uof = () => 60 * vA;                                                   /* m/s,基准 60 */
+const reOf = () => Math.pow(10, 3 + 3 * Math.log(vA / 0.1) / Math.log(25));  /* 10^3 - 10^6 */
+const cellsOf = () => 1e4 * Math.pow(1.8847, dens - 1);                      /* 1 万 - 300 万 */
+const cflVal = () => (Uof() + 340) * 1.5e-4 / (18 / (30 * dens));            /* Δt = 0.15 ms */
+const Uv = () => 3.2 * vA;                                                   /* 视觉单位来流速度 */
+const Tsh = () => 1.4 / (0.2 * Uv());                                        /* 涡脱周期 St=0.2 */
+const cdBase = () => 1.0 + 0.32 * clamp((Math.log10(reOf()) - 3) / 2, 0, 1);
+const cdOf = () => cdBase() + 0.05 * Math.sin(4 * Math.PI * tsim / Math.max(Tsh(), 1e-6));
+const clOf = () => 0.4 * Math.sin(TAU * tsim / Math.max(Tsh(), 1e-6)) * (0.85 + 0.15 * Math.sin(tsim * 0.35));
+const SUPD = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+const sup = n => String(n).split('').map(c => SUPD[+c]).join('');
+function reStr() { const e = Math.floor(Math.log10(reOf())); return (reOf() / Math.pow(10, e)).toFixed(1) + '×10' + sup(e); }
+
+/* 柔和圆点贴图(粒子/涡核共用) */
+function softDot() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,255,255,.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const dotTex = softDot();
+
+const M = {
+  floor: new THREE.MeshStandardMaterial({ color: 0x272c33, roughness: 0.95 }),
+  body: new THREE.MeshStandardMaterial({ color: 0x9fb0c0, metalness: 0.55, roughness: 0.35 }),
+  wire: new THREE.LineBasicMaterial({ color: 0x6f8db3, transparent: true, opacity: 0.8 }),
+  grid: new THREE.LineBasicMaterial({ color: 0x3b9ae1, transparent: true, opacity: 0.5 }),
+  inlet: new THREE.MeshBasicMaterial({ color: 0x3b9ae1, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false }),
+  outlet: new THREE.MeshBasicMaterial({ color: 0x74dc84, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }),
+  glow: new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
+  tracer: new THREE.PointsMaterial({ size: 0.085, map: dotTex, transparent: true, opacity: 0.9, vertexColors: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+  vcore: new THREE.PointsMaterial({ size: 0.85, map: dotTex, transparent: true, opacity: 0.85, vertexColors: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+  sheet: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }),
+  insetC: new THREE.LineBasicMaterial({ color: 0xffa94d, transparent: true, opacity: 0.9 }),
+  insetF: new THREE.LineBasicMaterial({ color: 0x74dc84, transparent: true, opacity: 0.9 }),
+  stream: new THREE.LineBasicMaterial({ color: 0x7fc4ff, transparent: true, opacity: 0.45 }),
+};
+HL.glow = M.glow;
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0d1013 : 0xe9e4da);
+  scopeDark = dark;
+  M.floor.color.set(dark ? 0x272c33 : 0xc9c3b6);
+  M.wire.color.set(dark ? 0x6f8db3 : 0x51708f);
+  M.grid.color.set(dark ? 0x3b9ae1 : 0x1f6ea8);
+  M.inlet.opacity = dark ? 0.13 : 0.1;
+}
+
+/* ---------------- 场景:计算域(线框 / 边界面 / 底板) ---------------- */
+const domain = new THREE.Group();
+scene.add(domain);
+const boxEdges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(18, 5, 5)), M.wire);
+boxEdges.position.set(0, 2.5, 0);
+domain.add(boxEdges);
+const inletPlane = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), M.inlet);
+inletPlane.rotation.y = Math.PI / 2;
+inletPlane.position.set(-9, 2.5, 0);
+domain.add(inletPlane);
+const outletPlane = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 4.6), M.outlet);
+outletPlane.rotation.y = -Math.PI / 2;
+outletPlane.position.set(9, 2.5, 0);
+domain.add(outletPlane);
+const floorM = new THREE.Mesh(new THREE.BoxGeometry(18, 0.12, 5), M.floor);
+floorM.position.set(0, -0.06, 0);
+domain.add(floorM);
+
+/* ---------------- 场景:钝体圆柱 ---------------- */
+const cyl = new THREE.Mesh(new THREE.CylinderGeometry(CR, CR, 5, 48), M.body);
+cyl.rotation.x = Math.PI / 2;
+cyl.position.set(0, CY, 0);
+scene.add(cyl);
+
+/* ---------------- 场景:结构网格(中央剖面 + 底面,密度可调) ---------------- */
+let midGrid = null, floorGrid = null;
+function rebuildMesh(d) {
+  const dd = (d === undefined) ? dens : d;
+  if (midGrid) { midGrid.geometry.dispose(); scene.remove(midGrid); }
+  if (floorGrid) { floorGrid.geometry.dispose(); scene.remove(floorGrid); }
+  const nX = 12 + 3 * dd;
+  const nY = 9 + Math.round(2.2 * dd);
+  const xs = [], ys = [];
+  for (let i = 0; i <= nX; i++) { const t = i / nX; xs.push(-9 + 18 * (t + 0.14 * Math.sin(Math.PI * t))); }
+  for (let j = 0; j <= nY; j++) { const t = j / nY; ys.push(5 * (0.45 * t + 0.275 * (1 - Math.cos(Math.PI * t)))); }
+  /* 中央剖面网格:线段按 x 排序,便于「生成动画」用 drawRange 从入口扫到出口 */
+  const segList = [];
+  for (const x of xs) segList.push([x, 0, x, 5]);
+  for (const y of ys) segList.push([-9, y, 9, y]);
+  segList.sort((a, b) => (a[0] + a[2]) - (b[0] + b[2]));
+  const arr = new Float32Array(segList.length * 6);
+  segList.forEach((s, i) => { arr[i * 6] = s[0]; arr[i * 6 + 1] = s[1]; arr[i * 6 + 2] = 0; arr[i * 6 + 3] = s[2]; arr[i * 6 + 4] = s[3]; arr[i * 6 + 5] = 0; });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  midGrid = new THREE.LineSegments(geo, M.grid);
+  scene.add(midGrid);
+  const farr = [];
+  for (const x of xs) farr.push(x, 0.02, -2.5, x, 0.02, 2.5);
+  for (let j = 0; j <= 6; j++) { const z = -2.5 + 5 * j / 6; farr.push(-9, 0.02, z, 9, 0.02, z); }
+  const fgeo = new THREE.BufferGeometry();
+  fgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(farr), 3));
+  floorGrid = new THREE.LineSegments(fgeo, M.grid);
+  scene.add(floorGrid);
+}
+
+/* ---------------- 场景:y+ 近壁加密带 / 圆柱近壁壳 / 尾流加密盒(HL 可脉冲) ---------------- */
+const wallBand = new THREE.Mesh(new THREE.BoxGeometry(18, 0.22, 5), M.glow);
+wallBand.position.set(0, 0.11, 0);
+scene.add(wallBand);
+const wallShell = new THREE.Mesh(new THREE.CylinderGeometry(CR + 0.15, CR + 0.15, 5, 48, 1, true), M.glow);
+wallShell.rotation.x = Math.PI / 2;
+wallShell.position.set(0, CY, 0);
+scene.add(wallShell);
+const wakeBox = new THREE.Mesh(new THREE.BoxGeometry(7, 3, 5.2), M.glow);
+wakeBox.position.set(3.9, CY, 0);
+scene.add(wakeBox);
+
+/* ---------------- 场景:势流流线(粒子输运模式可见) ---------------- */
+const streamG = new THREE.Group();
+scene.add(streamG);
+(function buildStreamlines() {
+  const seeds = [0.5, 1.25, 1.95, 3.05, 3.75, 4.5];
+  for (const y0 of seeds) {
+    let x = -8.8, y = y0;
+    const pts = [new THREE.Vector3(x, y, 0)];
+    for (let i = 0; i < 260; i++) {
+      const dx = x, dy = y - CY, r2 = dx * dx + dy * dy;
+      if (r2 < (CR + 0.03) * (CR + 0.03)) break;
+      const c = CR * CR / (r2 * r2);
+      const ux = 1 - c * (dx * dx - dy * dy);
+      const uy = -c * 2 * dx * dy;
+      const sp = Math.hypot(ux, uy);
+      if (sp < 1e-4) break;
+      x += ux / sp * 0.22; y += uy / sp * 0.22;
+      pts.push(new THREE.Vector3(x, y, 0));
+      if (x > 8.9) break;
+    }
+    const g = new THREE.BufferGeometry().setFromPoints(pts);
+    streamG.add(new THREE.Line(g, M.stream));
+  }
+})();
+
+/* ---------------- 场景:示踪粒子(速度着色:蓝慢红快) ---------------- */
+const trPos = new Float32Array(NTr * 3), trCol = new Float32Array(NTr * 3);
+function respawn(i) {
+  trPos[i * 3] = -9 + Math.random() * 1.6;
+  trPos[i * 3 + 1] = 0.15 + Math.random() * 4.7;
+  trPos[i * 3 + 2] = (Math.random() - 0.5) * 4.6;
+}
+for (let i = 0; i < NTr; i++) {
+  respawn(i);
+  trPos[i * 3] = -9 + Math.random() * 17.5;   /* 初始铺满全域,避免开场空场 */
+  trCol[i * 3] = 0.2; trCol[i * 3 + 1] = 0.5; trCol[i * 3 + 2] = 1;
+}
+const trGeo = new THREE.BufferGeometry();
+trGeo.setAttribute('position', new THREE.BufferAttribute(trPos, 3));
+trGeo.setAttribute('color', new THREE.BufferAttribute(trCol, 3));
+const tracers = new THREE.Points(trGeo, M.tracer);
+tracers.frustumCulled = false;
+scene.add(tracers);
+
+/* ---------------- 场景:涡核标记点(红 +ω / 蓝 −ω) ---------------- */
+const corePos = new Float32Array(NCore * 3), coreCol = new Float32Array(NCore * 3);
+for (let i = 0; i < NCore; i++) corePos[i * 3 + 1] = -100;
+const coreGeo = new THREE.BufferGeometry();
+coreGeo.setAttribute('position', new THREE.BufferAttribute(corePos, 3));
+coreGeo.setAttribute('color', new THREE.BufferAttribute(coreCol, 3));
+const cores = new THREE.Points(coreGeo, M.vcore);
+cores.frustumCulled = false;
+scene.add(cores);
+
+/* ---------------- 场景:涡量云带(中央)与加密对比双带 ---------------- */
+function makeSheet(w, h, sx, sy, cx, cy) {
+  const g = new THREE.PlaneGeometry(w, h, sx, sy);
+  g.translate(cx, cy, 0);
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3), 3));
+  const m = new THREE.Mesh(g, M.sheet);
+  m.visible = false;
+  m.frustumCulled = false;
+  scene.add(m);
+  return m;
+}
+const vortSheet = makeSheet(13.5, 4.6, 54, 18, 5.25, 2.5);
+const fineSheet = makeSheet(13.5, 2.1, 54, 8, 5.25, 3.62);
+const coarseSheet = makeSheet(13.5, 2.1, 54, 8, 5.25, 1.38);
+function paintSheet(mesh, list) {
+  const pos = mesh.geometry.attributes.position, col = mesh.geometry.attributes.color;
+  for (let i = 0; i < pos.count; i++) {
+    const wx = pos.getX(i), wy = pos.getY(i);
+    let w = 0;
+    for (let k = 0; k < list.length; k++) {
+      const vt = list[k];
+      const ax = wx - vt.x, ay = wy - vt.y;
+      const d2 = ax * ax + ay * ay;
+      if (d2 < 12) w += (vt.g > 0 ? 1 : -1) * Math.exp(-d2 / (RC * RC)) * Math.exp(-vt.age / 7);
+    }
+    const t = clamp(w, -1, 1), a = Math.abs(t);
+    let r, g2, b;
+    if (t >= 0) { r = 1.0; g2 = 0.22 + 0.3 * (1 - a); b = 0.25 + 0.3 * (1 - a); }
+    else { r = 0.2 + 0.3 * (1 - a); g2 = 0.35 + 0.25 * (1 - a); b = 1.0; }
+    const dim = 0.3 + 0.7 * a;
+    col.setXYZ(i, r * dim, g2 * dim, b * dim);
+  }
+  col.needsUpdate = true;
+}
+
+/* ---------------- 场景:加密对比的粗 / 细网格小样 ---------------- */
+function makeInset(nx, ny, w, h, mat, cx, cy) {
+  const segs = [];
+  for (let i = 0; i <= nx; i++) { const x = -w / 2 + w * i / nx; segs.push(x, -h / 2, 0, x, h / 2, 0); }
+  for (let j = 0; j <= ny; j++) { const y = -h / 2 + h * j / ny; segs.push(-w / 2, y, 0, w / 2, y, 0); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs), 3));
+  const m = new THREE.LineSegments(g, mat);
+  m.position.set(cx, cy, 1.0);
+  m.visible = false;
+  scene.add(m);
+  return m;
+}
+const insetCoarse = makeInset(6, 4, 3.4, 1.4, M.insetC, -5.5, 4.05);
+const insetFine = makeInset(26, 16, 3.4, 1.4, M.insetF, -5.5, 2.45);
+
+/* ---------------- 场景标签 ---------------- */
+addLabel(() => L('入口:速度入口 U∞', 'inlet: velocity inlet U∞'), () => 'b', new THREE.Vector3(-9.45, 3.5, 0));
+addLabel(() => L('出口:压力出口', 'outlet: pressure outlet'), () => 'g', new THREE.Vector3(9.45, 3.5, 0));
+addLabel(() => L('壁面:无滑移', 'wall: no-slip'), () => '', new THREE.Vector3(-4, 0.18, 2.8));
+addLabel(() => L('钝体圆柱 D = 0.1 m', 'bluff cylinder D = 0.1 m'), () => 'e', new THREE.Vector3(0, 3.72, 0));
+const cellsLbl = addLabel(() => {
+  const p = clamp(meshT / 3.3, 0, 1);
+  if (preset === 'mesh' && meshT < 3.3) {
+    const c = Math.max(1, Math.round(cellsOf() / 1e4 * p));
+    return L(`网格单元 ≈ ${c} 万格 · 生成 ${Math.round(p * 100)}%`, `cells ≈ ${(c / 10).toFixed(1)}0k · ${Math.round(p * 100)}% built`);
+  }
+  return L(`网格单元 ≈ ${Math.round(cellsOf() / 1e4)} 万格`, `mesh cells ≈ ${(cellsOf() / 1e3).toFixed(0)}0k`);
+}, () => 'b', new THREE.Vector3(-8.4, 5.45, 0));
+const yplusLbl = addLabel(() => L('近壁加密:y+ ≈ 1(第一层网格)', 'near-wall clustering: y+ ≈ 1 (first cell)'), () => 'w', new THREE.Vector3(-4.6, 0.5, 0));
+const wakeLbl = addLabel(() => L('尾流加密:捕捉分离', 'wake refinement: capture separation'), () => 'w', new THREE.Vector3(5.6, 1.35, 0));
+const streetLbl = addLabel(() => {
+  const fHz = Math.round(0.2 * Uof() / 0.1);
+  if (preset === 'vort') return L(`涡量 ω:f ≈ ${fHz} Hz · T ≈ ${(1000 / fHz).toFixed(1)} ms · St ≈ 0.20`, `vorticity: f ≈ ${fHz} Hz, T ≈ ${(1000 / fHz).toFixed(1)} ms, St ≈ 0.20`);
+  return L(`卡门涡街:旋涡交替脱落 · f ≈ ${fHz} Hz`, `Karman street: alternating shedding, f ≈ ${fHz} Hz`);
+}, () => 'b', new THREE.Vector3(6.8, 3.95, 0));
+const cflLbl = addLabel(() => L(`CFL = ${cflVal().toFixed(2)} 超限:解发散,须减小 Δt`, `CFL = ${cflVal().toFixed(2)} over limit: diverging, shrink Δt`), () => 'bad', new THREE.Vector3(-3.6, 4.85, 0));
+cflLbl.o.visible = false;
+const giLbl = addLabel(() => L('网格无关性检验:粗 / 中 / 细 三套网格外推 → 与风洞对表(常见差 2–5%)', 'grid-independence study: coarse/medium/fine extrapolation -> wind-tunnel check (2-5% typical)'), () => 'st', new THREE.Vector3(2.5, 5.5, 0));
+giLbl.o.visible = false;
+const fineLbl = addLabel(() => L('细网格:非对称涡街 · Cd ≈ 1.32', 'fine mesh: asymmetric street, Cd ≈ 1.32'), () => 'g', new THREE.Vector3(12.6, 3.62, 0));
+fineLbl.o.visible = false;
+const coarseLbl = addLabel(() => L('粗网格:对称伪解 · Cd ≈ 1.08(偏低 18%)', 'coarse mesh: symmetric pseudo-solution, Cd ≈ 1.08 (-18%)'), () => 'w', new THREE.Vector3(12.6, 1.38, 0));
+coarseLbl.o.visible = false;
+const insCLbl = addLabel(() => L('粗网格小样 Δx ≈ 20 mm', 'coarse sample, Δx ≈ 20 mm'), () => 'w', new THREE.Vector3(-5.5, 4.9, 1));
+insCLbl.o.visible = false;
+const insFLbl = addLabel(() => L('细网格小样 Δx ≈ 2 mm', 'fine sample, Δx ≈ 2 mm'), () => 'g', new THREE.Vector3(-5.5, 3.32, 1));
+insFLbl.o.visible = false;
+
+/* ---------------- 视图模式(预设接线) ---------------- */
+function applyViewMode() {
+  if (preset === 'mesh') { meshT = 0; meshStage = -1; }
+  if (preset === 'grid') { cVorts.length = 0; nextCoarse = tsim + 0.3; }
+  updateSliderLabels();
+}
+
+/* ---------------- 示波器:Cl / Cd 收敛曲线 + CFL 数曲线(超限闪红) ---------------- */
+function drawScope() {
+  const w = scope.width, h = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, w, h);
+  scopeCtx.strokeStyle = 'rgba(127,140,160,.4)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.strokeRect(4, 4, w - 8, h - 8);
+  const mid = h * 0.58, ch = h;
+  /* CFL = 1 参考线(虚线) */
+  const yRef = mid - 0.5 * ch * 0.4;
+  scopeCtx.setLineDash([4 * dpr, 4 * dpr]);
+  scopeCtx.strokeStyle = 'rgba(255,120,120,.55)';
+  scopeCtx.beginPath(); scopeCtx.moveTo(4, yRef); scopeCtx.lineTo(w - 4, yRef); scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  const cfl = cflVal();
+  const cflCol = cfl > 1 ? (Math.sin(etG * 12) > 0 ? '#ff5a5a' : '#ffb3b3') : '#4d9cff';
+  drawTrace(sndT, '#37b56a', mid, ch, dpr);
+  drawTrace(sndA, '#f09a3e', mid, ch, dpr);
+  drawTrace(sndB, cflCol, mid, ch, dpr);
+  scopeCtx.fillStyle = scopeDark ? 'rgba(242,245,249,.85)' : 'rgba(22,32,44,.85)';
+  scopeCtx.font = `${10 * dpr}px sans-serif`;
+  scopeCtx.fillText(L('Cl 升力(绿) · Cd 阻力(橙) · CFL 数(蓝;越过虚线 = 大于 1,闪红发散)', 'Cl lift (green) - Cd drag (orange) - CFL (blue; past the dashed line = above 1, flashing red = divergent)'), 8, 14 * dpr);
+}
+
+/* ---------------- 步骤 ---------------- */
+const STEPS = [
+  { b: '流体力学三支柱', be: 'three pillars of fluid dynamics', tgt: [0, 2.5, 0],
+    d: '流体力学靠三条腿走路:理论给出 Navier–Stokes 方程(Navier 1822、Stokes 1845 补全),实验靠风洞吹出真实气动力(1871 年出现第一座风洞),数值模拟 CFD 是第三条路——三者互为对表:CFD 结果要同风洞、飞行试验比对,升阻力常见差 2–5%。CFD 思路很直接:把连续流体切成上百万个小控制体,对每个格子守恒记账,再用时间步推进——这台数值风洞不吹风,却能算风。',
+    de: 'Fluid mechanics walks on three legs: theory supplies the Navier-Stokes equations (Navier 1822, Stokes 1845), experiment blows real aerodynamic forces in the wind tunnel (first built in 1871), and CFD is the third road - the three cross-check each other: CFD results are compared against wind-tunnel and flight tests, with lift and drag typically within 2-5%. The recipe is direct: chop the fluid into millions of small control volumes, keep a conservation ledger per cell, and march forward in time steps - this wind tunnel blows no wind, yet it computes the wind.' },
+  { b: '控制体记账', be: 'the cell ledger', tgt: [-5.5, 2.5, 0],
+    d: '有限体积法把计算域切成格子,每个格子是一本账:某量在格内的变化率 = 从各面流进的通量 − 流出的通量 + 源项;质量、动量、能量都这么记,守恒严格到格与格之间。解出一个时间步就推进到下一步:格子越密,账记得越细,解越接近真实流动——代价是单元数暴涨、算力飙升,这就是「网格密度」滑杆的另一面。',
+    de: 'The finite volume method cuts the domain into cells, and every cell is a ledger: the rate of change of a quantity inside equals the flux flowing in through its faces minus the flux flowing out plus sources; mass, momentum and energy are all booked this way, and conservation holds exactly between neighbouring cells. Solve one time step, advance to the next: the denser the mesh, the finer the ledger and the closer the solution to the real flow - at the price of exploding cell counts and compute bills.' },
+  { b: '网格与边界层', be: 'mesh and boundary layer', tgt: [1.5, 1.1, 0], hl: 'glow',
+    d: '网格是 CFD 的地基。近壁边界层里速度从零爬到主流值,必须加密——壁面第一层网格的尺度用无量纲 y+ 衡量,气动计算通常要求 y+≈1;钝体后缘的分离涡也要局部加密才能抓住。网格质量(正交性、长细比)直接决定解的可信度:一套歪斜扭曲的网格,再好的算法也解不出可信的流场。',
+    de: 'The mesh is the foundation of CFD. Inside the near-wall boundary layer the velocity climbs from zero to the free stream, so the mesh must cluster there - the first cell height at the wall is judged by the dimensionless y+, and aerodynamic jobs usually demand y+ of about 1; the separated vortices behind a blunt body also need local refinement to be captured. Mesh quality - orthogonality and aspect ratio - directly decides how trustworthy the solution is: a skewed, twisted grid defeats any algorithm.' },
+  { b: '耦合与 CFL', be: 'coupling and the CFL condition', tgt: [-1.5, 2.5, 0],
+    d: '不可压流动里压力没有自己的方程,它藏在连续性(散度为零)里:SIMPLE/PISO 算法用「猜压力 → 解动量 → 修压力」的迭代把速度和压力拧到自洽。时间步还受 CFL 条件约束:Δt ≤ Δx/(u+c)——格距减半、流速加倍,时间步都得跟着变小,否则数值波动一拍快过一拍,解当场发散;把「来流速度」与「网格密度」都拉满,红色报警就会亮起。',
+    de: 'In incompressible flow pressure has no equation of its own; it hides inside continuity (zero divergence): the SIMPLE/PISO algorithms iterate guess-pressure, solve-momentum, correct-pressure until velocity and pressure lock together. The time step also obeys the CFL condition Δt ≤ Δx/(u+c) - halve the cell size or double the speed and the step must shrink accordingly, or numerical ripples outrun physics and the solution diverges on the spot; push both sliders to maximum and the red alarm lights up.' },
+  { b: '湍流的代价', be: 'the price of turbulence', tgt: [5.5, 2.5, 0],
+    d: '湍流是 CFD 最贵的部分。要直接数值模拟(DNS)所有尺度的涡,网格量按 Re^(9/4) 增长——雷诺数百万级的绕流需要 10¹⁵ 量级格子,全球算力加起来也不够。工程上的折中:RANS 用 k-ε/k-ω 模型把脉动打包成涡黏性,一次稳态解、几百万网格;LES 直接算大涡、只建模小涡,更接近真相,但成本高出 10–100 倍。',
+    de: 'Turbulence is the most expensive part of CFD. Direct numerical simulation resolves every eddy at a cell count growing like Re^(9/4) - a flow at a Reynolds number of millions demands on the order of 10^15 cells, beyond all compute on Earth. The engineering compromises: RANS packs the fluctuations into an eddy viscosity with k-epsilon / k-omega models - one steady solve on a few million cells; LES resolves the large eddies and models only the small ones, closer to truth but 10-100 times costlier.' },
+  { b: '网格无关性检验', be: 'the grid-independence study', tgt: [5.5, 2.5, 0],
+    act: () => { if (preset !== 'grid') setPreset('grid'); },
+    d: '粗网格会「骗人」:它把涡街抹得上下对称、把阻力算低——对比模式里粗网格 Cd≈1.08、细网格 Cd≈1.32,相差近两成。基本功是网格加密收敛研究:粗、中、细三套网格同跑一个工况,看关键量是否收敛,并向零格距外推;最后与风洞数据对表,升阻力差落在 2–5% 以内,这份 CFD 报告才敢签发。',
+    de: 'A coarse mesh will lie: it smears the vortex street into symmetry and under-predicts drag - in compare mode the coarse grid gives Cd of about 1.08 against 1.32 on the fine grid, nearly a fifth apart. The basic drill is a grid-convergence study: run coarse, medium and fine meshes on the same case, check that key quantities converge, and extrapolate toward zero cell size; only when lift and drag sit within 2-5% of wind-tunnel data is the CFD report fit to sign.' },
+  { b: '从翼型到天气预报', be: 'from airfoils to forecasts', tgt: [0, 3.2, 2],
+    d: '同一套数学今天在到处服役:飞机全机气动、汽车风阻与噪声、HVAC 洁净室气流组织、血管里的血流分析,乃至数值天气预报,解的都是这组方程;现代翼型优化要批量跑上千个工况,云上算力替风洞分担了一半工作。而流线、涡量、Q 准则涡核、压力云图这些「看图」功夫,同样是 CFD 的一半——数据不画出来,等于没算。',
+    de: 'The same mathematics serves everywhere today: full-aircraft aerodynamics, car drag and wind noise, cleanroom airflow, blood flow in vessels, even numerical weather prediction all solve these equations; a modern airfoil optimization sweeps thousands of cases, with cloud compute sharing half the wind tunnel workload. And reading the pictures - streamlines, vorticity, Q-criterion vortex cores, pressure maps - is half of CFD too: data you never plot is data you never really computed.' },
+];
+
+/* ---------------- 公式 ---------------- */
+function updateFormula() {
+  el.formula.innerHTML =
+    L('<b>ρ(∂u/∂t + u·∇u) = −∇p + μ∇²u</b>,<b>∇·u = 0</b>:动量 + 连续性;压力-速度耦合用 <b>SIMPLE / PISO</b> 迭代',
+      '<b>rho(du/dt + u·grad u) = −grad p + μ∇²u</b>, <b>div u = 0</b>: momentum + continuity; <b>SIMPLE / PISO</b> coupling') +
+    '<br>' +
+    L(`CFL 条件:<b>Δt ≤ Δx/(u+c)</b> → Δx = <b>${(600 / dens).toFixed(0)} mm</b>、Δt = <b>0.15 ms</b> → CFL = <b>${cflVal().toFixed(2)}</b>(越过 1 即发散,红)`,
+      `CFL: <b>Δt ≤ Δx/(u+c)</b> -> Δx = <b>${(600 / dens).toFixed(0)} mm</b>, Δt = <b>0.15 ms</b> -> CFL = <b>${cflVal().toFixed(2)}</b> (above 1 diverges, red)`) +
+    '<br>' +
+    L(`DNS 网格量 ∝ <b>Re^(9/4)</b>:Re = 10⁶ → ~10¹⁵ 格;当前 <b>Re = ${reStr()}</b> · U = <b>${Uof().toFixed(0)} m/s</b> · Cd = <b>${cdOf().toFixed(2)}</b>(细网格基准 ≈ 1.32)`,
+      `DNS cells ∝ <b>Re^(9/4)</b>: Re = 10^6 -> ~10^15 cells; now <b>Re = ${reStr()}</b>, U = <b>${Uof().toFixed(0)} m/s</b>, Cd = <b>${cdOf().toFixed(2)}</b> (fine-mesh base 1.32)`);
+}
+
+/* ---------------- 状态面板 ---------------- */
+function updateSliderLabels() {
+  el.elAVal.textContent = Uof().toFixed(0) + ' m/s';
+  el.elBVal.textContent = Math.round(cellsOf() / 1e4) + ' 万格';
+}
+function updateStats() {
+  const ex = Math.floor(Math.log10(reOf()));
+  el.stA.innerHTML = (reOf() / Math.pow(10, ex)).toFixed(1) + '<small>×10' + sup(ex) + '</small>';
+  el.stA.className = 'v';
+  const cfl = cflVal();
+  el.stB.innerHTML = cfl.toFixed(2) + '<small> = Δt(u+c)/Δx</small>';
+  el.stB.className = 'v' + (cfl > 1 ? ' bad' : cfl > 0.7 ? ' warn' : ' ok');
+  el.stC.innerHTML = cdOf().toFixed(2) + '<small> 细网格</small>';
+  el.stC.className = 'v';
+  el.stD.innerHTML = Math.round(cellsOf() / 1e4) + '<small> 万格</small>';
+  el.stD.className = 'v' + (dens <= 3 ? ' warn' : '');
+}
+function resetMachine() {
+  vA = 1; dens = 6;
+  tsim = 0; nextShed = 0.6; nextCoarse = 0.6; shedSide = 1;
+  meshT = 0; meshStage = -1;
+  vorts.length = 0; cVorts.length = 0;
+  preset = null;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  applyViewMode();
+  el.elA.value = 100; el.elB.value = 6;
+  tgtVec.set(0, 2.5, 0);
+  updateSliderLabels(); updateStats(); updateFormula();
+}
+
+/* ---------------- UI 接线 ---------------- */
+const el = {
+  elA: document.getElementById('vA'), elAVal: document.getElementById('vAVal'),
+  elB: document.getElementById('vB'), elBVal: document.getElementById('vBVal'),
+  stA: document.getElementById('stA'), stB: document.getElementById('stB'),
+  stC: document.getElementById('stC'), stD: document.getElementById('stD'),
+  formula: document.getElementById('formula'),
+};
+el.elA.addEventListener('input', () => { vA = (+el.elA.value) / 100; updateSliderLabels(); updateStats(); updateFormula(); });
+el.elB.addEventListener('input', () => { dens = +el.elB.value; meshStage = -1; rebuildMesh(); updateSliderLabels(); updateStats(); updateFormula(); });
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主逻辑 ---------------- */
+function pageFrame(et, dt) {
+  etG = et;
+  const mode = preset;
+  const UvN = Uv();
+  /* 仿真推进:涡脱(细网格交替 / 粗网格对称对)、涡输运与消散 */
+  if (dt > 0) {
+    tsim += dt;
+    if (mode === 'mesh') meshT += dt;
+    while (tsim >= nextShed) {
+      shedSide = -shedSide;
+      vorts.push({ x: 0.55, y: CY + shedSide * (0.85 + Math.random() * 0.12), g: (shedSide > 0 ? -1 : 1) * 2.1 * UvN, age: 0 });
+      nextShed += Tsh() / 2;
+    }
+    if (vorts.length > 40) vorts.splice(0, vorts.length - 40);
+    if (mode === 'grid') {
+      while (tsim >= nextCoarse) {
+        cVorts.push({ x: 0.5, y: CY + 0.85, g: -1.5 * UvN, age: 0 });
+        cVorts.push({ x: 0.5, y: CY - 0.85, g: 1.5 * UvN, age: 0 });
+        nextCoarse += Tsh();
+      }
+    }
+    for (let i = vorts.length - 1; i >= 0; i--) {
+      const vt = vorts[i];
+      vt.age += dt; vt.x += 0.78 * UvN * dt;
+      if (vt.x > 11.5 || vt.age > 10) vorts.splice(i, 1);
+    }
+    for (let i = cVorts.length - 1; i >= 0; i--) {
+      const vt = cVorts[i];
+      vt.age += dt; vt.x += 0.7 * UvN * dt;
+      if (vt.x > 11.5 || vt.age > 10) cVorts.splice(i, 1);
+    }
+  }
+  /* 视图模式:可见度与透明度 */
+  const pm = mode === 'mesh';
+  const pGrid = mode === 'grid';
+  const pFlow = mode === null || mode === 'flow';
+  const pVort = mode === 'vort';
+  const pT = pFlow ? 1 : pVort ? 0.15 : 0;
+  pAmt += (pT - pAmt) * Math.min(1, dt * 3 + 0.02);
+  const cT = pFlow || pVort ? 1 : 0;
+  coreAmt += (cT - coreAmt) * Math.min(1, dt * 3 + 0.02);
+  const gT = pm ? 0.7 : pFlow ? 0.15 : pVort ? 0.05 : pGrid ? 0.1 : 0.5;
+  M.grid.opacity += (gT - M.grid.opacity) * Math.min(1, dt * 3 + 0.02);
+  M.tracer.opacity = 0.9 * pAmt;
+  tracers.visible = pAmt > 0.02;
+  M.vcore.opacity = 0.85 * coreAmt;
+  cores.visible = coreAmt > 0.02;
+  M.glow.opacity = pm ? 0.16 : 0;
+  streamG.visible = mode === 'flow';
+  vortSheet.visible = pVort;
+  fineSheet.visible = coarseSheet.visible = pGrid;
+  insetCoarse.visible = insetFine.visible = pGrid;
+  /* 网格剖分动画:粗 → 中 → 细三级,每级从入口扫到出口 */
+  if (pm) {
+    const stage = meshT < 1.15 ? Math.max(2, dens - 4) : meshT < 2.3 ? Math.max(3, Math.round(dens / 2)) : dens;
+    if (stage !== meshStage) { meshStage = stage; rebuildMesh(stage); meshStageT = meshT; }
+    const sp = clamp((meshT - meshStageT) / 1.1, 0, 1);
+    const totV = midGrid.geometry.attributes.position.count;
+    midGrid.geometry.setDrawRange(0, Math.floor(totV * sp / 2) * 2);
+  } else {
+    midGrid.geometry.setDrawRange(0, Infinity);
+  }
+  /* 示踪粒子:绕流 + 涡街输运,颜色映射速度 */
+  if (pAmt > 0.02 && dt > 0) {
+    const decayK = 1 / (RC * RC);
+    for (let i = 0; i < NTr; i++) {
+      const px = trPos[i * 3], py = trPos[i * 3 + 1];
+      const dx = px, dy = py - CY;
+      const r2 = dx * dx + dy * dy;
+      if (r2 < (CR + 0.05) * (CR + 0.05)) { respawn(i); continue; }
+      const c = CR * CR / (r2 * r2);
+      let ux = UvN * (1 - c * (dx * dx - dy * dy));
+      let uy = -UvN * c * 2 * dx * dy;
+      for (let k = 0; k < vorts.length; k++) {
+        const vt = vorts[k];
+        const ax = px - vt.x, ay = py - vt.y;
+        const d2 = ax * ax + ay * ay + 0.02;
+        const s = vt.g * (1 - Math.exp(-d2 * decayK)) / (TAU * d2);
+        ux += -s * ay; uy += s * ax;
+      }
+      trPos[i * 3] = px + ux * dt;
+      trPos[i * 3 + 1] = py + uy * dt;
+      if (trPos[i * 3] > 9.3 || trPos[i * 3 + 1] < 0.06 || trPos[i * 3 + 1] > 4.94) { respawn(i); continue; }
+      const t2 = clamp(Math.sqrt(ux * ux + uy * uy) / (1.9 * UvN), 0, 1);
+      let r, g2, b;
+      if (t2 < 0.5) { const kk = t2 * 2; r = 0.15 + 0.1 * kk; g2 = 0.45 + 0.4 * kk; b = 1.0 - 0.05 * kk; }
+      else { const kk = (t2 - 0.5) * 2; r = 0.25 + 0.75 * kk; g2 = 0.85 - 0.55 * kk; b = 0.95 - 0.67 * kk; }
+      trCol[i * 3] = r; trCol[i * 3 + 1] = g2; trCol[i * 3 + 2] = b;
+    }
+    trGeo.attributes.position.needsUpdate = true;
+    trGeo.attributes.color.needsUpdate = true;
+  }
+  /* 涡核标记点 */
+  if (coreAmt > 0.02) {
+    let ci = 0;
+    for (const vt of vorts) {
+      if (ci >= NCore) break;
+      corePos[ci * 3] = vt.x; corePos[ci * 3 + 1] = vt.y; corePos[ci * 3 + 2] = 0;
+      const pr = vt.g > 0;
+      coreCol[ci * 3] = pr ? 1 : 0.3;
+      coreCol[ci * 3 + 1] = 0.36;
+      coreCol[ci * 3 + 2] = pr ? 0.3 : 1;
+      ci++;
+    }
+    for (; ci < NCore; ci++) corePos[ci * 3 + 1] = -100;
+    coreGeo.attributes.position.needsUpdate = true;
+    coreGeo.attributes.color.needsUpdate = true;
+  }
+  /* 涡量云带着色 */
+  if (pVort) paintSheet(vortSheet, vorts);
+  if (pGrid) { paintSheet(fineSheet, vorts); paintSheet(coarseSheet, cVorts); }
+  /* 标签可见性 */
+  yplusLbl.o.visible = labelsOn && pm;
+  wakeLbl.o.visible = labelsOn && pm;
+  streetLbl.o.visible = labelsOn && (pFlow || pVort);
+  cflLbl.o.visible = labelsOn && cflVal() > 1;
+  giLbl.o.visible = labelsOn && pGrid;
+  fineLbl.o.visible = labelsOn && pGrid;
+  coarseLbl.o.visible = labelsOn && pGrid;
+  insCLbl.o.visible = labelsOn && pGrid;
+  insFLbl.o.visible = labelsOn && pGrid;
+  /* 示波器采样:Cl / Cd / CFL */
+  frameN++;
+  if (dt > 0 && frameN % 2 === 0) pushSnd(clOf() / 0.5, (cdOf() - 1.05) / 0.5, (cflVal() - 0.5) / 1.0);
+}
+
+/* ---------------- 装配 ---------------- */
+applyViewMode();
+rebuildMesh();
+updateSliderLabels();
+updateStats();
+
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  pageFrame(et, simDt);
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.opacity = 0.3 + 0.25 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked && typeof drawScope === 'function') drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>

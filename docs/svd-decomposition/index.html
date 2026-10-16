@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>奇异值分解 · 任何变换都是旋转-缩放-旋转</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#1971c2;
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#14538e;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(25,113,194,.65); background: rgba(25,113,194,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(20,83,142,.55); background: rgba(20,83,142,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(25,113,194,.10); border-color: rgba(25,113,194,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(20,83,142,.08); border-color: rgba(20,83,142,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #a5c9ea; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { max-width: calc(100vw - 200px); }
+    #title h1 { font-size: 16px; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="奇异值分解" data-en="SVD">奇异值分解</h1>
+  <div class="sub" data-zh="任何矩阵——方的、长方的、甚至不满秩的——都能分解为 A=UΣVᵀ:先做一个旋转(Vᵀ,右奇异向量),再沿一组互相垂直的轴各缩放一份(对角阵 Σ,奇异值 σ₁≥σ₂≥…≥σᵣ),最后再旋转(U,左奇异向量)。把单位圆送进去,出来的必定是个椭圆,奇异值恰好是各半轴长——旋转只换方向,缩放才产生形状,这就是「任何线性变换=旋转-缩放-旋转」的几何本质。埃克特-杨定理进一步说:只保留前 k 项的 A_k=Σᵢ≤k σᵢuᵢvᵢᵀ,是一切秩 k 矩阵中对 A 的最佳逼近,谱范数误差恰为 σₖ₊₁——奇异值从大到小排好队,顺序就是重要性顺序,保留能量比例=Σᵢ≤kσᵢ²/Σσᵢ²。图像压缩是最直观的战场:一张 512×512 灰度图秩至多 512,原样要存 262144 个数;只留 k=5 项,只需 5×1025=5125 个数,压缩比约 50:1,画面只剩轮廓感;k=50 时压缩比约 5:1,已接近原图;存储量从 n² 降到 k(2n+1)。JPEG/DCT 用的是人人相同的「固定基」,SVD 的基是数据自己长出来的——哪组方向最能解释这张图,分解过程自己会算出来。同一台机器换个名字就是 PCA:对中心化数据矩阵做 SVD,右奇异向量就是主成分方向,σᵢ²/(n−1) 恰是协方差矩阵的特征值。它还能算伪逆(秩亏矩阵也能解最小二乘)、滤噪声(小奇异值多半是噪声,砍掉,PSNR 回升)、做推荐(用户-物品矩阵拆成潜在因子,Netflix 大赛的经典武器)、做潜语义分析(LSA);PageRank 的本质也只是求最大特征向量。数值上,Golub–Kahan 双对角化加 QR 迭代在 LAPACK 里打磨了几十年,稳定可靠;条件数 κ=σ₁/σₙ 时刻提醒你这个矩阵「有多病」。拖「保留秩 k」看重构精度与谱截断,拖「噪声水平」看噪声淹没与滤除;按「变换三连」看圆变椭圆,按「逐步分解」看三块矩阵卡片依次点亮,按「图像压缩」看像素方块逐渐归位,按「噪声滤除」看 PSNR 回升。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停
+- 场景要点: 左侧舞台演示变换三连:带 12 个采样点的单位圆盘先被 Vᵀ 转过一个角度,再被 Σ 沿正交主轴拉成椭圆,主轴亮起并标出半轴长 σ₁σ₂,最后被 U 转到最终姿态,12 条映射连线实时跟随;右侧立起 16×16 像素面板与奇异值谱阶梯柱,按 k 截断重构、被砍掉的谱柱闪灰;噪声滤除模式下含噪面板被逐步抹平,PSNR 数字回升,黄色截断线随 k 移动。" data-en="Every matrix - square, rectangular, or even rank-deficient - factors as A = UΣVᵀ: first a rotation (Vᵀ, the right singular vectors), then independent stretches along mutually orthogonal axes (the diagonal Σ, holding singular values σ₁ ≥ σ₂ ≥ … ≥ σᵣ), then a final rotation (U, the left singular vectors). Send a unit circle in and an ellipse always comes out; the singular values are exactly its semi-axes - rotation only reorients, scaling creates shape: the geometric soul of every linear transform, rotate then scale then rotate. The Eckart-Young theorem adds: the rank-k truncation A_k = Σᵢ≤k σᵢuᵢvᵢᵀ is the best rank-k approximation of A among all matrices, with spectral-norm error exactly σₖ₊₁ - singular values listed large to small order information by importance, and the retained energy share is Σᵢ≤kσᵢ²/Σσᵢ². Image compression is the most intuitive battleground: a 512×512 grayscale image has rank at most 512 and stores 262144 numbers; keeping k=5 terms needs 5×1025 = 5125 numbers, about 50:1, leaving only the outline, while k=50 gives about 5:1 and a near-original picture; storage drops from n² to k(2n+1). JPEG/DCT compresses with a fixed basis shared by everyone; the SVD basis grows out of the data itself. The same machine renamed is PCA: SVD of the centered data matrix makes the right singular vectors the principal directions, and σᵢ²/(n−1) are exactly the covariance eigenvalues. It also computes the pseudoinverse (least squares even for rank-deficient matrices), filters noise (small singular values are mostly noise - cut them and PSNR climbs), drives recommender systems (user-item matrices split into latent factors, the classic Netflix-prize weapon) and latent semantic analysis (LSA); PageRank at heart just seeks the largest eigenvector. Numerically, Golub-Kahan bidiagonalization plus QR iteration, polished for decades inside LAPACK, is rock-solid; the condition number κ = σ₁/σₙ keeps warning how sick a matrix is. Drag rank k to steer reconstruction and spectrum truncation, drag noise level to drown and rescue the pixels; press transform trio to watch the circle become an ellipse, step-by-step to light the three matrix cards in turn, image compression to watch pixels settle, noise filtering to see PSNR recover. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause
+- 场景要点: 左侧舞台演示变换三连:带 12 个采样点的单位圆盘先被 Vᵀ 转过一个角度,再被 Σ 沿正交主轴拉成椭圆,主轴亮起并标出半轴长 σ₁σ₂,最后被 U 转到最终姿态,12 条映射连线实时跟随;右侧立起 16×16 像素面板与奇异值谱阶梯柱,按 k 截断重构、被砍掉的谱柱闪灰;噪声滤除模式下含噪面板被逐步抹平,PSNR 数字回升,黄色截断线随 k 移动。">任何矩阵——方的、长方的、甚至不满秩的——都能分解为 A=UΣVᵀ:先做一个旋转(Vᵀ,右奇异向量),再沿一组互相垂直的轴各缩放一份(对角阵 Σ,奇异值 σ₁≥σ₂≥…≥σᵣ),最后再旋转(U,左奇异向量)。把单位圆送进去,出来的必定是个椭圆,奇异值恰好是各半轴长——旋转只换方向,缩放才产生形状,这就是「任何线性变换=旋转-缩放-旋转」的几何本质。埃克特-杨定理进一步说:只保留前 k 项的 A_k=Σᵢ≤k σᵢuᵢvᵢᵀ,是一切秩 k 矩阵中对 A 的最佳逼近,谱范数误差恰为 σₖ₊₁——奇异值从大到小排好队,顺序就是重要性顺序,保留能量比例=Σᵢ≤kσᵢ²/Σσᵢ²。图像压缩是最直观的战场:一张 512×512 灰度图秩至多 512,原样要存 262144 个数;只留 k=5 项,只需 5×1025=5125 个数,压缩比约 50:1,画面只剩轮廓感;k=50 时压缩比约 5:1,已接近原图;存储量从 n² 降到 k(2n+1)。JPEG/DCT 用的是人人相同的「固定基」,SVD 的基是数据自己长出来的——哪组方向最能解释这张图,分解过程自己会算出来。同一台机器换个名字就是 PCA:对中心化数据矩阵做 SVD,右奇异向量就是主成分方向,σᵢ²/(n−1) 恰是协方差矩阵的特征值。它还能算伪逆(秩亏矩阵也能解最小二乘)、滤噪声(小奇异值多半是噪声,砍掉,PSNR 回升)、做推荐(用户-物品矩阵拆成潜在因子,Netflix 大赛的经典武器)、做潜语义分析(LSA);PageRank 的本质也只是求最大特征向量。数值上,Golub–Kahan 双对角化加 QR 迭代在 LAPACK 里打磨了几十年,稳定可靠;条件数 κ=σ₁/σₙ 时刻提醒你这个矩阵「有多病」。拖「保留秩 k」看重构精度与谱截断,拖「噪声水平」看噪声淹没与滤除;按「变换三连」看圆变椭圆,按「逐步分解」看三块矩阵卡片依次点亮,按「图像压缩」看像素方块逐渐归位,按「噪声滤除」看 PSNR 回升。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="最大奇异值" data-en="largest sigma">最大奇异值</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="保留能量" data-en="kept energy">保留能量</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="截断误差" data-en="trunc. error">截断误差</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="重构 PSNR" data-en="PSNR">重构 PSNR</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="单位圆(输入)" data-en="unit circle (input)">单位圆(输入)</span>
+    <span class="chip g" data-zh="主轴 σ₁ / σ₂" data-en="principal axes σ₁ / σ₂">主轴 σ₁ / σ₂</span>
+    <span class="chip o" data-zh="椭圆(输出)" data-en="ellipse (output)">椭圆(输出)</span>
+    <span class="chip r" data-zh="噪声(砍小奇异值)" data-en="noise (cut tail)">噪声(砍小奇异值)</span>
+    <span class="chip" style="color:#ccd5e0;border-color:rgba(204,213,224,.55)" data-zh="16×16 像素面板" data-en="16×16 pixel panel">16×16 像素面板</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-decomp" data-zh="变换三连" data-en="transform trio">变换三连</button>
+    <button class="abtn" id="btn-stages" data-zh="逐步分解" data-en="step by step">逐步分解</button>
+    <button class="abtn" id="btn-compress" data-zh="图像压缩" data-en="image compression">图像压缩</button>
+    <button class="abtn hot" id="btn-noise" data-zh="噪声滤除" data-en="noise filtering">噪声滤除</button>
+    <button class="abtn hot" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="保留秩 k" data-en="rank k">保留秩 k</label><input id="vA" type="range" min="1" max="16" step="1" value="8"><span class="val" id="vAVal"></span></div>
+  <div class="row"><label data-zh="噪声水平" data-en="noise level">噪声水平</label><input id="vB" type="range" min="0" max="100" step="1" value="30"><span class="val" id="vBVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="曲线/示波" data-en="curve scope">曲线/示波</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../pca-eigenvectors/" data-zh="主成分孪生兄弟" data-en="PCA twin">主成分孪生兄弟</a>
+    <a href="../matrix-transform/" data-zh="线性变换几何" data-en="linear transforms">线性变换几何</a>
+    <a href="../fourier-series/" data-zh="另一种「按重要性分解」" data-en="another decomposition by importance">另一种「按重要性分解」</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.__errs = [];
+addEventListener('error', e => window.__errs.push((e.message || String(e)) + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(1.6, 4.4, 11.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.5, 1.6, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.2;
+controls.maxDistance = 45;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0.5, 1.6, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  if (STEPS[scenario].act) STEPS[scenario].act();
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el = document.getElementById('steps');
+  el.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  applyViewMode();
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+
+/* ================= 奇异值分解 ================= */
+const TITLE_ZH = '奇异值分解 · 任何变换都是旋转-缩放-旋转';
+const TITLE_EN = 'SVD: Every Transform Is Rotate - Scale - Rotate';
+const PRESET_IDS = ['decomp', 'stages', 'compress', 'noise'];
+const HL = {};
+
+let kRank = 8;          // vA:保留秩 k(1–16)
+let noisePct = 30;      // vB:噪声水平 %
+let animT = 0;          // 变换三连动画时钟
+let avNow = 0, auNow = 0;
+let scopeDark = true, etG = 0;
+let noisyImg = null, svdNoise = null, denoisedImg = null;
+let denoiseDirty = true, panelsDirty = true, barsDirty = true;
+const cardLit = { V: false, S: false, U: false };
+
+/* 粒子预算:本页无粒子系统;实例与网格合计 < 2000(像素面板 2×256 实例 + 谱柱 16 + 采样点/箭头 14 + 其余网格约 40) */
+
+/* ---------------- 16×16 基准图(笑脸)+ 雅可比旋转法 SVD ---------------- */
+const NB = 16;
+/* 二值像素笑脸(主体)+ DCT 余弦基底纹理(底纹):
+   纯二值图恰好秩 7、谱是悬崖;叠一层谱系为 0.8ⁱ 的平滑纹理后,
+   16 个奇异值全部非零、约 3 个数量级对数递减,截断演示才有层次 */
+const binFace = [];
+for (let r = 0; r < NB; r++) {
+  const row = new Float64Array(NB);
+  for (let c = 0; c < NB; c++) {
+    const dr = r - 7.5, dc = c - 7.5;
+    const inFace = dr * dr + dc * dc <= 47;
+    const dm = Math.hypot(r - 5.5, c - 7.5);
+    const inMouth = dm >= 5.8 && dm <= 7.2 && r > 9;
+    const inEye = r >= 4 && r <= 6 && ((c >= 4 && c <= 6) || (c >= 9 && c <= 11));
+    row[c] = inFace && !inMouth && !inEye ? 1 : 0;
+  }
+  binFace.push(row);
+}
+const cosB = [];
+for (let i = 0; i < NB; i++) {
+  const v = new Float64Array(NB);
+  for (let j = 0; j < NB; j++) v[j] = Math.sqrt(i === 0 ? 1 / NB : 2 / NB) * Math.cos(Math.PI * (2 * j + 1) * i / (2 * NB));
+  cosB.push(v);
+}
+const baseImg = [];
+for (let r = 0; r < NB; r++) {
+  const row = new Float64Array(NB);
+  for (let c = 0; c < NB; c++) {
+    let g = 0;
+    for (let i = 0; i < NB; i++) g += Math.pow(0.8, i) * cosB[i][r] * cosB[i][c];
+    row[c] = binFace[r][c] + 0.45 * g;
+  }
+  baseImg.push(row);
+}
+/* 单边雅可比旋转:对 16×16 小矩阵足够精确,浏览器里实时可算 */
+function jacobiSVD(Ain, m, n) {
+  const A = Ain.map(row => Float64Array.from(row));
+  const V = [];
+  for (let i = 0; i < n; i++) { const row = new Float64Array(n); row[i] = 1; V.push(row); }
+  for (let sweep = 0; sweep < 40; sweep++) {
+    let off = 0;
+    for (let p = 0; p < n - 1; p++) for (let q = p + 1; q < n; q++) {
+      let app = 0, aqq = 0, apq = 0;
+      for (let i = 0; i < m; i++) { const ap = A[i][p], aq = A[i][q]; app += ap * ap; aqq += aq * aq; apq += ap * aq; }
+      if (Math.abs(apq) <= 1e-14 * Math.sqrt(app * aqq) + 1e-300) continue;
+      off += apq * apq;
+      const tau = (aqq - app) / (2 * apq);
+      const t = (tau >= 0 ? 1 : -1) / (Math.abs(tau) + Math.sqrt(1 + tau * tau));
+      const c = 1 / Math.sqrt(1 + t * t), s = t * c;
+      for (let i = 0; i < m; i++) { const ap = A[i][p], aq = A[i][q]; A[i][p] = c * ap - s * aq; A[i][q] = s * ap + c * aq; }
+      for (let i = 0; i < n; i++) { const vp = V[i][p], vq = V[i][q]; V[i][p] = c * vp - s * vq; V[i][q] = s * vp + c * vq; }
+    }
+    if (off <= 1e-12) break;
+  }
+  const cols = [];
+  for (let j = 0; j < n; j++) {
+    let nrm = 0;
+    for (let i = 0; i < m; i++) nrm += A[i][j] * A[i][j];
+    cols.push({ j, s: Math.sqrt(nrm) });
+  }
+  cols.sort((a, b) => b.s - a.s);
+  const S = [], U = [], Vt = [];
+  for (const col of cols) {
+    const nrm = col.s > 1e-300 ? col.s : 1;
+    S.push(col.s);
+    const u = new Float64Array(m);
+    for (let i = 0; i < m; i++) u[i] = A[i][col.j] / nrm;
+    U.push(u);
+    const v = new Float64Array(n);
+    for (let i = 0; i < n; i++) v[i] = V[i][col.j];
+    Vt.push(v);
+  }
+  return { S, U, V: Vt };   // U[i]、V[i] 分别是第 i 个左/右奇异向量
+}
+const svdBase = jacobiSVD(baseImg, NB, NB);
+const noiseR = [];
+for (let r = 0; r < NB; r++) {
+  const row = new Float64Array(NB);
+  for (let c = 0; c < NB; c++) row[c] = Math.random() * 2 - 1;
+  noiseR.push(row);
+}
+const curSpec = () => (preset === 'noise' && svdNoise) ? svdNoise.S : svdBase.S;
+function reconImg(sv, kk) {
+  const out = [];
+  const S = sv.S, U = sv.U, V = sv.V;
+  for (let r = 0; r < NB; r++) {
+    const row = new Float64Array(NB);
+    for (let i = 0; i < kk; i++) {
+      const s = S[i], ui = U[i], vi = V[i];
+      for (let c = 0; c < NB; c++) row[c] += s * ui[r] * vi[c];
+    }
+    out.push(row);
+  }
+  return out;
+}
+function energyFrac(kk, S) {
+  let a = 0, b = 0;
+  for (let i = 0; i < S.length; i++) { const s2 = S[i] * S[i]; b += s2; if (i < kk) a += s2; }
+  return b > 0 ? a / b : 1;
+}
+function psnrVsBase(img) {
+  let mse = 0;
+  for (let r = 0; r < NB; r++) for (let c = 0; c < NB; c++) { const d = img[r][c] - baseImg[r][c]; mse += d * d; }
+  mse /= NB * NB;
+  return mse <= 1e-9 ? 60 : Math.min(60, 10 * Math.log10(1 / mse));
+}
+function ensureDenoised() {
+  if (!denoiseDirty || !svdNoise) return;
+  denoisedImg = reconImg(svdNoise, kRank);
+  denoiseDirty = false;
+}
+function recomputeNoise() {
+  const amp = noisePct / 100 * 0.9;
+  const An = [];
+  for (let r = 0; r < NB; r++) {
+    const row = new Float64Array(NB);
+    for (let c = 0; c < NB; c++) row[c] = baseImg[r][c] + amp * noiseR[r][c];
+    An.push(row);
+  }
+  noisyImg = An;
+  svdNoise = jacobiSVD(An, NB, NB);   // 含噪矩阵的谱:尾巴被噪声抬起
+  barsDirty = true;
+}
+
+/* ---------------- 材质表 ---------------- */
+const M = {
+  floor: new THREE.MeshStandardMaterial({ color: 0x232830, roughness: 0.96 }),
+  ghost: new THREE.LineBasicMaterial({ color: 0x6ea8dc, transparent: true, opacity: 0.5 }),
+  disk: new THREE.MeshStandardMaterial({ color: 0x2f6fb8, transparent: true, opacity: 0.30, roughness: 0.5, metalness: 0.05, side: THREE.DoubleSide }),
+  rim: new THREE.LineBasicMaterial({ color: 0x8fc1ee, transparent: true, opacity: 0.9 }),
+  spoke: new THREE.LineBasicMaterial({ color: 0x8fc1ee, transparent: true, opacity: 0.35 }),
+  dot: new THREE.MeshStandardMaterial({ color: 0xbfd9f2, roughness: 0.4 }),
+  arrow: new THREE.MeshStandardMaterial({ color: 0xe8b34a, roughness: 0.4 }),
+  axisMain: new THREE.MeshStandardMaterial({ color: 0xffa94d, emissive: 0xffa94d, emissiveIntensity: 0.55, transparent: true, opacity: 0.85 }),
+  axisMin: new THREE.MeshStandardMaterial({ color: 0x63d0a8, emissive: 0x63d0a8, emissiveIntensity: 0.45, transparent: true, opacity: 0.8 }),
+  map: new THREE.LineBasicMaterial({ color: 0x9fb0c3, transparent: true, opacity: 0.35 }),
+  plate: new THREE.MeshStandardMaterial({ color: 0x1a212b, roughness: 0.9 }),
+  pixel: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.02, transparent: true, opacity: 1 }),
+  barOn: new THREE.MeshStandardMaterial({ color: 0x1971c2, emissive: 0x123f66, emissiveIntensity: 0.5, roughness: 0.4 }),
+  barOff: new THREE.MeshStandardMaterial({ color: 0x8b98a8, transparent: true, opacity: 0.45, roughness: 0.6 }),
+  cut: new THREE.MeshBasicMaterial({ color: 0xffd43b, transparent: true, opacity: 0.85 }),
+  base: new THREE.MeshStandardMaterial({ color: 0x2a323d, roughness: 0.9 }),
+};
+HL.sigma = M.axisMain;   // 步骤 1 高亮:主轴 σ₁
+HL.cut = M.cut;          // 步骤 2 高亮:k 截断线
+const rampLo = new THREE.Color(0x1c2836);
+const rampHi = new THREE.Color(0xe9f1fb);
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0e1216 : 0xe7ebee);
+  scopeDark = dark;
+  M.floor.color.set(dark ? 0x232830 : 0xcdd4db);
+  M.plate.color.set(dark ? 0x1a212b : 0xf2f5f8);
+  M.base.color.set(dark ? 0x2a323d : 0xb9c2cc);
+  M.ghost.color.set(dark ? 0x6ea8dc : 0x1864ab);
+  M.rim.color.set(dark ? 0x8fc1ee : 0x1864ab);
+  M.spoke.color.set(dark ? 0x8fc1ee : 0x1864ab);
+  M.map.color.set(dark ? 0x9fb0c3 : 0x5b6b7d);
+  M.disk.color.set(dark ? 0x2f6fb8 : 0x74a8d8);
+  grid.material.opacity = dark ? 0.26 : 0.34;
+  rampLo.set(dark ? 0x1c2836 : 0xe8edf3);
+  rampHi.set(dark ? 0xe9f1fb : 0x1d4e7c);
+  panelsDirty = true;
+}
+
+/* ---------------- 场景:地面与网格 ---------------- */
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(26, 16), M.floor);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = 0;
+scene.add(ground);
+const grid = new THREE.GridHelper(26, 26, 0x3a4656, 0x232a34);
+grid.position.y = 0.01;
+grid.material.transparent = true;
+grid.material.opacity = 0.26;
+scene.add(grid);
+
+/* ---------------- 场景:变换舞台(Vᵀ 旋转 → Σ 缩放 → U 旋转) ---------------- */
+const STX = -2.7, STY = 1.5, STZ = 0;
+const MAXV = -62 * Math.PI / 180, MAXU = 38 * Math.PI / 180;
+const S1T = 1.32, S2T = 0.56, CYC = 12.5;
+const gU = new THREE.Group(); gU.position.set(STX, STY, STZ); scene.add(gU);
+const gS = new THREE.Group(); gU.add(gS);
+const gV = new THREE.Group(); gS.add(gV);
+/* 单位圆盘 */
+const disk = new THREE.Mesh(new THREE.CircleGeometry(1, 64), M.disk);
+disk.rotation.x = -Math.PI / 2;
+gV.add(disk);
+/* 辐条(经线) */
+const spokePts = [];
+for (let i = 0; i < 12; i++) {
+  const a = i * TAU / 12;
+  spokePts.push(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), new THREE.Vector3(0, 0, 0));
+}
+gV.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(spokePts), M.spoke));
+/* 圆周(纬线) */
+const rimPts = [];
+for (let i = 0; i < 64; i++) {
+  const a = i / 64 * TAU;
+  rimPts.push(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)));
+}
+gV.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(rimPts), M.rim));
+/* 方向箭头(切向,随盘旋转) */
+const coneGeo = new THREE.ConeGeometry(0.05, 0.16, 10);
+for (const cc of [[1, Math.PI / 2], [-1, -Math.PI / 2]]) {
+  const cone = new THREE.Mesh(coneGeo, M.arrow);
+  cone.position.set(cc[0], 0.02, 0);
+  cone.rotation.x = cc[1];
+  gV.add(cone);
+}
+/* 12 个采样点:单位圆上 → 椭圆上 */
+const dotGeo = new THREE.SphereGeometry(0.034, 10, 8);
+for (let i = 0; i < 12; i++) {
+  const a = i * TAU / 12;
+  const d = new THREE.Mesh(dotGeo, M.dot);
+  d.position.set(Math.cos(a), 0, Math.sin(a));
+  gV.add(d);
+}
+/* 正交主轴(在 gS 内,随 Σ 缩放自动伸长:半轴长 = σ) */
+gS.add(new THREE.Mesh(new THREE.BoxGeometry(2.04, 0.02, 0.055), M.axisMain));
+gS.add(new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.02, 2.04), M.axisMin));
+/* 幽灵输入圆(固定不动的「变换前」位置) */
+const ghostPts = [];
+for (let i = 0; i < 64; i++) {
+  const a = i / 64 * TAU;
+  ghostPts.push(new THREE.Vector3(STX + Math.cos(a), STY, STZ + Math.sin(a)));
+}
+scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(ghostPts), M.ghost));
+/* 映射连线:12 条,源=固定单位圆点,目标=实时算出的椭圆点 */
+const mapPos = new Float32Array(12 * 2 * 3);
+const mapGeo = new THREE.BufferGeometry();
+mapGeo.setAttribute('position', new THREE.BufferAttribute(mapPos, 3));
+const mapLines = new THREE.LineSegments(mapGeo, M.map);
+mapLines.frustumCulled = false;
+scene.add(mapLines);
+
+/* ---------------- 场景:16×16 像素面板(原图 / 重构) ---------------- */
+const PANAX = 1.55, PANBX = 3.55, PANAY = 1.72, PANELZ = 0.3, PITCH = 0.123;
+function makePanel(cx) {
+  const g = new THREE.Group();
+  g.position.set(cx, PANAY, PANELZ);
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(1.99, 1.99, 0.02), M.plate);
+  plate.position.z = -0.02;
+  g.add(plate);
+  scene.add(g);
+  return g;
+}
+const panAG = makePanel(PANAX);
+const panBG = makePanel(PANBX);
+const cellGeo = new THREE.BoxGeometry(0.104, 0.104, 0.03);
+const instA = new THREE.InstancedMesh(cellGeo, M.pixel, NB * NB);
+const instB = new THREE.InstancedMesh(cellGeo, M.pixel, NB * NB);
+const tmpM = new THREE.Matrix4();
+for (let r = 0; r < NB; r++) for (let c = 0; c < NB; c++) {
+  tmpM.makeTranslation((c - 7.5) * PITCH, (7.5 - r) * PITCH, 0.018);
+  instA.setMatrixAt(r * NB + c, tmpM);
+  instB.setMatrixAt(r * NB + c, tmpM);
+}
+instA.instanceMatrix.needsUpdate = true;
+instB.instanceMatrix.needsUpdate = true;
+panAG.add(instA);
+panBG.add(instB);
+const tmpC = new THREE.Color();
+function refreshPanels() {
+  ensureDenoised();
+  const imgA = preset === 'noise' ? noisyImg : baseImg;
+  const imgB = preset === 'noise' ? denoisedImg : reconImg(svdBase, kRank);
+  for (let r = 0; r < NB; r++) for (let c = 0; c < NB; c++) {
+    const i = r * NB + c;
+    instA.setColorAt(i, tmpC.copy(rampLo).lerp(rampHi, clamp(imgA[r][c], 0, 1)));
+    instB.setColorAt(i, tmpC.copy(rampLo).lerp(rampHi, clamp(imgB[r][c], 0, 1)));
+  }
+  if (instA.instanceColor) instA.instanceColor.needsUpdate = true;
+  if (instB.instanceColor) instB.instanceColor.needsUpdate = true;
+}
+
+/* ---------------- 场景:奇异值谱阶梯柱 + k 截断线 ---------------- */
+const BAR_X0 = 1.62, BAR_DX = 0.128, BAR_Y0 = 0.62, BARZ = -0.95;
+const bars = [];
+const barGeo = new THREE.BoxGeometry(0.09, 1, 0.09);
+barGeo.translate(0, 0.5, 0);   // 从底部向上生长
+for (let i = 0; i < NB; i++) {
+  const b = new THREE.Mesh(barGeo, M.barOn);
+  b.position.set(BAR_X0 + i * BAR_DX, BAR_Y0, BARZ);
+  scene.add(b);
+  bars.push(b);
+}
+const cutBar = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.9, 0.15), M.cut);
+cutBar.position.set(BAR_X0 + 3.5 * BAR_DX, BAR_Y0 + 0.95, BARZ);
+scene.add(cutBar);
+function updateBars(S) {
+  const hi = Math.log(Math.max(S[0], 1e-9));
+  const lo = Math.log(Math.max(S[NB - 1], S[0] * 1e-3, 1e-9));
+  for (let i = 0; i < NB; i++) {
+    const t = (Math.log(Math.max(S[i], 1e-9)) - lo) / ((hi - lo) || 1);
+    bars[i].scale.y = 0.08 + 1.55 * clamp(t, 0, 1);   // 对数高度:σ₁…σ₁₆ 阶梯递减
+    bars[i].material = i < kRank ? M.barOn : M.barOff;
+  }
+  cutBar.position.x = BAR_X0 + (kRank - 0.5) * BAR_DX;
+  cutLbl.o.position.set(cutBar.position.x, BAR_Y0 + 2.0, BARZ);
+}
+
+/* ---------------- 场景标签 ---------------- */
+addLabel(() => L('输入:单位圆', 'input: unit circle'), () => 'b',
+  new THREE.Vector3(STX - 1.5, 0.88, 1.2));
+addLabel(() => L('输出:椭圆', 'output: ellipse'), () => 'o',
+  new THREE.Vector3(STX + 1.5, STY + 0.42, 0.95));
+addLabel(() => 'σ₁ = ' + curSpec()[0].toFixed(2), () => 'g',
+  new THREE.Vector3(1.06, 0.12, 0), null, gS);
+addLabel(() => 'σ₂ = ' + curSpec()[1].toFixed(2), () => 'g',
+  new THREE.Vector3(0, 0.12, 1.06), null, gS);
+addLabel(() => `Vᵀ 旋转 ${Math.round(avNow * 180 / Math.PI)}°`, () => cardLit.V ? 'b' : 'st',
+  new THREE.Vector3(STX - 1.15, 3.0, 0.35));
+addLabel(() => `Σ 缩放 σ₁=${curSpec()[0].toFixed(2)} σ₂=${curSpec()[1].toFixed(2)}`, () => cardLit.S ? 'g' : 'st',
+  new THREE.Vector3(STX, 3.35, 0));
+addLabel(() => `U 旋转 +${Math.round(auNow * 180 / Math.PI)}°`, () => cardLit.U ? 'o' : 'st',
+  new THREE.Vector3(STX + 1.15, 3.0, 0.35));
+addLabel(() => L(preset === 'noise' ? '含噪输入 B+ηR' : '原图 B', preset === 'noise' ? 'noisy input' : 'original image'), () => 'st',
+  new THREE.Vector3(0, -1.24, 0.1), null, panAG);
+addLabel(() => L(preset === 'noise' ? `滤波输出(前 ${kRank} 项)` : `重构 A_k(前 ${kRank} 项)`, preset === 'noise' ? `filtered, top ${kRank}` : `reconstruction A_k, top ${kRank}`), () => 'g',
+  new THREE.Vector3(0, -1.24, 0.1), null, panBG);
+addLabel(() => L('奇异值谱 σ₁ … σ₁₆', 'singular spectrum σ₁…σ₁₆'), () => '',
+  new THREE.Vector3(BAR_X0 + 7.5 * BAR_DX, 2.45, BARZ));
+const cutLbl = addLabel(() => 'k = ' + kRank, () => 'e',
+  new THREE.Vector3(BAR_X0 + 3.5 * BAR_DX, BAR_Y0 + 2.0, BARZ));
+
+/* ---------------- 视图模式(预设接线) ---------------- */
+function applyViewMode() {
+  if (preset === 'noise') recomputeNoise();
+  denoiseDirty = true;
+  panelsDirty = true;
+  barsDirty = true;
+  updateSliderLabels();
+}
+
+/* ---------------- 示波器:奇异值谱柱状 + 累积能量曲线 ---------------- */
+function drawScope() {
+  const w = scope.width, h = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, w, h);
+  scopeCtx.strokeStyle = 'rgba(127,140,160,.4)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.strokeRect(2, 2, w - 4, h - 4);
+  const S = curSpec();
+  const hi = Math.log(Math.max(S[0], 1e-9));
+  const lo = Math.log(Math.max(S[NB - 1], S[0] * 1e-3, 1e-9));
+  const pad = 6 * dpr, top = 20 * dpr, bot = h - 6 * dpr;
+  const bw = (w - pad * 2) / NB;
+  const accCol = scopeDark ? '#5aa9e6' : '#1864ab';
+  for (let i = 0; i < NB; i++) {
+    const t = (Math.log(Math.max(S[i], 1e-9)) - lo) / ((hi - lo) || 1);
+    const bh = Math.max(2 * dpr, t * (bot - top));
+    const x0 = pad + i * bw;
+    if (i < kRank) {
+      scopeCtx.fillStyle = accCol;
+      scopeCtx.globalAlpha = 0.9;
+    } else {
+      scopeCtx.fillStyle = scopeDark ? '#8b98a8' : '#94a0b0';
+      scopeCtx.globalAlpha = 0.30 + 0.14 * Math.sin(etG * 6 + i);   // 被砍掉的谱柱闪灰
+    }
+    scopeCtx.fillRect(x0 + bw * 0.18, bot - bh, bw * 0.64, bh);
+  }
+  scopeCtx.globalAlpha = 1;
+  /* 累积能量曲线 E(k) = Σᵢ≤kσᵢ² / Σσᵢ² */
+  let acc = 0;
+  let tot = 0;
+  for (let i = 0; i < NB; i++) tot += S[i] * S[i];
+  tot = tot || 1;
+  scopeCtx.strokeStyle = scopeDark ? '#ffd43b' : '#e0a10c';
+  scopeCtx.lineWidth = Math.max(1.4, 1.4 * dpr);
+  scopeCtx.beginPath();
+  for (let i = 0; i < NB; i++) {
+    acc += S[i] * S[i];
+    const x = pad + i * bw + bw / 2;
+    const y = bot - (acc / tot) * (bot - top);
+    i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+  }
+  scopeCtx.stroke();
+  /* 90% 能量门槛 */
+  scopeCtx.setLineDash([4 * dpr, 3 * dpr]);
+  scopeCtx.strokeStyle = scopeDark ? 'rgba(255,212,55,.55)' : 'rgba(224,161,12,.6)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath();
+  const y90 = bot - 0.9 * (bot - top);
+  scopeCtx.moveTo(pad, y90); scopeCtx.lineTo(w - pad, y90);
+  scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  /* 截断 k 竖线 */
+  const xc = pad + kRank * bw;
+  scopeCtx.strokeStyle = scopeDark ? 'rgba(255,255,255,.55)' : 'rgba(22,32,44,.55)';
+  scopeCtx.beginPath(); scopeCtx.moveTo(xc, top - 4 * dpr); scopeCtx.lineTo(xc, bot); scopeCtx.stroke();
+  scopeCtx.fillStyle = scopeDark ? 'rgba(242,245,249,.85)' : 'rgba(22,32,44,.85)';
+  scopeCtx.font = `${10 * dpr}px sans-serif`;
+  scopeCtx.fillText(L('奇异值谱(柱,对数高)· 累积能量(黄线)· ┄ 90% 门槛 · | 截断 k', 'spectrum (bars, log height) - cumulative energy (yellow) - dashed 90% mark - | cutoff k'), pad, 12 * dpr);
+}
+
+/* ---------------- 步骤 ---------------- */
+const STEPS = [
+  { b: '旋转-缩放-旋转', be: "rotate, scale, rotate", tgt: [STX, STY, 0], hl: 'sigma',
+    d: '任何矩阵——方的、长方的、不满秩的都一样——都能分解为 A=UΣVᵀ:先被 Vᵀ 转过一个角度(右奇异向量),再沿一组互相垂直的轴各缩放一份(对角阵 Σ,奇异值 σ₁≥σ₂≥…),最后被 U 转到终态(左奇异向量)。把单位圆送进去,出来必定是椭圆,各半轴长恰为各奇异值;旋转只换方向,缩放才变形——这就是一切线性变换的几何骨架。',
+    de: 'Any matrix - square, rectangular, rank-deficient - factors as A = UΣVᵀ: first a rotation by Vᵀ (the right singular vectors), then independent stretches along mutually orthogonal axes (the diagonal Σ, with singular values σ₁ ≥ σ₂ ≥ …), then a final rotation by U (the left singular vectors). Send a unit circle in and an ellipse must come out, its semi-axes exactly the singular values; rotation only reorients, scaling is what deforms - the geometric skeleton of every linear transformation.' },
+  { b: '排序就是重要性', be: 'the order is the importance', tgt: [0.4, 1.6, -0.3], hl: 'cut',
+    d: '埃克特-杨定理:只保留前 k 项的 A_k=Σᵢ≤k σᵢuᵢvᵢᵀ,在一切秩 k 矩阵中对 A 的逼近最优,谱范数误差恰为第 k+1 个奇异值 σₖ₊₁。所以奇异值从大到小的排队,就是信息重要性的排队;保留能量比例=Σᵢ≤kσᵢ²/Σσᵢ²。看左下示波器:谱柱右端越排越矮,竖线是截断 k,阶梯线是累积能量——跨过 90% 门槛后再多存,性价比急剧下降。',
+    de: 'The Eckart-Young theorem: the rank-k truncation A_k = Σ σᵢuᵢvᵢᵀ is, among all rank-k matrices, the best approximation of A, with spectral-norm error exactly the (k+1)-th singular value σₖ₊₁. So listing singular values from large to small lists information by importance, and the retained energy share is Σᵢ≤kσᵢ²/Σσᵢ². Watch the scope: the bars decay to the right, the vertical line is the cutoff k, the stepped line is cumulative energy - past the 90% mark, extra storage buys very little.' },
+  { b: '图像压缩', be: 'image compression', tgt: [PANBX, PANAY, 0],
+    d: '图像压缩是最直观的应用:一张 512×512 灰度图的秩至多 512,原样要存 262144 个数;改存前 k 个奇异项只需 k(2n+1) 个数——k=5 时约 50:1,画面只剩轮廓感;k=50 时约 5:1,已接近原图。JPEG/DCT 用的是人人相同的「固定基」,SVD 的基却是数据自己长出来的:哪组方向最能解释这张图,分解自己会算出来。',
+    de: 'Image compression is the most intuitive application: a 512×512 grayscale image has rank at most 512 and stores 262144 numbers as-is; keeping the top k singular terms needs only k(2n+1) numbers - k=5 gives a ratio of about 50:1 with only the outline left, while k=50 gives about 5:1, already close to the original. JPEG/DCT compresses with a fixed basis shared by everyone; the SVD basis grows out of the data itself - which directions explain this image best is something the decomposition works out on its own.' },
+  { b: 'PCA 的孪生兄弟', be: "PCA's twin brother", tgt: [STX + 0.4, STY + 0.1, 0.6],
+    d: '对中心化后的数据矩阵 X 做一次 SVD,右奇异向量就是主成分方向,σᵢ²/(n−1) 恰好是协方差矩阵的特征值——PCA 与 SVD 是同一台机器的两个名字。第一主成分是数据最「胖」的方向,和舞台上的椭圆主轴是同一件事:方差最大的方向,就是奇异值最大的方向。',
+    de: 'Run one SVD on the centered data matrix X and the right singular vectors are exactly the principal component directions, while σᵢ²/(n−1) are exactly the eigenvalues of the covariance matrix - PCA and SVD are two names for the same machine. The first principal component is the fattest direction of the data, the same thing as the major axis of the ellipse on stage: the direction of largest variance is the direction of largest singular value.' },
+  { b: '噪声滤除', be: 'noise filtering', tgt: [PANAX, PANAY, 0],
+    d: '真实测量总带噪声:信号集中在少数大奇异值方向,噪声却把谱的尾巴垫得又平又密。砍掉尾部、只保留前 k 项,等于把数据投影回信号主子空间——噪声方块被抹平,PSNR 回升。这就是谱截断滤波,图像去噪与地震勘探里的老手艺;拖动「噪声水平」看谱的尾巴如何被抬起,再拖动「保留秩 k」把它按回去。',
+    de: 'Real measurements always carry noise: the signal concentrates in a few large-singular-value directions, while noise pads the tail of the spectrum flat and dense. Cutting the tail and keeping the top k terms projects the data back onto the principal subspace of the signal - the noisy pixels smooth out and PSNR climbs. This is spectral truncation filtering, an old hand at image denoising and seismic exploration; drag the noise level to see the tail lift, then drag rank k to press it back down.' },
+  { b: '伪逆·推荐·潜语义', be: 'pseudoinverse, recommenders, LSA', tgt: [0.4, 1.8, 0],
+    d: '同一个分解还有很多化身:伪逆 A⁺=VΣ⁺Uᵀ 给出最小二乘的最小范数解,秩亏矩阵也能解;把用户-物品评分矩阵拆成潜在因子,是 Netflix 大赛的标志性武器;潜语义分析(LSA)对词-文档矩阵做截断 SVD;PageRank 的本质只是求最大特征向量——「按重要性分解」的思想无处不在。',
+    de: 'The same decomposition has many more guises: the pseudoinverse A⁺ = VΣ⁺Uᵀ gives the minimum-norm least-squares solution, even for rank-deficient matrices; splitting a user-item rating matrix into latent factors was the signature weapon of the Netflix prize; latent semantic analysis (LSA) truncates the SVD of a term-document matrix; and PageRank at heart just seeks the largest eigenvector - decompose by importance, everywhere.' },
+  { b: '数值视角', be: 'the numerical view', tgt: [2.0, 1.6, -0.5],
+    d: '实用 SVD 用 Golub–Kahan 双对角化加 QR 迭代实现,几十年打磨进 LAPACK,数值稳定,是线性代数里最可靠的重器之一;条件数 κ=σ₁/σₙ 则警告矩阵「有多病」——κ 越大,输入的小扰动在输出里被放得越狠,动手计算前先看一眼谱是行家习惯。本页的 16×16 小矩阵用雅可比旋转法在浏览器里实时分解,过程完全透明。',
+    de: 'Practical SVD is computed by Golub-Kahan bidiagonalization plus QR iteration, polished over decades into LAPACK and numerically dependable - one of the most reliable heavy tools in linear algebra; the condition number κ = σ₁/σₙ warns how sick a matrix is - the larger κ, the more a small input perturbation is amplified in the output, and professionals glance at the spectrum before computing. The 16×16 matrix on this page is decomposed live in your browser by Jacobi rotations, the whole process in the open.' },
+];
+
+/* ---------------- 公式 ---------------- */
+function updateFormula() {
+  const S = curSpec();
+  const en = (energyFrac(kRank, S) * 100).toFixed(1);
+  const err = (kRank < S.length ? S[kRank] : 0).toFixed(3);
+  ensureDenoised();
+  const img = preset === 'noise' ? denoisedImg : reconImg(svdBase, kRank);
+  const p = psnrVsBase(img);
+  const pTxt = p >= 60 ? '60+' : p.toFixed(1);
+  el.formula.innerHTML =
+    L(`<b>A = UΣVᵀ</b>:先转(Vᵀ)→ 沿正交轴缩放(Σ)→ 再转(U);单位圆 → 椭圆,半轴 = σ₁ ≥ σ₂ ≥ …`,
+      `<b>A = UΣVᵀ</b>: rotate (Vᵀ) → scale along orthogonal axes (Σ) → rotate (U); unit circle → ellipse, semi-axes = σ₁ ≥ σ₂ ≥ …`) +
+    '<br>' +
+    L(`埃克特-杨:<b>‖A − A_k‖ = σₖ₊₁</b>(秩 k 最优);512×512 图存 n²=262144 → k(2n+1):k=5 ≈ <b>50:1</b>,k=50 ≈ <b>5:1</b>`,
+      `Eckart-Young: <b>‖A − A_k‖ = σₖ₊₁</b> (best rank-k); a 512×512 image stores n²=262144 → k(2n+1): k=5 ≈ <b>50:1</b>, k=50 ≈ <b>5:1</b>`) +
+    '<br>' +
+    L(`当前:k=<b>${kRank}</b> · 保留能量 <b>${en}%</b> · σₖ₊₁=<b>${err}</b> · PSNR <b>${pTxt} dB</b> · 含噪 <b>${noisePct}%</b>`,
+      `now: k=<b>${kRank}</b> - energy <b>${en}%</b> - σₖ₊₁=<b>${err}</b> - PSNR <b>${pTxt} dB</b> - noise <b>${noisePct}%</b>`);
+}
+
+/* ---------------- 状态面板 ---------------- */
+function updateSliderLabels() {
+  el.elAVal.textContent = 'k = ' + kRank;
+  el.elBVal.textContent = noisePct + '%';
+}
+function updateStats() {
+  const S = curSpec();
+  el.stA.innerHTML = S[0].toFixed(2) + '<small> ‖A‖</small>';
+  el.stA.className = 'v';
+  const en = energyFrac(kRank, S) * 100;
+  el.stB.innerHTML = en.toFixed(1) + '<small> %</small>';
+  el.stB.className = 'v' + (en >= 90 ? ' ok' : en >= 60 ? ' warn' : ' bad');
+  const err = kRank < S.length ? S[kRank] : 0;
+  el.stC.innerHTML = err.toFixed(3) + '<small> =σₖ₊₁</small>';
+  el.stC.className = 'v' + (err > 0.4 ? ' bad' : err > 0.12 ? ' warn' : ' ok');
+  ensureDenoised();
+  const img = preset === 'noise' ? denoisedImg : reconImg(svdBase, kRank);
+  const p = psnrVsBase(img);
+  el.stD.innerHTML = (p >= 60 ? '60+' : p.toFixed(1)) + '<small> dB</small>';
+  el.stD.className = 'v' + (p >= 28 ? ' ok' : p >= 20 ? ' warn' : ' bad');
+}
+function resetMachine() {
+  kRank = 8; noisePct = 30;
+  preset = null;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  el.elA.value = 8; el.elB.value = 30;
+  recomputeNoise();
+  denoiseDirty = true; panelsDirty = true; barsDirty = true;
+  tgtVec.set(0.5, 1.6, 0);
+  updateSliderLabels(); updateStats(); updateFormula();
+}
+
+/* ---------------- UI 接线 ---------------- */
+const el = {
+  elA: document.getElementById('vA'), elAVal: document.getElementById('vAVal'),
+  elB: document.getElementById('vB'), elBVal: document.getElementById('vBVal'),
+  stA: document.getElementById('stA'), stB: document.getElementById('stB'),
+  stC: document.getElementById('stC'), stD: document.getElementById('stD'),
+  formula: document.getElementById('formula'),
+};
+el.elA.addEventListener('input', () => {
+  kRank = +el.elA.value;
+  denoiseDirty = true; panelsDirty = true; barsDirty = true;
+  updateSliderLabels();
+});
+el.elB.addEventListener('input', () => {
+  noisePct = +el.elB.value;
+  recomputeNoise();
+  denoiseDirty = true; panelsDirty = true;
+  updateSliderLabels();
+});
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主逻辑 ---------------- */
+function pageFrame(et, dt) {
+  etG = et;
+  /* 变换三连动画:静置 → Vᵀ 转 → Σ 拉 → U 转 → 保持,循环 */
+  if (playing) animT += dt;
+  const p = (animT % CYC) / CYC;
+  const sm = t => t * t * (3 - 2 * t);
+  let av = 0, au = 0, s1 = 1, s2 = 1;
+  if (p >= 0.10 && p < 0.32) {
+    av = MAXV * sm((p - 0.10) / 0.22);
+  } else if (p >= 0.32 && p < 0.42) {
+    av = MAXV;
+  } else if (p >= 0.42 && p < 0.64) {
+    av = MAXV;
+    const f = sm((p - 0.42) / 0.22);
+    s1 = 1 + (S1T - 1) * f; s2 = 1 + (S2T - 1) * f;
+  } else if (p >= 0.64 && p < 0.74) {
+    av = MAXV; s1 = S1T; s2 = S2T;
+  } else if (p >= 0.74 && p < 0.96) {
+    av = MAXV; s1 = S1T; s2 = S2T;
+    au = MAXU * sm((p - 0.74) / 0.22);
+  } else if (p >= 0.96) {
+    av = MAXV; s1 = S1T; s2 = S2T; au = MAXU;
+  }
+  avNow = av; auNow = au;
+  /* 矩阵卡片点亮:「逐步分解」依次点亮,其余模式同时亮 */
+  const seq = preset === 'stages';
+  cardLit.V = p >= 0.10 && p < 0.99;
+  cardLit.S = seq ? (p >= 0.42 && p < 0.99) : cardLit.V;
+  cardLit.U = seq ? (p >= 0.74 && p < 0.99) : cardLit.V;
+  gV.rotation.y = av; gU.rotation.y = au; gS.scale.set(s1, 1, s2);
+  /* 12 条映射连线(源=固定单位圆点,目标=手动复算的椭圆点) */
+  const ca = Math.cos(au), sa = Math.sin(au), cvr = Math.cos(av), svr = Math.sin(av);
+  for (let i = 0; i < 12; i++) {
+    const phi = i * TAU / 12, cp = Math.cos(phi), sp = Math.sin(phi);
+    const x1 = cp * cvr + sp * svr, z1 = -cp * svr + sp * cvr;
+    const x2 = s1 * x1, z2 = s2 * z1;
+    mapPos[i * 6] = STX + cp; mapPos[i * 6 + 1] = STY; mapPos[i * 6 + 2] = STZ + sp;
+    mapPos[i * 6 + 3] = STX + x2 * ca + z2 * sa;
+    mapPos[i * 6 + 4] = STY;
+    mapPos[i * 6 + 5] = STZ - x2 * sa + z2 * ca;
+  }
+  mapGeo.attributes.position.needsUpdate = true;
+  /* 模式调光:压缩/噪声模式压暗舞台,分解模式压暗像素面板 */
+  const dimStage = preset === 'compress' || preset === 'noise';
+  const dOp = (dimStage ? 0.10 : 1) * (scopeDark ? 0.30 : 0.34);
+  M.disk.opacity += (dOp - M.disk.opacity) * Math.min(1, dt * 4 + 0.02);
+  const mOp = (dimStage ? 0.15 : 1) * (scopeDark ? 0.35 : 0.45);
+  M.map.opacity += (mOp - M.map.opacity) * Math.min(1, dt * 4 + 0.02);
+  const pOp = (preset === 'decomp' || preset === 'stages') ? 0.45 : 1;
+  M.pixel.opacity += (pOp - M.pixel.opacity) * Math.min(1, dt * 4 + 0.02);
+  /* 谱柱与截断线 */
+  if (barsDirty) { updateBars(curSpec()); barsDirty = false; }
+  M.barOff.opacity = 0.4 + 0.2 * (0.5 + 0.5 * Math.sin(et * 6));
+  /* 非 hl 高亮的材料回到基础透明度 */
+  if (STEPS[scenario].hl !== 'cut') M.cut.opacity += (0.85 - M.cut.opacity) * Math.min(1, dt * 3 + 0.02);
+  if (STEPS[scenario].hl !== 'sigma') M.axisMain.opacity += (0.85 - M.axisMain.opacity) * Math.min(1, dt * 3 + 0.02);
+  /* 像素面板 */
+  if (denoiseDirty) ensureDenoised();
+  if (panelsDirty) { refreshPanels(); panelsDirty = false; }
+}
+
+/* ---------------- 装配 ---------------- */
+recomputeNoise();
+applyViewMode();
+updateSliderLabels();
+updateStats();
+
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  pageFrame(et, simDt);
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.opacity = 0.3 + 0.25 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked && typeof drawScope === 'function') drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
