@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多臂老虎机与UCB · 拉杆既吃老臂又试新臂,遗憾如何被压到 ln n</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#d9a02b; /* 老虎机主题色:金币黄 */
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#a67c10;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.w { border-color: rgba(255,224,102,.9); color: #ffe9a8; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(212,167,16,.9); color: #8a6d00; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    background: var(--cv-pill); border-radius: 10px; padding: 6px 9px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  :root[data-theme="light"] #title .sub { text-shadow: none; }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(217,160,43,.65); background: rgba(217,160,43,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(166,124,16,.55); background: rgba(166,124,16,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(217,160,43,.10); border-color: rgba(217,160,43,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(166,124,16,.08); border-color: rgba(166,124,16,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #f2cd8a; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { top: 62px; max-width: calc(100vw - 44px); }
+    #title h1 { font-size: 16px; line-height: 1.4; }
+    #title .sub { font-size: 11.5px; line-height: 1.45; }
+    .lbl, .lbl.bad, .lbl.st { max-width: 42vw; padding: 5px 7px; border-radius: 8px;
+      font-size: 10.5px; line-height: 1.35; white-space: normal; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="多臂老虎机与UCB" data-en="Multi-Armed Bandit & UCB1">多臂老虎机与UCB</h1>
+  <div class="sub" data-zh="一排三台老虎机,中奖率 0.42 / 0.30 / 0.55(示意)且对你保密:每次拉杆既是在「吃」当前看起来最好的老臂,也是在给冷门的新臂采样——只利用会被次优臂套牢,只探索又把赢面全交了学费。策略优劣折成一个数:累计遗憾 R_n = n·μ* − Σ μ(aₜ),即与全知策略的收入差。UCB1(Auer 等,2002)给拉得少的臂加置信奖金 c·√(2 ln t / n):奖金随样本数按 1/√n 塌缩,「不确定」本身变成吸引力,冷门臂自动轮到机会;定理保证遗憾 ≤ ΣΔ + 8 ln n·Σ1/Δ = O(log n),而 Lai–Robbins(1985)证明 ln n 是任何策略都躲不开的地板。对照:ε-greedy 每 1/ε 次就白扔一次、遗憾按线性爬;ε=0 的纯贪心开局手气定终身,n=10⁴ 时白丢上千枚;Thompson 采样(1933)用 Beta 后验抽签,天生平衡。同一套数学撑着 A/B 测试与广告投放:5%→6% 的转化提升按固定分流要 ≈0.8 万样本/臂才能裁决(p<0.05),bandit 把流量实时滚向赢家、少给输家送转化。拖「探索系数 c / ε / 拉杆速度」改策略,按「UCB1 / ε-greedy / 贪心失效 / 纯随机 / Thompson」五策对照,示波器会留下各策略的遗憾曲线:蓝的弯、红的直,高下立判。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停" data-en="Three slot machines with hidden win rates 0.42 / 0.30 / 0.55 (illustrative): every pull both exploits the arm that looks best and samples the cold ones - pure exploitation gets locked onto a suboptimal arm, pure exploration hands your winnings back as tuition. Every policy is scored by one number, the cumulative regret R_n = n·μ* − Σ μ(a_t), the gap to an omniscient player. UCB1 (Auer et al., 2002) pays a confidence bonus c·√(2 ln t / n) to under-sampled arms: the bonus shrinks like 1/√n, uncertainty itself becomes attractive, and regret is provably O(log n); Lai-Robbins (1985) shows ln n is also the floor for any consistent policy. Comparisons: ε-greedy wastes 1 pull in 1/ε forever (linear regret), the ε=0 greedy locks in on its first lucky streak and loses over a thousand coins by n=10⁴, Thompson sampling (1933) draws from Beta posteriors and balances for free. The same math runs A/B tests and ad allocation: deciding a 5%→6% lift by fixed split takes ≈8k samples per arm (p<0.05), while a bandit rolls traffic toward the winner live. Drag the exploration constant c, ε, or pull rate; press UCB1 / ε-greedy / greedy failure / random / Thompson to compare policies - the scope keeps each policy's regret curve: blue bends, red runs straight. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause">一排三台老虎机,中奖率 0.42 / 0.30 / 0.55(示意)且对你保密:每次拉杆既是在「吃」当前看起来最好的老臂,也是在给冷门的新臂采样——只利用会被次优臂套牢,只探索又把赢面全交了学费。策略优劣折成一个数:累计遗憾 R_n = n·μ* − Σ μ(aₜ),即与全知策略的收入差。UCB1(Auer 等,2002)给拉得少的臂加置信奖金 c·√(2 ln t / n):奖金随样本数按 1/√n 塌缩,「不确定」本身变成吸引力,冷门臂自动轮到机会;定理保证遗憾 ≤ ΣΔ + 8 ln n·Σ1/Δ = O(log n),而 Lai–Robbins(1985)证明 ln n 是任何策略都躲不开的地板。对照:ε-greedy 每 1/ε 次就白扔一次、遗憾按线性爬;ε=0 的纯贪心开局手气定终身,n=10⁴ 时白丢上千枚;Thompson 采样(1933)用 Beta 后验抽签,天生平衡。同一套数学撑着 A/B 测试与广告投放:5%→6% 的转化提升按固定分流要 ≈0.8 万样本/臂才能裁决(p<0.05),bandit 把流量实时滚向赢家、少给输家送转化。拖「探索系数 c / ε / 拉杆速度」改策略,按「UCB1 / ε-greedy / 贪心失效 / 纯随机 / Thompson」五策对照,示波器会留下各策略的遗憾曲线:蓝的弯、红的直,高下立判。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="拉杆次数" data-en="pulls">拉杆次数</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="累计遗憾" data-en="cumulative regret">累计遗憾</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="估计最优臂" data-en="estimated best arm">估计最优臂</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="每拉收益" data-en="reward per pull">每拉收益</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="UCB 上界 = Q̂ + c√(2 ln t/n)" data-en="UCB = Q̂ + c√(2 ln t/n)">UCB 上界 = Q̂ + c√(2 ln t/n)</span>
+    <span class="chip o" data-zh="置信气球随 1/√n 塌缩" data-en="confidence balloon shrinks ~1/√n">置信气球随 1/√n 塌缩</span>
+    <span class="chip" style="color:#dfe6ee;border-color:rgba(190,200,214,.55)" data-zh="虚线环 = 真实中奖率 μ" data-en="dashed ring = true win rate μ">虚线环 = 真实中奖率 μ</span>
+    <span class="chip o" data-zh="金币 = 一次中奖" data-en="gold = a win">金币 = 一次中奖</span>
+    <span class="chip r" data-zh="红线 = 贪心失效线性遗憾" data-en="red = greedy linear regret">红线 = 贪心失效线性遗憾</span>
+    <span class="chip g" data-zh="绿闪 = Thompson 后验抽样" data-en="green flash = Thompson posterior draw">绿闪 = Thompson 后验抽样</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-ucb" data-zh="UCB1 主线" data-en="UCB1 main">UCB1 主线</button>
+    <button class="abtn" id="btn-eps" data-zh="ε-greedy 对照" data-en="ε-greedy">ε-greedy 对照</button>
+    <button class="abtn hot" id="btn-greedy" data-zh="贪心失效 ε=0" data-en="greedy failure ε=0">贪心失效 ε=0</button>
+    <button class="abtn" id="btn-random" data-zh="纯随机对照" data-en="pure random">纯随机对照</button>
+    <button class="abtn" id="btn-ts" data-zh="Thompson 采样" data-en="Thompson sampling">Thompson 采样</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="探索系数 c" data-en="exploration c">探索系数 c</label><input id="vA" type="range" min="0.1" max="3" step="0.05" value="1"><span class="val" id="vAVal"></span></div>
+  <div class="row"><label data-zh="ε 探索率" data-en="ε explore rate">ε 探索率</label><input id="vB" type="range" min="0" max="0.5" step="0.01" value="0.1"><span class="val" id="vBVal"></span></div>
+  <div class="row"><label data-zh="拉杆速度" data-en="pull rate">拉杆速度</label><input id="vC" type="range" min="1" max="30" step="1" value="6"><span class="val" id="vCVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglTruth" type="checkbox" checked> <span data-zh="真实 μ 环" data-en="true μ rings">真实 μ 环</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../q-learning/" data-zh="Q 学习:同一困境" data-en="Q-learning">Q 学习:同一困境</a>
+    <a href="../monte-carlo-tree-search/" data-zh="MCTS:UCT 同源" data-en="MCTS (UCT)">MCTS:UCT 同源</a>
+    <a href="../secretary-problem/" data-zh="秘书问题:最优停止" data-en="secretary problem">秘书问题:最优停止</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.__errs = [];
+addEventListener('error', e => window.__errs.push((e.message || String(e)) + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+const isMobile = () => innerWidth <= 760;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 45;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotateSpeed = 0.25;
+function applyView() {
+  const mobile = innerWidth <= 760;
+  camera.fov = mobile ? 46 : 42;
+  camera.position.set(...(mobile ? [8.4, 5.4, 11.6] : [5.0, 3.9, 9.2]));
+  controls.target.set(0, 2.0, 0);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+applyView();
+
+scene.add(new THREE.HemisphereLight(0x9db4d6, 0x2c3038, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.9);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.5);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn };
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(0, 2.0, 0);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  if (STEPS[scenario].preset && STEPS[scenario].preset !== policy) setPreset(STEPS[scenario].preset);
+  markStep(); syncPhase(); updateFormula();
+}
+function buildSteps() {
+  const el2 = document.getElementById('steps');
+  el2.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el2.appendChild(li);
+  });
+}
+
+/* ---------------- 预设(五种策略对照) ---------------- */
+function setPreset(id) {
+  if (policy !== id && cur.length > 1) {
+    frozen.push({ color: POLICY_COL[policy], pts: cur });
+    if (frozen.length > 3) frozen.shift();
+  }
+  policy = id;
+  /* ε 滑杆保持用户值;greedy 模式直接无视 ε 并把滑杆归零示意 */
+  if (id === 'greedy') { epsV = 0; el.elB.value = 0; }
+  resetRun();
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === id);
+  updateSliderLabels(); updateFormula(); updateStats();
+}
+document.getElementById('btnReset').addEventListener('click', () => {
+  frozen = [];
+  resetRun();
+  updateStats(); updateFormula();
+});
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglTruth = document.getElementById('tglTruth');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+tglTruth.addEventListener('change', () => { for (const m of arms) m.trueRing.visible = tglTruth.checked && labelsOn; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  applyView();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+/* ================= 多臂老虎机与 UCB1 ================= */
+const TITLE_ZH = '多臂老虎机与UCB · 拉杆既吃老臂又试新臂,遗憾如何被压到 ln n';
+const TITLE_EN = 'Multi-Armed Bandit: UCB1 and the Explore-Exploit Dilemma';
+const PRESET_IDS = ['ucb', 'eps', 'greedy', 'random', 'ts'];
+/* 三台机器的真实中奖率 μ(示意),最优臂 C 在最右:μ* = 0.55,Δ_A = 0.13,Δ_B = 0.25。
+   最优臂放最后是刻意的:纯贪心的平局裁决总偏向左边的臂,把它引向次优,A/B/C 从左到右正好看清失效 */
+const K = 3;
+const BESTI = 2;
+const MU = [0.42, 0.30, 0.55];
+const ARMLETER = ['A', 'B', 'C'];
+const ARMCOL = [0xffa94d, 0x4dabf7, 0x69db7c];
+const POLICY_COL = { ucb: '#7fc4ff', eps: '#ffd43b', greedy: '#ff6b6b', random: '#b8c4d0', ts: '#7bd88f' };
+
+/* ---------------- 策略/运行状态 ---------------- */
+let policy = 'ucb', cC = 1.0, epsV = 0.10, pullRate = 6;
+let n = 0, regret = 0, totalWin = 0;
+let pulls = [0, 0, 0], winsArr = [0, 0, 0];
+let tsA = [1, 1, 1], tsB = [1, 1, 1];       // Beta(1+w, 1+l) 后验
+const tsS = new Float32Array(K);            // 最近一次后验抽样
+let cur = [], stride = 1, frozen = [];      // 遗憾曲线:当前 + 冻结对照
+let lastPick = -1, lastWin = null;
+let pullAcc = 0, etG = 0;
+const leverPh = new Float32Array(K), reelVel = new Float32Array(K), trayFlash = new Float32Array(K);
+let tsFlashT = -9, tsFlashArm = -1;
+
+/* 柔和圆点贴图(金币/失误烟尘共用) */
+function softDot() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,255,255,.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const dotTex = softDot();
+
+const M = {
+  floor: new THREE.MeshStandardMaterial({ color: 0x1a2030, roughness: 0.9 }),
+  wall: new THREE.MeshStandardMaterial({ color: 0x141821, roughness: 0.98 }),
+  cab: new THREE.MeshStandardMaterial({ color: 0x2b3140, roughness: 0.55, metalness: 0.2 }),
+  metal: new THREE.MeshStandardMaterial({ color: 0x9aa6b5, metalness: 0.85, roughness: 0.32 }),
+  dark: new THREE.MeshStandardMaterial({ color: 0x10131a, roughness: 0.4 }),
+  white: new THREE.MeshStandardMaterial({ color: 0xe8eef4, roughness: 0.6 }),
+  window: new THREE.MeshStandardMaterial({ color: 0x0a0d13, roughness: 0.3 }),
+  pole: new THREE.MeshBasicMaterial({ color: 0x8894a8, transparent: true, opacity: 0.4 }),
+  balloon: new THREE.MeshBasicMaterial({ color: 0x9cc8ff, transparent: true, opacity: 0.26, depthWrite: false, side: THREE.DoubleSide }),
+  trueRing: new THREE.MeshBasicMaterial({ color: 0xcfd6e0, transparent: true, opacity: 0.55 }),
+  cap: new THREE.MeshBasicMaterial({ color: 0xffe9a8 }),
+  coin: new THREE.PointsMaterial({ size: 0.075, map: dotTex, transparent: true, opacity: 0.95, color: 0xffcf5e, depthWrite: false, blending: THREE.AdditiveBlending }),
+  miss: new THREE.PointsMaterial({ size: 0.05, map: dotTex, transparent: true, opacity: 0.5, color: 0x8fa2ba, depthWrite: false }),
+  tsFlash: new THREE.MeshBasicMaterial({ color: 0x7bd88f, transparent: true, opacity: 0.95 }),
+};
+for (let i = 0; i < K; i++) {
+  M['arm' + i] = new THREE.MeshStandardMaterial({ color: ARMCOL[i], roughness: 0.4, metalness: 0.15, emissive: ARMCOL[i], emissiveIntensity: 0.08 });
+  M['ring' + i] = new THREE.MeshBasicMaterial({ color: ARMCOL[i] });
+  M['tray' + i] = new THREE.MeshStandardMaterial({ color: 0x8a93a5, metalness: 0.8, roughness: 0.35, emissive: 0xffcf5e, emissiveIntensity: 0 });
+}
+
+let scopeDark = true;
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x0e1118 : 0xe6e3da);
+  scopeDark = dark;
+  M.floor.color.set(dark ? 0x1a2030 : 0xc9cbd6);
+  M.wall.color.set(dark ? 0x141821 : 0xd6d2c6);
+  M.cab.color.set(dark ? 0x2b3140 : 0x6f7890);
+  M.dark.color.set(dark ? 0x10131a : 0x3a4150);
+}
+
+/* ---------------- 场景:地面与背景墙 ---------------- */
+const floor = new THREE.Mesh(new THREE.BoxGeometry(13, 0.2, 8), M.floor);
+floor.position.set(0, -0.1, 0);
+scene.add(floor);
+const wall = new THREE.Mesh(new THREE.BoxGeometry(13, 6.2, 0.5), M.wall);
+wall.position.set(0, 3.1, -4.2);
+scene.add(wall);
+
+/* ---------------- 场景:三台老虎机 + 置信塔 ----------------
+   标尺:机柜高 1.9 u;置信塔 2.15~4.35 u 映射中奖率 0~1 */
+const MX = [-2.6, 0, 2.6];
+const scaleV = v => 2.15 + 2.2 * clamp(v, 0, 1.02);
+const arms = [];
+function reelTexture(i) {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 128;
+  const g = c.getContext('2d');
+  const col = '#' + ARMCOL[i].toString(16).padStart(6, '0');
+  g.fillStyle = '#1a1e28'; g.fillRect(0, 0, 64, 128);
+  g.fillStyle = col;
+  for (let k = 0; k < 4; k++) g.fillRect(0, k * 32, 64, 12);
+  g.fillStyle = 'rgba(255,255,255,.85)';
+  for (let k = 0; k < 4; k++) g.fillRect(0, k * 32 + 20, 64, 4);
+  return new THREE.CanvasTexture(c);
+}
+for (let i = 0; i < K; i++) {
+  const g = new THREE.Group();
+  g.position.set(MX[i], 0, 0);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.9, 0.75), M.cab);
+  body.position.y = 0.95; g.add(body);
+  const marquee = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.3, 0.82), M['arm' + i]);
+  marquee.position.y = 2.05; g.add(marquee);
+  const trim = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.58, 0.05), M['arm' + i]);
+  trim.position.set(0, 1.5, 0.36); g.add(trim);
+  const win = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.48, 0.06), M.window);
+  win.position.set(0, 1.5, 0.39); g.add(win);
+  const rt = reelTexture(i);
+  const reels = [];
+  for (let r = 0; r < 3; r++) {
+    const reel = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.2, 14),
+      new THREE.MeshBasicMaterial({ map: rt }));
+    reel.rotation.x = Math.PI / 2;
+    reel.position.set(-0.25 + r * 0.25, 1.5, 0.43);
+    g.add(reel); reels.push(reel);
+  }
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.07, 0.1), M.dark);
+  slot.position.set(0, 0.98, 0.41); g.add(slot);
+  const tray = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.1, 0.24), M['tray' + i]);
+  tray.position.set(0, 0.3, 0.46); g.add(tray);
+  const lever = new THREE.Group();
+  lever.position.set(0.62, 1.3, 0.1);
+  const larm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.45, 0.05), M.metal);
+  larm.position.y = 0.22; lever.add(larm);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10), M['arm' + i]);
+  knob.position.y = 0.47; lever.add(knob);
+  g.add(lever);
+  /* 置信塔:立杆 + 均值环 + 置信气球 + 顶帽 + 真实 μ 虚位环 + Thompson 抽样闪点 */
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 2.2, 8), M.pole);
+  pole.position.set(0, 3.25, 0); g.add(pole);
+  const bGeo = new THREE.CylinderGeometry(0.055, 0.055, 1, 10, 1, true);
+  bGeo.translate(0, 0.5, 0);
+  const balloon = new THREE.Mesh(bGeo, M.balloon);
+  balloon.renderOrder = 2; g.add(balloon);
+  const meanRing = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.02, 8, 20), M['ring' + i]);
+  meanRing.rotation.x = Math.PI / 2; g.add(meanRing);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.042, 10, 8), M.cap);
+  g.add(cap);
+  const trueRing = new THREE.Mesh(new THREE.TorusGeometry(0.145, 0.014, 8, 22), M.trueRing);
+  trueRing.rotation.x = Math.PI / 2; trueRing.position.y = scaleV(MU[i]); g.add(trueRing);
+  const tsDot = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), M.tsFlash);
+  tsDot.visible = false; g.add(tsDot);
+  scene.add(g);
+  arms.push({ g, reels, lever, tray, balloon, meanRing, cap, trueRing, tsDot });
+}
+
+/* ---------------- 中奖金币 / 未中烟尘粒子(预算 60 + 40) ---------------- */
+const NCOIN = 60, NMISS = 40;
+const coinPos = new Float32Array(NCOIN * 3), coinVel = new Float32Array(NCOIN * 3), coinAge = new Float32Array(NCOIN).fill(-1);
+const missPos = new Float32Array(NMISS * 3), missVel = new Float32Array(NMISS * 3), missAge = new Float32Array(NMISS).fill(-1);
+function makePts(arr, mat) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  const pts = new THREE.Points(geo, mat);
+  pts.frustumCulled = false;
+  scene.add(pts);
+  return geo;
+}
+const coinGeo = makePts(coinPos, M.coin);
+const missGeo = makePts(missPos, M.miss);
+for (let i = 0; i < NCOIN; i++) coinPos[i * 3 + 1] = -50;
+for (let i = 0; i < NMISS; i++) missPos[i * 3 + 1] = -50;
+function spawnCoin(a) {
+  const m = arms[a];
+  const wp = new THREE.Vector3(); m.tray.getWorldPosition(wp);
+  let spawned = 0;
+  for (let i = 0; i < NCOIN && spawned < 12; i++) {
+    if (coinAge[i] >= 0) continue;
+    coinAge[i] = 0;
+    coinPos[i * 3] = wp.x + (Math.random() - 0.5) * 0.5;
+    coinPos[i * 3 + 1] = wp.y + 0.05;
+    coinPos[i * 3 + 2] = wp.z + 0.05;
+    coinVel[i * 3] = (Math.random() - 0.5) * 1.1;
+    coinVel[i * 3 + 1] = 1.6 + Math.random() * 1.2;
+    coinVel[i * 3 + 2] = (Math.random() - 0.3) * 0.9;
+    spawned++;
+  }
+}
+function spawnMiss(a) {
+  const m = arms[a];
+  const wp = new THREE.Vector3(); m.tray.getWorldPosition(wp);
+  let spawned = 0;
+  for (let i = 0; i < NMISS && spawned < 6; i++) {
+    if (missAge[i] >= 0) continue;
+    missAge[i] = 0;
+    missPos[i * 3] = wp.x + (Math.random() - 0.5) * 0.3;
+    missPos[i * 3 + 1] = wp.y + 0.05;
+    missPos[i * 3 + 2] = wp.z + 0.05;
+    missVel[i * 3] = (Math.random() - 0.5) * 0.5;
+    missVel[i * 3 + 1] = 0.5 + Math.random() * 0.5;
+    missVel[i * 3 + 2] = (Math.random() - 0.2) * 0.4;
+    spawned++;
+  }
+}
+
+/* ---------------- 场景标签 ---------------- */
+function armLabel(i) {
+  return addLabel(() => {
+    if (isMobile()) return `${ARMLETER[i]} · n=${pulls[i]}`;
+    const q = pulls[i] > 0 ? (winsArr[i] / pulls[i]).toFixed(2) : '—';
+    const u = pulls[i] > 0 ? ucbVal(i, Math.max(n, 1)).toFixed(2) : '∞';
+    return `${L('臂', 'arm')} ${ARMLETER[i]} · n=${pulls[i]} · Q̂=${q} · UCB ${u}`;
+  }, () => 'b', new THREE.Vector3(MX[i], 4.62, 0));
+}
+const armLbls = [armLabel(0), armLabel(1), armLabel(2)];
+const regretLbl = addLabel(() => isMobile()
+  ? `R=${regret.toFixed(0)}`
+  : L(`累计遗憾 R_n = ${regret.toFixed(1)} 枚(= 少赢的钱)`, `regret R_n = ${regret.toFixed(1)} coins (= money not won)`),
+  () => 'e', new THREE.Vector3(0, 5.05, 0));
+
+/* ---------------- 策略数学 ---------------- */
+function qhat(i) { return pulls[i] > 0 ? winsArr[i] / pulls[i] : 0; }
+function argmaxQ() {
+  let bi = 0, bv = -1;
+  for (let i = 0; i < K; i++) { const q = qhat(i); if (q > bv) { bv = q; bi = i; } }
+  return bi;
+}
+function ucbVal(i, t) { return qhat(i) + cC * Math.sqrt(2 * Math.log(Math.max(t, 2)) / pulls[i]); }
+function randn() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v);
+}
+function gamma1(k) { /* Marsaglia-Tsang,scale=1 */
+  if (k < 1) { const u = Math.random(); return gamma1(k + 1) * Math.pow(u, 1 / k); }
+  const d = k - 1 / 3, c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    const x = randn(), v = 1 + c * x;
+    if (v <= 0) continue;
+    const vv = v * v * v, u = Math.random();
+    if (u < 1 - 0.0331 * x * x * x * x) return d * vv;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - vv + Math.log(vv))) return d * vv;
+  }
+}
+function betaSample(a, b) { const x = gamma1(a), y = gamma1(b); return x / (x + y); }
+
+function resetRun() {
+  n = 0; regret = 0; totalWin = 0;
+  pulls = [0, 0, 0]; winsArr = [0, 0, 0];
+  tsA = [1, 1, 1]; tsB = [1, 1, 1];
+  cur = []; stride = 1; pullAcc = 0;
+  lastPick = -1; lastWin = null;
+}
+function doPull() {
+  const t = n + 1;
+  let a;
+  if (policy === 'ucb') {
+    a = -1;
+    for (let i = 0; i < K; i++) if (pulls[i] === 0) { a = i; break; }  // 每臂先试一次
+    if (a < 0) {
+      let bv = -1;
+      for (let i = 0; i < K; i++) { const u = ucbVal(i, t); if (u > bv) { bv = u; a = i; } }
+    }
+  } else if (policy === 'eps' || policy === 'greedy') {
+    a = -1;
+    for (let i = 0; i < K; i++) if (pulls[i] === 0) { a = i; break; }  // 每臂先试一次拿初始估计
+    if (a < 0) {
+      const explore = policy === 'eps' && Math.random() < epsV;
+      a = explore ? (Math.random() * K | 0) : argmaxQ();
+    }
+  } else if (policy === 'random') {
+    a = Math.random() * K | 0;
+  } else { /* Thompson:每臂从 Beta 后验抽一个 θ,选最大 */
+    let bv = -1;
+    for (let i = 0; i < K; i++) { const s = betaSample(tsA[i], tsB[i]); tsS[i] = s; if (s > bv) { bv = s; a = i; } }
+    tsFlashT = etG; tsFlashArm = a;
+  }
+  const win = Math.random() < MU[a];
+  n = t; pulls[a]++;
+  if (win) { winsArr[a]++; totalWin++; tsA[a]++; } else tsB[a]++;
+  regret += MU[BESTI] - MU[a];   // 期望遗憾:每拉一次次优臂就欠 Δ
+  lastPick = a; lastWin = win;
+  leverPh[a] = 1; reelVel[a] = 9 + Math.random() * 5;
+  if (win) { spawnCoin(a); trayFlash[a] = 1; } else spawnMiss(a);
+  if (n === 1 || n % stride === 0) cur.push([n, regret]);
+  if (cur.length > 380) { cur = cur.filter((_, i) => (i & 1) === 0); stride *= 2; }
+}
+
+/* ---------------- 示波器:累计遗憾-拉杆数 ---------------- */
+function drawScope() {
+  const w = scope.width, h = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, w, h);
+  scopeCtx.strokeStyle = 'rgba(127,140,160,.4)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.strokeRect(4, 4, w - 8, h - 8);
+  const all = frozen.concat([{ pts: cur, color: POLICY_COL[policy] }]);
+  let maxN = 10, maxR = 0.5;
+  for (const c of all) if (c.pts.length) { maxN = Math.max(maxN, c.pts[c.pts.length - 1][0]); maxR = Math.max(maxR, c.pts[c.pts.length - 1][1]); }
+  const base = h - 8, amp = h - 20;
+  const px = nn => 4 + (nn / maxN) * (w - 8);
+  const py = rr => base - (rr / maxR) * amp;
+  /* 冻结对照曲线 */
+  for (const c of frozen) {
+    if (c.pts.length < 2) continue;
+    scopeCtx.globalAlpha = 0.45;
+    scopeCtx.strokeStyle = c.color;
+    scopeCtx.lineWidth = Math.max(1, 1.1 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < c.pts.length; i++) {
+      const x = px(c.pts[i][0]), y = py(c.pts[i][1]);
+      i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+    }
+    scopeCtx.stroke();
+    scopeCtx.globalAlpha = 1;
+  }
+  /* 当前策略曲线 */
+  if (cur.length >= 2) {
+    scopeCtx.strokeStyle = POLICY_COL[policy];
+    scopeCtx.lineWidth = Math.max(1.4, 1.5 * dpr);
+    scopeCtx.beginPath();
+    for (let i = 0; i < cur.length; i++) {
+      const x = px(cur[i][0]), y = py(cur[i][1]);
+      i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+    }
+    scopeCtx.stroke();
+  }
+  scopeCtx.fillStyle = scopeDark ? 'rgba(242,245,249,.85)' : 'rgba(22,32,44,.85)';
+  scopeCtx.font = `${10 * dpr}px sans-serif`;
+  scopeCtx.fillText(L('累计遗憾-拉杆数(弯=对数好,直=线性坏),淡线=换策略前的冻结对照', 'regret vs pulls (bent=log good, straight=linear bad), faint=frozen previous policies'), 8, 14 * dpr);
+  scopeCtx.fillText(`n=${Math.round(maxN)}  R=${maxR.toFixed(0)}`, w - 74 * dpr, h - 8 * dpr);
+}
+
+/* ---------------- 步骤 ---------------- */
+const STEPS = [
+  { b: '探索-利用困境', be: 'explore vs exploit', tgt: [0, 2.1, 0], preset: null,
+    d: '三台机器的中奖率 0.42/0.30/0.55(示意)且保密:每次拉杆既是消费——想赢就该拉当前看起来最好的那台;也是采样——想知道别台是否更好就得试。只利用会被次优臂套牢,只探索又把赢面交学费。一切策略的优劣折成一个数:累计遗憾 R_n = n·μ* − Σ μ(aₜ),即与全知最优策略的期望收入差。',
+    de: 'The hidden win rates are 0.42/0.30/0.55 (illustrative). Every pull is consumption - pull the arm that looks best - and sampling at once - try others to learn. Exploit only and a suboptimal arm traps you; explore only and the winnings go to tuition. All policies are scored by one number: the regret R_n = n·μ* − Σ μ(a_t), the expected revenue gap to an omniscient player.' },
+  { b: '采样与均值估计', be: 'sampling and means', tgt: [-1.4, 1.9, 1.6], preset: 'ucb',
+    d: '拉一次臂 a,以 μₐ 的概率赢 1 枚;样本均值 Q̂(a)=赢的次数/拉的次数按大数定律向 μₐ 收敛——但收敛要样本:只拉 20 次时标准误还有约 0.11(示意),手气会被误当实力。看每台机器上方的彩色均值环:早期上下乱跳,拉多了才坐稳到虚线的真实 μ 环附近。',
+    de: 'Pull arm a and it pays 1 coin with probability μ_a; the sample mean Q̂(a)=wins/pulls converges to μ_a by the law of large numbers - but convergence needs samples: after 20 pulls the standard error is still ≈0.11 (illustrative), and luck masquerades as skill. Watch the colored mean rings wobble early and settle near the dashed true-μ rings only after many pulls.' },
+  { b: '置信上界与区间收缩', be: 'confidence bounds shrink', tgt: [0, 3.4, 1.4], preset: 'ucb',
+    d: '样本少→均值不可信→UCB 给它加置信奖金 c·√(2 ln t / n):拉得越少气球越大,上界被高估得越狠——「不确定」本身变成吸引力,冷门臂自动轮到机会;拉得越多,气球按 1/√n 塌缩,上界贴向真实均值。算法原则是「面对不确定性保持乐观」:宁可高估没试过的臂,也不放过任何一个可能是最好的。',
+    de: 'Few samples mean an untrustworthy mean, so UCB1 adds a confidence bonus c·√(2 ln t / n): the less an arm was pulled, the bigger its balloon and the more its upper bound is inflated - uncertainty itself becomes attractive and cold arms get their turn automatically; as pulls accumulate the balloon collapses like 1/√n and the bound hugs the truth. The principle: be optimistic in the face of uncertainty.' },
+  { b: 'UCB1:对数遗憾', be: 'UCB1: logarithmic regret', tgt: [0, 2.3, 2.0], preset: 'ucb',
+    d: 'UCB1(Auer、Cesa-Bianchi、Fischer,2002)每步选 Q̂ + √(2 ln t / n) 最大的臂,零调参。定理:R_n ≤ ΣΔ + 8 ln n·Σ 1/Δ,遗憾只按对数增长;Lai–Robbins(1985)更早证明任何一致策略 R_n ≥ c·ln n——对数既是天花板也是地板,UCB1 贴着信息论的下限走。看示波器蓝线:先陡后缓,斜率越来越像 ln n。',
+    de: 'UCB1 (Auer, Cesa-Bianchi, Fischer 2002) always pulls the arm maximizing Q̂ + √(2 ln t / n), with no tuning knobs. Theorem: R_n ≤ ΣΔ + 8 ln n·Σ 1/Δ - regret grows only logarithmically; Lai-Robbins (1985) had already proved every consistent policy has R_n ≥ c·ln n. The log is both ceiling and floor: UCB1 walks right along the information-theoretic bound. The blue scope curve bends like ln n.' },
+  { b: 'ε-greedy 与 Thompson', be: 'ε-greedy and Thompson', tgt: [0, 2.1, 1.7], preset: 'eps',
+    d: '最朴素的修法是 ε-greedy:以 ε 概率随机试、1−ε 贪心。ε=0.1 时每 10 次白扔 1 次,遗憾按 0.1·(Δ_A+Δ_B)/2 的斜率线性爬、永不收敛到零;Thompson 采样(Thompson,1933)给每臂挂 Beta(1+赢,1+输) 后验,每步从各后验抽一个 θₐ、选最大者——数据越多抽样越集中,探索量随不确定性自适应,是广告点击预测的默认选手。切到 Thompson 按钮看绿色抽样闪点。',
+    de: 'The simplest fix is ε-greedy: explore with probability ε, exploit otherwise. At ε=0.1 one pull in ten is wasted forever, so regret climbs linearly with slope ε·ΣΔ and never converges to zero. Thompson sampling (1933) gives each arm a Beta(1+wins, 1+losses) posterior and draws one θ per arm each step, picking the largest - exploration adapts to remaining uncertainty, and it is the default choice in ad click prediction. Press Thompson to watch green posterior draws.' },
+  { b: '贪心失效与 A/B 对照', be: 'greedy failure and A/B tests', tgt: [-1.6, 2.0, 1.8], preset: 'greedy',
+    d: '把 ε 拧到 0:开局几次手气定终身,贪心多半锁死在次优臂,A/B 臂的 Δ=0.13/0.25 让遗憾按 Δ·n 线性上涨——n=10⁴ 时白丢上千枚,红线在示波器上甩开所有对数曲线。治法:留一点 ε 尾巴,或乐观初值 Q₀=1 逼它先试遍每台机器。A/B 测试同源:5%→6% 的转化提升按固定分流要 ≈0.8 万样本/臂才能裁决(p<0.05,示意),bandit 把流量实时滚向赢家、少给输家送转化——这就是广告投放里「多臂老虎机分配」的全部动机。',
+    de: 'Set ε to 0: the first lucky streak decides everything, greedy locks onto a suboptimal arm, and the gaps Δ=0.13/0.25 make regret grow linearly as Δ·n - over a thousand coins squandered by n=10⁴, the red scope curve leaving every log curve behind. Remedies: keep an ε tail, or optimistic initialization Q₀=1 to force trying every arm first. A/B tests share the math: proving a 5%→6% lift with a fixed split needs ≈8k samples per arm (p<0.05, illustrative), while a bandit rolls traffic to the winner live - the whole point of bandit allocation in ad delivery.' },
+];
+
+/* ---------------- 公式 ---------------- */
+function updateFormula() {
+  const t = Math.max(n, 1);
+  let ui = 0, uv = -1;
+  for (let i = 0; i < K; i++) if (pulls[i] > 0) { const u = ucbVal(i, t); if (u > uv) { uv = u; ui = i; } }
+  const hasUCB = uv >= 0;
+  const wSum = tsA[0] + tsA[1] + tsA[2] - 3, lSum = tsB[0] + tsB[1] + tsB[2] - 3;
+  el.formula.innerHTML =
+    L(`<b>UCB1(a) = Q̂(a) + c·√(2 ln t / n(a))</b>,c = <b>${cC.toFixed(2)}</b> · 当前上界最高:${hasUCB ? `臂 ${ARMLETER[ui]} = ${qhat(ui).toFixed(2)} + ${(uv - qhat(ui)).toFixed(2)} = <b>${uv.toFixed(2)}</b>` : '—'}`,
+      `<b>UCB1(a) = Q̂(a) + c·√(2 ln t / n(a))</b>, c = <b>${cC.toFixed(2)}</b> · top bound now: ${hasUCB ? `arm ${ARMLETER[ui]} = ${qhat(ui).toFixed(2)} + ${(uv - qhat(ui)).toFixed(2)} = <b>${uv.toFixed(2)}</b>` : '-'}`) + '<br>' +
+    L(`<b>R_n = n·μ* − Σ μ(aₜ) = ${regret.toFixed(1)} 枚</b> · Δ = (0.13, 0.25) · UCB1:R_n ≤ ΣΔ + 8 ln n·Σ1/Δ = <b>O(log n)</b>(Auer 2002;Lai–Robbins 1985:ln n 也是地板)`,
+      `<b>R_n = n·μ* − Σ μ(a_t) = ${regret.toFixed(1)}</b> · Δ = (0.13, 0.25) · UCB1: R_n ≤ ΣΔ + 8 ln n·Σ1/Δ = <b>O(log n)</b> (Auer 2002; Lai-Robbins 1985: ln n is also the floor)`) + '<br>' +
+    L(`Thompson:θₐ~Beta(<b>1+${wSum}</b>, <b>1+${lSum}</b>)(1933)· 贪心 ε=0:R ≈ Δ·n 线性 · A/B:5%→6% 需 ≈<b>0.8 万/臂</b>(p<0.05,示意)`,
+      `Thompson: θₐ~Beta(<b>1+${wSum}</b>, <b>1+${lSum}</b>) (1933) · greedy ε=0: R ≈ Δ·n linear · A/B: 5%→6% needs ≈<b>8k/arm</b> (p<0.05, illustrative)`);
+}
+
+/* ---------------- 状态面板 ---------------- */
+function updateSliderLabels() {
+  el.elAVal.textContent = cC.toFixed(2);
+  el.elBVal.textContent = epsV.toFixed(2);
+  el.elCVal.textContent = pullRate + L(' 拉/s', '/s');
+}
+function updateStats() {
+  el.stA.innerHTML = n + '<small> ' + L('次', 'pulls') + '</small>';
+  el.stA.className = 'v';
+  const rate = n > 0 ? regret / n : 0;
+  el.stB.innerHTML = regret.toFixed(1) + '<small> ' + L('枚', 'coins') + '</small>';
+  el.stB.className = 'v' + (n > 20 ? (rate < 0.035 ? ' ok' : rate < 0.1 ? ' warn' : ' bad') : '');
+  let bi = -1, bv = -1;
+  for (let i = 0; i < K; i++) if (pulls[i] > 0 && qhat(i) > bv) { bv = qhat(i); bi = i; }
+  const settled = bi >= 0 && Math.min(...pulls) > 0 && n > 40;
+  el.stC.innerHTML = bi < 0 ? '—' : `${ARMLETER[bi]} <small>Q̂=${bv.toFixed(2)}</small>`;
+  el.stC.className = 'v' + (settled ? (bi === BESTI ? ' ok' : ' warn') : '');
+  el.stD.innerHTML = n > 0 ? (totalWin / n).toFixed(3) + '<small>' + L(' μ*=0.55', ' μ*=0.55') + '</small>' : '—';
+  el.stD.className = 'v' + (n > 20 ? (totalWin / n > 0.5 ? ' ok' : totalWin / n > 0.42 ? ' warn' : ' bad') : '');
+}
+
+/* ---------------- UI 接线 ---------------- */
+const el = {
+  elA: document.getElementById('vA'), elAVal: document.getElementById('vAVal'),
+  elB: document.getElementById('vB'), elBVal: document.getElementById('vBVal'),
+  elC: document.getElementById('vC'), elCVal: document.getElementById('vCVal'),
+  stA: document.getElementById('stA'), stB: document.getElementById('stB'),
+  stC: document.getElementById('stC'), stD: document.getElementById('stD'),
+  formula: document.getElementById('formula'),
+};
+el.elA.addEventListener('input', () => { cC = +el.elA.value; updateSliderLabels(); updateFormula(); });
+el.elB.addEventListener('input', () => {
+  epsV = +el.elB.value;
+  if (epsV > 0 && policy === 'greedy') { policy = 'eps'; document.getElementById('btn-greedy').classList.remove('on'); document.getElementById('btn-eps').classList.add('on'); resetRun(); }
+  updateSliderLabels(); updateFormula();
+});
+el.elC.addEventListener('input', () => { pullRate = +el.elC.value; updateSliderLabels(); });
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主逻辑 ---------------- */
+function pageFrame(et, simDt, dt) {
+  etG = et;
+  /* ---- 拉杆:按速率排队执行 ---- */
+  if (simDt > 0) {
+    pullAcc += simDt * pullRate;
+    let guard = 0;
+    while (pullAcc >= 1 && guard < 40) { pullAcc -= 1; doPull(); guard++; }
+    if (pullAcc > 3) pullAcc = 0;
+  }
+  /* ---- 机构动画:拉杆 / 卷轮 / 出币托盘闪金 ---- */
+  for (let i = 0; i < K; i++) {
+    const m = arms[i];
+    if (leverPh[i] > 0.003) { leverPh[i] *= Math.exp(-5.5 * dt); m.lever.rotation.x = 1.55 * leverPh[i]; }
+    else { leverPh[i] = 0; m.lever.rotation.x = 0; }
+    if (reelVel[i] > 0.05) { reelVel[i] *= Math.exp(-2.6 * dt); for (const r of m.reels) r.rotation.z += reelVel[i] * dt; }
+    if (trayFlash[i] > 0.005) { trayFlash[i] *= Math.exp(-4.5 * dt); M['tray' + i].emissiveIntensity = 1.6 * trayFlash[i]; }
+    else M['tray' + i].emissiveIntensity = 0;
+  }
+  /* ---- 置信塔:均值环 / 气球 / 顶帽 ---- */
+  const t = Math.max(n, 1);
+  M.balloon.opacity = 0.24 + 0.10 * (0.5 + 0.5 * Math.sin(et * 4.6)) * (scenario === 2 ? 1 : 0);
+  for (let i = 0; i < K; i++) {
+    const m = arms[i];
+    const q = pulls[i] > 0 ? qhat(i) : 0;
+    let u = q;
+    if (pulls[i] === 0) u = 1.02;               // 未试过的臂:上界按 ∞ 乐观处理
+    else if (policy === 'ucb') u = ucbVal(i, t);
+    m.meanRing.position.y = scaleV(q);
+    m.meanRing.visible = pulls[i] > 0;
+    m.balloon.position.y = scaleV(q);
+    m.balloon.scale.y = Math.max(0.03, scaleV(u) - scaleV(q));
+    m.balloon.visible = policy === 'ucb';
+    m.cap.position.y = scaleV(u);
+    m.cap.visible = policy === 'ucb';
+    m.trueRing.visible = tglTruth.checked && labelsOn;
+    m.tsDot.visible = false;
+  }
+  /* Thompson 抽样闪点:每次抽签在选中臂上闪 0.3 s */
+  if (policy === 'ts' && et - tsFlashT < 0.3 && tsFlashArm >= 0) {
+    const m = arms[tsFlashArm];
+    m.tsDot.visible = true;
+    m.tsDot.position.set(0.16, scaleV(clamp(tsS[tsFlashArm], 0, 1)), 0);
+  }
+  /* ---- 金币粒子 ---- */
+  for (let i = 0; i < NCOIN; i++) {
+    if (coinAge[i] < 0) continue;
+    coinAge[i] += dt;
+    if (coinAge[i] > 0.85) { coinAge[i] = -1; coinPos[i * 3 + 1] = -50; continue; }
+    coinVel[i * 3 + 1] -= 5.2 * dt;
+    coinPos[i * 3] += coinVel[i * 3] * dt;
+    coinPos[i * 3 + 1] += coinVel[i * 3 + 1] * dt;
+    coinPos[i * 3 + 2] += coinVel[i * 3 + 2] * dt;
+  }
+  coinGeo.attributes.position.needsUpdate = true;
+  for (let i = 0; i < NMISS; i++) {
+    if (missAge[i] < 0) continue;
+    missAge[i] += dt;
+    if (missAge[i] > 0.5) { missAge[i] = -1; missPos[i * 3 + 1] = -50; continue; }
+    missVel[i * 3 + 1] -= 2.5 * dt;
+    missPos[i * 3] += missVel[i * 3] * dt;
+    missPos[i * 3 + 1] += missVel[i * 3 + 1] * dt;
+    missPos[i * 3 + 2] += missVel[i * 3 + 2] * dt;
+  }
+  missGeo.attributes.position.needsUpdate = true;
+  /* ---- 标签可见性 ---- */
+  regretLbl.o.visible = labelsOn;
+}
+
+/* ---------------- 装配 ---------------- */
+refreshLabels();
+updateSliderLabels();
+updateStats();
+updateFormula();
+const t0 = parseInt(qs.get('t'), 10);
+const p0 = qs.get('policy');
+if (p0 && PRESET_IDS.includes(p0)) { policy = p0; document.getElementById('btn-' + p0).classList.add('on'); }
+else document.getElementById('btn-ucb').classList.add('on');
+const c0 = qsFloat('c', NaN), e0 = qsFloat('eps', NaN);
+if (Number.isFinite(c0)) { cC = clamp(c0, 0.1, 3); el.elA.value = cC; }
+if (Number.isFinite(e0)) { epsV = clamp(e0, 0, 0.5); el.elB.value = epsV; }
+updateSliderLabels();
+tgtVec.set(0, 2.1, 0);
+camera.position.set(5.0, 3.9, 9.2);
+applyView();
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  pageFrame(et, simDt, dt);
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  for (const r of labelReg) {
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
