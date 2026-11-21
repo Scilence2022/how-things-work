@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蝮蛇红外感受窝 · 0.003~0.02 °C 的膜温感受器如何画出热像</title>
+<style>
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --acc:#d6483c; /* 红外热主题色:热斑红 */
+    --bg:#0f1216; --panel:rgba(13,17,23,.86); --panel-border:rgba(255,255,255,.09);
+    --text:#f2f5f9; --text2:#9fb0c3; --text3:#c7d2de;
+    --hover:rgba(255,255,255,.05); --shadow:0 8px 30px rgba(0,0,0,.45);
+    --tool:rgba(13,17,23,.78); --tool-border:rgba(255,255,255,.12);
+    --cv-pill:rgba(13,17,23,.8);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --acc:#b23227;
+    --bg:#eff1f4; --panel:rgba(255,255,255,.88); --panel-border:rgba(15,25,40,.10);
+    --text:#16202c; --text2:#5b6b7d; --text3:#33414f;
+    --hover:rgba(15,25,40,.05); --shadow:0 8px 26px rgba(30,45,70,.15);
+    --tool:rgba(255,255,255,.85); --tool-border:rgba(15,25,40,.14);
+    --cv-pill:rgba(255,255,255,.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .25s; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  .lbl { background: var(--cv-pill); border: 1px solid var(--tool-border);
+    color: var(--text3); font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 999px;
+    white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity .25s; }
+  :root[data-theme="light"] .lbl { text-shadow: none; }
+  .lbl.e { border-color: rgba(255,133,120,.9); color: #ffc9c2; }
+  .lbl.w { border-color: rgba(255,205,112,.9); color: #ffe2ae; }
+  .lbl.g { border-color: rgba(116,220,132,.9); color: #c8f5d0; }
+  .lbl.b { border-color: rgba(116,192,252,.9); color: #bde9ff; }
+  .lbl.bad { border-color: rgba(255,93,93,.9); color: #ffc2c2; font-size: 13px; padding: 6px 11px; }
+  .lbl.st { border-color: rgba(154,167,184,.9); font-size: 13px; padding: 6px 11px; }
+  :root[data-theme="light"] .lbl.e { border-color: rgba(178,50,39,.9); color: #a32e22; }
+  :root[data-theme="light"] .lbl.w { border-color: rgba(143,106,37,.9); color: #8a5f12; }
+  :root[data-theme="light"] .lbl.g { border-color: rgba(11,122,90,.9); color: #0b7a5a; }
+  :root[data-theme="light"] .lbl.b { border-color: rgba(30,120,200,.9); color: #1864ab; }
+  :root[data-theme="light"] .lbl.bad { border-color: rgba(224,49,49,.9); color: #c92a2a; }
+
+  #tools { position: fixed; top: 16px; right: 18px; z-index: 6; display: flex; gap: 8px; }
+  .tbtn { appearance: none; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text3); font: inherit; font-size: 12.5px; font-weight: 600;
+    min-width: 40px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; backdrop-filter: blur(6px);
+    transition: border-color .15s, color .15s, transform .15s; }
+  .tbtn:hover { border-color: var(--acc); color: var(--acc); transform: translateY(-1px); }
+
+  #title { position: fixed; top: 18px; left: 22px; z-index: 5; pointer-events: none;
+    max-width: calc(100vw - 320px); }
+  #title h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: .5px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #title .sub { font-size: 12.5px; color: var(--text2); margin-top: 6px; line-height: 1.5;
+    text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  #stats { position: fixed; right: 18px; bottom: 18px; z-index: 4; background: var(--panel);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 16px;
+    backdrop-filter: blur(6px); display: grid; grid-template-columns: auto auto; gap: 3px 18px; }
+  #stats .k { font-size: 12px; color: var(--text2); align-self: center; }
+  #stats .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #stats .v small { font-size: 11px; color: var(--text2); font-weight: 400; }
+  #stats .v.ok { color: #7bd88f; }
+  #stats .v.warn { color: #ffa94d; }
+  #stats .v.bad { color: #ff6b6b; }
+
+  #panel { position: fixed; left: 18px; bottom: 18px; z-index: 5; width: 392px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 8px 12px 7px; backdrop-filter: blur(6px);
+    box-shadow: var(--shadow); max-height: calc(100vh - 160px); overflow: auto; }
+  #legend { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid; }
+  .chip.o { color: #ffe0ae; border-color: rgba(255,180,84,.7); }
+  .chip.g { color: #c8f5d0; border-color: rgba(116,220,132,.7); }
+  .chip.b { color: #bde9ff; border-color: rgba(116,192,252,.7); }
+  .chip.r { color: #ffc2c2; border-color: rgba(255,107,107,.7); }
+  :root[data-theme="light"] .chip.o { color:#a34e00; } :root[data-theme="light"] .chip.g { color:#2b8a3e; }
+  :root[data-theme="light"] .chip.b { color:#1864ab; } :root[data-theme="light"] .chip.r { color:#c92a2a; }
+  #actions { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .abtn { appearance: none; font: inherit; cursor: pointer; flex: 1 1 40%;
+    background: var(--hover); color: var(--text2); border: 1px solid var(--tool-border);
+    border-radius: 9px; padding: 4px 7px; font-size: 11.5px; font-weight: 600;
+    transition: border-color .15s, color .15s, background .15s; }
+  .abtn:hover { border-color: var(--acc); color: var(--text); }
+  .abtn.on { border-color: rgba(214,72,60,.65); background: rgba(214,72,60,.14); color: var(--text); }
+  .abtn.hot { border-color: rgba(255,107,107,.6); color: #ffa8a8; }
+  :root[data-theme="light"] .abtn.on { border-color: rgba(178,50,39,.55); background: rgba(178,50,39,.10); }
+  :root[data-theme="light"] .abtn.hot { color:#c92a2a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  .row label { font-size: 12px; color: var(--text2); flex: 0 0 92px; }
+  .row .val { font-size: 11.5px; color: var(--text3); flex: 0 0 66px; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--acc); height: 15px; }
+  input[type=range]:disabled { opacity: .4; }
+  #scope { width: 100%; height: 60px; display: block; margin-top: 4px; border-radius: 8px;
+    background: rgba(127,140,160,.10); border: 1px solid var(--panel-border); }
+  #formula { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text2);
+    border-top: 1px dashed var(--panel-border); padding-top: 4px; }
+  #formula b { color: var(--text3); font-weight: 600; }
+  #steps { list-style: none; margin-top: 3px; }
+  #steps li { display: flex; gap: 6px; padding: 3px 5px; border-radius: 9px; cursor: pointer;
+    border: 1px solid transparent; align-items: flex-start; }
+  #steps li:hover { background: var(--hover); }
+  #steps li.on { background: rgba(214,72,60,.10); border-color: rgba(214,72,60,.45); }
+  :root[data-theme="light"] #steps li.on { background: rgba(178,50,39,.08); border-color: rgba(178,50,39,.4); }
+  #steps .n { flex: 0 0 15px; height: 15px; border-radius: 50%; font-size: 10.5px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    background: rgba(255,255,255,.12); color: var(--text3); }
+  :root[data-theme="light"] #steps .n { background: rgba(15,25,40,.10); }
+  #steps li.on .n { background: var(--acc); color: #fff; }
+  #steps .t { font-size: 11px; color: var(--text3); line-height: 1.35; }
+  #steps .t b { color: var(--text); font-size: 11px; }
+  #steps li.on .t b { color: #f2a09a; }
+  :root[data-theme="light"] #steps li.on .t b { color: var(--acc); }
+  #ctrl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border); }
+  #play { grid-row: 1 / 3; grid-column: 1; padding: 6px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--acc); color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+  #play:hover { filter: brightness(1.12); }
+  .crow { display: flex; align-items: center; gap: 8px; }
+  .crow .ck { font-size: 11.5px; color: var(--text2); flex: 0 0 34px; }
+  .crow .cv { font-size: 10.5px; color: var(--text3); flex: 0 0 96px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #toggles { display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap; }
+  #toggles label { font-size: 11.5px; color: var(--text2); display: flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+  #toggles input { accent-color: var(--acc); }
+  #rel { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--panel-border);
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #rel span { font-size: 11px; color: var(--text2); }
+  #rel a { font-size: 11px; color: var(--text3); text-decoration: none; border: 1px solid var(--tool-border);
+    border-radius: 999px; padding: 2px 8px; transition: color .15s, border-color .15s; }
+  #rel a:hover { color: var(--acc); border-color: var(--acc); }
+  @media (max-width: 900px) { #stats { display: none; } }
+  @media (max-width: 760px) {
+    #panel { width: calc(100vw - 36px); max-height: 55vh; }
+    #title { top: 62px; max-width: calc(100vw - 44px); }
+    #title h1 { font-size: 16px; line-height: 1.4; }
+    #title .sub { font-size: 11.5px; line-height: 1.45; }
+    .lbl, .lbl.bad, .lbl.st { max-width: 42vw; padding: 5px 7px; border-radius: 8px;
+      font-size: 10.5px; line-height: 1.35; white-space: normal; }
+  }
+
+  /* 控制面板折叠按钮 */
+  #panelToggle { display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin: -4px 0 -22px auto; position: sticky; top: 8px; z-index: 3;
+    border-radius: 8px; border: 1px solid var(--tool-border); background: var(--tool);
+    color: var(--text2); font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+    backdrop-filter: blur(6px); transition: border-color .15s, color .15s; }
+  #panelToggle:hover { border-color: var(--acc); color: var(--acc); }
+  #panelToggle + * { padding-right: 34px; } /* panelTogglePad: 首行给 ▾ 按钮让位 */
+  #panel { scrollbar-width: thin; scrollbar-color: rgba(140,140,150,.6) transparent; }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(140,140,150,.55); border-radius: 3px; }
+  #panel::-webkit-scrollbar-track { background: transparent; }
+  #panel > .panelFade { position: sticky; bottom: 0; z-index: 2; height: 26px; margin: -26px 0 -4px;
+    pointer-events: none; opacity: 0; transition: opacity .2s;
+    background: linear-gradient(to bottom, transparent, var(--panel) 78%); }
+  #panel.scrollable:not(.at-bottom) > .panelFade { opacity: 1; }
+  #panel.collapsed { width: auto; min-width: 0; padding: 6px; max-height: none; overflow: visible; }
+  #panel.collapsed > :not(#panelToggle) { display: none; }
+  #panel.collapsed > #panelToggle { margin: 0; position: static; }
+  @media (max-width: 760px) { #panel.collapsed { width: auto; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="title">
+  <h1 data-zh="蝮蛇红外感受窝" data-en="Viper Infrared Pit Organs">蝮蛇红外感受窝</h1>
+  <div class="sub" data-zh="蝮亚科(响尾蛇、蝮、烙铁头)的眼鼻之间还有一对「额外的小孔」——颊窝:它不是眼睛,而是一张 15 µm 厚悬膜做的量热辐射计。窝口只开 1~2 mm,窝深约 3 mm;悬膜把窝分成开口朝外的外室与密闭的内室(气压缓冲),膜面密布约 7000 根三叉神经末梢(TRPA1 门控温觉通道)。一切高于绝对零度的物体都在发光:34 °C 小鼠皮肤的峰值波长按维恩位移 λmax=2898/T≈9.4 µm,落在 8~14 µm 大气窗口,与 18 °C 背景的辐出度差 εσ(T⁴−T₀⁴)≈94 W/m²;25 cm 外的小鼠经窝口把约 2 µW 打上膜,热斑膜温几十毫秒升高约 7 m°C——感受器灵敏度 0.003~0.02 °C,恰在阈值之上。窝口同时是针孔光圈:膜上成上下左右倒置的热像,几何模糊 θ≈d/L≈27°,25 cm 外的猎物糊成 ~13 cm 一团,分辨率比人眼(≈1′)差千倍;但中脑顶盖把红外图与视觉图叠印在同一张拓扑地图上(双模神经元),黑暗中照样给出射击诸元,大脑再靠运动流把热斑追成准星,出击误差可达毫米级。工程对照:非制冷微热像仪是同一原理的硅版——17 µm VOx 微测辐射热计阵列、NETD≈0.02~0.05 °C,还得温控加挡片校准;蛇这张活膜不制冷、不校准,靠神经适应减掉背景基线,代价是空间粗糙、时间也慢(≈50 ms 一帧)。权衡一目了然:窝口开大,进光按 d² 涨、模糊按 d 变宽;膜更薄响应更快,横向热扩散却把邻斑抹匀。失效最干脆:变温青蛙体温=环境,对比度归零,热像里彻底隐身;晒热的岩石反而成了假目标。拖「猎物距离/窝口径/环境温度/猎物体温」看热斑生灭与模糊伸缩;按「红外成像」看倒像热斑与射线,按「追踪出击」看瞄准-出击闭环,按「热像仪对照」对比人造像元阵,按「变温失效」看隐身盲区。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停
+- 场景要点: 夜色林地,一只剖视的蝮蛇头停在画面近处:暗红断面排着眼、脑与中脑顶盖,眼鼻之间挖出的颊窝被放大 ~10 倍挂在旁边——窝口金属环、外室喇叭口、15 µm 悬膜(实时热图)与密闭内室,一根三叉神经连进脑。远处草地上小鼠按滑杆距离蹲着,体温高于环境时周身泛红外光(示意);红外射线从鼠身汇进窝口,穿过针孔在膜上晒出一片上下颠倒的热斑——鼠往右挪、斑往左跑。追踪出击模式里蛇头缓缓转轴瞄准、锁定两秒后张口前扑;热像仪对照模式里三脚架上的微热像仪把同一幕切成 16×9 像元阵画上屏幕;变温失效模式把小鼠换成与环境同温的青蛙——射线消失、热斑熄灭、膜一片死蓝,蛇抬头打转找不到目标。" data-en="Pit vipers (rattlesnakes, Agkistrodon, Trimeresurus) carry an extra pair of holes between eye and nostril - the loreal pits. They are not eyes but a bolometer made of a 15 µm suspended membrane. The aperture opens only 1-2 mm, the pit is about 3 mm deep; the membrane splits it into an open outer chamber and a sealed inner chamber (pressure buffer), and the membrane face carries about 7000 trigeminal nerve endings gated by TRPA1 warm channels. Everything above absolute zero glows: mouse skin at 34 °C peaks at lambda-max = 2898/T ≈ 9.4 µm by Wien's law, inside the 8-14 µm atmospheric window, and its radiance excess over an 18 °C background is epsilon·sigma·(T⁴-T0⁴) ≈ 94 W/m². A mouse 25 cm away pipes about 2 µW through the aperture onto the membrane, warming the hot spot by roughly 7 m°C within tens of milliseconds - receptor sensitivity is 0.003-0.02 °C, so the signal rides just above threshold. The aperture is also a pinhole: the membrane holds an upside-down, left-right flipped heat image, with geometric blur theta ≈ d/L ≈ 27°; a mouse at 25 cm smears into a ~13 cm blob, a thousand times coarser than the human eye (≈1 arcmin). Yet the optic tectum prints the infrared map on top of the visual map (bimodal neurons), so the snake aims in total darkness, and the brain chases the blurry blob into a crosshair with motion flow - strikes land within millimetres. Engineering comparison: an uncooled thermal camera is the same physics in silicon - a 17 µm VOx microbolometer array with NETD ≈ 0.02-0.05 °C that still needs temperature stabilization and a chopper; the living membrane needs no cooling and no calibration, subtracting the background by neural adaptation, paying in spatial and temporal resolution (≈50 ms a frame). The trade-off is visible: widen the aperture and flux grows with d² while blur grows with d; thin the membrane for speed and lateral heat diffusion smears neighbouring spots. Failure is blunt: an ectothermic frog at ambient temperature has zero contrast and vanishes from the heat image, while a sun-warmed rock becomes a false target. Drag prey distance / aperture / ambient / prey temp to breed or kill the hot spot; press IR imaging for the inverted spot and rays, tracking strike for the aim-and-strike loop, thermal camera to compare man-made pixels, cold-blooded failure to watch it go blind. 3D interactive demo - drag to orbit / scroll to zoom - Space = play/pause
+- Scene: a night forest floor. A sectional viper head sits near the camera: eye, brain and optic tectum laid on the dark-red cut face; the pit between eye and nostril is enlarged about 10x and hung beside it - metal aperture ring, outer-chamber horn, the 15 µm membrane (live heat map) and a sealed inner chamber, one trigeminal nerve running into the brain. A mouse crouches on the grass at the slider distance, glowing faintly red when warmer than the air (schematic); IR rays converge from its body into the pit opening and, through the pinhole, print an upside-down hot spot on the membrane - move the mouse right and the spot runs left. In tracking-strike mode the head yaws to aim, locks for two seconds and lunges with open jaws; in thermal-camera mode a tripod microbolometer cuts the same scene into a 16x9 pixel mosaic on its screen; in cold-blooded failure the mouse becomes a frog at ambient temperature - rays vanish, the spot dies, the membrane turns dead blue, and the snake circles, blind.">蝮亚科(响尾蛇、蝮、烙铁头)的眼鼻之间还有一对「额外的小孔」——颊窝:它不是眼睛,而是一张 15 µm 厚悬膜做的量热辐射计。窝口只开 1~2 mm,窝深约 3 mm;悬膜把窝分成开口朝外的外室与密闭的内室(气压缓冲),膜面密布约 7000 根三叉神经末梢(TRPA1 门控温觉通道)。一切高于绝对零度的物体都在发光:34 °C 小鼠皮肤的峰值波长按维恩位移 λmax=2898/T≈9.4 µm,落在 8~14 µm 大气窗口,与 18 °C 背景的辐出度差 εσ(T⁴−T₀⁴)≈94 W/m²;25 cm 外的小鼠经窝口把约 2 µW 打上膜,热斑膜温几十毫秒升高约 7 m°C——感受器灵敏度 0.003~0.02 °C,恰在阈值之上。窝口同时是针孔光圈:膜上成上下左右倒置的热像,几何模糊 θ≈d/L≈27°,25 cm 外的猎物糊成 ~13 cm 一团,分辨率比人眼(≈1′)差千倍;但中脑顶盖把红外图与视觉图叠印在同一张拓扑地图上(双模神经元),黑暗中照样给出射击诸元,大脑再靠运动流把热斑追成准星,出击误差可达毫米级。工程对照:非制冷微热像仪是同一原理的硅版——17 µm VOx 微测辐射热计阵列、NETD≈0.02~0.05 °C,还得温控加挡片校准;蛇这张活膜不制冷、不校准,靠神经适应减掉背景基线,代价是空间粗糙、时间也慢(≈50 ms 一帧)。权衡一目了然:窝口开大,进光按 d² 涨、模糊按 d 变宽;膜更薄响应更快,横向热扩散却把邻斑抹匀。失效最干脆:变温青蛙体温=环境,对比度归零,热像里彻底隐身;晒热的岩石反而成了假目标。拖「猎物距离/窝口径/环境温度/猎物体温」看热斑生灭与模糊伸缩;按「红外成像」看倒像热斑与射线,按「追踪出击」看瞄准-出击闭环,按「热像仪对照」对比人造像元阵,按「变温失效」看隐身盲区。3D 交互演示 · 鼠标拖动旋转 / 滚轮缩放 · 空格播放/暂停
+- 场景要点: 夜色林地,一只剖视的蝮蛇头停在画面近处:暗红断面排着眼、脑与中脑顶盖,眼鼻之间挖出的颊窝被放大 ~10 倍挂在旁边——窝口金属环、外室喇叭口、15 µm 悬膜(实时热图)与密闭内室,一根三叉神经连进脑。远处草地上小鼠按滑杆距离蹲着,体温高于环境时周身泛红外光(示意);红外射线从鼠身汇进窝口,穿过针孔在膜上晒出一片上下颠倒的热斑——鼠往右挪、斑往左跑。追踪出击模式里蛇头缓缓转轴瞄准、锁定两秒后张口前扑;热像仪对照模式里三脚架上的微热像仪把同一幕切成 16×9 像元阵画上屏幕;变温失效模式把小鼠换成与环境同温的青蛙——射线消失、热斑熄灭、膜一片死蓝,蛇抬头打转找不到目标。</div>
+</div>
+
+<div id="tools">
+  <a class="tbtn" href="../" data-zh="← 首页" data-en="← Home">← 首页</a>
+  <button class="tbtn" id="langBtn" aria-label="switch language">EN</button>
+  <button class="tbtn" id="themeBtn" aria-label="toggle theme">☀</button>
+</div>
+
+<div id="stats">
+  <span class="k" data-zh="膜温升 ΔT" data-en="membrane ΔT">膜温升 ΔT</span><span class="v" id="stA">—</span>
+  <span class="k" data-zh="热斑直径" data-en="spot diameter">热斑直径</span><span class="v" id="stB">—</span>
+  <span class="k" data-zh="猎物处模糊" data-en="blur at prey">猎物处模糊</span><span class="v" id="stC">—</span>
+  <span class="k" data-zh="末梢放电(示意)" data-en="firing rate (schem.)">末梢放电(示意)</span><span class="v" id="stD">—</span>
+</div>
+
+<div id="panel">
+  <button id="panelToggle" title="折叠 / 展开" aria-label="toggle panel">▾</button>
+  <div id="legend">
+    <span class="chip b" data-zh="窝膜 ~15 µm · ~7000 末梢" data-en="membrane 15 µm · 7000 endings">窝膜 ~15 µm · ~7000 末梢</span>
+    <span class="chip o" data-zh="热斑 ≥5 m°C 判定(文献 3~20)" data-en="spot gate 5 m°C (lit. 3-20)">热斑 ≥5 m°C 判定(文献 3~20)</span>
+    <span class="chip r" data-zh="针孔倒像 · 模糊 θ≈d/L" data-en="pinhole inversion · blur θ≈d/L">针孔倒像 · 模糊 θ≈d/L</span>
+    <span class="chip g" data-zh="微热像仪 NETD ~0.02 °C" data-en="thermal cam NETD ~0.02 °C">微热像仪 NETD ~0.02 °C</span>
+    <span class="chip o" data-zh="晒热岩石 = 红外杂波" data-en="warm rock = IR clutter">晒热岩石 = 红外杂波</span>
+    <span class="chip r" data-zh="变温猎物 = 隐身" data-en="ectotherm = invisible">变温猎物 = 隐身</span>
+  </div>
+  <div id="actions">
+    <button class="abtn" id="btn-anatomy" data-zh="解剖剖视" data-en="anatomy">解剖剖视</button>
+    <button class="abtn" id="btn-image" data-zh="红外成像" data-en="IR imaging">红外成像</button>
+    <button class="abtn" id="btn-track" data-zh="追踪出击" data-en="tracking strike">追踪出击</button>
+    <button class="abtn" id="btn-camera" data-zh="热像仪对照" data-en="thermal cam">热像仪对照</button>
+    <button class="abtn hot" id="btn-cold" data-zh="变温失效" data-en="cold failure">变温失效</button>
+    <button class="abtn" id="btnReset" data-zh="复位" data-en="reset">复位</button>
+  </div>
+  <div class="row"><label data-zh="猎物距离" data-en="prey distance">猎物距离</label><input id="vA" type="range" min="5" max="40" step="1" value="25"><span class="val" id="vAVal"></span></div>
+  <div class="row"><label data-zh="窝口径" data-en="pit aperture">窝口径</label><input id="vB" type="range" min="0.8" max="4" step="0.1" value="1.5"><span class="val" id="vBVal"></span></div>
+  <div class="row"><label data-zh="环境温度" data-en="ambient temp">环境温度</label><input id="vC" type="range" min="5" max="35" step="0.5" value="18"><span class="val" id="vCVal"></span></div>
+  <div class="row"><label data-zh="猎物体温" data-en="prey temp">猎物体温</label><input id="vD" type="range" min="10" max="38" step="0.5" value="34"><span class="val" id="vDVal"></span></div>
+  <canvas id="scope"></canvas>
+  <div id="formula"></div>
+  <ol id="steps"></ol>
+  <div id="ctrl">
+    <button id="play">暂停</button>
+    <div id="ctrlRows">
+      <div class="crow"><span class="ck" data-zh="步骤" data-en="Step">步骤</span><input id="phase" type="range" min="0" max="1000" value="0"><span class="cv" id="phaseVal">—</span></div>
+      <div class="crow"><span class="ck" data-zh="速度" data-en="Speed">速度</span><input id="speed" type="range" min="2" max="30" value="10"><span class="cv" id="speedVal">1.0×</span></div>
+      <div id="toggles">
+        <label><input id="tglCurve" type="checkbox" checked> <span data-zh="曲线/示波" data-en="curve scope">曲线/示波</span></label>
+        <label><input id="tglLabels" type="checkbox" checked> <span data-zh="标签" data-en="Labels">标签</span></label>
+        <label><input id="tglRotate" type="checkbox" checked> <span data-zh="自动环绕" data-en="auto-orbit">自动环绕</span></label>
+      </div>
+    </div>
+  </div>
+  <div id="rel">
+    <span data-zh="相关:" data-en="Related:">相关:</span>
+    <a href="../eye-vision/" data-zh="真正的视觉:人眼" data-en="eye vision">真正的视觉:人眼</a>
+    <a href="../jwst-infrared/" data-zh="JWST:人造红外之眼" data-en="JWST infrared">JWST:人造红外之眼</a>
+    <a href="../snake-venom/" data-zh="蛇毒:同一条蛇的化学武器" data-en="snake venom">蛇毒:同一条蛇的化学武器</a>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.__errs = [];
+addEventListener('error', e => window.__errs.push((e.message || String(e)) + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+
+/* ---------------- URL 参数 / 工具 ---------------- */
+const qs = new URLSearchParams(location.search);
+const qsFloat = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const qsBool = (k, d) => { const v = qs.get(k); return v === null ? d : v !== '0' && v !== 'false'; };
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const TAU = Math.PI * 2;
+const isMobile = () => innerWidth <= 760;
+
+/* ---------------- 主题 / 语言 ---------------- */
+const htmlEl = document.documentElement;
+let THEME = localStorage.getItem('htw-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+let LANG = localStorage.getItem('htw-lang') || 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+
+const scene = new THREE.Scene();
+function applyTheme() {
+  htmlEl.dataset.theme = THEME;
+  document.getElementById('themeBtn').textContent = THEME === 'dark' ? '☀' : '☾';
+  pageTheme(THEME === 'dark');
+}
+function applyLang() {
+  htmlEl.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-zh]').forEach(el => {
+    el.textContent = LANG === 'en' ? el.dataset.en : el.dataset.zh;
+  });
+  document.getElementById('langBtn').textContent = LANG === 'en' ? '中' : 'EN';
+  document.title = L(TITLE_ZH, TITLE_EN);
+  buildSteps(); setPlayLabel(); markStep(); syncPhase(); updateFormula(); updateSliderLabels();
+}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  THEME = THEME === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('htw-theme', THEME);
+  applyTheme();
+});
+document.getElementById('langBtn').addEventListener('click', () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('htw-lang', LANG);
+  applyLang();
+});
+
+/* ---------------- 渲染器 / 场景 / 相机 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 3 });
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.5;
+controls.maxDistance = 60;
+controls.maxPolarAngle = Math.PI * 0.55;
+controls.autoRotateSpeed = 0.25;
+function applyView() {
+  const mobile = isMobile();
+  camera.fov = mobile ? 47 : 42;
+  camera.position.set(...(mobile ? [16, 8, 29] : [10.5, 5.5, 19]));
+  controls.target.set(1.2, 1.2, 7.5);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+applyView();
+scene.add(new THREE.HemisphereLight(0x39465e, 0x1a2016, 0.75));
+const keyLight = new THREE.DirectionalLight(0xfff2e0, 1.6);
+keyLight.position.set(6, 10, 5);
+scene.add(keyLight);
+const fill = new THREE.DirectionalLight(0x7fa8ff, 0.35);
+fill.position.set(-7, 5, -6);
+scene.add(fill);
+
+/* ---------------- 状态标签(包装对象,勿把返回值当 CSS2DObject 用) ---------------- */
+const labelReg = [];
+function addLabel(textFn, clsFn, pos, follow, parent) {
+  const div = document.createElement('div');
+  div.className = 'lbl ' + (clsFn ? clsFn() : '');
+  const o = new CSS2DObject(div);
+  o.position.copy(pos);
+  (parent || scene).add(o);
+  labelReg.push({ o, text: textFn, cls: clsFn, follow });
+  div.textContent = textFn();
+  return { o, text: textFn, cls: clsFn, follow };
+}
+
+/* ---------------- 讲解步骤 ---------------- */
+let scenario = 0;
+const tgtVec = new THREE.Vector3(1.2, 1.2, 7.5);
+const camV = new THREE.Vector3();
+function markStep() {
+  [...document.getElementById('steps').children].forEach((li, i) => li.classList.toggle('on', i === scenario));
+}
+function syncPhase() {
+  elPhase.value = Math.round(scenario / (STEPS.length - 1) * 1000);
+  elPhaseVal.textContent = L(`第 ${scenario + 1}/${STEPS.length} 步`, `step ${scenario + 1}/${STEPS.length}`);
+}
+function activateStep(i) {
+  scenario = clamp(i, 0, STEPS.length - 1);
+  tgtVec.fromArray(STEPS[scenario].tgt);
+  dollyTo(STEPS[scenario].r);
+  markStep(); syncPhase(); updateFormula();
+}
+/* 视角推近:保持视线方向,按目标半径重设机位 */
+function dollyTo(r) {
+  if (!r) return;
+  const dir = tmpV2.copy(camera.position).sub(tgtVec);
+  if (dir.lengthSq() < 1e-4) dir.set(0.5, 0.4, 1);
+  dir.normalize().multiplyScalar(r);
+  camera.position.copy(tgtVec).add(dir);
+  controls.update();
+}
+function buildSteps() {
+  const el2 = document.getElementById('steps');
+  el2.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="t"><b>${L(s.b, s.be)}</b>　${L(s.d, s.de)}</span>`;
+    li.addEventListener('click', () => activateStep(i));
+    el2.appendChild(li);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+let preset = null;
+function setPreset(id) {
+  preset = preset === id ? null : id;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.toggle('on', pid === preset);
+  syncCold();
+  if (preset && TGT[preset]) { tgtVec.fromArray(TGT[preset].tgt); dollyTo(TGT[preset].r); }
+  updateFormula();
+}
+document.getElementById('btnReset').addEventListener('click', () => resetMachine());
+
+/* ---------------- 示波器 ---------------- */
+const scope = document.getElementById('scope');
+const scopeCtx = scope.getContext('2d');
+function sizeScope() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  scope.width = Math.max(10, scope.clientWidth * dpr);
+  scope.height = 60 * dpr;
+}
+
+/* ---------------- 播放状态 ---------------- */
+let playing = !qsBool('pause', false);
+if (qs.get('pause') === null && matchMedia('(prefers-reduced-motion: reduce)').matches) playing = false;
+let speed = clamp(qsFloat('speed', 1), 0.2, 3);
+let labelsOn = qsBool('labels', true);
+
+/* ---------------- UI ---------------- */
+const elPlay = document.getElementById('play');
+const elPhase = document.getElementById('phase'), elPhaseVal = document.getElementById('phaseVal');
+const elSpeed = document.getElementById('speed'), elSpeedVal = document.getElementById('speedVal');
+const tglCurve = document.getElementById('tglCurve');
+const tglLabels = document.getElementById('tglLabels');
+const tglRotate = document.getElementById('tglRotate');
+function setPlayLabel() { elPlay.textContent = playing ? L('暂停', 'Pause') : L('播放', 'Play'); }
+function refreshLabels() {
+  for (const r of labelReg) r.o.visible = labelsOn;
+}
+elPlay.addEventListener('click', () => { playing = !playing; setPlayLabel(); });
+elPhase.addEventListener('input', () => {
+  activateStep(Math.round(parseInt(elPhase.value, 10) / 1000 * (STEPS.length - 1)));
+});
+elSpeed.addEventListener('input', () => { speed = (+elSpeed.value) / 10; elSpeedVal.textContent = speed.toFixed(1) + '×'; });
+tglCurve.addEventListener('change', () => { scope.style.display = tglCurve.checked ? 'block' : 'none'; if (tglCurve.checked) sizeScope(); });
+tglLabels.addEventListener('change', () => { labelsOn = tglLabels.checked; refreshLabels(); });
+tglRotate.addEventListener('change', () => { controls.autoRotate = tglRotate.checked; });
+if (!qsBool('labels', true)) { labelsOn = false; tglLabels.checked = false; refreshLabels(); }
+controls.autoRotate = qsBool('spin', true);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); elPlay.click(); } });
+addEventListener('resize', () => {
+  applyView();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  sizeScope();
+});
+
+
+
+/* ================= 蝮蛇红外感受窝 ================= */
+const TITLE_ZH = '蝮蛇红外感受窝 · 0.003~0.02 °C 的膜温感受器如何画出热像';
+const TITLE_EN = 'Infrared Pit Organs: Seeing Heat with 0.003-0.02 °C Membrane Skin';
+const PRESET_IDS = ['anatomy', 'image', 'track', 'camera', 'cold'];
+const SCEN_BASE = ['anatomy', 'image', 'image', 'image', 'track', 'camera'];
+const TGT = {
+  anatomy: { tgt: [0.3, 0.5, 0.7], r: 3.6 },
+  image: { tgt: [0.6, 0.7, 6], r: 8 },
+  track: { tgt: [1.2, 1.0, 8], r: 12 },
+  camera: { tgt: [-1.6, 1.6, 9.8], r: 11 },
+};
+const HL = {};
+
+/* 物理常数(真实 SI;G_TOT / A_PROJ 为标定值,示意) */
+const SIGMA = 5.67e-8, EPSI = 0.97;
+const A_PROJ = 0.0025;   // 小鼠迎面投影面积 m²(示意)
+const HALF_H = 0.035;    // 小鼠半高 m → 角半径
+const L_PIT = 0.003;     // 窝深 3 mm
+const D_MEM = 0.004;     // 膜径 4 mm
+const G_TOT = 4.5e-4;    // 膜总热导 W/K(示意标定)
+const TH_GATE = 5;       // 演示判定阈值 m°C(文献 3~20)
+const TH_MEM = Math.atan((D_MEM / 2) / L_PIT);
+const ROCK_T_DIST = 1.2; // 岩石计热距 m(示意)
+const ROCK_A = 0.06;     // 岩石投影面积 m²(示意)
+
+let DIST = 25, DAP = 1.5, TA = 18, TP = 34;
+let coldOn = false, savedTP = null;
+let yaw = 0, lockT = 0, strikePhase = 0, strikeT0 = -9, jawK = 0, lungeK = 0, caughtK = 0;
+let wanderX = 0, st = 0;
+let errCm = 0, hitMsgT = -9, hitOk = false;
+const s1 = { on: false, vis: false, detect: false, dT: 0, thSpot: 0, sg: 1, uc: 0, vc: 0, sd: 0.2, dM: 0, Pin: 0, lam: 9.4, thBlur: 0 };
+const s2 = { on: false, dT: 0, sg: 1, uc: 0, vc: 0 };
+
+/* 柔和圆点贴图(射线粒子共用) */
+function softDot() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,255,255,.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const dotTex = softDot();
+
+const M = {
+  ground: new THREE.MeshStandardMaterial({ color: 0x22301f, roughness: 0.95 }),
+  grass: new THREE.MeshStandardMaterial({ color: 0x39543a, roughness: 0.9 }),
+  rock: new THREE.MeshStandardMaterial({ color: 0x6f6a60, roughness: 0.85 }),
+  branch: new THREE.MeshStandardMaterial({ color: 0x4a3826, roughness: 0.9 }),
+  skin: new THREE.MeshStandardMaterial({ color: 0x4a5d3a, roughness: 0.55, side: THREE.DoubleSide }),
+  jaw: new THREE.MeshStandardMaterial({ color: 0x3f5033, roughness: 0.6 }),
+  cut: new THREE.MeshStandardMaterial({ color: 0x6b2f2a, roughness: 0.9, side: THREE.DoubleSide }),
+  bone: new THREE.MeshStandardMaterial({ color: 0xd9d2c0, roughness: 0.6 }),
+  fang: new THREE.MeshStandardMaterial({ color: 0xe8e2d2, roughness: 0.35 }),
+  eyeGold: new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.25 }),
+  pupil: new THREE.MeshStandardMaterial({ color: 0x101010, roughness: 0.3 }),
+  brain: new THREE.MeshStandardMaterial({ color: 0xd9c9c0, roughness: 0.7 }),
+  nerve: new THREE.MeshStandardMaterial({ color: 0xd8cba0, roughness: 0.7 }),
+  tect: new THREE.MeshStandardMaterial({ color: 0xd6483c, roughness: 0.5, emissive: 0xd6483c, emissiveIntensity: 0.55, transparent: true }),
+  apRing: new THREE.MeshStandardMaterial({ color: 0x9aa6b5, metalness: 0.85, roughness: 0.3, transparent: true }),
+  horn: new THREE.MeshStandardMaterial({ color: 0x8fae8a, roughness: 0.4, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }),
+  inner: new THREE.MeshStandardMaterial({ color: 0x3a4a58, roughness: 0.6, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }),
+  mount: new THREE.MeshStandardMaterial({ color: 0xcfc4ae, roughness: 0.6, transparent: true }),
+  memb: new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
+  ray: new THREE.LineBasicMaterial({ color: 0xff7a40, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+  rayHot: new THREE.LineBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+  ray2: new THREE.LineBasicMaterial({ color: 0xffb060, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+  part: new THREE.PointsMaterial({ size: 0.07, map: dotTex, transparent: true, opacity: 0, color: 0xffa060, depthWrite: false, blending: THREE.AdditiveBlending }),
+  fur: new THREE.MeshStandardMaterial({ color: 0x8a7867, roughness: 0.85, emissive: 0xff4d1f, emissiveIntensity: 0, transparent: true }),
+  frog: new THREE.MeshStandardMaterial({ color: 0x4a8a4f, roughness: 0.8 }),
+  camBody: new THREE.MeshStandardMaterial({ color: 0x2a3038, roughness: 0.5, metalness: 0.4 }),
+  lens: new THREE.MeshStandardMaterial({ color: 0x141a22, roughness: 0.2, metalness: 0.6 }),
+  disp: new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.96 }),
+  leader: new THREE.LineBasicMaterial({ color: 0x8a94a8, transparent: true, opacity: 0.6 }),
+};
+HL.memb = M.mount;
+HL.prey = M.fur;
+HL.ap = M.apRing;
+HL.tect = M.tect;
+HL.cam = M.disp;
+
+const tmpV2 = new THREE.Vector3();
+
+function pageTheme(dark) {
+  scene.background = new THREE.Color(dark ? 0x101820 : 0xe5e0d2);
+  scopeDark = dark;
+  M.ground.color.set(dark ? 0x22301f : 0x93a888);
+  M.grass.color.set(dark ? 0x39543a : 0x5d8059);
+  M.rock.color.set(dark ? 0x6f6a60 : 0x8a8478);
+  M.branch.color.set(dark ? 0x4a3826 : 0x6b5540);
+  M.skin.color.set(dark ? 0x4a5d3a : 0x5a6f47);
+  M.jaw.color.set(dark ? 0x3f5033 : 0x4d6040);
+  M.cut.color.set(dark ? 0x6b2f2a : 0x8a4038);
+}
+
+/* ---------------- 场景:林地 ---------------- */
+const ground = new THREE.Mesh(new THREE.CircleGeometry(34, 48), M.ground);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.0), M.rock);
+rock.position.set(5.5, 0.55, 13);
+rock.scale.set(1.2, 0.7, 1);
+scene.add(rock);
+const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.17, 3.4, 10), M.branch);
+branch.rotation.z = Math.PI / 2;
+branch.rotation.y = 0.4;
+branch.position.set(-4.5, 0.16, 6);
+scene.add(branch);
+for (let i = 0; i < 14; i++) {
+  const g = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.45 + (i % 3) * 0.16, 6), M.grass);
+  const a = i / 14 * TAU + 0.3, r = 4 + (i * 37 % 19);
+  g.position.set(Math.cos(a) * r, 0.2, Math.sin(a) * r + 6);
+  g.rotation.z = (i % 2 ? 1 : -1) * 0.18;
+  scene.add(g);
+}
+
+/* ---------------- 场景:蝮蛇头(剖视,facing +Z) ----------------
+   比例:1 u ≈ 1.5 cm,头长 3.4 u ≈ 5 cm;颊窝结构放大 ~10×(示意) */
+const headGroup = new THREE.Group();
+headGroup.position.set(0, 0.5, 0);
+scene.add(headGroup);
+const HEAD_POS = new THREE.Vector3(0, 0.5, 0);
+/* 半球壳:剖面在 x=0,壳在远侧 x<0 */
+const skull = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 24, 0, Math.PI), M.skin);
+skull.scale.set(1.68, 0.6, 1.05);
+skull.rotation.y = -Math.PI / 2;
+skull.position.set(0, 0, -0.1);
+headGroup.add(skull);
+/* 剖面(暗红断面) */
+const cutFace = new THREE.Mesh(new THREE.CircleGeometry(1, 28), M.cut);
+cutFace.scale.set(1.64, 0.58, 1);
+cutFace.rotation.y = Math.PI / 2;
+cutFace.position.set(0.01, 0, -0.1);
+headGroup.add(cutFace);
+/* 眼(黄金色,竖瞳蛇眼) */
+const eyeBall = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), M.eyeGold);
+eyeBall.position.set(0.1, 0.16, 0.6);
+headGroup.add(eyeBall);
+const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.042, 10, 8), M.pupil);
+pupil.position.set(0.17, 0.16, 0.62);
+headGroup.add(pupil);
+/* 鼻孔 */
+const nostril = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), M.pupil);
+nostril.position.set(0.08, 0.4, 1.1);
+headGroup.add(nostril);
+/* 脑 + 中脑顶盖 */
+const brain = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), M.brain);
+brain.scale.set(0.13, 0.16, 0.42);
+brain.position.set(0.03, 0.26, -0.5);
+headGroup.add(brain);
+const tect = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 10), M.tect);
+tect.position.set(0.06, 0.27, -0.28);
+headGroup.add(tect);
+/* 下颌(可张口) */
+const jawG = new THREE.Group();
+jawG.position.set(0, -0.16, -0.55);
+headGroup.add(jawG);
+const jawMesh = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.13, 1.85), M.jaw);
+jawMesh.position.set(0, -0.05, 0.92);
+jawG.add(jawMesh);
+/* 管牙(上颌,前毒牙) */
+for (const sx of [-1, 1]) {
+  const fang = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.3, 8), M.fang);
+  fang.position.set(sx * 0.13, -0.18, 1.32);
+  fang.rotation.x = Math.PI - 0.28;
+  headGroup.add(fang);
+}
+
+/* ---------------- 颊窝组件(放大 10×) ---------------- */
+const PIT_FWD = new THREE.Vector3(0.15, 0.02, 1).normalize();
+const PIT_R = new THREE.Vector3().crossVectors(PIT_FWD, new THREE.Vector3(0, 1, 0)).normalize().negate();
+const PIT_U = new THREE.Vector3().crossVectors(PIT_R, PIT_FWD).normalize();
+const M0 = new THREE.Vector3(0.42, 0.05, 0.62).addScaledVector(PIT_FWD, 0);   // 膜心
+const A0 = M0.clone().addScaledVector(PIT_FWD, 0.30);                          // 窝口
+const I0 = M0.clone().addScaledVector(PIT_FWD, -0.16);                         // 内室
+const qPit = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), PIT_FWD);
+const qPitY = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), PIT_FWD);
+/* 窝口金属环(半径随滑杆缩放) */
+const apRing = new THREE.Mesh(new THREE.TorusGeometry(0.0525, 0.018, 8, 28), M.apRing);
+apRing.position.copy(A0);
+apRing.quaternion.copy(qPit);
+headGroup.add(apRing);
+/* 外室喇叭口 */
+const horn = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.22, 0.30, 24, 1, true), M.horn);
+horn.position.copy(M0).addScaledVector(PIT_FWD, 0.15);
+horn.quaternion.copy(qPitY);
+horn.renderOrder = 2;
+headGroup.add(horn);
+/* 悬膜(实时热图):顶点位置 + 顶点色 */
+const NSEG = 34;
+const membGeo = new THREE.PlaneGeometry(0.44, 0.44, NSEG, NSEG);
+const mCount = membGeo.attributes.position.count;
+const vu = new Float32Array(mCount), vv = new Float32Array(mCount);
+const noiseN = new Float32Array(mCount);
+for (let i = 0; i < mCount; i++) {
+  vu[i] = membGeo.attributes.position.getX(i);
+  vv[i] = membGeo.attributes.position.getY(i);
+  noiseN[i] = (Math.random() - 0.5) * 1.6;
+}
+membGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(mCount * 3), 3));
+const membrane = new THREE.Mesh(membGeo, M.memb);
+membrane.position.copy(M0);
+membrane.quaternion.copy(qPit);
+headGroup.add(membrane);
+/* 膜固定环 */
+const mountRing = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.016, 8, 28), M.mount);
+mountRing.position.copy(M0);
+mountRing.quaternion.copy(qPit);
+headGroup.add(mountRing);
+/* 内室(密闭缓冲腔) */
+const innerC = new THREE.Mesh(new THREE.SphereGeometry(0.24, 20, 14), M.inner);
+innerC.position.copy(I0);
+innerC.scale.set(1, 0.85, 0.75);
+innerC.quaternion.copy(qPit);
+innerC.renderOrder = 2;
+headGroup.add(innerC);
+/* 剖面 → 颊窝 引线 */
+{
+  const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0.03, 0.08, 0.6), M0.clone().addScaledVector(PIT_FWD, -0.05)]);
+  headGroup.add(new THREE.Line(lg, M.leader));
+}
+/* 三叉神经 → 中脑顶盖 */
+const nerveCurve = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(0.40, 0.0, 0.52), new THREE.Vector3(0.26, 0.1, 0.25),
+  new THREE.Vector3(0.12, 0.22, -0.05), new THREE.Vector3(0.07, 0.28, -0.28),
+]);
+headGroup.add(new THREE.Mesh(new THREE.TubeGeometry(nerveCurve, 24, 0.02, 6), M.nerve));
+const ganglion = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), M.nerve);
+ganglion.position.set(0.26, 0.1, 0.25);
+headGroup.add(ganglion);
+
+/* ---------------- 猎物(小鼠 / 青蛙) ---------------- */
+const preyG = new THREE.Group();
+scene.add(preyG);
+const mouseG = new THREE.Group();
+preyG.add(mouseG);
+const mouseBody = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 18), M.fur);
+mouseBody.scale.set(0.9, 0.65, 1.6);
+mouseBody.position.set(0, 0.72, 0);
+mouseG.add(mouseBody);
+const mouseHead = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 12), M.fur);
+mouseHead.position.set(0, 0.85, 1.75);
+mouseG.add(mouseHead);
+for (const sx of [-1, 1]) {
+  const ear = new THREE.Mesh(new THREE.CircleGeometry(0.22, 12), M.fur);
+  ear.position.set(sx * 0.24, 1.3, 1.9);
+  ear.rotation.y = sx * 0.5;
+  mouseG.add(ear);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), M.pupil);
+  eye.position.set(sx * 0.3, 0.98, 2.12);
+  mouseG.add(eye);
+}
+const tailCurve = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(0, 0.62, -1.5), new THREE.Vector3(0.25, 0.3, -2.3), new THREE.Vector3(0.55, 0.08, -3.0),
+]);
+mouseG.add(new THREE.Mesh(new THREE.TubeGeometry(tailCurve, 16, 0.045, 6), M.fur));
+const frogG = new THREE.Group();
+frogG.visible = false;
+preyG.add(frogG);
+const frogBody = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), M.frog);
+frogBody.scale.set(1.0, 0.5, 1.1);
+frogBody.position.set(0, 0.5, 0);
+frogG.add(frogBody);
+for (const sx of [-1, 1]) {
+  const fe = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), M.frog);
+  fe.position.set(sx * 0.3, 0.85, 0.75);
+  frogG.add(fe);
+  const fp = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), M.pupil);
+  fp.position.set(sx * 0.34, 0.92, 0.85);
+  frogG.add(fp);
+}
+
+/* ---------------- 微热像仪(对照) ---------------- */
+const camG = new THREE.Group();
+camG.position.set(-5.2, 0, 10.5);
+scene.add(camG);
+for (let i = 0; i < 3; i++) {
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.6, 6), M.camBody);
+  const a = i / 3 * TAU;
+  leg.position.set(Math.cos(a) * 0.28, 0.8, Math.sin(a) * 0.28);
+  leg.rotation.z = Math.cos(a) * 0.22;
+  leg.rotation.x = -Math.sin(a) * 0.22;
+  camG.add(leg);
+}
+const camBody = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 0.75), M.camBody);
+camBody.position.set(0, 1.75, 0);
+camG.add(camBody);
+const camLensGeo = new THREE.CylinderGeometry(0.14, 0.16, 0.26, 16);
+camLensGeo.rotateX(Math.PI / 2);
+const camLens = new THREE.Mesh(camLensGeo, M.lens);
+camLens.position.set(0, 1.75, 0.48);
+camG.add(camLens);
+/* 热像屏(canvas 贴图) */
+const camCanvas = document.createElement('canvas');
+camCanvas.width = 256; camCanvas.height = 160;
+const camCtx = camCanvas.getContext('2d');
+const camTex = new THREE.CanvasTexture(camCanvas);
+M.disp.map = camTex;
+const dispPlane = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 1.45), M.disp);
+dispPlane.position.set(-6.1, 3.3, 10.9);
+dispPlane.lookAt(15.9, 3.3, 11.9);
+dispPlane.visible = false;
+scene.add(dispPlane);
+
+/* ---------------- 红外射线 / 粒子 ---------------- */
+const NR1 = 24;
+const rays1Geo = new THREE.BufferGeometry();
+rays1Geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NR1 * 6), 3));
+const rays1 = new THREE.LineSegments(rays1Geo, M.ray);
+rays1.frustumCulled = false;
+rays1.visible = false;
+rays1.renderOrder = 6;
+scene.add(rays1);
+const rayOff = [];
+for (let i = 0; i < NR1; i++) {
+  const a = Math.random() * TAU, b = (Math.random() - 0.5) * 1.2;
+  rayOff.push(new THREE.Vector3(Math.cos(a) * (0.5 + Math.random() * 0.5), Math.sin(b), Math.sin(a) * (0.6 + Math.random() * 0.7)));
+}
+const centerRayGeo = new THREE.BufferGeometry();
+centerRayGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+const centerRay = new THREE.Line(centerRayGeo, M.rayHot);
+centerRay.frustumCulled = false;
+centerRay.visible = false;
+centerRay.renderOrder = 6;
+scene.add(centerRay);
+const NR2 = 8;
+const rays2Geo = new THREE.BufferGeometry();
+rays2Geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NR2 * 6), 3));
+const rays2 = new THREE.LineSegments(rays2Geo, M.ray2);
+rays2.frustumCulled = false;
+rays2.visible = false;
+rays2.renderOrder = 6;
+scene.add(rays2);
+const NP = 46;
+/* 预分配临时向量/数组(60fps:避免每帧 new) */
+const _apW = new THREE.Vector3(), _m0W = new THREE.Vector3();
+const _fw = new THREE.Vector3(), _rw = new THREE.Vector3(), _uw = new THREE.Vector3();
+const _ray1 = new THREE.Vector3(), _ray2 = new THREE.Vector3(), _tv = new THREE.Vector3();
+const FAN = [[1, 1], [-1, 1], [1, -1], [-1, -1], [0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5]];
+const SCOPE_N = 90;
+const scopeVals = new Array(SCOPE_N + 1).fill(0);
+const _camDir = new THREE.Vector3(), _camPrey = new THREE.Vector3(), _camRock = new THREE.Vector3();
+const partGeo = new THREE.BufferGeometry();
+partGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NP * 3), 3));
+const partPts = new THREE.Points(partGeo, M.part);
+partPts.frustumCulled = false;
+partPts.visible = false;
+partPts.renderOrder = 6;
+scene.add(partPts);
+const partPh = new Float32Array(NP), partSpd = new Float32Array(NP);
+const partOff = [], partTgt = [];
+for (let i = 0; i < NP; i++) {
+  partPh[i] = Math.random();
+  partSpd[i] = 0.35 + Math.random() * 0.4;
+  partOff.push(new THREE.Vector3((Math.random() - 0.5) * 1.4, Math.random() * 0.6, (Math.random() - 0.5) * 2.2));
+  partTgt.push([(Math.random() - 0.5) * 1.6, (Math.random() - 0.5) * 1.6]);
+}
+
+/* ---------------- 场景标签 ---------------- */
+const isMob = () => isMobile();
+const apLbl = addLabel(() => L('窝口 1~2 mm:针孔光圈', 'aperture 1-2 mm: pinhole'), () => 'w',
+  new THREE.Vector3(0.8, 0.2, 0.9), null, headGroup);
+const membLbl = addLabel(() => L('窝膜 15 µm · ~7000 末梢', 'membrane 15 µm · 7000 endings'), () => 'b',
+  new THREE.Vector3(0.42, 0.4, 0.62), null, headGroup);
+const innerLbl = addLabel(() => L('内室:密闭气压缓冲', 'inner chamber: sealed buffer'), () => '',
+  new THREE.Vector3(0.14, -0.3, 0.5), null, headGroup);
+const eyeLbl = addLabel(() => L('视觉:锐(≈1′)但看不见热', 'vision: sharp (1′) but heat-blind'), () => 'st',
+  new THREE.Vector3(0.14, 0.4, 0.6), null, headGroup);
+const pitLbl = addLabel(() => isMob() ? L('颊窝 ×2', 'pits ×2') : L('颊窝:眼鼻之间,左右各一', 'loreal pit: between eye and nostril'), () => 'e',
+  new THREE.Vector3(0.9, -0.18, 0.95), null, headGroup);
+const tectLbl = addLabel(() => isMob() ? L('顶盖叠图', 'tectum overlay') : L('中脑顶盖:红外图 ⊕ 视觉图', 'optic tectum: IR ⊕ visual map'), () => 'e',
+  new THREE.Vector3(0.1, 0.44, -0.28), null, headGroup);
+const nerveLbl = addLabel(() => isMob() ? L('三叉神经', 'trigeminal') : L('三叉神经:50 ms 一帧', 'trigeminal: 50 ms a frame'), () => 'g',
+  new THREE.Vector3(0.3, 0.14, 0.15), null, headGroup);
+const preyLbl = addLabel(() => {
+  if (coldOn) return isMob() ? L('青蛙 = 环境', 'frog = ambient') : L(`青蛙 ${TA.toFixed(0)} °C = 环境温度`, `frog ${TA.toFixed(0)} °C = ambient`);
+  return isMob() ? L(`${TP.toFixed(0)} °C 小鼠`, `${TP.toFixed(0)} °C mouse`) : L(`小鼠 ${TP.toFixed(0)} °C · λmax≈${s1.lam.toFixed(1)} µm`, `mouse ${TP.toFixed(0)} °C · λmax≈${s1.lam.toFixed(1)} µm`);
+}, () => coldOn ? 'bad' : 'o', new THREE.Vector3(0, 2.2, 16.7),
+  pos => pos.set(preyG.position.x, 2.2, preyG.position.z));
+const spotLbl = addLabel(() => L(`热斑 ΔT ${s1.dT.toFixed(1)} m°C${s1.detect ? ' ≥5 有感' : ' <5 无感'}`, `spot ΔT ${s1.dT.toFixed(1)} m°C${s1.detect ? ' ≥5 sensed' : ' <5 below'}`), () => s1.detect ? 'o' : 'bad',
+  new THREE.Vector3(0.5, 0.5, 0.8),
+  pos => pos.set(M0.x, M0.y + 0.62, M0.z).addScaledVector(PIT_FWD, 0.28).applyMatrix4(headGroup.matrixWorld));
+const invLbl = addLabel(() => isMob() ? L('倒像!', 'inverted!') : L('倒像:猎物偏右 → 热斑偏左', 'inverted: prey right → spot left'), () => 'r',
+  new THREE.Vector3(0.3, -0.3, 0.62), null, headGroup);
+const coldLbl = addLabel(() => L('体温≈环境:对比度归零,隐身', 'body = ambient: zero contrast, invisible'), () => 'bad',
+  new THREE.Vector3(0, 2.9, 16.7),
+  pos => pos.set(preyG.position.x, 2.9, preyG.position.z));
+const rockLbl = addLabel(() => isMob() ? L('红外杂波', 'IR clutter') : L('晒热岩石:红外假目标(杂波)', 'sun-warmed rock: IR false target'), () => 'o',
+  new THREE.Vector3(5.5, 1.7, 13));
+const camLbl = addLabel(() => isMob() ? L('微热像仪', 'microbolometer') : L('微热像仪:17 µm 像元 · NETD ~0.02 °C', 'microbolometer: 17 µm pixels · NETD ~0.02 °C'), () => 'g',
+  new THREE.Vector3(-5.2, 2.5, 10.5));
+const strikeLbl = addLabel(() => {
+  if (hitMsgT > 0 && etG - hitMsgT < 1.6) return hitOk ? L(`命中!误差 ≈ ${errCm.toFixed(1)} cm`, `hit! error ≈ ${errCm.toFixed(1)} cm`) : L(`脱靶 ${errCm.toFixed(0)} cm`, `miss ${errCm.toFixed(0)} cm`);
+  if (lockT > 0.15) return L(`锁定 ${Math.min(2, lockT).toFixed(1)}/2 s · 瞄准误差 ${errCm.toFixed(1)} cm`, `lock ${Math.min(2, lockT).toFixed(1)}/2 s · aim error ${errCm.toFixed(1)} cm`);
+  return isMob() ? L('搜寻热源…', 'searching…') : L('搜寻热源…(出击距离示意压缩)', 'searching… (strike range compressed)');
+}, () => 'st', new THREE.Vector3(0, 1.6, 3));
+const scaleLbl = addLabel(() => isMob() ? L('1 格≈1.5 cm', '1 unit ≈1.5 cm') : L('比例:1 格 ≈1.5 cm · 窝结构放大 ~10×(示意)', 'scale: 1 unit ≈1.5 cm · pit drawn ~10x (schem.)'), () => 'st',
+  new THREE.Vector3(0, 0.3, 24));
+
+/* ---------------- 物理模型:针孔 + 量热 ---------------- */
+function spotModel(tempC, projA, halfW, distM, out) {
+  const Tk = tempC + 273.15, Tak = TA + 273.15;
+  out.dM = EPSI * SIGMA * (Tk * Tk * Tk * Tk - Tak * Tak * Tak * Tak);
+  out.lam = 2898 / Tk;
+  const Omega = projA / (distM * distM);
+  const Eap = out.dM / Math.PI * Omega;
+  const dap = DAP / 1000;
+  out.Pin = Eap * Math.PI * (dap / 2) * (dap / 2);
+  const thPrey = Math.atan(halfW / distM);
+  out.thBlur = Math.atan(dap / L_PIT);
+  out.thSpot = Math.hypot(thPrey, out.thBlur);
+  out.sg = out.thSpot * 0.55;
+  const f = clamp((out.thSpot / TH_MEM) * (out.thSpot / TH_MEM), 0.04, 1);
+  out.dT = out.Pin / (G_TOT * f) * 1000;           // m°C
+  return out;
+}
+
+/* ---------------- 视图模式 / 低温联动 ---------------- */
+function syncCold() {
+  const want = preset === 'cold';
+  if (want && !coldOn) {
+    coldOn = true; savedTP = TP; TP = TA;
+    el.elD.value = TA; el.elD.disabled = true;
+  } else if (!want && coldOn) {
+    coldOn = false;
+    if (savedTP !== null) { TP = savedTP; el.elD.value = savedTP; }
+    el.elD.disabled = false;
+    savedTP = null;
+  }
+  frogG.visible = coldOn;
+  mouseG.visible = !coldOn;
+  updateSliderLabels();
+}
+
+/* ---------------- 示波器:膜温廓线 ---------------- */
+function drawScope() {
+  const w = scope.width, h = scope.height, dpr = Math.min(devicePixelRatio, 2);
+  scopeCtx.clearRect(0, 0, w, h);
+  scopeCtx.strokeStyle = 'rgba(127,140,160,.4)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.strokeRect(4, 4, w - 8, h - 8);
+  const tanM = Math.tan(TH_MEM);
+  const ang1 = Math.atan(s1.uc / 0.22 * tanM);
+  const ang2 = Math.atan(s2.uc / 0.22 * tanM);
+  const N = SCOPE_N;
+  let mx = 0;
+  for (let i = 0; i <= N; i++) {
+    const u = -0.24 + 0.48 * i / N;
+    const ang = Math.atan(u / 0.22 * tanM);
+    let val = noiseN[i * 3 % mCount] * 0.5;
+    if (s1.on) val += s1.dT * Math.exp(-0.5 * ((ang - ang1) / s1.sg) * ((ang - ang1) / s1.sg));
+    if (s2.on) val += s2.dT * Math.exp(-0.5 * ((ang - ang2) / s2.sg) * ((ang - ang2) / s2.sg));
+    scopeVals[i] = Math.max(0, val);
+    if (scopeVals[i] > mx) mx = scopeVals[i];
+  }
+  const ymax = Math.max(10, mx * 1.25, TH_GATE * 1.5);
+  const base = h * 0.88, amp = h * 0.76;
+  /* 阈值线(红虚线) */
+  const yg = base - TH_GATE / ymax * amp;
+  scopeCtx.setLineDash([4 * dpr, 3 * dpr]);
+  scopeCtx.strokeStyle = 'rgba(255,107,107,.7)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath(); scopeCtx.moveTo(4, yg); scopeCtx.lineTo(w - 4, yg); scopeCtx.stroke();
+  scopeCtx.setLineDash([]);
+  /* 廓线(橙) */
+  scopeCtx.strokeStyle = '#f08c3e';
+  scopeCtx.lineWidth = Math.max(1.3, 1.3 * dpr);
+  scopeCtx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const x = 4 + (i / N) * (w - 8);
+    const y = base - scopeVals[i] / ymax * amp;
+    i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+  }
+  scopeCtx.stroke();
+  /* 中轴(0 mm) */
+  const xc = 4 + (w - 8) / 2;
+  scopeCtx.strokeStyle = scopeDark ? 'rgba(255,255,255,.35)' : 'rgba(22,32,44,.35)';
+  scopeCtx.lineWidth = 1;
+  scopeCtx.beginPath(); scopeCtx.moveTo(xc, 4); scopeCtx.lineTo(xc, h - 4); scopeCtx.stroke();
+  scopeCtx.fillStyle = scopeDark ? 'rgba(242,245,249,.85)' : 'rgba(22,32,44,.85)';
+  scopeCtx.font = `${10 * dpr}px sans-serif`;
+  scopeCtx.fillText(L('膜温廓线(沿膜横轴 mm)· 红虚线=判定阈值 5 m°C', 'membrane profile (across mm) · dashed red = gate 5 m°C'), 8, 13 * dpr);
+}
+
+/* ---------------- 步骤 ---------------- */
+const STEPS = [
+  { b: '一对颊窝:不是眼睛', be: 'a pair of pits, not eyes', tgt: [0.3, 0.5, 0.7], r: 3.6, hl: 'memb',
+    d: '蝮亚科在眼与鼻孔之间各有一只颊窝:窝口只开 1~2 mm,窝深约 3 mm,孔后悬一张约 15 µm 厚的窝膜,把窝分成开口朝外的外室与密闭的内室——内室充当气压与温度缓冲,让膜只对外界辐射有响应。膜面密布约 7000 根三叉神经末梢。它不是眼睛:不收光子成像,只测「膜哪里被晒热了一点」——一台活的量热辐射计(bolometer)。',
+    de: 'Pit vipers carry one pit on each side between eye and nostril: the aperture opens 1-2 mm, the pit runs about 3 mm deep, and a suspended membrane roughly 15 µm thick divides it into an outward-facing outer chamber and a sealed inner chamber - a pressure and temperature buffer so the membrane answers only to external radiation. About 7000 trigeminal endings carpet the membrane. It is not an eye: it collects no image-forming photons, it only measures which patch of film got slightly warmer - a living bolometer.' },
+  { b: '猎物在发光:黑体辐射', be: 'prey glows: blackbody radiation', tgt: [0.5, 0.8, 10], r: 10, hl: 'prey',
+    d: '一切高于绝对零度的物体都在辐射:34 °C 的小鼠皮肤按维恩位移定律峰值波长 λmax=2898/T≈9.4 µm,正好落在 8~14 µm 的大气红外窗口;它与 18 °C 背景的辐出度差 εσ(T⁴−T₀⁴)≈94 W/m²。注意蛇没有任何红外透镜——普通玻璃对远红外不透明,窝膜对 8~14 µm 一视同仁地吸收,照单全收。',
+    de: 'Everything above absolute zero radiates: mouse skin at 34 °C peaks at lambda-max = 2898/T ≈ 9.4 µm by Wien, squarely inside the 8-14 µm atmospheric window, and its radiance excess over an 18 °C background is epsilon·sigma·(T⁴-T0⁴) ≈ 94 W/m². Note the snake has no infrared lens at all - ordinary glass is opaque to far IR - so the membrane simply absorbs 8-14 µm across the board.' },
+  { b: '膜温感受器:50 ms 一报', be: 'membrane thermometer: 50 ms a frame', tgt: [0.45, 0.5, 0.75], r: 2.6, hl: 'memb',
+    d: '辐射经窝口打在膜上,热斑处膜温几十毫秒内升到可感水平:演示标定下 25 cm 处的小鼠抬升约 7 m°C。膜里 TRPA1 门控的温觉通道随温度张开,末梢放电率从每秒几个脉冲抬到几十个——实测灵敏度 0.003~0.02 °C(不同测法口径),信号链约 50 ms 报一帧,比视觉暗适应快得多。把「猎物体温」拖近环境温度,看 ΔT 蒸发。',
+    de: 'Radiation through the aperture warms the hot spot to a sensed level within tens of milliseconds: in this calibration a mouse at 25 cm lifts the membrane by about 7 m°C. TRPA1-gated warm channels in the endings open with temperature and firing rises from a few spikes per second to tens - measured sensitivity is 0.003-0.02 °C depending on method, and the link reports a frame about every 50 ms, far faster than dark adaptation. Drag prey temp toward ambient and watch ΔT evaporate.' },
+  { b: '针孔成像:倒像与模糊', be: 'pinhole imaging: inverted and blurry', tgt: [0.5, 0.5, 0.9], r: 3.0, hl: 'ap',
+    d: '窝口就是针孔相机的光圈:射线穿孔直线前进,膜上成上下左右倒置的热像——鼠往右挪,斑往左跑。几何模糊 θ≈d/L:口径 1.5 mm、窝深 3 mm → 约 27°,25 cm 外的小鼠糊成 ~13 cm 一团;膜内横向热扩散再把邻斑抹匀。分辨率比人眼(≈1 角分)差千倍,但拖「窝口径」看权衡:进光按 d² 涨、模糊按 d 变宽——信噪比换清晰度,蛇选了亮度。',
+    de: 'The aperture is a pinhole: rays travel straight through, and the membrane holds an upside-down, mirror-flipped heat image - move the mouse right, the spot runs left. Geometric blur theta ≈ d/L: at 1.5 mm aperture and 3 mm depth that is about 27°, smearing a mouse at 25 cm into a ~13 cm blob; lateral heat diffusion in the membrane smears further. Resolution is a thousand times coarser than the human eye (≈1 arcmin), but drag the aperture to see the trade: flux grows with d² while blur grows with d - signal-to-noise traded for sharpness, and the snake chose brightness.' },
+  { b: '中脑叠图,黑暗出击', be: 'tectum overlay, strike in the dark', tgt: [0.1, 0.45, 0.2], r: 2.2, hl: 'tect',
+    d: '红外信号走三叉神经→脑干→中脑顶盖,与视网膜输入叠印在同一张拓扑地图上(双模神经元)——蛇在「视场」里直接看到一团热。锁定后头颈转轴对准热源,大脑再用运动流把糊斑追成准星,出击误差可达毫米级。按「追踪出击」看瞄准-出击闭环;夜间捕食不靠星光,靠猎物自己发的热。',
+    de: 'Infrared signals run trigeminal nerve → brainstem → optic tectum, printed onto the same topographic map as retinal input (bimodal neurons) - the snake literally sees a blob of heat in its visual field. Once locked, head and neck axis onto the source; motion flow chases the blurry blob into a crosshair and strikes land within millimetres. Press tracking strike to watch the loop; night hunting needs no starlight, only the prey\'s own heat.' },
+  { b: '对照:热像仪与失效', be: 'comparison: thermal camera and failure', tgt: [-1.6, 1.6, 9.8], r: 11, hl: 'cam',
+    d: '人造非制冷热像仪是同一原理的硅版:17 µm VOx 微测辐射热计阵列、NETD≈0.02~0.05 °C,还要温控到 25 °C 附近并加挡片周期校准;蛇这张活膜不制冷、不校准,靠神经适应减掉背景基线,代价是空间粗糙、时间也慢。失效也干脆:变温青蛙体温=环境,对比度归零,热像里彻底隐身;晒热的岩石(杂波)反而成了假目标。按「变温失效」亲眼看盲区,把「环境温度」拖到 34 °C 也一样失明。',
+    de: 'The uncooled thermal camera is the same physics in silicon: a 17 µm VOx microbolometer array with NETD ≈ 0.02-0.05 °C that still needs stabilization near 25 °C and periodic chopper calibration. The living membrane needs neither cooling nor calibration - neural adaptation subtracts the background baseline - paying with coarse space and slow time. Failure is blunt: an ectothermic frog at ambient temperature has zero contrast and vanishes; a sun-warmed rock (clutter) becomes a false target. Press cold-blooded failure to see the blind spot, or drag ambient to 34 °C for the same snow-blindness.' },
+];
+
+/* ---------------- 公式 ---------------- */
+function updateFormula() {
+  const tanS = Math.tan(s1.thSpot);
+  const spotMm = 2 * tanS * L_PIT * 1000;
+  const blurCm = DIST * tanS;
+  el.formula.innerHTML =
+    L(`<b>ΔM = εσ(T⁴−T₀⁴) = ${s1.dM.toFixed(0)} W/m²</b> · 维恩 <b>λmax = 2898/T ≈ ${s1.lam.toFixed(1)} µm</b>(${TP.toFixed(0)} °C 猎物)`,
+      `<b>ΔM = εσ(T⁴-T0⁴) = ${s1.dM.toFixed(0)} W/m²</b> - Wien <b>λmax = 2898/T ≈ ${s1.lam.toFixed(1)} µm</b>(${TP.toFixed(0)} °C prey)`) + '<br>' +
+    L(`<b>P ≈ ΔM/π·Ω·A孔 = ${(s1.Pin * 1e6).toFixed(1)} µW</b> → ΔT膜 ≈ <b>${s1.dT.toFixed(1)} m°C</b>${s1.detect ? ' · ≥5 m°C:<b>有感</b>' : ' · &lt;5 m°C:<b>无感</b>'}`,
+      `<b>P ≈ ΔM/π·Ω·A = ${(s1.Pin * 1e6).toFixed(1)} µW</b> -> ΔT ≈ <b>${s1.dT.toFixed(1)} m°C</b>${s1.detect ? ' · ≥5 m°C: <b>sensed</b>' : ' · &lt;5 m°C: <b>not sensed</b>'}`) + '<br>' +
+    L(`<b>θ ≈ √(θ猎物²+θ孔²) = ${(s1.thSpot * 180 / Math.PI).toFixed(0)}°</b> → 猎物处糊 <b>${blurCm.toFixed(0)} cm</b> · 热斑 <b>${spotMm.toFixed(1)} mm</b>${s2.on ? ' · 岩石杂波 ' + s2.dT.toFixed(0) + ' m°C' : ''}`,
+      `<b>θ ≈ √(prey²+pin²) = ${(s1.thSpot * 180 / Math.PI).toFixed(0)}°</b> -> blur at prey <b>${blurCm.toFixed(0)} cm</b> · spot <b>${spotMm.toFixed(1)} mm</b>${s2.on ? ' · rock clutter ' + s2.dT.toFixed(0) + ' m°C' : ''}`);
+}
+
+/* ---------------- 状态面板 ---------------- */
+function updateSliderLabels() {
+  el.elAVal.textContent = DIST + ' cm';
+  el.elBVal.textContent = DAP.toFixed(1) + ' mm';
+  el.elCVal.textContent = TA.toFixed(1) + ' °C';
+  el.elDVal.textContent = (coldOn ? TA : TP).toFixed(1) + ' °C';
+}
+function updateStats() {
+  el.stA.innerHTML = s1.dT.toFixed(1) + '<small> m°C</small>';
+  el.stA.className = 'v' + (s1.detect ? ' ok' : (s1.dT >= 2 ? ' warn' : ' bad'));
+  const spotMm = 2 * Math.tan(s1.thSpot) * L_PIT * 1000;
+  el.stB.innerHTML = s1.vis ? spotMm.toFixed(1) + '<small> mm</small>' : '—<small> 膜外</small>';
+  el.stB.className = 'v' + (s1.vis && s1.detect ? ' ok' : s1.vis ? ' warn' : ' bad');
+  const blurCm = DIST * Math.tan(s1.thSpot);
+  el.stC.innerHTML = blurCm.toFixed(1) + '<small> cm</small>';
+  el.stC.className = 'v' + (blurCm < 15 ? ' ok' : blurCm < 25 ? ' warn' : ' bad');
+  const rate = 6 + 34 * clamp(s1.dT / TH_GATE, 0, 1.15);
+  el.stD.innerHTML = rate.toFixed(0) + '<small> Hz</small>';
+  el.stD.className = 'v' + (s1.detect ? ' ok' : '');
+}
+function resetMachine() {
+  coldOn = false; savedTP = null;
+  DIST = 25; el.elA.value = 25;
+  DAP = 1.5; el.elB.value = 1.5;
+  TA = 18; el.elC.value = 18;
+  TP = 34; el.elD.value = 34; el.elD.disabled = false;
+  preset = null;
+  for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).classList.remove('on');
+  frogG.visible = false; mouseG.visible = true;
+  yaw = 0; lockT = 0; strikePhase = 0; jawK = 0; lungeK = 0; caughtK = 0;
+  hitMsgT = -9;
+  headGroup.position.copy(HEAD_POS); headGroup.rotation.y = 0;
+  tgtVec.set(1.2, 1.2, 7.5);
+  dollyTo(14);
+  updateSliderLabels(); updateStats(); updateFormula();
+}
+
+/* ---------------- UI 接线 ---------------- */
+const el = {
+  elA: document.getElementById('vA'), elAVal: document.getElementById('vAVal'),
+  elB: document.getElementById('vB'), elBVal: document.getElementById('vBVal'),
+  elC: document.getElementById('vC'), elCVal: document.getElementById('vCVal'),
+  elD: document.getElementById('vD'), elDVal: document.getElementById('vDVal'),
+  stA: document.getElementById('stA'), stB: document.getElementById('stB'),
+  stC: document.getElementById('stC'), stD: document.getElementById('stD'),
+  formula: document.getElementById('formula'),
+};
+const qd = (k, dv, mn, mx) => clamp(qsFloat(k, dv), mn, mx);
+DIST = qd('dist', 25, 5, 40); el.elA.value = DIST;
+DAP = qd('ap', 1.5, 0.8, 4); el.elB.value = DAP;
+TA = qd('amb', 18, 5, 35); el.elC.value = TA;
+TP = qd('prey', 34, 10, 38); el.elD.value = TP;
+el.elA.addEventListener('input', () => { DIST = +el.elA.value; updateSliderLabels(); });
+el.elB.addEventListener('input', () => { DAP = +el.elB.value; apRing.scale.setScalar(DAP / 1.5); updateSliderLabels(); });
+el.elC.addEventListener('input', () => {
+  TA = +el.elC.value;
+  if (coldOn) { TP = TA; el.elD.value = TA; }
+  updateSliderLabels();
+});
+el.elD.addEventListener('input', () => { TP = +el.elD.value; updateSliderLabels(); });
+for (const pid of PRESET_IDS) document.getElementById('btn-' + pid).addEventListener('click', () => setPreset(pid));
+
+/* ---------------- 主逻辑 ---------------- */
+let lastScenario = -1;
+function pageFrame(et, simDt, dt) {
+  etG = et;
+  st += simDt;
+  const base = (preset && preset !== 'cold') ? preset : SCEN_BASE[scenario];
+  /* ---- 步骤切换 ---- */
+  if (scenario !== lastScenario) {
+    lastScenario = scenario;
+    lockT = 0; strikePhase = 0; caughtK = 0;
+  }
+  /* ---- 猎物游走 ---- */
+  const amp = base === 'track' ? 3.4 : base === 'camera' ? 1.6 : base === 'anatomy' ? 0.6 : 1.2;
+  if (caughtK <= 0) wanderX = amp * Math.sin(st * 0.42 + 1.7) + amp * 0.5 * Math.sin(st * 1.13);
+  const Ru = DIST / 1.5;
+  preyG.position.set(wanderX, 0, Ru);
+  /* ---- 猎物体温→红外辉光 ---- */
+  M.fur.emissiveIntensity = clamp((TP - TA) / 16, 0, 1) * 0.6;
+  /* ---- 头部:瞄准 / 出击 ---- */
+  const preyAng = Math.atan2(preyG.position.x, preyG.position.z);
+  let yawTgt = Math.sin(st * 0.6) * 0.25;
+  if (base === 'track') {
+    yawTgt = s1.detect && s1.vis ? clamp(preyAng * 0.9, -0.6, 0.6) : Math.sin(st * 0.8) * 0.35;
+    if (s1.detect && s1.vis && strikePhase === 0) lockT += simDt;
+    else if (!(s1.detect && s1.vis)) lockT = Math.max(0, lockT - simDt * 2);
+    if (lockT >= 2 && strikePhase === 0) { strikePhase = 1; strikeT0 = et; }
+  } else { lockT = 0; if (strikePhase !== 0) { strikePhase = 0; caughtK = 0; lungeK = 0; jawK = 0; } }
+  if (strikePhase === 1) {
+    const k = (et - strikeT0) / 0.22;
+    if (k >= 1) { strikePhase = 2; strikeT0 = et; lungeK = 1; jawK = 1; caughtK = 0.001; }
+    else { lungeK = 1 - (1 - k) * (1 - k); jawK = k; }
+  } else if (strikePhase === 2) {
+    const k = (et - strikeT0) / 1.0;
+    caughtK = Math.min(1, caughtK + simDt * 6);
+    if (k >= 1) { strikePhase = 3; strikeT0 = et; }
+  } else if (strikePhase === 3) {
+    const k = (et - strikeT0) / 0.7;
+    caughtK = Math.max(0, 1 - k * 2);
+    if (k >= 1) { strikePhase = 0; lockT = 0; lungeK = 0; jawK = 0; caughtK = 0; }
+    else { lungeK = 1 - k; jawK = 1 - k; }
+  }
+  const yawErr = Math.abs(preyAng - yaw);
+  errCm = DIST * Math.tan(yawErr);
+  yaw += (yawTgt - yaw) * Math.min(1, simDt * 3 + (simDt > 0 ? 0.02 : 0));
+  headGroup.rotation.y = yaw;
+  const fwd = tmpV2.set(0, 0, 1).applyQuaternion(headGroup.quaternion); fwd.y = 0; fwd.normalize();
+  headGroup.position.copy(HEAD_POS).addScaledVector(fwd, lungeK * 3.6);
+  jawG.rotation.x = 0.10 + 0.42 * jawK;
+  /* 猎物被咬住:翻倒 */
+  mouseG.rotation.x = -Math.PI / 2 * clamp(caughtK, 0, 1);
+  frogG.rotation.x = -Math.PI / 2 * clamp(caughtK, 0, 1);
+  if (caughtK > 0.9 && hitMsgT < 0) { hitMsgT = et; hitOk = errCm < 8; }
+  if (strikePhase === 0 && caughtK === 0) hitMsgT = -9;
+  headGroup.updateMatrixWorld(true);
+
+  /* ---- 物理量(每帧缓存,面板低频刷新读取;全部预分配向量) ---- */
+  _apW.copy(A0).applyMatrix4(headGroup.matrixWorld);
+  _m0W.copy(M0).applyMatrix4(headGroup.matrixWorld);
+  _fw.copy(PIT_FWD).applyQuaternion(headGroup.quaternion);
+  _rw.copy(PIT_R).applyQuaternion(headGroup.quaternion);
+  _uw.copy(PIT_U).applyQuaternion(headGroup.quaternion);
+  spotModel(coldOn ? TA : TP, A_PROJ, HALF_H, DIST / 100, s1);
+  s1.detect = s1.dT >= TH_GATE;
+  _ray1.set(preyG.position.x, 0.7, preyG.position.z).negate().add(_apW).normalize();
+  const dz1 = Math.max(0.05, -_ray1.dot(_fw));
+  s1.uc = clamp(0.22 * (_ray1.dot(_rw) / dz1) / Math.tan(TH_MEM), -0.5, 0.5);
+  s1.vc = clamp(0.22 * (_ray1.dot(_uw) / dz1) / Math.tan(TH_MEM), -0.5, 0.5);
+  s1.vis = Math.abs(s1.uc) <= 0.235 && Math.abs(s1.vc) <= 0.235;
+  s1.sd = 0.22 * Math.tan(s1.thSpot) / Math.tan(TH_MEM);
+  s1.on = s1.dT >= 0.6;
+  /* 岩石杂波:晒热岩石 ≈ 环境+15 °C */
+  const rockT = TA + 15;
+  spotModel(rockT, ROCK_A, 0.2, ROCK_T_DIST, s2);
+  s2.on = s2.dT >= 1;
+  _ray2.copy(rock.position).negate().add(_apW).normalize();
+  const dz2 = Math.max(0.05, -_ray2.dot(_fw));
+  s2.uc = clamp(0.22 * (_ray2.dot(_rw) / dz2) / Math.tan(TH_MEM), -0.5, 0.5);
+  s2.vc = clamp(0.22 * (_ray2.dot(_uw) / dz2) / Math.tan(TH_MEM), -0.5, 0.5);
+  s2.sg = Math.atan(0.2 / ROCK_T_DIST) * 0.9 + 0.05;
+
+  /* ---- 悬膜热图(顶点色) ---- */
+  const colAttr = membGeo.attributes.color;
+  const ca = colAttr.array;
+  const d1x = _ray1.x, d1y = _ray1.y, d1z = _ray1.z;
+  const d2x = _ray2.x, d2y = _ray2.y, d2z = _ray2.z;
+  for (let i = 0; i < mCount; i++) {
+    const wx = _m0W.x + _rw.x * vu[i] + _uw.x * vv[i];
+    const wy = _m0W.y + _rw.y * vu[i] + _uw.y * vv[i];
+    const wz = _m0W.z + _rw.z * vu[i] + _uw.z * vv[i];
+    let dx = wx - _apW.x, dy = wy - _apW.y, dz = wz - _apW.z;
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    dx /= len; dy /= len; dz /= len;
+    let val = noiseN[i] * 0.5;
+    if (s1.on) {
+      const dot = dx * d1x + dy * d1y + dz * d1z;
+      const ang = Math.acos(dot > 1 ? 1 : dot < -1 ? -1 : dot);
+      const q = ang / s1.sg;
+      val += s1.dT * Math.exp(-0.5 * q * q);
+    }
+    if (s2.on) {
+      const dot = dx * d2x + dy * d2y + dz * d2z;
+      const ang = Math.acos(dot > 1 ? 1 : dot < -1 ? -1 : dot);
+      const q = ang / s2.sg;
+      val += s2.dT * Math.exp(-0.5 * q * q);
+    }
+    val = Math.max(0, val);
+    /* 热色带 t = val/14 */
+    const t = clamp(val / 14, 0, 1.35);
+    let r, g, b;
+    if (t < 0.22) { const f = t / 0.22; r = 0.07 + f * 0.23; g = 0.10 + f * 0.02; b = 0.22 + f * 0.02; }
+    else if (t < 0.5) { const f = (t - 0.22) / 0.28; r = 0.30 + f * 0.48; g = 0.12 + f * 0.08; b = 0.24 - f * 0.14; }
+    else if (t < 0.8) { const f = (t - 0.5) / 0.3; r = 0.78 + f * 0.22; g = 0.20 + f * 0.32; b = 0.10 + f * 0.02; }
+    else if (t < 1.1) { const f = (t - 0.8) / 0.3; r = 1.0; g = 0.52 + f * 0.34; b = 0.12 + f * 0.38; }
+    else { const f = clamp((t - 1.1) / 0.25, 0, 1); r = 1.0; g = 0.86 + f * 0.12; b = 0.5 + f * 0.32; }
+    const j = i * 3;
+    ca[j] = r; ca[j + 1] = g; ca[j + 2] = b;
+  }
+  colAttr.needsUpdate = true;
+
+  /* ---- 射线与粒子(有感才亮) ---- */
+  const rayK = clamp(s1.dT / TH_GATE, 0, 1) * (s1.vis ? 1 : 0.3);
+  const raysOn = s1.on && rayK > 0.15;
+  rays1.visible = centerRay.visible = rays2.visible = partPts.visible = raysOn;
+  if (raysOn) {
+    const pulse = 0.6 + 0.35 * Math.sin(et * 9);
+    const p1 = rays1Geo.attributes.position.array;
+    for (let i = 0; i < NR1; i++) {
+      const o = rayOff[i];
+      p1[i * 6] = preyG.position.x + o.x; p1[i * 6 + 1] = 0.7 + o.y; p1[i * 6 + 2] = preyG.position.z + o.z;
+      p1[i * 6 + 3] = _apW.x; p1[i * 6 + 4] = _apW.y; p1[i * 6 + 5] = _apW.z;
+    }
+    rays1Geo.attributes.position.needsUpdate = true;
+    M.ray.opacity = 0.30 * rayK * pulse;
+    const pc = centerRayGeo.attributes.position.array;
+    pc[0] = preyG.position.x; pc[1] = 0.9; pc[2] = preyG.position.z;
+    pc[3] = _apW.x; pc[4] = _apW.y; pc[5] = _apW.z;
+    centerRayGeo.attributes.position.needsUpdate = true;
+    M.rayHot.opacity = 0.6 * rayK * pulse;
+    const p2 = rays2Geo.attributes.position.array;
+    for (let i = 0; i < NR2; i++) {
+      const ux = clamp(s1.uc + s1.sd * FAN[i][0], -0.22, 0.22);
+      const vy = clamp(s1.vc + s1.sd * FAN[i][1], -0.22, 0.22);
+      p2[i * 6] = _apW.x; p2[i * 6 + 1] = _apW.y; p2[i * 6 + 2] = _apW.z;
+      p2[i * 6 + 3] = _m0W.x + _rw.x * ux + _uw.x * vy;
+      p2[i * 6 + 4] = _m0W.y + _rw.y * ux + _uw.y * vy;
+      p2[i * 6 + 5] = _m0W.z + _rw.z * ux + _uw.z * vy;
+    }
+    rays2Geo.attributes.position.needsUpdate = true;
+    M.ray2.opacity = 0.4 * rayK;
+    const pp = partGeo.attributes.position.array;
+    for (let i = 0; i < NP; i++) {
+      const tt = (st * partSpd[i] + partPh[i]) % 1;
+      const ox = preyG.position.x + partOff[i].x, oy = 0.7 + partOff[i].y, oz = preyG.position.z + partOff[i].z;
+      const ux = clamp(s1.uc + s1.sd * partTgt[i][0], -0.22, 0.22);
+      const vy = clamp(s1.vc + s1.sd * partTgt[i][1], -0.22, 0.22);
+      const tx = _m0W.x + _rw.x * ux + _uw.x * vy;
+      const ty = _m0W.y + _rw.y * ux + _uw.y * vy;
+      const tz = _m0W.z + _rw.z * ux + _uw.z * vy;
+      let px, py, pz2;
+      if (tt < 0.55) { const f = tt / 0.55; px = ox + (_apW.x - ox) * f; py = oy + (_apW.y - oy) * f; pz2 = oz + (_apW.z - oz) * f; }
+      else { const f = (tt - 0.55) / 0.45; px = _apW.x + (tx - _apW.x) * f; py = _apW.y + (ty - _apW.y) * f; pz2 = _apW.z + (tz - _apW.z) * f; }
+      pp[i * 3] = px; pp[i * 3 + 1] = py; pp[i * 3 + 2] = pz2;
+    }
+    partGeo.attributes.position.needsUpdate = true;
+    M.part.opacity = 0.55 * rayK;
+  } else { M.ray.opacity = M.rayHot.opacity = M.ray2.opacity = M.part.opacity = 0; }
+
+  /* ---- 微热像仪屏 ---- */
+  const camOn = base === 'camera';
+  dispPlane.visible = camLbl.o.visible = camOn;
+  if (camOn) {
+    M.disp.opacity = 0.75 + 0.2 * (0.5 + 0.5 * Math.sin(et * 4));
+    /* 屏幕内容 150ms 节流刷新(见 frame()) */
+  } else M.disp.opacity = 0.96;
+  camLens.lookAt(preyG.position.x, 0.7, preyG.position.z);
+
+  /* ---- 标签可见性 ---- */
+  apLbl.o.visible = labelsOn;
+  membLbl.o.visible = labelsOn;
+  innerLbl.o.visible = labelsOn;
+  eyeLbl.o.visible = labelsOn;
+  pitLbl.o.visible = labelsOn;
+  tectLbl.o.visible = labelsOn;
+  nerveLbl.o.visible = labelsOn;
+  preyLbl.o.visible = labelsOn;
+  invLbl.o.visible = labelsOn && s1.detect;
+  spotLbl.o.visible = labelsOn && s1.vis;
+  coldLbl.o.visible = labelsOn && coldOn;
+  rockLbl.o.visible = labelsOn && s2.on;
+  strikeLbl.o.visible = labelsOn && base === 'track';
+  scaleLbl.o.visible = labelsOn;
+}
+
+/* ---------------- 微热像仪屏幕绘制(16×9 像元) ---------------- */
+function drawCamDisplay() {
+  const g = camCtx, W = camCanvas.width, H = camCanvas.height;
+  g.fillStyle = '#04060b';
+  g.fillRect(0, 0, W, H);
+  const cols = 16, rows = 9, cw = 14.6, ch = 12.4, ox = 6, oy = 22;
+  const lensPos = camG.position;
+  _camPrey.set(preyG.position.x, 0.7, preyG.position.z).sub(lensPos);
+  _camRock.set(rock.position.x, rock.position.y, rock.position.z).sub(lensPos);
+  const angP = s1.on ? s1.thSpot * 0.62 + Math.atan(HALF_H / (DIST / 100)) * 0.4 : 1e9;
+  const angR = s2.sg;
+  let bx = 0, by = 0, bv = -1;
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const tx = -4 + 8 * i / (cols - 1);
+      const tz = (DIST / 1.5 - 4) + 8 * j / (rows - 1);
+      _camDir.set(tx, 0.7, tz).sub(lensPos);
+      let val = noiseN[(i * cols + j) % mCount] * 0.5;
+      if (s1.on) {
+        const ang = _camDir.angleTo(_camPrey);
+        val += s1.dT * Math.exp(-0.5 * (ang / angP) * (ang / angP));
+      }
+      if (s2.on) {
+        const ang = _camDir.angleTo(_camRock);
+        val += s2.dT * Math.exp(-0.5 * (ang / angR) * (ang / angR));
+      }
+      val = Math.max(0, val);
+      const t = clamp(val / 14, 0, 1.35);
+      const f = t < 0.22 ? [0.07 + t / 0.22 * 0.23, 0.10, 0.22] :
+        t < 0.5 ? [0.30 + (t - 0.22) / 0.28 * 0.48, 0.12 + (t - 0.22) / 0.28 * 0.08, 0.10] :
+        t < 0.8 ? [0.78 + (t - 0.5) / 0.3 * 0.22, 0.20 + (t - 0.5) / 0.3 * 0.32, 0.12] :
+        [1, 0.52 + (t - 0.8) / 0.3 * 0.34, 0.12 + (t - 0.8) / 0.3 * 0.38];
+      g.fillStyle = `rgb(${Math.round(f[0] * 255)},${Math.round(f[1] * 255)},${Math.round(f[2] * 255)})`;
+      g.fillRect(ox + i * cw, oy + j * ch, cw - 1.2, ch - 1.2);
+      if (val > bv) { bv = val; bx = ox + i * cw + cw / 2; by = oy + j * ch + ch / 2; }
+    }
+  }
+  /* 十字准星 */
+  if (s1.detect) {
+    g.strokeStyle = 'rgba(255,255,255,.85)';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(bx - 8, by); g.lineTo(bx + 8, by);
+    g.moveTo(bx, by - 8); g.lineTo(bx, by + 8);
+    g.stroke();
+    g.strokeRect(bx - 11, by - 11, 22, 22);
+  }
+  g.fillStyle = 'rgba(230,240,250,.9)';
+  g.font = '11px monospace';
+  g.fillText(s1.detect ? 'LOCK ΔT ' + s1.dT.toFixed(1) + ' m°C' : (s2.on ? 'CLUTTER ONLY' : 'NO TARGET'), 8, 14);
+  g.fillStyle = 'rgba(160,175,195,.85)';
+  g.font = '9px monospace';
+  g.fillText('VOx 17µm · NETD 0.02°C · 384x288@25Hz', 8, H - 6);
+  camTex.needsUpdate = true;
+}
+
+/* ---------------- 装配 ---------------- */
+applyView();
+updateSliderLabels();
+updateStats();
+apRing.scale.setScalar(DAP / 1.5);
+camera.position.set(10.5, 5.5, 19);
+controls.target.set(1.2, 1.2, 7.5);
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let rafOn = false, lastStatsT = 0, et = 0, etG = 0, scopeDark = true;
+function frame() {
+  const dt = clamp(clock.getDelta(), 0, 0.05);
+  et += dt;
+  const simDt = playing ? dt * speed : 0;
+  pageFrame(et, simDt, dt);
+  const hlm = HL[STEPS[scenario].hl];
+  if (hlm) hlm.opacity = 0.5 + 0.3 * (0.45 + 0.25 * Math.sin(et * 5));
+  camV.copy(tgtVec);
+  controls.target.lerp(camV, 0.04);
+  for (const r of labelReg) {
+    if (r.follow) r.follow(r.o.position);
+    r.o.element.textContent = r.text();
+    r.o.element.className = 'lbl ' + (r.cls ? r.cls() : '');
+  }
+  if (tglCurve.checked && typeof drawScope === 'function') drawScope();
+  const now = performance.now();
+  if (now - lastStatsT > 150) {
+    lastStatsT = now;
+    updateStats();
+    updateFormula();
+    if (dispPlane.visible) drawCamDisplay();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+function schedule() { if (!rafOn && !document.hidden) { rafOn = true; requestAnimationFrame(tick); } }
+function tick() { rafOn = false; frame(); schedule(); }
+document.addEventListener('visibilitychange', schedule);
+
+/* ---------------- 初始化 ---------------- */
+applyTheme();
+applyLang();
+elSpeed.value = Math.round(speed * 10);
+elSpeedVal.textContent = speed.toFixed(1) + '×';
+sizeScope();
+const t0 = parseInt(qs.get('t'), 10);
+if (Number.isFinite(t0) && t0 >= 1) activateStep(clamp(t0 - 1, 0, STEPS.length - 1));
+else activateStep(0);
+setPlayLabel();
+tglCurve.dispatchEvent(new Event('change'));
+schedule();
+</script>
+
+<script>
+/* 控制面板折叠(按页面路径记忆;窄屏默认折叠) */
+(function () {
+  var panel = document.getElementById('panel');
+  var btn = document.getElementById('panelToggle');
+  if (!panel || !btn) return;
+  var key = 'htw-panel-collapsed:' + location.pathname;
+  function show(c) {
+    panel.classList.toggle('collapsed', c);
+    btn.textContent = c ? '\u25B4' : '\u25BE';
+  }
+  btn.addEventListener('click', function () {
+    var c = !panel.classList.contains('collapsed');
+    show(c);
+    try { localStorage.setItem(key, c ? '1' : '0'); } catch (e) {}
+  });
+  var fade = document.createElement('div'); /* panelFadeJS */
+  fade.className = 'panelFade';
+  panel.appendChild(fade);
+  function updFade() {
+    var sc = panel.scrollHeight - panel.clientHeight > 6;
+    panel.classList.toggle('scrollable', sc);
+    panel.classList.toggle('at-bottom', !sc || panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 6);
+  }
+  panel.addEventListener('scroll', updFade, { passive: true });
+  if (window.ResizeObserver) { new ResizeObserver(updFade).observe(panel); }
+  updFade();
+  var saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  show(saved === '1' || (saved === null && matchMedia('(max-width: 760px)').matches));
+})();
+</script>
+</body>
+</html>
